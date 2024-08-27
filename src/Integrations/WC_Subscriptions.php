@@ -1,6 +1,6 @@
 <?php
 
-namespace WPCOMSpecialProjects\Scaffold\Integrations;
+namespace WPCOMSpecialProjects\a8csp-background-tasks\Integrations;
 
 defined( 'ABSPATH' ) || exit;
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace WPCOMSpecialProjects\Scaffold;
+namespace WPCOMSpecialProjects\a8csp-background-tasks;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -39,7 +39,7 @@ final class Blocks {
 	 * @return  void
 	 */
 	public function register_blocks(): void {
-		\register_block_type( WPCOMSP_SCAFFOLD_PATH . 'blocks/build/foobar' );
+		\register_block_type( A8CSP_BACKGROUND_TASKS_PATH . 'blocks/build/foobar' );
 	}
 
 	/**
@@ -51,12 +51,12 @@ final class Blocks {
 	 * @return  void
 	 */
 	public function enqueue_block_editor_assets(): void {
-		$plugin_slug = wpcomsp_scaffold_get_plugin_slug();
+		$plugin_slug = a8csp_background_tasks_get_plugin_slug();
 
-		$asset_meta = wpcomsp_scaffold_get_asset_meta( WPCOMSP_SCAFFOLD_PATH . 'assets/js/build/editor.js' );
+		$asset_meta = a8csp_background_tasks_get_asset_meta( A8CSP_BACKGROUND_TASKS_PATH . 'assets/js/build/editor.js' );
 		\wp_register_script(
 			"$plugin_slug-editor",
-			WPCOMSP_SCAFFOLD_URL . 'assets/js/build/editor.js',
+			A8CSP_BACKGROUND_TASKS_URL . 'assets/js/build/editor.js',
 			$asset_meta['dependencies'],
 			$asset_meta['version'],
 			false

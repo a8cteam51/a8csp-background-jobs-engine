@@ -1,8 +1,8 @@
 <?php
 
-namespace WPCOMSpecialProjects\Scaffold;
+namespace WPCOMSpecialProjects\a8csp-background-tasks;
 
-use WPCOMSpecialProjects\Scaffold\Integrations\WC_Subscriptions;
+use WPCOMSpecialProjects\a8csp-background-tasks\Integrations\WC_Subscriptions;
 
 defined( 'ABSPATH' ) || exit;
 
