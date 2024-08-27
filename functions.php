@@ -2,7 +2,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-use WPCOMSpecialProjects\a8csp-background-tasks\Plugin;
+use A8C\SpecialProjects\BackgroundTasks\Plugin;
 
 // region
 
@@ -29,12 +29,5 @@ function a8csp_background_tasks_get_plugin_instance(): Plugin {
 function a8csp_background_tasks_get_plugin_slug(): string {
 	return sanitize_key( A8CSP_BACKGROUND_TASKS_METADATA['TextDomain'] );
 }
-
-// endregion
-
-//region OTHERS
-
-require A8CSP_BACKGROUND_TASKS_PATH . 'includes/assets.php';
-require A8CSP_BACKGROUND_TASKS_PATH . 'includes/settings.php';
 
 // endregion
