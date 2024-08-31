@@ -1,10 +1,10 @@
-<?php
+<?php declare( strict_types = 1 );
 
 defined( 'ABSPATH' ) || exit;
 
 use A8C\SpecialProjects\BackgroundTasks\Plugin;
 
-// region
+// region META
 
 /**
  * Returns the plugin's main class instance.
@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundTasks\Plugin;
  *
  * @return  Plugin
  */
-function a8csp_background_tasks_get_plugin_instance(): Plugin {
+function a8csp_bgt_get_plugin_instance(): Plugin {
 	return Plugin::get_instance();
 }
 
@@ -26,7 +26,7 @@ function a8csp_background_tasks_get_plugin_instance(): Plugin {
  *
  * @return  string
  */
-function a8csp_background_tasks_get_plugin_slug(): string {
+function a8csp_bgt_get_plugin_slug(): string {
 	return sanitize_key( A8CSP_BACKGROUND_TASKS_METADATA['TextDomain'] );
 }
 

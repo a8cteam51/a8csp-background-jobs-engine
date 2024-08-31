@@ -1,4 +1,4 @@
-<?php
+<?php declare( strict_types = 1 );
 /**
  * The A8C Special Projects Background Tasks bootstrap file.
  *
@@ -35,7 +35,7 @@ define( 'A8CSP_BACKGROUND_TASKS_BASENAME', plugin_basename( __FILE__ ) );
 define( 'A8CSP_BACKGROUND_TASKS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'A8CSP_BACKGROUND_TASKS_URL', plugin_dir_url( __FILE__ ) );
 
-// Load plugin translations so they are available even for the error admin notices.
+// Load plugin translations, so they are available even for the error admin notices.
 add_action(
 	'init',
 	static function () {
@@ -82,5 +82,5 @@ if ( $a8csp_background_tasks_requirements instanceof WP_Error ) {
 	);
 } else {
 	require_once A8CSP_BACKGROUND_TASKS_PATH . 'functions.php';
-	add_action( 'plugins_loaded', array( a8csp_background_tasks_get_plugin_instance(), 'maybe_initialize' ) );
+	add_action( 'plugins_loaded', array( a8csp_bgt_get_plugin_instance(), 'initialize' ) );
 }
