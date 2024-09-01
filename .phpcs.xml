@@ -18,11 +18,18 @@
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="a8csp_"/>
-				<element value="a8csp_bgt_"/>
-				<element value="a8csp_background_tasks_"/>
+				<element value="a8csp"/>
+				<element value="a8csp_bgt"/>
+				<element value="a8csp_background_tasks"/>
 				<element value="A8C\SpecialProjects\BackgroundTasks"/>
 			</property>
+		</properties>
+	</rule>
+
+	<!-- Allow additional word delimiters for hook names. -->
+	<rule ref="WordPress.NamingConventions.ValidHookName">
+		<properties>
+			<property name="additionalWordDelimiters" value="/"/>
 		</properties>
 	</rule>
 </ruleset>

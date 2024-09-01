@@ -17,7 +17,7 @@ function a8csp_bgt_hash_task_args( array $args ): string {
 }
 
 /**
- * Returns the UNIX timestamp for the provided date.
+ * Returns the Unix timestamp for the provided date.
  *
  * @param   string            $date     The date to convert to a timestamp.
  * @param   DateTimeZone|null $timezone Optional. The timezone to use. Default is the site's timezone.
@@ -51,4 +51,21 @@ function a8csp_bgt_get_date_timestamp( string $date = 'now', ?DateTimeZone $time
 function a8csp_bgt_log_error( string $message, string $context, ?array $extra = null, string $type = 'Generic' ): void {
 	$message = "❌ $type Error ($context): $message" . ( ! is_null( $extra ) ? ' - ' . wp_json_encode( $extra ) : '' );
 	error_log( $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+}
+
+/**
+ * Logs an error message for a background task to the error log.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string     $task_name The name of the task.
+ * @param   string     $run_id    The ID of the run.
+ * @param   string     $message   The error message.
+ * @param   array|null $extra     Additional information to log.
+ *
+ * @return  void
+ */
+function a8csp_bgt_log_task_error( string $task_name, string $run_id, string $message, ?array $extra = null ): void {
+	a8csp_bgt_log_error( $message, "$task_name|$run_id", $extra, 'Background Task' );
 }

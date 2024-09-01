@@ -24,6 +24,10 @@ function a8csp_bgt_get_task_run_queue( string $task_name, string $run_id ): ?arr
  * @return  boolean
  */
 function a8csp_bgt_set_task_run_queue( string $task_name, string $run_id, array $queue ): bool {
+	if ( array_filter( $queue, 'is_array' ) !== $queue ) {
+		throw new InvalidArgumentException( 'The queue must be an array of arrays.' );
+	}
+
 	return update_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_queue", $queue, false );
 }
 
@@ -66,13 +70,13 @@ function a8csp_bgt_dequeue_from_task_queue( string $task_name, string $run_id ):
  *
  * @param   string $task_name The name of the task.
  * @param   string $run_id    The ID of the task run.
- * @param   array  $args      The args to enqueue.
+ * @param   array  $chunk     The args to enqueue.
  *
  * @return  boolean
  */
-function a8csp_bgt_enqueue_to_task_queue( string $task_name, string $run_id, array $args ): bool {
+function a8csp_bgt_enqueue_to_task_queue( string $task_name, string $run_id, array $chunk ): bool {
 	$queue   = a8csp_bgt_get_task_run_queue( $task_name, $run_id );
-	$queue[] = $args;
+	$queue[] = $chunk;
 
 	return a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
 }
@@ -82,13 +86,13 @@ function a8csp_bgt_enqueue_to_task_queue( string $task_name, string $run_id, arr
  *
  * @param   string $task_name The name of the task.
  * @param   string $run_id    The ID of the task run.
- * @param   array  $args      The args to prepend to the queue.
+ * @param   array  $chunk     The args to prepend to the queue.
  *
  * @return  boolean
  */
-function a8csp_bgt_enqueue_front_to_task_queue( string $task_name, string $run_id, array $args ): bool {
+function a8csp_bgt_prepend_to_task_queue( string $task_name, string $run_id, array $chunk ): bool {
 	$queue = a8csp_bgt_get_task_run_queue( $task_name, $run_id );
-	array_unshift( $queue, $args );
+	array_unshift( $queue, $chunk );
 
 	return a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
 }

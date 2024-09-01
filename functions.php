@@ -27,39 +27,34 @@ function a8csp_bgt_get_plugin_instance(): Plugin {
  * @return  string
  */
 function a8csp_bgt_get_plugin_slug(): string {
-	return sanitize_key( A8CSP_BACKGROUND_TASKS_METADATA['TextDomain'] );
+	return sanitize_key( A8CSP_BGT_METADATA['TextDomain'] );
+}
+
+/**
+ * Returns the task instance for the provided task name.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $task_name The name of the task to return the instance for.
+ *
+ * @return  A8CSP_Abstract_Background_Task|null
+ */
+function a8csp_bgt_get_task( string $task_name ): ?A8CSP_Abstract_Background_Task {
+	$tasks = apply_filters( 'a8csp/background_tasks', array() );
+	return $tasks[ $task_name ] ?? null;
 }
 
 // endregion
 
 // region OTHERS
 
-foreach ( glob( A8CSP_BACKGROUND_TASKS_PATH . 'includes/*.php' ) as $a8csp_bgt_filename ) {
+foreach ( glob( A8CSP_BGT_PATH . 'includes/*.php' ) as $a8csp_bgt_filename ) {
 	if ( preg_match( '#/includes/_#i', $a8csp_bgt_filename ) ) {
 		continue; // Ignore files prefixed with an underscore.
 	}
 
 	include $a8csp_bgt_filename;
-}
-
-// endregion
-
-
-
-// region TASKS API
-
-/**
- * Returns the hash of the provided arguments.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   array $args The arguments to hash.
- *
- * @return  string
- */
-function a8csp_bgt_hash_task_args( array $args ): string {
-	return hash( 'md5', wp_json_encode( $args ) );
 }
 
 // endregion
