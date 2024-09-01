@@ -3,6 +3,19 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
+ * Returns the number of run IDs to keep for a given task.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @return integer
+ */
+function a8csp_bgt_task_run_ids_to_keep(): int {
+	$run_ids_to_keep = defined( 'A8CSP_BGT_MAX_RUN_IDS' ) ? A8CSP_BGT_MAX_RUN_IDS : 30;
+	return absint( $run_ids_to_keep );
+}
+
+/**
  * Returns an array of all run IDs for the provided task name and arguments.
  *
  * @since   1.0.0

@@ -140,6 +140,7 @@ class Plugin {
 	 * @return  void
 	 */
 	public function process_background_task( string $task_name, string $run_id, array $chunk ): void {
+		$this->validate_task_run_event( $task_name, $run_id );
 	}
 
 	/**
@@ -154,6 +155,13 @@ class Plugin {
 	 * @return  void
 	 */
 	public function cleanup_background_task( string $task_name, string $run_id ): void {
+		$this->validate_task_run_event( $task_name, $run_id );
+
+		$task = $this->get_task( $task_name );
+		$task::cleanup( $run_id );
+
+		\do_action( "a8csp/background_tasks/cleanup/$task_name", $run_id, $task_name );
+		$this->store_task_completed_run_id( $task_name, $run_id );
 	}
 
 	/**
@@ -203,12 +211,12 @@ class Plugin {
 		\update_option( "a8csp_bg-task_{$task_name}_latest-run-id_$args_hash", $run_id, false );
 		\update_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_args", $run_args, false );
 
-		$this->store_task_run_id( $task_name, $run_id, $run_args );
+		$this->store_task_started_run_id( $task_name, $run_id, $run_args );
 		return $run_id;
 	}
 
 	/**
-	 * Stores the ID of a task run.
+	 * Stores the ID of a started task run.
 	 *
 	 * @param   string $task_name The name of the task.
 	 * @param   string $run_id    The ID of the task run.
@@ -216,24 +224,21 @@ class Plugin {
 	 *
 	 * @return  void
 	 */
-	protected function store_task_run_id( string $task_name, string $run_id, array $run_args ): void {
-		/* @noinspection PhpUndefinedConstantInspection */
-		$run_ids_to_keep = \defined( 'A8CSP_BGT_MAX_RUN_IDS' ) ? A8CSP_BGT_MAX_RUN_IDS : 30;
-		$run_ids_to_keep = \absint( $run_ids_to_keep );
+	protected function store_task_started_run_id( string $task_name, string $run_id, array $run_args ): void {
+		$run_ids_to_keep = a8csp_bgt_task_run_ids_to_keep();
 
-		foreach ( array( null, $run_args ) as $args ) {
-			$task_run_ids   = a8csp_bgt_get_task_run_ids( $task_name, $args );
-			$task_run_ids[] = $run_id;
-			$task_run_ids   = \array_slice( $task_run_ids, -1 * $run_ids_to_keep );
+		$run_ids_all  = a8csp_bgt_get_task_run_ids( $task_name );
+		$run_ids_args = a8csp_bgt_get_task_run_ids( $task_name, $run_args );
 
-			$option_name = "a8csp_bg-task_{$task_name}_run-ids";
-			if ( ! \is_null( $args ) ) {
-				$args_hash    = a8csp_bgt_hash_task_args( $args );
-				$option_name .= "_$args_hash";
-			}
+		$run_ids_all[] = $run_id;
+		$run_ids_all   = \array_slice( $run_ids_all, -1 * $run_ids_to_keep );
 
-			\update_option( $option_name, $task_run_ids, false );
-		}
+		$run_ids_args[] = $run_id;
+		$run_ids_args   = \array_slice( $run_ids_args, -1 * $run_ids_to_keep );
+
+		$args_hash = a8csp_bgt_hash_task_args( $run_args );
+		\update_option( "a8csp_bg-task_{$task_name}_run-ids", $run_ids_all, false );
+		\update_option( "a8csp_bg-task_{$task_name}_run-ids_$args_hash", $run_ids_args, false );
 	}
 
 	/**
@@ -255,33 +260,51 @@ class Plugin {
 	}
 
 	/**
-	 * Stores the run ID for a task.
+	 * Ensures that we don't handle stale events.
+	 *
+	 * @param   string $task_name The name of the task.
+	 * @param   string $run_id    The ID of the task run.
+	 *
+	 * @throws  \RuntimeException If the event is stale.
+	 *
+	 * @return  void
+	 */
+	protected function validate_task_run_event( string $task_name, string $run_id ): void {
+		$run_args = a8csp_bgt_get_task_run_args( $task_name, $run_id );
+		if ( a8csp_bgt_get_task_latest_run_id( $task_name, $run_args ) !== $run_id ) {
+			throw new \RuntimeException( 'Skipping stale event.' );
+		}
+	}
+
+	/**
+	 * Stores the ID of a completed task run.
 	 *
 	 * @param   string $task_name The name of the task.
 	 * @param   string $run_id    The ID of the task run.
 	 *
 	 * @return  void
 	 */
-	protected function store_task_run_id( string $task_name, string $run_id ): void {
-		$start_args = $this->get_task_run_start_args( $task_name, $run_id );
-		if ( \is_null( $start_args ) ) {
-			throw new \LogicException( \wp_kses_post( "Missing start args for run `$run_id` of task `$task_name`." ) );
+	protected function store_task_completed_run_id( string $task_name, string $run_id ): void {
+		$run_ids_to_keep = a8csp_bgt_task_run_ids_to_keep();
+
+		$run_ids_all   = a8csp_bgt_get_task_completed_run_ids( $task_name );
+		$run_ids_all[] = $run_id;
+		$run_ids_all   = \array_slice( $run_ids_all, -1 * $run_ids_to_keep );
+
+		\update_option( "a8csp_bg-task_{$task_name}_completed-run-ids", $run_ids_all, false );
+
+		$run_args = a8csp_bgt_get_task_run_args( $task_name, $run_id );
+		if ( \is_null( $run_args ) ) {
+			a8csp_bgt_log_task_error( $task_name, $run_id, 'Task run args not found.' );
+			return;
 		}
 
-		$run_ids_to_keep = \defined( 'A8CSP_BGT_MAX_RUN_IDS' ) ? A8CSP_BGT_MAX_RUN_IDS : 30;
-		$run_ids_to_keep = \absint( $run_ids_to_keep );
+		$run_ids_args   = a8csp_bgt_get_task_completed_run_ids( $task_name, $run_args );
+		$run_ids_args[] = $run_id;
+		$run_ids_args   = \array_slice( $run_ids_args, -1 * $run_ids_to_keep );
 
-		$task_run_ids_all   = a8csp_bgt_get_task_run_ids( $task_name );
-		$task_run_ids_all[] = $run_id;
-		$task_run_ids_all   = \array_slice( $task_run_ids_all, -1 * $run_ids_to_keep );
-
-		$task_run_ids_args   = a8csp_bgt_get_task_run_ids( $task_name, $start_args );
-		$task_run_ids_args[] = $run_id;
-		$task_run_ids_args   = \array_slice( $task_run_ids_args, -1 * $run_ids_to_keep );
-
-		$args_hash = a8csp_bgt_hash_task_args( $start_args );
-		\update_option( "a8csp_bg-task_{$task_name}_run-ids", $task_run_ids_all, false );
-		\update_option( "a8csp_bg-task_{$task_name}_run-ids_$args_hash", $task_run_ids_args, false );
+		$args_hash = a8csp_bgt_hash_task_args( $run_args );
+		\update_option( "a8csp_bg-task_{$task_name}_completed-run-ids_$args_hash", $run_ids_args, false );
 	}
 
 	// endregion
