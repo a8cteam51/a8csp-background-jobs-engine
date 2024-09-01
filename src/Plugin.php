@@ -161,6 +161,8 @@ class Plugin {
 		$task::cleanup( $run_id );
 
 		\do_action( "a8csp/background_tasks/cleanup/$task_name", $run_id, $task_name );
+		\delete_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_retries" );
+
 		$this->store_task_completed_run_id( $task_name, $run_id );
 	}
 
@@ -176,6 +178,16 @@ class Plugin {
 	 * @return  void
 	 */
 	public function stop_background_task( string $task_name, array $run_args ): void {
+		$scheduler = $this->get_task_scheduler( $task_name );
+		$scheduler::unschedule_task_runs( $task_name, $run_args );
+
+		$latest_run_id = a8csp_bgt_get_task_latest_run_id( $task_name, $run_args );
+		if ( ! \is_null( $latest_run_id ) ) { // Null on the very first run.
+			$scheduler::unschedule_task_run_events( $task_name, $latest_run_id );
+
+			\delete_option( "a8csp_bg-task_{$task_name}_run-{$latest_run_id}_retries" );
+			a8csp_bgt_clear_task_run_queue( $task_name, $latest_run_id );
+		}
 	}
 
 	// endregion
@@ -193,6 +205,17 @@ class Plugin {
 	 */
 	protected function get_task( string $task_name ): \A8CSP_Abstract_Background_Task {
 		return a8csp_bgt_get_task( $task_name ) ?? throw new \RuntimeException( \wp_kses_post( "Background task `$task_name` not found." ) );
+	}
+
+	/**
+	 * Retrieves the scheduler for a task by name.
+	 *
+	 * @param   string $task_name The name of the task.
+	 *
+	 * @return  \A8CSP_Task_Scheduler_Adapter_Interface
+	 */
+	protected function get_task_scheduler( string $task_name ): \A8CSP_Task_Scheduler_Adapter_Interface {
+		return $this->get_task( $task_name )::get_scheduler();
 	}
 
 	/**
