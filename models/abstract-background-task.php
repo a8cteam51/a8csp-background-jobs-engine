@@ -83,6 +83,22 @@ abstract class A8CSP_Abstract_Background_Task {
 	 */
 	abstract public static function get_name(): string;
 
+	/**
+	 * Returns an adapter for the scheduler to use.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  A8CSP_Task_Scheduler_Adapter_Interface
+	 */
+	public static function get_scheduler(): A8CSP_Task_Scheduler_Adapter_Interface {
+		if ( is_plugin_active( 'action-scheduler/action-scheduler.php' ) ) {
+			return new A8CSP_ActionScheduler_Adapter();
+		}
+
+		return new A8CSP_WPCron_Adapter();
+	}
+
 	// endregion
 
 	// region LIFECYCLE

@@ -45,6 +45,21 @@ function a8csp_bgt_get_task( string $task_name ): ?A8CSP_Abstract_Background_Tas
 	return $tasks[ $task_name ] ?? null;
 }
 
+/**
+ * Returns the task scheduler adapter for the provided task name.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $task_name The name of the task to return the scheduler adapter for.
+ *
+ * @return  A8CSP_Task_Scheduler_Adapter_Interface|null
+ */
+function a8csp_bgt_get_task_scheduler( string $task_name ): ?A8CSP_Task_Scheduler_Adapter_Interface {
+	$task = a8csp_bgt_get_task( $task_name );
+	return $task ? $task::get_scheduler() : null;
+}
+
 // endregion
 
 // region OTHERS
