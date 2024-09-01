@@ -49,7 +49,7 @@
       "A8C\\SpecialProjects\\BackgroundTasks\\": "src/"
     },
     "classmap": [
-      "models/"
+      "models"
     ]
   },
   "autoload-dev": {

@@ -78,6 +78,8 @@ class Plugin {
 	 * @return  void
 	 */
 	public function initialize(): void {
+		\A8CSP_Call_User_Func_Task::get_instance();
+
 		\add_action( 'a8csp/background_tasks/start', array( $this, 'start_background_task' ), 10, 2 );
 		\add_action( 'a8csp/background_tasks/continue', array( $this, 'continue_background_task' ), 10, 2 );
 		\add_action( 'a8csp/background_tasks/process', array( $this, 'process_background_task' ), 10, 3 );
