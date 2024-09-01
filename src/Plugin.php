@@ -78,10 +78,10 @@ class Plugin {
 	 * @return  void
 	 */
 	public function initialize(): void {
-		\add_action( 'a8csp/start_background_task', array( $this, 'start_background_task' ), 10, 2 );
-		\add_action( 'a8csp/continue_background_task', array( $this, 'continue_background_task' ), 10, 2 );
-		\add_action( 'a8csp/run_background_task', array( $this, 'run_background_task' ), 10, 3 );
-		\add_action( 'a8csp/cleanup_background_task', array( $this, 'cleanup_background_task' ), 10, 2 );
+		\add_action( 'a8csp/background_tasks/start', array( $this, 'start_background_task' ), 10, 2 );
+		\add_action( 'a8csp/background_tasks/continue', array( $this, 'continue_background_task' ), 10, 2 );
+		\add_action( 'a8csp/background_tasks/process', array( $this, 'process_background_task' ), 10, 3 );
+		\add_action( 'a8csp/background_tasks/cleanup', array( $this, 'cleanup_background_task' ), 10, 2 );
 	}
 
 	// endregion
@@ -95,20 +95,20 @@ class Plugin {
 	 * @version 1.0.0
 	 *
 	 * @param   string $task_name The name of the task.
-	 * @param   array  $args      The arguments to start the task.
+	 * @param   array  $run_args  The arguments of the task run.
 	 *
 	 * @return  void
 	 */
-	public function start_background_task( string $task_name, array $args ): void {
-		$this->stop_background_task( $task_name, $args );
+	public function start_background_task( string $task_name, array $run_args ): void {
+		$this->stop_background_task( $task_name, $run_args ); // Multiple parallel runs of the same task with the same arguments are not allowed.
 
-		$run_id = $this->generate_task_run_id( $task_name, $args );
-		$this->generate_task_run_queue( $task_name, $run_id, $args );
+		$run_id = $this->generate_task_run_id( $task_name, $run_args );
+		$this->generate_task_run_queue( $task_name, $run_id, $run_args );
 		$this->continue_background_task( $task_name, $run_id );
 	}
 
 	/**
-	 * Continues a previously-started run of a background task.
+	 * Determines the next step of a running background task and continues it.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -119,11 +119,11 @@ class Plugin {
 	 * @return  void
 	 */
 	public function continue_background_task( string $task_name, string $run_id ): void {
-		$next_args = a8csp_bgt_dequeue_from_task_queue( $task_name, $run_id );
-		if ( \is_null( $next_args ) ) {
+		$chunk = a8csp_bgt_dequeue_from_task_queue( $task_name, $run_id );
+		if ( \is_null( $chunk ) ) {
 			$this->cleanup_background_task( $task_name, $run_id );
 		} else {
-			$this->run_background_task( $task_name, $run_id, $next_args );
+			$this->process_background_task( $task_name, $run_id, $chunk );
 		}
 	}
 
@@ -135,11 +135,11 @@ class Plugin {
 	 *
 	 * @param   string $task_name The name of the task.
 	 * @param   string $run_id    The ID of the task run.
-	 * @param   array  $args      The arguments for the chunk of work.
+	 * @param   array  $chunk     The arguments for the chunk of work.
 	 *
 	 * @return  void
 	 */
-	public function run_background_task( string $task_name, string $run_id, array $args ): void {
+	public function process_background_task( string $task_name, string $run_id, array $chunk ): void {
 	}
 
 	/**
@@ -162,17 +162,30 @@ class Plugin {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $task_name  The name of the task.
-	 * @param   array  $start_args The arguments used to start the task.
+	 * @param   string $task_name The name of the task.
+	 * @param   array  $run_args  The arguments of the task run.
 	 *
 	 * @return  void
 	 */
-	public function stop_background_task( string $task_name, array $start_args ): void {
+	public function stop_background_task( string $task_name, array $run_args ): void {
 	}
 
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Retrieves a task by name.
+	 *
+	 * @param   string $task_name The name of the task.
+	 *
+	 * @throws  \RuntimeException If the task is not found.
+	 *
+	 * @return  \A8CSP_Abstract_Background_Task
+	 */
+	protected function get_task( string $task_name ): \A8CSP_Abstract_Background_Task {
+		return a8csp_bgt_get_task( $task_name ) ?? throw new \RuntimeException( \wp_kses_post( "Background task `$task_name` not found." ) );
+	}
 
 	/**
 	 * Generates a unique ID for a task run.

@@ -55,14 +55,14 @@ function a8csp_bgt_dequeue_from_task_queue( string $task_name, string $run_id ):
 	$queue = a8csp_bgt_get_task_run_queue( $task_name, $run_id );
 
 	if ( empty( $queue ) ) {
-		$args = null;
+		$chunk = null;
 		a8csp_bgt_clear_task_run_queue( $task_name, $run_id );
 	} else {
-		$args = array_shift( $queue );
+		$chunk = array_shift( $queue );
 		a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
 	}
 
-	return $args;
+	return $chunk;
 }
 
 /**
