@@ -60,3 +60,35 @@ function a8csp_bgt_dequeue_from_task_queue( string $task_name, string $run_id ):
 
 	return $args;
 }
+
+/**
+ * Enqueues the provided args to the queue of the provided task name and run ID.
+ *
+ * @param   string $task_name The name of the task.
+ * @param   string $run_id    The ID of the task run.
+ * @param   array  $args      The args to enqueue.
+ *
+ * @return  boolean
+ */
+function a8csp_bgt_enqueue_to_task_queue( string $task_name, string $run_id, array $args ): bool {
+	$queue   = a8csp_bgt_get_task_run_queue( $task_name, $run_id );
+	$queue[] = $args;
+
+	return a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
+}
+
+/**
+ * Prepends the args for the next chunk of work to the queue of the provided task name and run ID.
+ *
+ * @param   string $task_name The name of the task.
+ * @param   string $run_id    The ID of the task run.
+ * @param   array  $args      The args to prepend to the queue.
+ *
+ * @return  boolean
+ */
+function a8csp_bgt_enqueue_front_to_task_queue( string $task_name, string $run_id, array $args ): bool {
+	$queue = a8csp_bgt_get_task_run_queue( $task_name, $run_id );
+	array_unshift( $queue, $args );
+
+	return a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
+}
