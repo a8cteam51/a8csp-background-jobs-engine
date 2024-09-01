@@ -16,6 +16,19 @@ function a8csp_bgt_task_run_ids_to_keep(): int {
 }
 
 /**
+ * Returns the maximum number of retries for a task run.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @return  integer
+ */
+function a8csp_bgt_task_run_max_retries(): int {
+	$max_retries = defined( 'A8CSP_BGT_MAX_RETRIES' ) ? A8CSP_BGT_MAX_RETRIES : 3;
+	return absint( $max_retries );
+}
+
+/**
  * Returns an array of all run IDs for the provided task name and arguments.
  *
  * @since   1.0.0

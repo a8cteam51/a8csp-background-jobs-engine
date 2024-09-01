@@ -141,6 +141,31 @@ class Plugin {
 	 */
 	public function process_background_task( string $task_name, string $run_id, array $chunk ): void {
 		$this->validate_task_run_event( $task_name, $run_id );
+
+		try {
+			$this->get_task( $task_name )::process( $chunk, $run_id );
+			\do_action( "a8csp/background_tasks/process/$task_name", $chunk, $run_id, $task_name );
+
+			$this->get_task_scheduler( $task_name )::schedule_task_run_event( $task_name, 'continue', \time() + MINUTE_IN_SECONDS, $run_id );
+		} catch ( \RuntimeException $e ) {
+			a8csp_bgt_log_task_error( $task_name, $run_id, 'Task run failed. Attempting retry...', \compact( 'task_name', 'run_id', 'chunk', 'e' ) );
+
+			$retry_counts = \get_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_retries", array() );
+
+			$args_hash   = a8csp_bgt_hash_task_args( $chunk );
+			$retry_count = (int) ( $retry_counts[ $args_hash ] ?? 0 );
+
+			$max_retries = a8csp_bgt_task_run_max_retries();
+			if ( $retry_count > $max_retries ) {
+				a8csp_bgt_log_task_error( $task_name, $run_id, 'Max retries reached for task run. No more retries will be attempted!', \compact( 'task_name', 'run_id', 'chunk', 'e' ) );
+				return;
+			}
+
+			$retry_counts[ $args_hash ] = ++$retry_count;
+			\update_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_retries", $retry_counts, false );
+
+			$this->get_task_scheduler( $task_name )::schedule_task_run_event( $task_name, 'process', \time() + ( $retry_count * MINUTE_IN_SECONDS ), $run_id, $chunk );
+		}
 	}
 
 	/**
