@@ -119,6 +119,12 @@ class Plugin {
 	 * @return  void
 	 */
 	public function continue_background_task( string $task_name, string $run_id ): void {
+		$next_args = a8csp_bgt_dequeue_from_task_queue( $task_name, $run_id );
+		if ( \is_null( $next_args ) ) {
+			$this->cleanup_background_task( $task_name, $run_id );
+		} else {
+			$this->run_background_task( $task_name, $run_id, $next_args );
+		}
 	}
 
 	/**
@@ -199,7 +205,7 @@ class Plugin {
 	 */
 	protected function generate_task_run_queue( string $task_name, string $run_id, array $args ): void {
 		$queue = \apply_filters( "a8csp/background_task_queue/$task_name", array(), $args, $run_id, $task_name );
-		\update_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_queue", $queue, false );
+		a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
 	}
 
 	/**

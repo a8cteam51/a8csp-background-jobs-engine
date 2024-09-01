@@ -32,6 +32,20 @@ function a8csp_bgt_get_plugin_slug(): string {
 
 // endregion
 
+// region OTHERS
+
+foreach ( glob( A8CSP_BACKGROUND_TASKS_PATH . 'includes/*.php' ) as $a8csp_bgt_filename ) {
+	if ( preg_match( '#/includes/_#i', $a8csp_bgt_filename ) ) {
+		continue; // Ignore files prefixed with an underscore.
+	}
+
+	include $a8csp_bgt_filename;
+}
+
+// endregion
+
+
+
 // region TASKS API
 
 /**
@@ -46,48 +60,6 @@ function a8csp_bgt_get_plugin_slug(): string {
  */
 function a8csp_bgt_hash_task_args( array $args ): string {
 	return hash( 'md5', wp_json_encode( $args ) );
-}
-
-/**
- * Returns the latest run ID for the provided task name and arguments.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   string     $task_name  The name of the task.
- * @param   array|null $start_args Optional. The arguments to start the task.
- *
- * @return  string|null
- */
-function a8csp_bgt_get_task_latest_run_id( string $task_name, ?array $start_args = null ): ?string {
-	$option_name = "a8csp_bg-task_{$task_name}_latest-run-id";
-	if ( ! is_null( $start_args ) ) {
-		$args_hash    = a8csp_bgt_hash_task_args( $start_args );
-		$option_name .= "_$args_hash";
-	}
-
-	return get_option( $option_name, null );
-}
-
-/**
- * Returns an array of all run IDs for the provided task name and arguments.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   string     $task_name  The name of the task.
- * @param   array|null $start_args Optional. The arguments used to start the task.
- *
- * @return  string[]
- */
-function a8csp_bgt_get_task_run_ids( string $task_name, ?array $start_args = null ): array {
-	$option_name = "a8csp_bg-task_{$task_name}_run-ids";
-	if ( ! is_null( $start_args ) ) {
-		$args_hash    = a8csp_bgt_hash_task_args( $start_args );
-		$option_name .= "_$args_hash";
-	}
-
-	return get_option( $option_name, array() );
 }
 
 // endregion
