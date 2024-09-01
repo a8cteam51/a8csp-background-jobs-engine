@@ -1,1 +1,87 @@
-<?php
+<?php declare( strict_types = 1 );
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The base class for all background tasks.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
+abstract class A8CSP_Abstract_Background_Task {
+	// region MAGIC METHODS
+
+	/**
+	 * A8CSP_Abstract_Background_Task constructor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	protected function __construct() {
+		\add_filter(
+			'a8csp/background_tasks',
+			static function ( array $tasks ): array {
+				$tasks[ static::get_name() ] = static::get_instance();
+				return $tasks;
+			}
+		);
+	}
+
+	/**
+	 * Prevent cloning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function __clone() {
+		/* Empty on purpose. */
+	}
+
+	/**
+	 * Prevent unserializing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function __wakeup() {
+		/* Empty on purpose. */
+	}
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Returns the singleton instance of the task.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  static
+	 */
+	public static function get_instance(): static {
+		static $tasks = array();
+
+		if ( ! isset( $tasks[ static::class ] ) ) {
+			$tasks[ static::class ] = new static();
+		}
+
+		return $tasks[ static::class ];
+	}
+
+	/**
+	 * Returns the name of the task. Must be unique across all registered tasks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	abstract public static function get_name(): string;
+
+	// endregion
+}
