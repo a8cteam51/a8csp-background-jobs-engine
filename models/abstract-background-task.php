@@ -83,5 +83,35 @@ abstract class A8CSP_Abstract_Background_Task {
 	 */
 	abstract public static function get_name(): string;
 
+	// region LIFECYCLE
+
+	/**
+	 * Generates the queue of chunks to process.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array $run_args The arguments of the task run.
+	 *
+	 * @return  array
+	 */
+	public static function generate_queue( array $run_args ): array {
+		return array( $run_args ); // Default to a single chunk matching the run args.
+	}
+
+	/**
+	 * Cleans up the background task.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id The ID of the current run.
+	 *
+	 * @return  void
+	 */
+	public static function cleanup( string $run_id ): void {
+		// Do nothing by default. Override in child classes.
+	}
+
 	// endregion
 }

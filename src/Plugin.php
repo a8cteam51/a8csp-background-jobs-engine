@@ -190,47 +190,68 @@ class Plugin {
 	/**
 	 * Generates a unique ID for a task run.
 	 *
-	 * @param   string $task_name  The name of the task.
-	 * @param   array  $start_args The arguments used to start the task.
+	 * @param   string $task_name The name of the task.
+	 * @param   array  $run_args  The arguments of the task run.
 	 *
 	 * @return  string
 	 */
-	protected function generate_task_run_id( string $task_name, array $start_args ): string {
+	protected function generate_task_run_id( string $task_name, array $run_args ): string {
 		$run_id    = \wp_generate_uuid4(); // Technically not unique-proof, but should be good enough for our purposes.
-		$args_hash = a8csp_bgt_hash_task_args( $start_args );
+		$args_hash = a8csp_bgt_hash_task_args( $run_args );
 
 		\update_option( "a8csp_bg-task_{$task_name}_latest-run-id", $run_id, false );
 		\update_option( "a8csp_bg-task_{$task_name}_latest-run-id_$args_hash", $run_id, false );
-		\update_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_start-args", $start_args, false );
+		\update_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_args", $run_args, false );
 
-		$this->store_task_run_id( $task_name, $run_id );
+		$this->store_task_run_id( $task_name, $run_id, $run_args );
 		return $run_id;
 	}
 
 	/**
-	 * Generates the queue of work for a task run.
+	 * Stores the ID of a task run.
 	 *
 	 * @param   string $task_name The name of the task.
 	 * @param   string $run_id    The ID of the task run.
-	 * @param   array  $args      The arguments used to start the task.
+	 * @param   array  $run_args  The arguments of the task run.
 	 *
 	 * @return  void
 	 */
-	protected function generate_task_run_queue( string $task_name, string $run_id, array $args ): void {
-		$queue = \apply_filters( "a8csp/background_task_queue/$task_name", array(), $args, $run_id, $task_name );
-		a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
+	protected function store_task_run_id( string $task_name, string $run_id, array $run_args ): void {
+		/* @noinspection PhpUndefinedConstantInspection */
+		$run_ids_to_keep = \defined( 'A8CSP_BGT_MAX_RUN_IDS' ) ? A8CSP_BGT_MAX_RUN_IDS : 30;
+		$run_ids_to_keep = \absint( $run_ids_to_keep );
+
+		foreach ( array( null, $run_args ) as $args ) {
+			$task_run_ids   = a8csp_bgt_get_task_run_ids( $task_name, $args );
+			$task_run_ids[] = $run_id;
+			$task_run_ids   = \array_slice( $task_run_ids, -1 * $run_ids_to_keep );
+
+			$option_name = "a8csp_bg-task_{$task_name}_run-ids";
+			if ( ! \is_null( $args ) ) {
+				$args_hash    = a8csp_bgt_hash_task_args( $args );
+				$option_name .= "_$args_hash";
+			}
+
+			\update_option( $option_name, $task_run_ids, false );
+		}
 	}
 
 	/**
-	 * Returns the arguments used to start a given task run.
+	 * Generates the queue of chunks to process for a task run.
 	 *
 	 * @param   string $task_name The name of the task.
 	 * @param   string $run_id    The ID of the task run.
+	 * @param   array  $run_args  The arguments of the task run.
 	 *
-	 * @return  array|null
+	 * @return  void
 	 */
-	protected function get_task_run_start_args( string $task_name, string $run_id ): ?array {
-		return \get_option( "a8csp_bg-task_{$task_name}_run-{$run_id}_start-args", null );
+	protected function generate_task_run_queue( string $task_name, string $run_id, array $run_args ): void {
+		$queue = $this->get_task( $task_name )::generate_queue( $run_args );
+
+		$queue = \apply_filters( "a8csp/background_tasks/queue/$task_name", $queue, $run_args, $task_name, $run_id );
+		$queue = \apply_filters( 'a8csp/background_tasks/queue', $queue, $run_args, $task_name, $run_id );
+
+		a8csp_bgt_set_task_run_queue( $task_name, $run_id, $queue );
 	}
 
 	/**
