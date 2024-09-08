@@ -31,6 +31,52 @@ This plugin requires WooCommerce 7.4+ to run. If you're running a lower version,
 1. Upload the `a8csp-background-tasks` folder to the `/wp-content/plugins/` directory.
 1. Activate the plugin through the `Plugins` menu in WordPress.
 
+## Example
+
+```php
+class MyExampleTask extends A8CSP_Abstract_Background_Task {
+	/**
+	 * {@inheritDoc}
+	 */
+	#[\Override]
+	public static function get_name(): string {
+		return 'my_example_task';
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	#[\Override]
+	public static function generate_queue( array $run_args ): array {
+		$queue = array();
+		for ( $i = 0; $i < 10; $i++ ) {
+			$queue[] = array( $i, wp_rand( 0, $i ) );
+		}
+
+		return $queue;
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	#[\Override]
+	public static function process( array $chunk, string $run_id ): void {
+		if ( wp_rand( 0, 10 ) > 5 ) {
+			throw new RuntimeException( 'Random exception' );
+		}
+
+		error_log( wp_json_encode( $chunk ) );
+	}
+} MyExampleTask::get_instance();
+
+$my_task_scheduler = MyExampleTask::get_instance()::get_scheduler();
+if ( ! $my_task_scheduler::has_task_run( MyExampleTask::get_name() ) ) {
+	$next_daily_timestamp = a8csp_bgt_get_date_timestamp( 'today 1PM' ) + 24 * HOUR_IN_SECONDS;
+	$my_task_scheduler::schedule_recurring_task_run( MyExampleTask::get_name(), $next_daily_timestamp, DAY_IN_SECONDS, array() );
+}
+
+```
+
 ### AFTER ACTIVATION
 
 If the minimum required version of WooCommerce is present, you will find a section present in the `Advanced` tab of the WooCommerce `Settings` page. Aliquam dolor sem, convallis malesuada neque sit amet, dictum mattis velit. Vestibulum at pharetra metus. Suspendisse rhoncus libero nisi, sed rhoncus tortor aliquam pretium.
