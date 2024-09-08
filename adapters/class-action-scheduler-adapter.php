@@ -158,7 +158,7 @@ class A8CSP_ActionScheduler_Adapter extends A8CSP_Abstract_Task_Scheduler_Adapte
 		}
 
 		$args   = static::prepare_task_event_args( $task_name, $event, $run_id, $args );
-		$result = as_enqueue_async_action( "a8csp/{$event}_background_task", $args, "$task_name|$run_id", false, $priority );
+		$result = as_enqueue_async_action( "a8csp/background_tasks/$event", $args, "$task_name|$run_id", false, $priority );
 		if ( 0 === $result ) {
 			return new WP_Error( 'enqueue_failed', __( 'The task event could not be enqueued.', 'a8csp-background-tasks' ) );
 		}
@@ -179,7 +179,7 @@ class A8CSP_ActionScheduler_Adapter extends A8CSP_Abstract_Task_Scheduler_Adapte
 		}
 
 		$args   = static::prepare_task_event_args( $task_name, $event, $run_id, $args );
-		$result = as_schedule_single_action( $timestamp, "a8csp/{$event}_background_task", $args, "$task_name|$run_id", false, $priority );
+		$result = as_schedule_single_action( $timestamp, "a8csp/background_tasks/$event", $args, "$task_name|$run_id", false, $priority );
 		if ( 0 === $result ) {
 			return new WP_Error( 'schedule_failed', __( 'The task event could not be scheduled.', 'a8csp-background-tasks' ) );
 		}

@@ -49,6 +49,7 @@
       "A8C\\SpecialProjects\\BackgroundTasks\\": "src/"
     },
     "classmap": [
+      "adapters",
       "models"
     ]
   },
@@ -57,7 +58,7 @@
   },
 
   "scripts": {
-    "generate-autoloader": "@composer dump-autoload -o",
+    "generate-autoloader": "@composer dump-autoload --ignore-platform-reqs -o",
 
     "format:php": "phpcbf --standard=./.phpcs.xml --basepath=. . -v",
     "lint:php": "phpcs --standard=./.phpcs.xml --basepath=. . -v",
