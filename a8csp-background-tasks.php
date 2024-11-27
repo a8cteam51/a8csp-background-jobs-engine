@@ -5,17 +5,17 @@
  * @since       1.0.0
  * @version     1.0.0
  * @author      Automattic Special Projects
- * @license     GPL-3.0-or-later
+ * @license     GPL-2.0-or-later
  *
  * @noinspection    ALL
  *
  * @wordpress-plugin
- * Plugin Name:             A8C Special Projects Background Tasks
+ * Plugin Name:             A8CSP Background Tasks
  * Plugin URI:              https://wpspecialprojects.wordpress.com
  * Description:             Provides a framework for running background tasks in WordPress.
  * Version:                 1.0.0
- * Requires at least:       6.6
- * Tested up to:            6.6
+ * Requires at least:       6.7
+ * Tested up to:            6.7
  * Requires PHP:            8.3
  * Author:                  Automattic Special Projects
  * Author URI:              https://wpspecialprojects.wordpress.com
@@ -53,10 +53,12 @@ if ( ! is_file( A8CSP_BGT_PATH . '/vendor/autoload.php' ) ) {
 		'admin_notices',
 		static function () {
 			wp_admin_notice(
-				__( 'It seems like <strong>a8csp-background-tasks</strong> is corrupted. Please reinstall!', 'a8csp-background-tasks' ),
-				array(
-					'type' => 'error',
-				)
+				wp_sprintf(
+					/* translators: %s: Plugin name */
+					__( 'It seems like <strong>%s</strong> is corrupted. Please reinstall!', 'a8csp-background-tasks' ),
+					A8CSP_BGT_METADATA['Name']
+				),
+				array( 'type' => 'error' )
 			);
 		}
 	);
@@ -66,7 +68,7 @@ require_once A8CSP_BGT_PATH . '/vendor/autoload.php';
 
 // Initialize the plugin if system requirements check out.
 $a8csp_bgt_requirements = validate_plugin_requirements( A8CSP_BGT_BASENAME );
-define( 'A8CSP_BACKGROUND_TASKS_REQUIREMENTS', $a8csp_bgt_requirements );
+define( 'A8CSP_BGT_REQUIREMENTS', $a8csp_bgt_requirements );
 
 if ( $a8csp_bgt_requirements instanceof WP_Error ) {
 	add_action(
@@ -74,9 +76,7 @@ if ( $a8csp_bgt_requirements instanceof WP_Error ) {
 		static function () use ( $a8csp_bgt_requirements ) {
 			wp_admin_notice(
 				$a8csp_bgt_requirements->get_error_message(),
-				array(
-					'type' => 'error',
-				)
+				array( 'type' => 'error' )
 			);
 		}
 	);

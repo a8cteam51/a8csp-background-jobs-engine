@@ -3,7 +3,7 @@
 	<description>Custom ruleset for the A8CSP plugin.</description>
 
 	<!-- Extend the A8CSP ruleset. -->
-	<rule ref="./vendor/a8cteam51/team51-configs/quality-tools/phpcs.xml.dist"/>
+	<rule ref="./vendor/a8cteam51/team51-configs/quality-tools/phpcs.dist.xml"/>
 
 	<!-- Check that the proper text domain(s) is used everywhere. -->
 	<rule ref="WordPress.WP.I18n">
