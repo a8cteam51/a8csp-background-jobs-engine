@@ -1,0 +1,14 @@
+{
+  "phpVersion": "8.3",
+  "plugins": [ "." ],
+  "env": {
+    "tests": {
+      "mappings": {
+        "project": "."
+      }
+    }
+  },
+  "lifecycleScripts": {
+    "afterStart": "vendor/a8cteam51/team51-configs/docker/wp-env-install-pdo_mysql.sh"
+  }
+}

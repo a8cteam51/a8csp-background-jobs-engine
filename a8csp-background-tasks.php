@@ -4,6 +4,7 @@
  *
  * @since       1.0.0
  * @version     1.0.0
+ * @package     Automattic\SpecialProjects\BackgroundTasks
  * @author      Automattic Special Projects
  * @license     GPL-2.0-or-later
  *
@@ -65,6 +66,8 @@ if ( ! is_file( A8CSP_BGT_PATH . '/vendor/autoload.php' ) ) {
 	return;
 }
 require_once A8CSP_BGT_PATH . '/vendor/autoload.php';
+
+return;
 
 // Initialize the plugin if system requirements check out.
 $a8csp_bgt_requirements = validate_plugin_requirements( A8CSP_BGT_BASENAME );

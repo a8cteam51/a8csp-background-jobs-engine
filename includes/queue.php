@@ -21,6 +21,8 @@ function a8csp_bgt_get_task_run_queue( string $task_name, string $run_id ): ?arr
  * @param   string $run_id    The ID of the task run.
  * @param   array  $queue     The work queue.
  *
+ * @throws  InvalidArgumentException If the queue is not an array of arrays.
+ *
  * @return  boolean
  */
 function a8csp_bgt_set_task_run_queue( string $task_name, string $run_id, array $queue ): bool {

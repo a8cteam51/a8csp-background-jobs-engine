@@ -31,16 +31,10 @@
     "ext-json": "*"
   },
   "require-dev": {
+    "wpackagist-plugin/action-scheduler": "*",
     "a8cteam51/team51-configs": "dev-trunk",
 
-    "johnpbloch/wordpress-core": "6.7.*",
-    "wpackagist-plugin/action-scheduler": "*",
-
     "wp-cli/i18n-command": "^2.6",
-
-    "wp-coding-standards/wpcs": "^3",
-    "phpcompatibility/phpcompatibility-wp": "*",
-
     "lucatume/wp-browser": "^4",
 
     "roave/security-advisories": "dev-latest"
@@ -55,35 +49,43 @@
       "models"
     ]
   },
-  "autoload-dev": {
-
-  },
 
   "scripts": {
     "generate-autoloader": "@composer dump-autoload --ignore-platform-reqs -o",
 
-    "format:php": "phpcbf --standard=./.phpcs.xml --basepath=. . -v",
-    "lint:php": "phpcs --standard=./.phpcs.xml --basepath=. . -v",
+    "format:php": "phpcbf --standard=./.phpcs.xml --basepath=. ./ -v",
+    "lint:php": [
+      "@lint:php:phpcs",
+      "@lint:php:phpmd",
+      "@lint:php:phpstan"
+    ],
+    "lint:php:phpcs": "phpcs --standard=./.phpcs.xml --basepath=. ./ -v",
+    "lint:php:phpmd": "phpmd ./ ansi ./.phpmd.xml -v",
+    "lint:php:phpstan": "phpstan analyse -c ./.phpstan.neon -v --memory-limit=1G",
 
     "internationalize": [
-      "@makepot",
-      "@updatepo",
-      "@makejson"
+      "@i18n:makepot",
+      "@i18n:updatepo",
+      "@i18n:makemo",
+      "@i18n:makejson",
+      "@i18n:makephp"
     ],
-    "makepot": "wp i18n make-pot .",
-    "updatepo": "wp i18n update-po ./languages/a8csp-background-tasks.pot",
-    "makejson": "wp i18n make-json ./languages --pretty-print --no-purge",
-    "makemo": "wp i18n make-mo ./languages",
+    "i18n:makepot": "wp i18n make-pot .",
+    "i18n:updatepo": "wp i18n update-po ./languages/a8csp-background-tasks.pot",
+    "i18n:makejson": "wp i18n make-json ./languages --pretty-print --no-purge",
+    "i18n:makemo": "wp i18n make-mo ./languages",
+    "i18n:makephp": "wp i18n make-php ./languages/",
 
-    "test": [
-      "@test:integration",
-      "@test:end-to-end"
+    "tests:clean": "@php ./vendor/bin/codecept clean",
+    "tests:run": [
+      "@tests:run:integration",
+      "@tests:run:end-to-end"
     ],
-    "test:integration": [
+    "tests:run:integration": [
       "Composer\\Config::disableProcessTimeout",
       "@php ./vendor/bin/codecept run Integration --debug"
     ],
-    "test:end-to-end": [
+    "tests:run:end-to-end": [
       "Composer\\Config::disableProcessTimeout",
       "@php ./vendor/bin/codecept run EndToEnd  --debug"
     ],
@@ -94,13 +96,14 @@
       "@composer update --prefer-stable --ignore-platform-reqs --no-interaction"
     ]
   },
+
   "config": {
     "allow-plugins": {
       "composer/*": true,
-      "dealerdirect/phpcodesniffer-composer-installer": true
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "phpstan/extension-installer": true
     }
   },
-
   "extra": {
     "installer-paths": {
       "vendor/wpackagist-plugin/{$name}/": [

@@ -18,6 +18,7 @@
     "npm": ">=10.0"
   },
   "devDependencies": {
+    "@wordpress/env": "^10.8.1",
     "@wordpress/scripts": "^30.0.6",
     "npm-run-all": "^4.1.5"
   },
@@ -33,6 +34,18 @@
     "packages-update": "wp-scripts packages-update --dist-tag=wp-6.7",
     "check-engines": "wp-scripts check-engines",
     "check-licenses": "wp-scripts check-licenses",
-    "start": "npm-run-all --parallel start:**"
+    "start": "npm-run-all --parallel start:**",
+    "selenium:start": "docker container start selenium-chromium",
+    "selenium:stop": "docker container stop selenium-chromium",
+    "tests:start": "wp-env start && npm run selenium:start",
+    "tests:run": "npm run tests:start && npm run tests:run:integration && npm run tests:run:end-to-end",
+    "tests:run:integration": "wp-env run tests-wordpress --env-cwd=project composer run-script tests:run:integration",
+    "tests:run:end-to-end": "wp-env run tests-wordpress --env-cwd=project composer run-script tests:run:end-to-end",
+    "tests:output-wp-path": "npm run wp-env install-path",
+    "tests:export-db": "npm run wp-env run tests-cli wp db export project/tests/Support/Data/dump.sql",
+    "wp-env:start": "wp-env start",
+    "wp-env:update": "wp-env start --update",
+    "wp-env:stop": "wp-env stop",
+    "wp-env": "wp-env"
   }
 }
