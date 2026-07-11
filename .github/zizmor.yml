@@ -1,0 +1,7 @@
+# The a8cteam51/a8csp-configs reusable workflows are deliberately consumed at a branch ref: they track the canonical configs package's trunk.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        a8cteam51/a8csp-configs/*: ref-pin
+        "*": hash-pin

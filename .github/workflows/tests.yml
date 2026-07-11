@@ -1,0 +1,57 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit (PHP ${{ matrix.php }})
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.5', '8.6']
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    with:
+      php-version: ${{ matrix.php }}
+      composer-script: 'test:unit'
+      needs-wp-env: false
+
+  integration:
+    name: Integration (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 'WP 7.0'
+            wp-version: '7.0'
+          - name: 'WP nightly'
+            wp-env-core: 'https://wordpress.org/nightly-builds/wordpress-latest.zip'
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    with:
+      wp-version: ${{ matrix.wp-version || '' }}
+      wp-env-core: ${{ matrix.wp-env-core || '' }}
+      wp-env-config-file: '.wp-env.tests.json'
+      composer-script: 'test:integration'
+
+  requirements:
+    name: Requirements (below-floor WP)
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    with:
+      wp-env-config-file: '.wp-env.belowfloor.json'
+      composer-script: 'test:requirements'
+
+  e2e:
+    name: End-to-End
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-playwright-e2e.yml@trunk
+    with:
+      artifact-slug: 'e2e'
+      composer-options: '--prefer-dist --ignore-platform-req=php+'

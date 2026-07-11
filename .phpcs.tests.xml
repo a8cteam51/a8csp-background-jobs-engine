@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<ruleset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vendor/squizlabs/php_codesniffer/phpcs.xsd">
+	<!-- Extend the A8CSP tests-profile ruleset: a separate profile, not the production ruleset,
+	     because tests carry different rule values — see the shared companion for the rationale
+	     and the tests-only relaxations. -->
+	<rule ref="./vendor/a8csp/configs/php/quality-assurance/phpcs.tests.dist.xml"/>
+
+	<!-- Check that the proper text domain is used everywhere (test fixtures call __()/_e() too). -->
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="a8csp-background-tasks-engine"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

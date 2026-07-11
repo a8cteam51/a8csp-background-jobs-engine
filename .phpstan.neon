@@ -1,6 +1,17 @@
 includes:
-    - vendor/a8cteam51/team51-configs/quality-assurance/phpstan.dist.neon
+    - vendor/a8csp/configs/php/quality-assurance/phpstan.dist.neon
 
 parameters:
+    scanDirectories:
+        - vendor/wp-plugin/woocommerce
+    # The included config autodetects only the fixed-name root files (functions-bootstrap.php,
+    # functions.php); the entry file's name is per-repo, so both gate files are pinned here
+    # explicitly and WPCompat.pluginFile below names the entry for the same reason.
     paths:
-        - adapters
+        - %currentWorkingDirectory%/a8csp-background-tasks-engine.php
+        - %currentWorkingDirectory%/functions-bootstrap.php
+    WPCompat:
+        # wp-compat's own fallback guesses "{cwd}/{basename(cwd)}.php", which only holds
+        # by coincidence when a repo's directory name matches its entry file; declared
+        # explicitly so it doesn't depend on that coincidence.
+        pluginFile: %currentWorkingDirectory%/a8csp-background-tasks-engine.php

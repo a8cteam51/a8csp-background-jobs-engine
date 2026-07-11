@@ -1,0 +1,31 @@
+name: Workflow Checks
+
+on:
+  push:
+    branches: [trunk]
+    paths: ['.github/workflows/**']
+  pull_request:
+    paths: ['.github/workflows/**']
+  schedule:
+    # Weekly Monday 06:00 UTC. Keeps zizmor's online audits (e.g.
+    # known-vulnerable-actions) fresh between workflow changes.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # GitHub rejects a reusable-workflow call at startup unless this job grants
+  # every permission requested by every job in the called workflow. zizmor needs
+  # both security-events: write for SARIF upload and actions: read.
+  workflow-checks:
+    name: Workflow checks
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-workflow-checks.yml@trunk
