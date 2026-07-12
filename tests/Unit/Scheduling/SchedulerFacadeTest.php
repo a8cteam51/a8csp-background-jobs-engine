@@ -75,6 +75,31 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Cron capability requires one backend that is both ready and capable.
+	 *
+	 * @return  void
+	 */
+	public function test_cron_capability_consults_only_ready_backends(): void {
+		$unready_supported                 = new RecordingBackend();
+		$unready_supported->ready          = false;
+		$unready_supported->cron_supported = true;
+		$ready_unsupported                 = new RecordingBackend();
+		$ready_supported                   = new RecordingBackend();
+		$ready_supported->cron_supported   = true;
+		$unused                            = new RecordingBackend();
+
+		$facade = new SchedulerFacade(
+			array( $unready_supported, $ready_unsupported, $ready_supported, $unused )
+		);
+
+		self::assertTrue( $facade->supports_cron_expressions() );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready_supported ) );
+		self::assertSame( array( 'is_ready', 'supports_cron_expressions' ), $this->call_verbs( $ready_unsupported ) );
+		self::assertSame( array( 'is_ready', 'supports_cron_expressions' ), $this->call_verbs( $ready_supported ) );
+		self::assertSame( array(), $unused->calls );
+	}
+
+	/**
 	 * Constructor keys do not affect declaration order or first-ready routing.
 	 *
 	 * @return  void
@@ -142,6 +167,7 @@ final class SchedulerFacadeTest extends TestCase {
 			array( 'run-17' ),
 			1_700_000_000,
 			'reports',
+			true,
 			20
 		);
 
@@ -160,6 +186,7 @@ final class SchedulerFacadeTest extends TestCase {
 						'args'                => array( 'run-17' ),
 						'first_run_timestamp' => 1_700_000_000,
 						'group'               => 'reports',
+						'unique'              => true,
 						'priority'            => 20,
 					),
 				),

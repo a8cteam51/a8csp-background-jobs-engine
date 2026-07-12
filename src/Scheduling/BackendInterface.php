@@ -29,12 +29,13 @@ interface BackendInterface {
 	 * @param   list<mixed> $args                Arguments passed to the hook.
 	 * @param   int|null    $first_run_timestamp Unix timestamp of the first run, or null for now.
 	 * @param   string      $group               Backend grouping label.
+	 * @param   bool        $unique              Whether an identical recurring chain is retained instead of duplicated.
 	 * @param   int         $priority            Advisory execution priority.
 	 *
 	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the recurring hook is scheduled.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult;
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult;
 
 	/**
 	 * Schedules a hook for one run.
@@ -125,6 +126,18 @@ interface BackendInterface {
 	 * @return  bool
 	 */
 	public function is_ready(): bool;
+
+	/**
+	 * Returns whether the backend adapter exposes calendar cron expressions.
+	 *
+	 * Readiness remains a separate runtime fact.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function supports_cron_expressions(): bool;
 
 	/**
 	 * Registers per-request backend hooks.

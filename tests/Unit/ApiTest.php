@@ -17,6 +17,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversFunction( 'a8csp_bgte_enqueue_task' )]
 #[CoversFunction( 'a8csp_bgte_start_batch' )]
 #[CoversFunction( 'a8csp_bgte_retry_failed_run' )]
+#[CoversFunction( 'a8csp_bgte_sync_schedules' )]
 final class ApiTest extends TestCase {
 	/**
 	 * Access remains nullable and every mutation names the boot-order correction.
@@ -38,6 +39,7 @@ final class ApiTest extends TestCase {
 			\a8csp_bgte_enqueue_task( 'email-digest', array( 'site_id' => 7 ), delay: 30, unique: true, priority: 5 ),
 			\a8csp_bgte_start_batch( 'catalog-sync', array( 'site_id' => 7 ), unique: true, priority: 23 ),
 			\a8csp_bgte_retry_failed_run( 'email-digest', 'run-1' ),
+			\a8csp_bgte_sync_schedules( 'consumer-plugin', array() ),
 		);
 
 		foreach ( $results as $result ) {

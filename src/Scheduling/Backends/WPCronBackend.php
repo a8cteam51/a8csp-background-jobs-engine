@@ -93,7 +93,7 @@ final class WPCronBackend implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
 		if ( 1 > $interval ) {
 			return new Failure(
 				new SchedulingError(
@@ -233,6 +233,19 @@ final class WPCronBackend implements BackendInterface {
 	#[\Override]
 	public function is_ready(): bool {
 		return true;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function supports_cron_expressions(): bool {
+		return false;
 	}
 
 	/**

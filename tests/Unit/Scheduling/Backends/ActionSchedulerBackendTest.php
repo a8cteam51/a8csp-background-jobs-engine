@@ -94,6 +94,15 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * The v1 adapter does not expose Action Scheduler's cron-expression function.
+	 *
+	 * @return  void
+	 */
+	public function test_cron_expressions_are_not_supported(): void {
+		self::assertFalse( ( new ActionSchedulerBackend() )->supports_cron_expressions() );
+	}
+
+	/**
 	 * Every write fails with corrective guidance before touching an unready backend.
 	 *
 	 * @return  void
@@ -220,7 +229,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$backend = $this->backend( self::READY_FACTS );
 
-		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', false, 247 );
 		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
 
 		self::assertInstanceOf( Success::class, $recurring );
@@ -254,7 +263,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$backend = $this->backend( self::READY_FACTS );
 
-		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', false, 247 );
 		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
 
 		self::assertInstanceOf( Success::class, $recurring );
@@ -269,14 +278,14 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_scheduling_calls_pass_groups_and_priorities_in_the_action_scheduler_shape(): void {
+	public function test_scheduling_calls_pass_groups_uniqueness_and_priorities_in_the_action_scheduler_shape(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
 			'as_next_scheduled_action' => array( false, false ),
 		);
 
 		$backend = $this->backend( self::READY_FACTS );
 
-		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', true, 247 );
 		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
 		$async     = $backend->enqueue_async( self::HOOK, array( 'c' ), 'exports', false, 245 );
 
@@ -284,7 +293,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		self::assertInstanceOf( Success::class, $single );
 		self::assertInstanceOf( Success::class, $async );
 		self::assertSame(
-			array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', false, 247 ),
+			array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', true, 247 ),
 			$this->as_calls( 'as_schedule_recurring_action' )[0]['args']
 		);
 		self::assertSame(
@@ -294,6 +303,40 @@ final class ActionSchedulerBackendTest extends TestCase {
 		self::assertSame(
 			array( self::HOOK, array( 'c' ), 'exports', false, 245 ),
 			$this->as_calls( 'as_enqueue_async_action' )[0]['args']
+		);
+	}
+
+	/**
+	 * A unique recurring insert accepts Action Scheduler's confirmed duplicate sentinel.
+	 *
+	 * @return  void
+	 */
+	public function test_unique_recurring_schedule_accepts_a_confirmed_duplicate(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_next_scheduled_action'     => array( false ),
+			'as_schedule_recurring_action' => array( 0 ),
+			'as_has_scheduled_action'      => array( true ),
+		);
+
+		$result = $this->backend( self::READY_FACTS )->schedule_recurring(
+			self::HOOK,
+			300,
+			array( 'a' ),
+			1_700_000_000,
+			'reports',
+			true,
+			247
+		);
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame(
+			array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', true, 247 ),
+			$this->as_calls( 'as_schedule_recurring_action' )[0]['args']
+		);
+		self::assertSame(
+			array( self::HOOK, array( 'a' ), 'reports' ),
+			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
 		);
 	}
 

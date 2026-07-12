@@ -44,6 +44,9 @@ final class RecordingBackend implements BackendInterface {
 	/** Whether the backend reports itself ready. */
 	public bool $ready = true;
 
+	/** Whether the backend adapter exposes calendar cron expressions. */
+	public bool $cron_supported = false;
+
 	/**
 	 * Readiness answers returned in call order before the stable readiness value.
 	 *
@@ -62,13 +65,14 @@ final class RecordingBackend implements BackendInterface {
 	 * @param   array    $args                Hook arguments.
 	 * @param   int|null $first_run_timestamp First-run timestamp.
 	 * @param   string   $group               Group name.
+	 * @param   bool     $unique              Whether the request is unique.
 	 * @param   int      $priority            Advisory priority.
 	 *
 	 * @return  AbstractResult
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
 		$this->calls[] = array(
 			'verb' => 'schedule_recurring',
 			'args' => array(
@@ -77,6 +81,7 @@ final class RecordingBackend implements BackendInterface {
 				'args'                => $args,
 				'first_run_timestamp' => $first_run_timestamp,
 				'group'               => $group,
+				'unique'              => $unique,
 				'priority'            => $priority,
 			),
 		);
@@ -234,6 +239,17 @@ final class RecordingBackend implements BackendInterface {
 		$readiness = \array_shift( $this->readiness_results );
 
 		return null === $readiness ? $this->ready : $readiness;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function supports_cron_expressions(): bool {
+		$this->calls[] = array(
+			'verb' => 'supports_cron_expressions',
+			'args' => array(),
+		);
+
+		return $this->cron_supported;
 	}
 
 	/** {@inheritDoc} */

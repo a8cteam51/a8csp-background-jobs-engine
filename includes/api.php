@@ -5,6 +5,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
@@ -92,5 +93,24 @@ function a8csp_bgte_start_batch(
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 function a8csp_bgte_retry_failed_run( string $name, string $run_id ): AbstractResult {
 	return a8csp_bgte_engine()?->tasks()->retry_failed( $name, $run_id )
+		?? new Failure( new EngineError( 'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.' ) );
+}
+
+/**
+ * Synchronizes one owner's complete declared schedule set.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string          $owner     Stable consumer identifier.
+ * @param   array<Schedule> $schedules Complete schedule declaration for the owner.
+ *
+ * @throws  \InvalidArgumentException When the owner, an entry, a registration key, or declaration uniqueness is invalid.
+ *
+ * @return  AbstractResult<true, EngineError|SchedulingError>
+ */
+#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
+function a8csp_bgte_sync_schedules( string $owner, array $schedules ): AbstractResult {
+	return a8csp_bgte_engine()?->schedules()->sync( $owner, $schedules )
 		?? new Failure( new EngineError( 'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.' ) );
 }

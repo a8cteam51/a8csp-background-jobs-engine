@@ -13,6 +13,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
@@ -31,6 +33,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( Engine::class )]
 #[CoversClass( Tasks::class )]
+#[CoversClass( Schedules::class )]
 #[CoversClass( Batches::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( LockRows::class )]
@@ -39,6 +42,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
+#[UsesClass( ScheduleRegistry::class )]
 final class EngineTest extends TestCase {
 	private const ARGS   = array(
 		'site_id' => 7,
@@ -110,6 +114,7 @@ final class EngineTest extends TestCase {
 
 		$this->engine = new Engine(
 			new Tasks( $tasks, $orchestrator ),
+			new Schedules( new ScheduleRegistry(), $this->backend, $clock ),
 			new Batches( $batches, $orchestrator ),
 		);
 	}
@@ -121,6 +126,7 @@ final class EngineTest extends TestCase {
 	 */
 	public function test_accessors_return_the_same_api_objects(): void {
 		self::assertSame( $this->engine->tasks(), $this->engine->tasks() );
+		self::assertSame( $this->engine->schedules(), $this->engine->schedules() );
 		self::assertSame( $this->engine->batches(), $this->engine->batches() );
 	}
 

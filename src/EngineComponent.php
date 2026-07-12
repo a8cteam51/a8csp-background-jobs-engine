@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulerFacade;
@@ -75,6 +76,7 @@ final class EngineComponent implements Component {
 		 */
 		$tasks        = new TaskRegistry();
 		$batches      = new BatchRegistry();
+		$schedules    = new ScheduleRegistry();
 		$logger       = new HookLogger();
 		$clock        = new SystemClock();
 		$randomizer   = new Randomizer();
@@ -99,6 +101,7 @@ final class EngineComponent implements Component {
 		);
 		$engine       = new Engine(
 			new Tasks( $tasks, $orchestrator ),
+			new Schedules( $schedules, $scheduler, $clock ),
 			new Batches( $batches, $orchestrator ),
 		);
 

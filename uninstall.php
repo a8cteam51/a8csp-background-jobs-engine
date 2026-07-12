@@ -20,7 +20,9 @@
  * classes), so the arrays stay inline: nothing here may reference plugin code.
  */
 $a8csp_bgte_footprint = array(
-	'options'   => array(),
+	'options'   => array(
+		'a8csp_bgte_schedules',
+	),
 	'user_meta' => array(),
 );
 
@@ -29,6 +31,7 @@ $a8csp_bgte_lifecycle_hooks = array(
 	'a8csp/background_tasks/continue',
 	'a8csp/background_tasks/run',
 	'a8csp/background_tasks/cleanup',
+	'a8csp/background_tasks/schedule_due',
 );
 
 /*

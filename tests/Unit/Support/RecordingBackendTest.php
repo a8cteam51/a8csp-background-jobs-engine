@@ -40,7 +40,7 @@ final class RecordingBackendTest extends TestCase {
 	public function test_write_verbs_record_calls_and_default_to_success(): void {
 		$backend = new RecordingBackend();
 		$results = array(
-			$backend->schedule_recurring( 'recurring', 300, array( 'a' ), 1_700_000_000, 'reports', 20 ),
+			$backend->schedule_recurring( 'recurring', 300, array( 'a' ), 1_700_000_000, 'reports', true, 20 ),
 			$backend->schedule_single( 'single', 1_700_000_100, array( 'b' ), 'imports', 30 ),
 			$backend->enqueue_async( 'async', array( 'c' ), 'exports', true, 40 ),
 			$backend->unschedule( 'clear', array( 'd' ), 'cleanup' ),
@@ -61,6 +61,7 @@ final class RecordingBackendTest extends TestCase {
 						'args'                => array( 'a' ),
 						'first_run_timestamp' => 1_700_000_000,
 						'group'               => 'reports',
+						'unique'              => true,
 						'priority'            => 20,
 					),
 				),
@@ -189,10 +190,12 @@ final class RecordingBackendTest extends TestCase {
 		$backend->scheduled      = true;
 		$backend->next_scheduled = 1_700_000_000;
 		$backend->ready          = false;
+		$backend->cron_supported = true;
 
 		self::assertTrue( $backend->is_scheduled( 'query', array( 'a' ), 'reports' ) );
 		self::assertSame( 1_700_000_000, $backend->get_next_scheduled( 'next', array( 'b' ), 'imports' ) );
 		self::assertFalse( $backend->is_ready() );
+		self::assertTrue( $backend->supports_cron_expressions() );
 		$backend->register_hooks();
 
 		self::assertSame(
@@ -215,6 +218,10 @@ final class RecordingBackendTest extends TestCase {
 				),
 				array(
 					'verb' => 'is_ready',
+					'args' => array(),
+				),
+				array(
+					'verb' => 'supports_cron_expressions',
 					'args' => array(),
 				),
 				array(

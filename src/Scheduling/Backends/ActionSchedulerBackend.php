@@ -122,7 +122,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
 		if ( ! $this->is_ready() ) {
 			return $this->backend_not_ready( $this->readiness_facts() );
 		}
@@ -159,11 +159,18 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			$hook,
 			$args,
 			$group,
-			false,
+			$unique,
 			$priority
 		);
 
-		return $this->result_for_action_id( $action_id, $hook, 'as_schedule_recurring_action' );
+		return $this->result_for_potentially_unique_action_id(
+			$action_id,
+			$hook,
+			$args,
+			$group,
+			$unique,
+			'as_schedule_recurring_action'
+		);
 	}
 
 	/**
@@ -225,22 +232,16 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			return $function_failure;
 		}
 
-		$action_id        = \as_enqueue_async_action( $hook, $args, $group, $unique, $priority );
-		$diagnostic_facts = null;
-		$failure_cause    = null;
-		if ( 0 === $action_id && $unique ) {
-			if ( '' === $group ) {
-				$failure_cause = 'a unique enqueue in the empty group returned zero, which is ambiguous between a duplicate and a store failure; use a non-empty group for verifiable uniqueness.';
-			} elseif ( ! ( $this->function_exists_probe )( 'as_has_scheduled_action' ) ) {
-				$diagnostic_facts = $this->readiness_facts();
+		$action_id = \as_enqueue_async_action( $hook, $args, $group, $unique, $priority );
 
-				$diagnostic_facts['action_scheduler_functions_exist'] = false;
-			} elseif ( \as_has_scheduled_action( $hook, $args, $group ) ) {
-				return new Success( true );
-			}
-		}
-
-		return $this->result_for_action_id( $action_id, $hook, 'as_enqueue_async_action', $diagnostic_facts, $failure_cause );
+		return $this->result_for_potentially_unique_action_id(
+			$action_id,
+			$hook,
+			$args,
+			$group,
+			$unique,
+			'as_enqueue_async_action'
+		);
 	}
 
 	/**
@@ -336,6 +337,19 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	public function is_ready(): bool {
 		return ( $this->readiness_probe )();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function supports_cron_expressions(): bool {
+		return false;
 	}
 
 	/**
@@ -443,6 +457,52 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 				$message,
 				$context,
 			)
+		);
+	}
+
+	/**
+	 * Maps an action ID while disambiguating Action Scheduler's unique zero sentinel.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int              $action_id    Positive action ID, or a non-positive rejection value.
+	 * @param   string           $hook         Hook being scheduled.
+	 * @param   list<mixed>      $args         Hook arguments.
+	 * @param   string           $group        Action group.
+	 * @param   bool             $unique       Whether the action is unique.
+	 * @param   non-empty-string $function_name Procedural function called.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	private function result_for_potentially_unique_action_id(
+		int $action_id,
+		string $hook,
+		array $args,
+		string $group,
+		bool $unique,
+		string $function_name
+	): AbstractResult {
+		$diagnostic_facts = null;
+		$failure_cause    = null;
+		if ( 0 === $action_id && $unique ) {
+			if ( '' === $group ) {
+				$failure_cause = 'a unique scheduling write in the empty group returned zero, which is ambiguous between a duplicate and a store failure; use a non-empty group for verifiable uniqueness.';
+			} elseif ( ! ( $this->function_exists_probe )( 'as_has_scheduled_action' ) ) {
+				$diagnostic_facts = $this->readiness_facts();
+
+				$diagnostic_facts['action_scheduler_functions_exist'] = false;
+			} elseif ( \as_has_scheduled_action( $hook, $args, $group ) ) {
+				return new Success( true );
+			}
+		}
+
+		return $this->result_for_action_id(
+			$action_id,
+			$hook,
+			$function_name,
+			$diagnostic_facts,
+			$failure_cause
 		);
 	}
 

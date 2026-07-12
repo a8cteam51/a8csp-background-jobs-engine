@@ -61,17 +61,27 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * A recurring write ignores its group and schedules the hook-and-args identity.
+	 * WP-Cron fixed intervals do not provide calendar cron expressions.
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_recurring_ignores_a_non_empty_group(): void {
+	public function test_cron_expressions_are_not_supported(): void {
+		self::assertFalse( ( new WPCronBackend() )->supports_cron_expressions() );
+	}
+
+	/**
+	 * A recurring write accepts uniqueness while retaining WP-Cron's hook-and-args identity.
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_recurring_accepts_uniqueness_with_a_non_empty_group(): void {
 		$result = ( new WPCronBackend() )->schedule_recurring(
 			self::HOOK,
 			300,
 			array( 'run-17' ),
 			1_700_000_000,
-			'reports|run-17'
+			'reports|run-17',
+			true
 		);
 
 		self::assertInstanceOf( Success::class, $result );

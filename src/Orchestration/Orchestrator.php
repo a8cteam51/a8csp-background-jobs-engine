@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Support\ScalarTree;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;
@@ -1561,7 +1562,7 @@ final readonly class Orchestrator {
 			$exception_class = $exception::class;
 		}
 
-		if ( ! \is_string( $encoded ) || ! $this->is_scalar_tree( $args ) ) {
+		if ( ! \is_string( $encoded ) || ! ScalarTree::is_valid( $args ) ) {
 			return new Failure(
 				new EngineError(
 					\sprintf(
@@ -1575,36 +1576,6 @@ final readonly class Orchestrator {
 		}
 
 		return \hash( 'sha256', $encoded );
-	}
-
-	/**
-	 * Returns whether every argument leaf remains portable through option storage.
-	 *
-	 * JSON encoding runs first so recursive or excessively deep arrays never reach this traversal.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $values Argument values.
-	 *
-	 * @return  bool
-	 */
-	private function is_scalar_tree( array $values ): bool {
-		foreach ( $values as $value ) {
-			if ( \is_array( $value ) ) {
-				if ( ! $this->is_scalar_tree( $value ) ) {
-					return false;
-				}
-
-				continue;
-			}
-
-			if ( null !== $value && ! \is_scalar( $value ) ) {
-				return false;
-			}
-		}
-
-		return true;
 	}
 
 	/**

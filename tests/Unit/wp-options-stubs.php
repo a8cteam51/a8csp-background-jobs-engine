@@ -127,6 +127,18 @@ if ( ! \function_exists( 'update_option' ) ) {
 	function update_option( $option, $value, $autoload = null ) {
 		a8csp_bgte_test_record_option_call( 'update_option', array( $option, $value, $autoload ) );
 
+		/** @var array<string, bool> $results */
+		$results = $GLOBALS['a8csp_bgte_test_update_option_results'] ?? array();
+		if ( false === ( $results[ $option ] ?? true ) ) {
+			return false;
+		}
+
+		/** @var array<string, mixed> $stored_values */
+		$stored_values = $GLOBALS['a8csp_bgte_test_update_option_values'] ?? array();
+		if ( \array_key_exists( $option, $stored_values ) ) {
+			$value = $stored_values[ $option ];
+		}
+
 		/** @var array<string, mixed> $options */
 		$options   = $GLOBALS['a8csp_bgte_test_options'] ?? array();
 		$unchanged = \array_key_exists( $option, $options ) && $value === $options[ $option ];
@@ -157,6 +169,12 @@ if ( ! \function_exists( 'delete_option' ) ) {
 	 */
 	function delete_option( $option ) {
 		a8csp_bgte_test_record_option_call( 'delete_option', array( $option ) );
+
+		/** @var array<string, bool> $results */
+		$results = $GLOBALS['a8csp_bgte_test_delete_option_results'] ?? array();
+		if ( false === ( $results[ $option ] ?? true ) ) {
+			return false;
+		}
 
 		/** @var array<string, mixed> $options */
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();

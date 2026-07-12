@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Support\ScalarTree;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -96,7 +97,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
 		if ( null !== $first_run_timestamp && 1 > $first_run_timestamp ) {
 			return $this->timestamp_failure( $hook, 'first_run_timestamp', $first_run_timestamp );
 		}
@@ -113,6 +114,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 				$args,
 				$first_run_timestamp,
 				$group,
+				$unique,
 				$priority
 			)
 		);
@@ -256,6 +258,25 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function supports_cron_expressions(): bool {
+		foreach ( $this->backends as $backend ) {
+			if ( $backend->is_ready() && $backend->supports_cron_expressions() ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 */
 	#[\Override]
 	public function register_hooks(): void {
@@ -369,7 +390,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  Failure<SchedulingError>|null
 	 */
 	private function payload_failure( string $hook, array $args ): ?Failure {
-		if ( ! $this->is_scalar_tree( $args ) ) {
+		if ( ! ScalarTree::is_valid( $args, self::MAX_ARGUMENTS_JSON_DEPTH ) ) {
 			return new Failure(
 				new SchedulingError(
 					SchedulingErrorReason::PayloadTooLarge,
@@ -405,39 +426,6 @@ final readonly class SchedulerFacade implements BackendInterface {
 				),
 			)
 		);
-	}
-
-	/**
-	 * Returns whether every leaf can be stored portably by each backend.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<mixed> $values          Values to inspect.
-	 * @param   int          $remaining_depth Array levels still permitted.
-	 *
-	 * @return  bool
-	 */
-	private function is_scalar_tree( array $values, int $remaining_depth = self::MAX_ARGUMENTS_JSON_DEPTH ): bool {
-		if ( 1 > $remaining_depth ) {
-			return false;
-		}
-
-		foreach ( $values as $value ) {
-			if ( \is_array( $value ) ) {
-				if ( ! $this->is_scalar_tree( $value, $remaining_depth - 1 ) ) {
-					return false;
-				}
-
-				continue;
-			}
-
-			if ( null !== $value && ! \is_scalar( $value ) ) {
-				return false;
-			}
-		}
-
-		return true;
 	}
 
 	// endregion

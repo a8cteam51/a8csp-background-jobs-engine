@@ -8,6 +8,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -151,11 +153,11 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Public task, batch, and retry calls traverse the composed WP-Cron graph unchanged.
+	 * Public task, schedule, batch, and retry calls traverse the composed WP-Cron graph unchanged.
 	 *
 	 * @return  void
 	 */
-	public function test_live_wp_cron_graph_round_trips_public_task_batch_and_retry_apis(): void {
+	public function test_live_wp_cron_graph_round_trips_public_task_schedule_batch_and_retry_apis(): void {
 		( new Plugin() )->boot();
 
 		$engine = \a8csp_bgte_engine();
@@ -203,6 +205,34 @@ final class EngineComponentTest extends TestCase {
 			$this->cron_events_for_hook( 'a8csp/background_tasks/start' )
 		);
 		self::assertSame( 2, $this->cron_event_count() );
+
+		$schedule        = new Schedule( 'connection-monitor', Cadence::every( 300 ), 'email-digest' );
+		$schedule_result = \a8csp_bgte_sync_schedules( 'consumer-plugin', array( $schedule ) );
+
+		self::assertInstanceOf( Success::class, $schedule_result );
+		self::assertTrue( $schedule_result->value );
+		self::assertSame(
+			array(
+				array(
+					'schedule' => 'a8csp_bgte_every_300s',
+					'args'     => array( 'consumer-plugin:connection-monitor' ),
+				),
+			),
+			$this->cron_events_for_hook( 'a8csp/background_tasks/schedule_due' )
+		);
+		$registrations = \get_option( 'a8csp_bgte_schedules', null );
+		self::assertIsArray( $registrations );
+		$owner_registrations = $registrations['consumer-plugin'] ?? null;
+		self::assertIsArray( $owner_registrations );
+		$registration = $owner_registrations['connection-monitor'] ?? null;
+		self::assertIsArray( $registration );
+		self::assertSame(
+			$schedule->fingerprint(),
+			$registration['fingerprint'] ?? null
+		);
+		self::assertIsInt( $registration['next_due'] ?? null );
+		self::assertNull( $registration['last_fired'] ?? null );
+		self::assertSame( 3, $this->cron_event_count() );
 
 		$options_before_retry    = $GLOBALS['a8csp_bgte_test_options'];
 		$cron_before_retry       = \get_option( 'cron', array() );

@@ -93,11 +93,15 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_lock_email-digest_args-hash',
 		'a8csp_bgte_failed_email-digest',
 	);
+	private const FIXED_OPTIONS   = array(
+		'a8csp_bgte_schedules',
+	);
 	private const LIFECYCLE_HOOKS = array(
 		'a8csp/background_tasks/start',
 		'a8csp/background_tasks/continue',
 		'a8csp/background_tasks/run',
 		'a8csp/background_tasks/cleanup',
+		'a8csp/background_tasks/schedule_due',
 	);
 	private const NEAR_MISS       = 'a8cspXbgteYforeign';
 
@@ -117,7 +121,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 
-		$options = array_fill_keys( self::DYNAMIC_OPTIONS, 'sentinel' );
+		$options = array_fill_keys( array_merge( self::DYNAMIC_OPTIONS, self::FIXED_OPTIONS ), 'sentinel' );
 
 		$options[ self::NEAR_MISS ] = 'sentinel';
 
@@ -140,6 +144,16 @@ final class UninstallTest extends TestCase {
 		foreach ( self::DYNAMIC_OPTIONS as $option ) {
 			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgte_test_options'] );
 		}
+		foreach ( self::FIXED_OPTIONS as $option ) {
+			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgte_test_options'] );
+		}
+		$option_calls      = $this->option_calls();
+		$first_option_call = $option_calls[0] ?? null;
+		self::assertIsArray( $first_option_call );
+		self::assertSame(
+			array( 'a8csp_bgte_schedules' ),
+			$first_option_call['args'] ?? null
+		);
 		self::assertArrayHasKey( self::NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
 		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::NEAR_MISS ] );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
@@ -259,6 +273,22 @@ final class UninstallTest extends TestCase {
 			array( 'prepared-option-prefix-query', 'prepared-option-prefix-query' ),
 			$wpdb->column_queries
 		);
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Returns the option-call ledger after verifying its runtime representation.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private function option_calls(): array {
+		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $calls );
+
+		return $calls;
 	}
 
 	// endregion.
