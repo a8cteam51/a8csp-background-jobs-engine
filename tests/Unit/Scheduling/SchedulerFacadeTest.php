@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( SchedulerFacade::class )]
 #[UsesClass( BackendInterface::class )]
+#[UsesClass( WPCronBackend::class )]
 #[UsesClass( Success::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
@@ -31,7 +33,7 @@ final class SchedulerFacadeTest extends TestCase {
 	private const HOOK = 'a8csp_bgte_test_hook';
 
 	/**
-	 * Satisfies production boot guards before the facade is autoloaded.
+	 * Keeps facade tests independent of a WordPress bootstrap while satisfying production guards.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -45,6 +47,25 @@ final class SchedulerFacadeTest extends TestCase {
 		}
 
 		require_once __DIR__ . '/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/wp-cron-stubs.php';
+	}
+
+	/**
+	 * Keeps the WP-Cron fallback isolated from process-global fake state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function setUp(): void {
+		parent::setUp();
+
+		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_results']        = array();
+		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
 	}
 
 	/**
@@ -206,6 +227,33 @@ final class SchedulerFacadeTest extends TestCase {
 			),
 			$second->calls[1]['args']
 		);
+	}
+
+	/**
+	 * A grouped async write reaches WP-Cron when the preferred backend is unavailable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_grouped_enqueue_async_falls_back_to_wp_cron(): void {
+		$preferred        = new RecordingBackend();
+		$preferred->ready = false;
+		$args             = array( 'run-19' );
+
+		$result = ( new SchedulerFacade( array( $preferred, new WPCronBackend() ) ) )->enqueue_async(
+			self::HOOK,
+			$args,
+			'reports|run-19',
+			true,
+			40
+		);
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $preferred ) );
+		self::assertIsInt( \wp_next_scheduled( self::HOOK, $args ) );
 	}
 
 	/**

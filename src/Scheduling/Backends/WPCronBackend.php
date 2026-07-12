@@ -17,9 +17,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
  * WP-Cron addresses recurring events through named schedules, so each interval receives a
  * synthetic name. The schedule filter combines intervals registered during this request with
  * names reconstructed from stored cron events so recurring events remain resolvable later.
- * WP-Cron has no priority dimension, so priority values are accepted and ignored. The backend
- * operates on WordPress's default cron-option store; replacements wired through Core's pre_*
- * cron filters sit outside its clearance guarantee.
+ * WP-Cron's complete event identity is the hook plus serialized arguments. Groups and priorities
+ * are advisory dimensions: backends honor each where their stores can express it, while this
+ * backend accepts and ignores both because rejecting a group breaks facade failover. The backend
+ * operates on WordPress's default cron-option store; replacements wired through Core's pre_* cron
+ * filters sit outside its clearance guarantee.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -60,11 +62,6 @@ final class WPCronBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
-		$group_failure = $this->reject_group( $group );
-		if ( null !== $group_failure ) {
-			return $group_failure;
-		}
-
 		if ( 1 > $interval ) {
 			return new Failure(
 				new SchedulingError(
@@ -97,11 +94,6 @@ final class WPCronBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_single( string $hook, int $timestamp, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
-		$group_failure = $this->reject_group( $group );
-		if ( null !== $group_failure ) {
-			return $group_failure;
-		}
-
 		$next_scheduled = \wp_next_scheduled( $hook, $args );
 		if ( false !== $next_scheduled && 0 < $next_scheduled ) {
 			return new Success( true );
@@ -123,11 +115,6 @@ final class WPCronBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
-		$group_failure = $this->reject_group( $group );
-		if ( null !== $group_failure ) {
-			return $group_failure;
-		}
-
 		if ( $unique && false !== \wp_next_scheduled( $hook, $args ) ) {
 			return new Success( true );
 		}
@@ -264,30 +251,6 @@ final class WPCronBackend implements BackendInterface {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Returns a failure when WP-Cron cannot honor the requested group.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $group Requested group.
-	 *
-	 * @return  Failure<SchedulingError>|null
-	 */
-	private function reject_group( string $group ): ?Failure {
-		if ( '' === $group ) {
-			return null;
-		}
-
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::UnsupportedGroup,
-				'WP-Cron has no groups; drop the group or ensure Action Scheduler is loaded before scheduling.',
-				array( 'group' => $group ),
-			)
-		);
-	}
 
 	/**
 	 * Registers an interval before WordPress validates the recurrence name.

@@ -69,51 +69,78 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Recurring writes reject a group before touching WordPress.
+	 * A recurring write ignores its group and schedules the hook-and-args identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_recurring_rejects_a_non_empty_group(): void {
-		$result = ( new WPCronBackend() )->schedule_recurring( self::HOOK, 300, array(), null, 'reports' );
+	public function test_schedule_recurring_ignores_a_non_empty_group(): void {
+		$result = ( new WPCronBackend() )->schedule_recurring(
+			self::HOOK,
+			300,
+			array( 'run-17' ),
+			1_700_000_000,
+			'reports|run-17'
+		);
 
-		$this->assert_unsupported_group( $result );
-		self::assertSame( array(), $this->cron_calls() );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame(
+			array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'run-17' ), true ),
+			$this->cron_calls( 'wp_schedule_event' )[0]['args']
+		);
 	}
 
 	/**
-	 * Single writes reject a group before touching WordPress.
+	 * A single write ignores its group and schedules the hook-and-args identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_single_rejects_a_non_empty_group(): void {
-		$result = ( new WPCronBackend() )->schedule_single( self::HOOK, 1_700_000_000, array(), 'reports' );
+	public function test_schedule_single_ignores_a_non_empty_group(): void {
+		$result = ( new WPCronBackend() )->schedule_single(
+			self::HOOK,
+			1_700_000_000,
+			array( 'run-18' ),
+			'reports|run-18'
+		);
 
-		$this->assert_unsupported_group( $result );
-		self::assertSame( array(), $this->cron_calls() );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame(
+			array( 1_700_000_000, self::HOOK, array( 'run-18' ), true ),
+			$this->cron_calls( 'wp_schedule_single_event' )[0]['args']
+		);
 	}
 
 	/**
-	 * Async writes reject a group before checking uniqueness or touching WordPress.
+	 * An async write ignores its group and schedules the hook-and-args identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_async_rejects_a_non_empty_group(): void {
-		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array(), true ) );
-		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
+	public function test_enqueue_async_ignores_a_non_empty_group(): void {
+		$before = \time();
+		$result = ( new WPCronBackend() )->enqueue_async(
+			self::HOOK,
+			array( 'run-19' ),
+			'reports|run-19',
+			true
+		);
+		$after  = \time();
 
-		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array(), 'reports', true );
-
-		$this->assert_unsupported_group( $result );
-		self::assertSame( array(), $this->cron_calls() );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		$call = $this->cron_calls( 'wp_schedule_single_event' )[0]['args'];
+		self::assertGreaterThanOrEqual( $before, $call[0] );
+		self::assertLessThanOrEqual( $after, $call[0] );
+		self::assertSame( array( self::HOOK, array( 'run-19' ), true ), \array_slice( $call, 1 ) );
 	}
 
 	/**
@@ -925,27 +952,6 @@ final class WPCronBackendTest extends TestCase {
 	 */
 	public function test_is_ready_is_always_true(): void {
 		self::assertTrue( ( new WPCronBackend() )->is_ready() );
-	}
-
-	/**
-	 * Asserts the exact unsupported-group failure contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param AbstractResult<true, SchedulingError> $result
-	 *
-	 * @param   AbstractResult $result Result to inspect.
-	 *
-	 * @return  void
-	 */
-	private function assert_unsupported_group( AbstractResult $result ): void {
-		$error = $this->assert_failure_reason( $result, SchedulingErrorReason::UnsupportedGroup );
-
-		self::assertSame(
-			'WP-Cron has no groups; drop the group or ensure Action Scheduler is loaded before scheduling.',
-			$error->message
-		);
 	}
 
 	/**
