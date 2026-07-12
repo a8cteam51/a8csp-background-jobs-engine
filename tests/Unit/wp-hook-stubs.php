@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
 /**
- * Recording `add_action()` and `add_filter()` stubs for Unit tests that boot the real component
- * list outside WordPress. Each stub appends its hook name to the
+ * Recording action and filter stubs for Unit tests that exercise hooks outside WordPress.
+ * Registration stubs append each hook name to the
  * `$GLOBALS['a8csp_bgte_test_hooks']` ledger so tests can assert which hooks a boot registered.
- * Action registrations also retain their callback configuration for component-level assertions.
+ * Action registrations retain their callback configuration, while fired actions retain their arguments.
  * The `function_exists()` guards keep this file inert wherever WordPress is loaded.
  *
  * @since   1.0.0
@@ -93,6 +93,33 @@ if ( ! \function_exists( 'add_filter' ) ) {
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = $filter_registrations;
 
 		return true;
+	}
+}
+
+if ( ! \function_exists( 'do_action' ) ) {
+	/**
+	 * Records a fired action and its arguments in the test ledger.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook_name Hook name.
+	 * @param   mixed  ...$args   Action arguments.
+	 *
+	 * @return  void
+	 */
+	function do_action( $hook_name, ...$args ) {
+		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? array();
+		if ( ! \is_array( $actions ) ) {
+			throw new \UnexpectedValueException( 'Initialize the fired-action test ledger as an array.' );
+		}
+
+		$actions[] = array(
+			'hook_name' => $hook_name,
+			'args'      => $args,
+		);
+
+		$GLOBALS['a8csp_bgte_test_fired_actions'] = $actions;
 	}
 }
 

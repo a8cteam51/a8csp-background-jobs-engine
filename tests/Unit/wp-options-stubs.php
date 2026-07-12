@@ -48,6 +48,8 @@ if ( ! \function_exists( 'get_option' ) ) {
 	 * @param   mixed  $default_value Default value.
 	 *
 	 * @return  mixed
+	 *
+	 * @phpstan-impure
 	 */
 	function get_option( $option, $default_value = false ) {
 		if ( 'cron' === $option && \array_key_exists( 'a8csp_bgte_test_cron_array', $GLOBALS ) ) {
@@ -74,9 +76,21 @@ if ( ! \function_exists( 'add_option' ) ) {
 	 * @param   bool|string|null $autoload   Autoload policy.
 	 *
 	 * @return  bool
+	 *
+	 * @phpstan-impure
 	 */
 	function add_option( $option, $value = '', $deprecated = '', $autoload = null ) {
 		a8csp_bgte_test_record_option_call( 'add_option', array( $option, $value, $deprecated, $autoload ) );
+
+		/** @var callable(string, mixed, string, bool|string|null): void|null $before_add */
+		$before_add = $GLOBALS['a8csp_bgte_test_before_add_option'] ?? null;
+		if ( null !== $before_add ) {
+			if ( ! \is_callable( $before_add ) ) {
+				throw new \UnexpectedValueException( 'Initialize the before-add-option test hook as a callable.' );
+			}
+
+			$before_add( $option, $value, $deprecated, $autoload );
+		}
 
 		/** @var array<string, mixed> $options */
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
@@ -110,6 +124,8 @@ if ( ! \function_exists( 'update_option' ) ) {
 	 * @param   bool|string|null $autoload Autoload policy.
 	 *
 	 * @return  bool
+	 *
+	 * @phpstan-impure
 	 */
 	function update_option( $option, $value, $autoload = null ) {
 		a8csp_bgte_test_record_option_call( 'update_option', array( $option, $value, $autoload ) );
@@ -142,6 +158,8 @@ if ( ! \function_exists( 'delete_option' ) ) {
 	 * @param   string $option Option name.
 	 *
 	 * @return  bool
+	 *
+	 * @phpstan-impure
 	 */
 	function delete_option( $option ) {
 		a8csp_bgte_test_record_option_call( 'delete_option', array( $option ) );
