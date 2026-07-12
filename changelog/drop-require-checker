@@ -1,0 +1,4 @@
+Significance: patch
+Type: removed
+
+Drop composer-require-checker from the lint fan-out and CI, following the plugin template; the wp-env integration matrix is the runtime-symbol net.

@@ -70,13 +70,11 @@
     "lint:php": [
       "@lint:php:phpcs",
       "@lint:php:phpcs:tests",
-      "@lint:php:phpstan",
-      "@lint:php:composer-require-checker"
+      "@lint:php:phpstan"
     ],
     "lint:php:phpcs": "phpcs --standard=./.phpcs.xml --basepath=. ./ -v",
     "lint:php:phpcs:tests": "phpcs --standard=./.phpcs.tests.xml --basepath=. ./tests -v",
     "lint:php:phpstan": "phpstan analyse -c ./.phpstan.neon -v --memory-limit=1G",
-    "lint:php:composer-require-checker": "@php -d memory_limit=1G vendor/bin/composer-require-checker check --config-file=./.composer-require-checker.json ./composer.json",
 
     "internationalize": [
       "@i18n:makepot",

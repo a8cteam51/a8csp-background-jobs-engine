@@ -17,7 +17,7 @@ jobs:
     name: PHP Lint
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-php-lint.yml@trunk
     with:
-      scripts: '["lint:php:phpcs", "lint:php:phpcs:tests", "lint:php:phpstan", "lint:php:composer-require-checker"]'
+      scripts: '["lint:php:phpcs", "lint:php:phpcs:tests", "lint:php:phpstan"]'
 
   php-syntax:
     name: PHP Syntax
