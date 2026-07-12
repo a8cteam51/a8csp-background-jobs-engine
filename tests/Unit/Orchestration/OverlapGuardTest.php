@@ -3,8 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ClaimResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ClockInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -17,14 +18,13 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( ClaimResult::class )]
-#[UsesClass( ClockInterface::class )]
 final class OverlapGuardTest extends TestCase {
 	private const ARGS_HASH = 'args-123';
 	private const KEY       = 'a8csp_bgte_lock_email-digest_args-123';
 	private const NAME      = 'email-digest';
 
 	/**
-	 * Loads guarded WordPress option and action functions before the guard is autoloaded.
+	 * Loads guarded WordPress option functions before the guard is autoloaded.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -38,11 +38,10 @@ final class OverlapGuardTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__ ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__ ) . '/wp-hook-stubs.php';
 	}
 
 	/**
-	 * Resets request-local option, interleaving, and action state.
+	 * Resets request-local option and interleaving state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -56,7 +55,6 @@ final class OverlapGuardTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_options']         = array();
 		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
 		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']   = array();
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 	}
 
@@ -169,6 +167,7 @@ final class OverlapGuardTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_claim_reclaims_a_stale_lock_and_logs_the_dead_run(): void {
+		$logger = new RecordingLogger();
 		$this->store_lock(
 			array(
 				'run_id'       => 'run-dead',
@@ -177,7 +176,7 @@ final class OverlapGuardTest extends TestCase {
 			)
 		);
 
-		$result = self::guard_at( 1_700_000_100 )->claim(
+		$result = self::guard_at( 1_700_000_100, $logger )->claim(
 			self::NAME,
 			self::ARGS_HASH,
 			'run-new',
@@ -203,20 +202,17 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/log',
-					'args'      => array(
-						'warning',
-						'Reclaimed stale execution-overlap lock.',
-						array(
-							'name'        => self::NAME,
-							'args_hash'   => self::ARGS_HASH,
-							'dead_run_id' => 'run-dead',
-							'run_id'      => 'run-new',
-						),
+					'level'   => 'warning',
+					'message' => 'Reclaimed stale execution-overlap lock.',
+					'context' => array(
+						'name'        => self::NAME,
+						'args_hash'   => self::ARGS_HASH,
+						'dead_run_id' => 'run-dead',
+						'run_id'      => 'run-new',
 					),
 				),
 			),
-			$this->fired_actions()
+			$logger->records
 		);
 	}
 
@@ -229,6 +225,7 @@ final class OverlapGuardTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_claim_returns_held_when_the_reclaim_race_is_lost(): void {
+		$logger = new RecordingLogger();
 		$this->store_lock(
 			array(
 				'run_id'       => 'run-dead',
@@ -256,7 +253,7 @@ final class OverlapGuardTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_before_add_option'] = $before_add;
 
-		$result = self::guard_at( 1_000 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+		$result = self::guard_at( 1_000, $logger )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
 
 		self::assertSame( ClaimResult::Held, $result );
 		self::assertSame(
@@ -272,7 +269,7 @@ final class OverlapGuardTest extends TestCase {
 			array( 'add_option', 'delete_option', 'add_option' ),
 			\array_column( $this->all_option_calls(), 'function' )
 		);
-		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame( array(), $logger->records );
 	}
 
 	/**
@@ -523,37 +520,16 @@ final class OverlapGuardTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $timestamp Current Unix timestamp.
+	 * @param   int                  $timestamp Current Unix timestamp.
+	 * @param   RecordingLogger|null $logger    Optional log recorder.
 	 *
 	 * @return  OverlapGuard
 	 */
-	private static function guard_at( int $timestamp ): OverlapGuard {
-		$clock = new class( $timestamp ) implements ClockInterface {
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   int $timestamp Current Unix timestamp.
-			 */
-			public function __construct( private int $timestamp ) {}
-
-			/**
-			 * Returns the fixed Unix timestamp.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				return $this->timestamp;
-			}
-		};
-
-		return new OverlapGuard( $clock );
+	private static function guard_at( int $timestamp, ?RecordingLogger $logger = null ): OverlapGuard {
+		return new OverlapGuard(
+			new FixedClock( $timestamp ),
+			$logger ?? new RecordingLogger()
+		);
 	}
 
 	/**
@@ -640,20 +616,5 @@ final class OverlapGuardTest extends TestCase {
 		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
 
 		return $calls;
-	}
-
-	/**
-	 * Returns every fired action and its arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
-	 */
-	private function fired_actions(): array {
-		/** @var list<array{hook_name: string, args: list<mixed>}> $actions */
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'];
-
-		return $actions;
 	}
 }

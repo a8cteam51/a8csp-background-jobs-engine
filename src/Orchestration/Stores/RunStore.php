@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ClockInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
+use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -59,7 +59,8 @@ final readonly class RunStore {
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
 	public function create( string $run_id, array $start_args, string $args_hash, array $queue ): ?RunState {
-		$now   = $this->clock->now();
+		// PSR-20 standardizes the clock seam while run options persist Unix-second integers.
+		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState(
 			status: RunStatus::Running,
 			start_args: $start_args,
@@ -128,7 +129,7 @@ final readonly class RunStore {
 			return null;
 		}
 
-		$state = $state->with_heartbeat_at( $this->clock->now() );
+		$state = $state->with_heartbeat_at( $this->clock->now()->getTimestamp() );
 		$this->save( $run_id, $state );
 
 		return $state;

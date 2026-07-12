@@ -2,6 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration;
 
+use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -32,9 +35,13 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ClockInterface $clock Timestamp source.
+	 * @param   ClockInterface  $clock  Timestamp source.
+	 * @param   LoggerInterface $logger Log event sink.
 	 */
-	public function __construct( private ClockInterface $clock ) {}
+	public function __construct(
+		private ClockInterface $clock,
+		private LoggerInterface $logger,
+	) {}
 
 	// endregion
 
@@ -63,7 +70,7 @@ final readonly class OverlapGuard {
 		int $staleness_window
 	): ClaimResult {
 		$option_name = $this->option_name( $name, $args_hash );
-		$now         = $this->clock->now();
+		$now         = $this->clock->now()->getTimestamp();
 		$new_lock    = self::new_lock( $run_id, $now );
 
 		if ( \add_option( $option_name, $new_lock, '', false ) ) {
@@ -93,9 +100,7 @@ final readonly class OverlapGuard {
 			return ClaimResult::Held;
 		}
 
-		\do_action(
-			'a8csp/background_tasks/log',
-			'warning',
+		$this->logger->warning(
 			'Reclaimed stale execution-overlap lock.',
 			array(
 				'name'        => $name,
@@ -124,7 +129,7 @@ final readonly class OverlapGuard {
 		$this->refresh_owned_lock(
 			$this->option_name( $name, $args_hash ),
 			$run_id,
-			$this->clock->now()
+			$this->clock->now()->getTimestamp()
 		);
 	}
 
@@ -168,7 +173,11 @@ final readonly class OverlapGuard {
 	public function is_held( string $name, string $args_hash, int $staleness_window ): bool {
 		$lock = self::read_lock( $this->option_name( $name, $args_hash ) );
 
-		return null !== $lock && ! self::is_stale( $lock, $this->clock->now(), $staleness_window );
+		return null !== $lock && ! self::is_stale(
+			$lock,
+			$this->clock->now()->getTimestamp(),
+			$staleness_window
+		);
 	}
 
 	// endregion

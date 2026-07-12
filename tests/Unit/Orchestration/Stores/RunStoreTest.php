@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ClockInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -17,7 +17,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( RunStore::class )]
-#[UsesClass( ClockInterface::class )]
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 final class RunStoreTest extends TestCase {
@@ -65,31 +64,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_create_get_round_trip_pins_schema_key_and_clock_stamps(): void {
-		$clock = new class( 1_700_000_100 ) implements ClockInterface {
-
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   int $timestamp Current Unix timestamp.
-			 */
-			public function __construct( public int $timestamp ) {}
-
-			/**
-			 * Returns the scripted Unix timestamp.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				return $this->timestamp;
-			}
-		};
+		$clock = new FixedClock( 1_700_000_100 );
 		$store = new RunStore( 'email-digest', $clock );
 		$state = $store->create(
 			run_id: 'run-123',
@@ -142,21 +117,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_create_reports_failure_without_overwriting_an_existing_option(): void {
-		$clock = new class() implements ClockInterface {
-
-			/**
-			 * Returns a fixed Unix timestamp.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				return 123;
-			}
-		};
+		$clock = new FixedClock( 123 );
 
 		$key = 'a8csp_bgte_run_reports_run-existing';
 
@@ -180,31 +141,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_save_round_trips_every_read_modify_write_mutation(): void {
-		$clock = new class( 100 ) implements ClockInterface {
-
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   int $timestamp Current Unix timestamp.
-			 */
-			public function __construct( public int $timestamp ) {}
-
-			/**
-			 * Returns the scripted Unix timestamp.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				return $this->timestamp;
-			}
-		};
+		$clock = new FixedClock( 100 );
 		$store = new RunStore( 'reports', $clock );
 		$state = $store->create(
 			'run-rmw',
@@ -265,30 +202,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_refresh_heartbeat_does_not_recreate_unrecoverable_runs(): void {
-		$clock = new class() implements ClockInterface {
-
-			/**
-			 * Number of timestamp reads.
-			 *
-			 * @var int
-			 */
-			public int $calls = 0;
-
-			/**
-			 * Returns a fixed Unix timestamp and records the read.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				++$this->calls;
-
-				return 200;
-			}
-		};
+		$clock = new FixedClock( 200 );
 		$store = new RunStore( 'heartbeat', $clock );
 
 		self::assertNull( $store->refresh_heartbeat( 'missing' ) );
@@ -314,21 +228,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_delete_removes_the_run_option(): void {
-		$clock = new class() implements ClockInterface {
-
-			/**
-			 * Returns a fixed Unix timestamp.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				return 123;
-			}
-		};
+		$clock = new FixedClock( 123 );
 		$store = new RunStore( 'cleanup', $clock );
 		$store->create( 'run-delete', array(), 'hash', array() );
 
@@ -351,21 +251,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_get_returns_null_for_missing_and_malformed_options(): void {
-		$clock = new class() implements ClockInterface {
-
-			/**
-			 * Returns a fixed Unix timestamp.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function now(): int {
-				return 123;
-			}
-		};
+		$clock = new FixedClock( 123 );
 		$store = new RunStore( 'corruption', $clock );
 		$key   = 'a8csp_bgte_run_corruption_run-bad';
 
