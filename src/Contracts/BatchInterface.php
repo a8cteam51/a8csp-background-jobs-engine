@@ -36,6 +36,11 @@ interface BatchInterface {
 	/**
 	 * Generates one argument array for each initial chunk.
 	 *
+	 * The engine materializes the iterable, then applies
+	 * `a8csp/background_tasks/queue/{batch}` with the exact signature
+	 * `(list<array<array-key, mixed>> $queue, array<array-key, mixed> $start_args, string $run_id):`
+	 * `list<array<array-key, mixed>>` before persistence.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\LatestRunPoin
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
@@ -49,6 +50,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
 final class OrchestratorTest extends TestCase {
 	private const ARGS = array(
@@ -127,6 +129,7 @@ final class OrchestratorTest extends TestCase {
 
 		$this->orchestrator = new Orchestrator(
 			$this->registry,
+			new BatchRegistry(),
 			$this->backend,
 			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
 			new StoreFactory( $this->clock ),
@@ -137,21 +140,39 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
-	 * Hook registration exposes only the two-argument internal lifecycle action.
+	 * Hook registration exposes every internal lifecycle action through the orchestrator.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_register_hooks_wires_the_internal_run_action(): void {
+	public function test_register_hooks_wires_the_internal_lifecycle_actions(): void {
 		$this->orchestrator->register_hooks();
 
 		self::assertSame(
 			array(
 				array(
+					'hook_name'     => 'a8csp/background_tasks/start',
+					'callback'      => array( $this->orchestrator, 'handle_start_action' ),
+					'priority'      => 10,
+					'accepted_args' => 2,
+				),
+				array(
+					'hook_name'     => 'a8csp/background_tasks/continue',
+					'callback'      => array( $this->orchestrator, 'handle_continue_action' ),
+					'priority'      => 10,
+					'accepted_args' => 2,
+				),
+				array(
 					'hook_name'     => 'a8csp/background_tasks/run',
 					'callback'      => array( $this->orchestrator, 'handle_run_action' ),
+					'priority'      => 10,
+					'accepted_args' => 3,
+				),
+				array(
+					'hook_name'     => 'a8csp/background_tasks/cleanup',
+					'callback'      => array( $this->orchestrator, 'handle_cleanup_action' ),
 					'priority'      => 10,
 					'accepted_args' => 2,
 				),

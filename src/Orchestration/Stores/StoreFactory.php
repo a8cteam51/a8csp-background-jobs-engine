@@ -7,7 +7,7 @@ use Psr\Clock\ClockInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Constructs the stores bound to one task name.
+ * Constructs the stores bound to one task or batch name.
  *
  * A single factory keeps name binding at the orchestration boundary without exposing four
  * untyped closure dependencies.
@@ -33,12 +33,12 @@ final readonly class StoreFactory {
 	// region METHODS
 
 	/**
-	 * Constructs the active-run store for a task name.
+	 * Constructs the active-run store for a task or batch name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task name.
+	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  RunStore
 	 */
@@ -47,12 +47,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the latest-run pointer for a task name.
+	 * Constructs the latest-run pointer for a task or batch name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task name.
+	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  LatestRunPointer
 	 */
@@ -61,12 +61,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the run history for a task name.
+	 * Constructs the run history for a task or batch name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task name.
+	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  RunHistory
 	 */
@@ -75,12 +75,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the failed-run store for a task name.
+	 * Constructs the failed-run store for a task or batch name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task name.
+	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  FailedRunStore
 	 */

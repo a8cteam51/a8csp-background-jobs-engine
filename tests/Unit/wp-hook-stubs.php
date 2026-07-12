@@ -131,6 +131,16 @@ if ( ! \function_exists( 'do_action' ) ) {
 
 			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
 		}
+
+		$throwables = $GLOBALS['a8csp_bgte_test_action_throwables'] ?? array();
+		if ( ! \is_array( $throwables ) ) {
+			throw new \UnexpectedValueException( 'Initialize the action-throwable test map as an array.' );
+		}
+
+		$throwable = $throwables[ $hook_name ] ?? null;
+		if ( $throwable instanceof \Throwable ) {
+			throw $throwable;
+		}
 	}
 }
 
