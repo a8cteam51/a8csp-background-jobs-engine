@@ -3,12 +3,24 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ClaimResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
+
+/** Detects whether lock-row decoding constructs a serialized class. */
+final class LockRowWakeupProbe {
+	public static bool $woke = false;
+
+	/** Records an unsafe object construction during unserialization. */
+	public function __wakeup(): void {
+		self::$woke = true;
+	}
+}
 
 /**
  * Pins execution-overlap ownership, liveness, reclaim, and release behavior.
@@ -18,69 +30,39 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( ClaimResult::class )]
+#[UsesClass( LockRows::class )]
 final class OverlapGuardTest extends TestCase {
 	private const ARGS_HASH = 'args-123';
 	private const KEY       = 'a8csp_bgte_lock_email-digest_args-123';
 	private const NAME      = 'email-digest';
 
-	/**
-	 * Loads guarded WordPress option functions before the guard is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	private WpdbLockSpy $wpdb;
+
+	private LockRows $rows;
+
+	/** Loads guarded WordPress functions before production classes are autoloaded. */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
 		if ( ! \defined( 'ABSPATH' ) ) {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 
-		require_once \dirname( __DIR__ ) . '/wp-options-stubs.php';
+		require_once \dirname( __DIR__ ) . '/wp-lock-stubs.php';
 	}
 
-	/**
-	 * Resets request-local option and interleaving state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** Resets the site, database, and cache state. */
 	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']         = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$GLOBALS['a8csp_bgte_test_blog_id']     = 1;
+		$GLOBALS['a8csp_bgte_test_cache']       = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
+		$this->wpdb                             = new WpdbLockSpy();
+		$this->rows                             = new LockRows( $this->wpdb );
 	}
 
-	/**
-	 * Clears a scripted interleaving even when a race assertion fails.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	protected function tearDown(): void {
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
-
-		parent::tearDown();
-	}
-
-	/**
-	 * Claim outcomes expose only the three lowercase-backed contract states.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** Claim outcomes expose only the three lowercase-backed contract states. */
 	public function test_claim_result_pins_cases_and_backing_values(): void {
 		self::assertSame(
 			array( ClaimResult::Claimed, ClaimResult::Reclaimed, ClaimResult::Held ),
@@ -92,59 +74,27 @@ final class OverlapGuardTest extends TestCase {
 		);
 	}
 
-	/**
-	 * A fresh claim inserts the exact lock schema under the literal non-autoloaded key.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** An absent lock is claimed with the exact schema and non-autoload policy. */
 	public function test_fresh_claim_inserts_the_literal_non_autoloaded_lock(): void {
-		$result = self::guard_at( 1_700_000_100 )->claim(
+		$result = $this->guard_at( 1_700_000_100 )->claim(
 			self::NAME,
 			self::ARGS_HASH,
 			'run-new',
 			900
 		);
 
-		$expected_lock = array(
-			'run_id'       => 'run-new',
-			'claimed_at'   => 1_700_000_100,
-			'heartbeat_at' => 1_700_000_100,
-		);
-
 		self::assertSame( ClaimResult::Claimed, $result );
-		self::assertSame( $expected_lock, $this->lock() );
-		self::assertSame( false, $this->autoload_flag() );
-		self::assertSame(
-			array(
-				array(
-					'function' => 'add_option',
-					'args'     => array( self::KEY, $expected_lock, '', false ),
-				),
-			),
-			$this->all_option_calls()
-		);
+		self::assertSame( self::row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
+		self::assertSame( 'off', $this->wpdb->autoload[ self::KEY ] );
+		self::assertSame( array( 'insert' ), $this->operations() );
 	}
 
-	/**
-	 * A live foreign owner blocks a claim without changing its lock row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** A fresh foreign owner blocks a claim without changing its raw row. */
 	public function test_claim_returns_held_and_leaves_a_fresh_foreign_lock_untouched(): void {
-		$foreign_lock = array(
-			'run_id'       => 'run-live',
-			'claimed_at'   => 1_700_000_000,
-			'heartbeat_at' => 1_700_000_090,
-		);
-		$this->store_lock( $foreign_lock );
+		$foreign = self::row( 'run-live', 1_700_000_000, 1_700_000_090 );
+		$this->store_lock( $foreign );
 
-		$result = self::guard_at( 1_700_000_100 )->claim(
+		$result = $this->guard_at( 1_700_000_100 )->claim(
 			self::NAME,
 			self::ARGS_HASH,
 			'run-new',
@@ -152,31 +102,16 @@ final class OverlapGuardTest extends TestCase {
 		);
 
 		self::assertSame( ClaimResult::Held, $result );
-		self::assertSame( $foreign_lock, $this->lock() );
-		self::assertCount( 1, $this->option_calls( 'add_option' ) );
-		self::assertSame( array(), $this->option_calls( 'update_option' ) );
-		self::assertSame( array(), $this->option_calls( 'delete_option' ) );
+		self::assertSame( $foreign, $this->lock() );
+		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
-	/**
-	 * The next claimant replaces a stale owner and reports the dead run through the log channel.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** A stale owner is value-conditionally replaced and reported through the warning channel. */
 	public function test_claim_reclaims_a_stale_lock_and_logs_the_dead_run(): void {
 		$logger = new RecordingLogger();
-		$this->store_lock(
-			array(
-				'run_id'       => 'run-dead',
-				'claimed_at'   => 1_699_999_000,
-				'heartbeat_at' => 1_699_999_199,
-			)
-		);
+		$this->store_lock( self::row( 'run-dead', 1_699_999_000, 1_699_999_199 ) );
 
-		$result = self::guard_at( 1_700_000_100, $logger )->claim(
+		$result = $this->guard_at( 1_700_000_100, $logger )->claim(
 			self::NAME,
 			self::ARGS_HASH,
 			'run-new',
@@ -184,21 +119,8 @@ final class OverlapGuardTest extends TestCase {
 		);
 
 		self::assertSame( ClaimResult::Reclaimed, $result );
-		self::assertSame(
-			array(
-				'run_id'       => 'run-new',
-				'claimed_at'   => 1_700_000_100,
-				'heartbeat_at' => 1_700_000_100,
-			),
-			$this->lock()
-		);
-		self::assertSame( false, $this->autoload_flag() );
-		self::assertSame(
-			array( 'add_option', 'delete_option', 'add_option' ),
-			\array_column( $this->all_option_calls(), 'function' )
-		);
-		self::assertSame( false, $this->option_calls( 'add_option' )[0]['args'][3] );
-		self::assertSame( false, $this->option_calls( 'add_option' )[1]['args'][3] );
+		self::assertSame( self::row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
+		self::assertSame( array( 'insert', 'select', 'delete', 'insert' ), $this->operations() );
 		self::assertSame(
 			array(
 				array(
@@ -216,405 +138,365 @@ final class OverlapGuardTest extends TestCase {
 		);
 	}
 
-	/**
-	 * A rival that inserts after deletion owns the row and turns this reclaim attempt into Held.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_claim_returns_held_when_the_reclaim_race_is_lost(): void {
+	/** A rival that inserts after deletion owns the row and makes the reclaim attempt Held. */
+	public function test_claim_returns_held_when_the_post_delete_insert_race_is_lost(): void {
 		$logger = new RecordingLogger();
-		$this->store_lock(
-			array(
-				'run_id'       => 'run-dead',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 100,
-			)
+		$this->store_lock( self::row( 'run-dead', 100, 100 ) );
+		$this->wpdb->before_next( 'insert', static function (): void {} );
+		$this->wpdb->before_next(
+			'insert',
+			static function ( WpdbLockSpy $database ): void {
+				$database->put( self::KEY, self::raw( self::row( 'run-rival', 1_000, 1_000 ) ) );
+			}
 		);
 
-		$add_attempts = 0;
-		$before_add   = function ( string $option ) use ( &$add_attempts ): void {
-			++$add_attempts;
-			if ( 2 !== $add_attempts ) {
-				return;
-			}
-
-			self::assertSame( self::KEY, $option );
-			$this->store_lock(
-				array(
-					'run_id'       => 'run-rival',
-					'claimed_at'   => 1_000,
-					'heartbeat_at' => 1_000,
-				)
-			);
-		};
-
-		$GLOBALS['a8csp_bgte_test_before_add_option'] = $before_add;
-
-		$result = self::guard_at( 1_000, $logger )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+		$result = $this->guard_at( 1_000, $logger )->claim(
+			self::NAME,
+			self::ARGS_HASH,
+			'run-new',
+			100
+		);
 
 		self::assertSame( ClaimResult::Held, $result );
-		self::assertSame(
-			array(
-				'run_id'       => 'run-rival',
-				'claimed_at'   => 1_000,
-				'heartbeat_at' => 1_000,
-			),
-			$this->lock()
-		);
-		self::assertSame( false, $this->autoload_flag() );
-		self::assertSame(
-			array( 'add_option', 'delete_option', 'add_option' ),
-			\array_column( $this->all_option_calls(), 'function' )
-		);
+		self::assertSame( self::row( 'run-rival', 1_000, 1_000 ), $this->lock() );
 		self::assertSame( array(), $logger->records );
 	}
 
-	/**
-	 * A fresh owner can claim idempotently while retaining its original claim timestamp.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_same_run_reclaim_refreshes_the_heartbeat_and_returns_claimed(): void {
-		$first_result = self::guard_at( 100 )->claim( self::NAME, self::ARGS_HASH, 'run-owner', 900 );
-		self::assertSame( ClaimResult::Claimed, $first_result );
+	/** A stale delete cannot remove a fresh winner that replaces the selected raw row first. */
+	public function test_stale_delete_cas_loser_cannot_delete_the_winners_row(): void {
+		$stale_raw  = self::raw( self::row( 'run-dead', 100, 100 ) );
+		$winner_raw = self::raw( self::row( 'run-winner', 1_000, 1_000 ) );
+		$this->wpdb->put( self::KEY, $stale_raw );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $database ) use ( $winner_raw ): void {
+				$database->put( self::KEY, $winner_raw );
+			}
+		);
 
-		$result = self::guard_at( 200 )->claim( self::NAME, self::ARGS_HASH, 'run-owner', 900 );
+		$result = $this->guard_at( 1_000 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+
+		self::assertSame( ClaimResult::Held, $result );
+		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'insert', 'select', 'delete' ), $this->operations() );
+	}
+
+	/** Two stale claimants cannot both reclaim the same selected raw row. */
+	public function test_dual_reclaimed_interleaving_is_impossible(): void {
+		$this->store_lock( self::row( 'run-dead', 100, 100 ) );
+		$guard_a  = $this->guard_at( 1_000 );
+		$guard_b  = $this->guard_at( 1_000 );
+		$a_result = null;
+		$this->wpdb->before_next(
+			'delete',
+			function () use ( $guard_a, &$a_result ): void {
+				$a_result = $guard_a->claim( self::NAME, self::ARGS_HASH, 'run-a', 100 );
+			}
+		);
+
+		$b_result = $guard_b->claim( self::NAME, self::ARGS_HASH, 'run-b', 100 );
+
+		self::assertSame( ClaimResult::Reclaimed, $a_result );
+		self::assertSame( ClaimResult::Held, $b_result );
+		self::assertSame( self::row( 'run-a', 1_000, 1_000 ), $this->lock() );
+		self::assertSame(
+			array( 'insert', 'select', 'insert', 'select', 'delete', 'insert', 'delete' ),
+			$this->operations()
+		);
+	}
+
+	/** A fresh owner reuses its selected raw row for one idempotent heartbeat update. */
+	public function test_same_run_claim_refreshes_with_one_select_and_retains_claim_time(): void {
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
+
+		$result = $this->guard_at( 200 )->claim( self::NAME, self::ARGS_HASH, 'run-owner', 900 );
 
 		self::assertSame( ClaimResult::Claimed, $result );
-		self::assertSame(
-			array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 200,
-			),
-			$this->lock()
-		);
-		self::assertSame( false, $this->autoload_flag() );
-		self::assertCount( 1, $this->option_calls( 'update_option' ) );
+		self::assertSame( self::row( 'run-owner', 100, 200 ), $this->lock() );
+		self::assertSame( 1, $this->operation_count( 'select' ) );
+		self::assertSame( array( 'insert', 'select', 'update' ), $this->operations() );
 	}
 
-	/**
-	 * Heartbeat refreshes an owned row without changing its claim timestamp.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** A malformed raw row is not held and is reclaimable with bounded diagnostic context. */
+	public function test_malformed_row_is_consistently_reclaimable_and_logs_a_bounded_snippet(): void {
+		$logger = new RecordingLogger();
+		$raw    = \str_repeat( 'malformed-', 30 );
+		$this->wpdb->put( self::KEY, $raw );
+		$guard = $this->guard_at( 1_000, $logger );
+
+		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		$result = $guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+
+		self::assertSame( ClaimResult::Reclaimed, $result );
+		self::assertSame( self::row( 'run-new', 1_000, 1_000 ), $this->lock() );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Reclaimed malformed execution-overlap lock.',
+					'context' => array(
+						'name'      => self::NAME,
+						'args_hash' => self::ARGS_HASH,
+						'malformed' => true,
+						'raw_row'   => \substr( $raw, 0, 200 ),
+						'run_id'    => 'run-new',
+					),
+				),
+			),
+			$logger->records
+		);
+		self::assertArrayNotHasKey( 'dead_run_id', $logger->records[0]['context'] );
+	}
+
+	/** A serialized object is malformed without constructing its class during reclaim. */
+	public function test_malformed_object_row_is_reclaimed_without_class_construction(): void {
+		LockRowWakeupProbe::$woke = false;
+		$this->wpdb->put( self::KEY, self::raw( new LockRowWakeupProbe() ) );
+
+		$result = $this->guard_at( 1_000 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+
+		self::assertSame( ClaimResult::Reclaimed, $result );
+		self::assertFalse( LockRowWakeupProbe::$woke );
+		self::assertSame( self::row( 'run-new', 1_000, 1_000 ), $this->lock() );
+	}
+
+	/** Heartbeat refreshes only an owned row's liveness timestamp. */
 	public function test_heartbeat_refreshes_only_the_owned_rows_liveness_timestamp(): void {
-		$this->store_lock(
-			array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 120,
-			)
-		);
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
 
-		self::guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertSame(
-			array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 200,
-			),
-			$this->lock()
-		);
-		self::assertSame( false, $this->autoload_flag() );
+		self::assertSame( self::row( 'run-owner', 100, 200 ), $this->lock() );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}
 
-	/**
-	 * Heartbeat leaves a foreign lock byte-for-byte unchanged.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** An identical-second heartbeat is confirmed after MySQL reports zero affected rows. */
+	public function test_identical_second_heartbeat_confirms_the_unchanged_owned_row(): void {
+		$row = self::row( 'run-owner', 100, 200 );
+		$this->store_lock( $row );
+
+		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertSame( $row, $this->lock() );
+		self::assertSame( array( 'select', 'update', 'select' ), $this->operations() );
+	}
+
+	/** Heartbeat leaves a foreign lock byte-for-byte unchanged. */
 	public function test_heartbeat_does_not_touch_a_foreign_lock(): void {
-		$foreign_lock = array(
-			'run_id'       => 'run-rival',
-			'claimed_at'   => 100,
-			'heartbeat_at' => 120,
-		);
-		$this->store_lock( $foreign_lock );
+		$foreign_raw = self::raw( self::row( 'run-rival', 100, 120 ) );
+		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		self::guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertSame( $foreign_lock, $this->lock() );
-		self::assertSame( array(), $this->all_option_calls() );
+		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/**
-	 * Heartbeat does not create an absent lock row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** Heartbeat does not create an absent lock row. */
 	public function test_heartbeat_is_a_no_op_when_the_lock_is_absent(): void {
-		self::guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertNull( $this->lock() );
-		self::assertSame( array(), $this->all_option_calls() );
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
+		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/**
-	 * Release deletes a lock owned by the terminating run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** A heartbeat that loses its CAS leaves the replacement owner's row unchanged. */
+	public function test_heartbeat_cas_loss_is_a_no_op(): void {
+		$winner_raw = self::raw( self::row( 'run-winner', 200, 200 ) );
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $database ) use ( $winner_raw ): void {
+				$database->put( self::KEY, $winner_raw );
+			}
+		);
+
+		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
+	}
+
+	/** Release deletes a lock owned by the terminating run. */
 	public function test_release_deletes_an_owned_lock(): void {
-		$this->store_lock(
-			array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 120,
-			)
-		);
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
 
-		self::guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertNull( $this->lock() );
-		self::assertCount( 1, $this->option_calls( 'delete_option' ) );
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
+		self::assertSame( array( 'select', 'delete' ), $this->operations() );
 	}
 
-	/**
-	 * Release leaves a foreign lock byte-for-byte unchanged.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** Release leaves a foreign lock byte-for-byte unchanged. */
 	public function test_release_does_not_delete_a_foreign_lock(): void {
-		$foreign_lock = array(
-			'run_id'       => 'run-rival',
-			'claimed_at'   => 100,
-			'heartbeat_at' => 120,
-		);
-		$this->store_lock( $foreign_lock );
+		$foreign_raw = self::raw( self::row( 'run-rival', 100, 120 ) );
+		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		self::guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertSame( $foreign_lock, $this->lock() );
-		self::assertSame( array(), $this->all_option_calls() );
+		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/**
-	 * Release does not write when no lock exists.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** Release does not write when no lock exists. */
 	public function test_release_is_a_no_op_when_the_lock_is_absent(): void {
-		self::guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertNull( $this->lock() );
-		self::assertSame( array(), $this->all_option_calls() );
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
+		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/**
-	 * Held-state reads distinguish a fresh row, an expired row, and no row without writing.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_is_held_reports_fresh_stale_and_absent_locks(): void {
-		$guard = self::guard_at( 1_000 );
-		$this->store_lock(
-			array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 901,
-			)
+	/** A release that loses its CAS leaves the replacement owner's row unchanged. */
+	public function test_release_cas_loss_is_a_no_op(): void {
+		$winner_raw = self::raw( self::row( 'run-winner', 200, 200 ) );
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $database ) use ( $winner_raw ): void {
+				$database->put( self::KEY, $winner_raw );
+			}
 		);
 
+		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
+	}
+
+	/** Held-state reads distinguish fresh, stale, absent, and malformed rows without writing. */
+	public function test_is_held_reports_only_parseable_fresh_locks(): void {
+		$guard = $this->guard_at( 1_000 );
+		$this->store_lock( self::row( 'run-owner', 100, 901 ) );
 		self::assertTrue( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
 
-		$this->store_lock(
-			array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 899,
-			)
-		);
-
+		$this->store_lock( self::row( 'run-owner', 100, 899 ) );
 		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-		unset( $options[ self::KEY ] );
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
-
+		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
 		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
-		self::assertSame( array(), $this->all_option_calls() );
+
+		$this->wpdb->put( self::KEY, 'not-a-lock-row' );
+		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertSame( array( 'select', 'select', 'select', 'select' ), $this->operations() );
 	}
 
-	/**
-	 * Held-state reads reject rows outside the lock's exact three-field schema.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** Held-state reads reject a deserializable row outside the exact three-field schema. */
 	public function test_is_held_rejects_a_lock_row_with_extra_fields(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			self::KEY => array(
-				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
-				'heartbeat_at' => 200,
-				'extra'        => true,
-			),
-		);
+		$row = self::row( 'run-owner', 100, 200 );
 
-		self::assertFalse( self::guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
-		self::assertSame( array(), $this->all_option_calls() );
+		$row['extra'] = true;
+		$this->wpdb->put( self::KEY, self::raw( $row ) );
+
+		self::assertFalse( $this->guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
 	}
 
-	/**
-	 * A heartbeat exactly one window old remains fresh until one more second elapses.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
+	/** A heartbeat exactly one window old remains fresh until one more second elapses. */
 	public function test_staleness_requires_heartbeat_age_to_exceed_the_given_window(): void {
-		$boundary_lock = array(
-			'run_id'       => 'run-owner',
-			'claimed_at'   => 100,
-			'heartbeat_at' => 900,
-		);
-		$this->store_lock( $boundary_lock );
+		$boundary = self::row( 'run-owner', 100, 900 );
+		$this->store_lock( $boundary );
+		$guard = $this->guard_at( 1_000 );
 
-		$boundary_guard = self::guard_at( 1_000 );
-
-		self::assertTrue( $boundary_guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertTrue( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
 		self::assertSame(
 			ClaimResult::Held,
-			$boundary_guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 )
+			$guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 )
 		);
-		self::assertSame( $boundary_lock, $this->lock() );
-		self::assertFalse( self::guard_at( 1_001 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertSame( $boundary, $this->lock() );
+		self::assertFalse( $this->guard_at( 1_001 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
 	}
 
 	/**
-	 * Returns a guard with a deterministic timestamp source.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * Returns a guard with deterministic time and the shared SQL seam.
 	 *
 	 * @param   int                  $timestamp Current Unix timestamp.
 	 * @param   RecordingLogger|null $logger    Optional log recorder.
 	 *
 	 * @return  OverlapGuard
 	 */
-	private static function guard_at( int $timestamp, ?RecordingLogger $logger = null ): OverlapGuard {
+	private function guard_at( int $timestamp, ?RecordingLogger $logger = null ): OverlapGuard {
 		return new OverlapGuard(
 			new FixedClock( $timestamp ),
-			$logger ?? new RecordingLogger()
+			$logger ?? new RecordingLogger(),
+			$this->rows
 		);
 	}
 
 	/**
-	 * Stores one lock row directly for a deterministic precondition.
+	 * Stores one structured lock row directly as a deterministic precondition.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $lock Lock row.
-	 *
-	 * @return  void
+	 * @param array<array-key, mixed> $row Lock row.
 	 */
-	private function store_lock( array $lock ): void {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-		$options[ self::KEY ]               = $lock;
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
-
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? null;
-		self::assertIsArray( $autoload_flags );
-		$autoload_flags[ self::KEY ]                = false;
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = $autoload_flags;
+	private function store_lock( array $row ): void {
+		$this->wpdb->put( self::KEY, self::raw( $row ) );
 	}
 
-	/**
-	 * Returns the current lock row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  mixed
-	 */
+	/** Returns the current lock row after WordPress-shaped unserialization. */
 	private function lock(): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
+		if ( ! isset( $this->wpdb->rows[ self::KEY ] ) ) {
+			return null;
+		}
 
-		return $options[ self::KEY ] ?? null;
+		return \maybe_unserialize( $this->wpdb->rows[ self::KEY ] );
 	}
 
 	/**
-	 * Returns the lock row's recorded autoload policy.
+	 * Returns an exact lock row.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @param   string $run_id       Run identifier.
+	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $heartbeat_at Heartbeat timestamp.
 	 *
-	 * @return  mixed
+	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}
 	 */
-	private function autoload_flag(): mixed {
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? null;
-		self::assertIsArray( $autoload_flags );
-
-		return $autoload_flags[ self::KEY ] ?? null;
+	private static function row( string $run_id, int $claimed_at, int $heartbeat_at ): array {
+		return array(
+			'run_id'       => $run_id,
+			'claimed_at'   => $claimed_at,
+			'heartbeat_at' => $heartbeat_at,
+		);
 	}
 
 	/**
-	 * Returns calls for one option function in recording order.
+	 * Returns a value's WordPress-shaped raw representation.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @param   mixed $value Value to serialize.
 	 *
-	 * @param   string $function_name Function name.
-	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
+	 * @return  string
 	 */
-	private function option_calls( string $function_name ): array {
-		return \array_values(
+	private static function raw( mixed $value ): string {
+		$raw = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+
+		return $raw;
+	}
+
+	/** @return list<'insert'|'select'|'update'|'delete'> */
+	private function operations(): array {
+		return \array_map(
+			static function ( string $query ): string {
+				return match ( true ) {
+					\str_starts_with( $query, 'INSERT IGNORE ' ) => 'insert',
+					\str_starts_with( $query, 'SELECT ' )        => 'select',
+					\str_starts_with( $query, 'UPDATE ' )        => 'update',
+					\str_starts_with( $query, 'DELETE ' )        => 'delete',
+					default => throw new \UnexpectedValueException( 'Unexpected lock query.' ),
+				};
+			},
+			$this->wpdb->recorded_queries
+		);
+	}
+
+	/**
+	 * Returns the number of recorded operations with one verb.
+	 *
+	 * @param   string $operation Operation name.
+	 *
+	 * @return  int
+	 */
+	private function operation_count( string $operation ): int {
+		return \count(
 			\array_filter(
-				$this->all_option_calls(),
-				static fn ( array $call ): bool => $function_name === $call['function']
+				$this->operations(),
+				static fn ( string $candidate ): bool => $operation === $candidate
 			)
 		);
-	}
-
-	/**
-	 * Returns every recorded option-function call.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
-	 */
-	private function all_option_calls(): array {
-		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
-
-		return $calls;
 	}
 }

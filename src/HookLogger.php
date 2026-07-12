@@ -42,11 +42,16 @@ final class HookLogger extends AbstractLogger {
 				continue;
 			}
 
-			$replacements[ '{' . $key . '}' ] = (string) $value;
+			try {
+				$replacements[ '{' . $key . '}' ] = (string) $value;
+			} catch ( \Throwable ) {
+				// A log call must never throw because one context placeholder cannot be rendered.
+				continue;
+			}
 		}
 
 		\do_action(
-			'a8csp/background_tasks/log',
+			Log::HOOK,
 			(string) $level,
 			\strtr( (string) $message, $replacements ),
 			$context

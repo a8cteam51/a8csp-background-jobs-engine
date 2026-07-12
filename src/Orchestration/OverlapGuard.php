@@ -10,9 +10,11 @@ use Psr\Log\LoggerInterface;
 /**
  * Owns execution-overlap locks stored as WordPress options.
  *
- * Nobody releases a crashed run's lock; the next claimant deletes and replaces it after its
- * heartbeat age exceeds the caller-resolved staleness window. Reclaim after a crash-then-revival
- * can double-fire once, so tasks must be idempotent.
+ * Nobody releases a crashed run's lock; the next claimant replaces it after its heartbeat age
+ * exceeds the caller-resolved staleness window. The stale row is deleted only while its exact raw
+ * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire only
+ * when a crashed process revives after its lock has been reclaimed, so tasks must be idempotent.
+ * Malformed rows are not held and follow the same value-conditioned reclaim path.
  *
  * The orchestrator resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -23,7 +25,8 @@ use Psr\Log\LoggerInterface;
 final readonly class OverlapGuard {
 	// region FIELDS AND CONSTANTS
 
-	private const OPTION_PREFIX = 'a8csp_bgte_lock_';
+	private const MALFORMED_RAW_BYTES = 200;
+	private const OPTION_PREFIX       = 'a8csp_bgte_lock_';
 
 	// endregion
 
@@ -37,10 +40,12 @@ final readonly class OverlapGuard {
 	 *
 	 * @param   ClockInterface  $clock  Timestamp source.
 	 * @param   LoggerInterface $logger Log event sink.
+	 * @param   LockRows        $rows   Authoritative lock-row I/O.
 	 */
 	public function __construct(
 		private ClockInterface $clock,
 		private LoggerInterface $logger,
+		private LockRows $rows,
 	) {}
 
 	// endregion
@@ -48,7 +53,7 @@ final readonly class OverlapGuard {
 	// region METHODS
 
 	/**
-	 * Claims an absent lock, refreshes a fresh owned lock, or replaces a stale lock.
+	 * Claims an absent lock, refreshes a fresh owned lock, or replaces a stale or malformed row.
 	 *
 	 * Re-claiming a fresh lock with the same run identifier is idempotent: it refreshes the
 	 * heartbeat and returns Claimed without changing the original claim timestamp.
@@ -69,52 +74,41 @@ final readonly class OverlapGuard {
 		string $run_id,
 		int $staleness_window
 	): ClaimResult {
-		$option_name = $this->option_name( $name, $args_hash );
-		$now         = $this->clock->now()->getTimestamp();
-		$new_lock    = self::new_lock( $run_id, $now );
+		$key      = $this->option_name( $name, $args_hash );
+		$now      = $this->clock->now()->getTimestamp();
+		$new_lock = self::new_lock( $run_id, $now );
 
-		if ( \add_option( $option_name, $new_lock, '', false ) ) {
+		if ( $this->rows->insert( $key, $new_lock ) ) {
 			return ClaimResult::Claimed;
 		}
 
-		$lock = self::read_lock( $option_name );
+		$raw = $this->rows->select( $key );
+		if ( null === $raw ) {
+			return ClaimResult::Held;
+		}
+
+		$lock = self::parse( $raw );
 		if ( null === $lock ) {
+			return $this->reclaim( $key, $raw, null, $new_lock, $name, $args_hash, $run_id );
+		}
+
+		if ( self::is_stale( $lock, $now, $staleness_window ) ) {
+			return $this->reclaim( $key, $raw, $lock, $new_lock, $name, $args_hash, $run_id );
+		}
+
+		if ( $run_id !== $lock['run_id'] ) {
 			return ClaimResult::Held;
 		}
 
-		if ( ! self::is_stale( $lock, $now, $staleness_window ) ) {
-			if ( $run_id !== $lock['run_id'] ) {
-				return ClaimResult::Held;
-			}
+		$lock['heartbeat_at'] = $now;
 
-			return $this->refresh_owned_lock( $option_name, $run_id, $now )
-				? ClaimResult::Claimed
-				: ClaimResult::Held;
-		}
-
-		\delete_option( $option_name );
-
-		if ( ! \add_option( $option_name, $new_lock, '', false ) ) {
-			// A rival can fill the row between deletion and insertion, so losing this race is a
-			// normal held result.
-			return ClaimResult::Held;
-		}
-
-		$this->logger->warning(
-			'Reclaimed stale execution-overlap lock.',
-			array(
-				'name'        => $name,
-				'args_hash'   => $args_hash,
-				'dead_run_id' => $lock['run_id'],
-				'run_id'      => $run_id,
-			)
-		);
-
-		return ClaimResult::Reclaimed;
+		return $this->rows->replace( $key, $raw, $lock )
+			? ClaimResult::Claimed
+			: ClaimResult::Held;
 	}
 
 	/**
-	 * Refreshes liveness only while the run still owns the lock.
+	 * Refreshes liveness only while the run still owns the exact selected lock row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -126,15 +120,26 @@ final readonly class OverlapGuard {
 	 * @return  void
 	 */
 	public function heartbeat( string $name, string $args_hash, string $run_id ): void {
-		$this->refresh_owned_lock(
-			$this->option_name( $name, $args_hash ),
-			$run_id,
-			$this->clock->now()->getTimestamp()
-		);
+		$key = $this->option_name( $name, $args_hash );
+		$raw = $this->rows->select( $key );
+		if ( null === $raw ) {
+			return;
+		}
+
+		$lock = self::parse( $raw );
+		if ( null === $lock || $run_id !== $lock['run_id'] ) {
+			return;
+		}
+
+		$lock['heartbeat_at'] = $this->clock->now()->getTimestamp();
+		if ( ! $this->rows->replace( $key, $raw, $lock ) ) {
+			// A lost CAS means ownership moved after selection, so this heartbeat must not touch the winner.
+			return;
+		}
 	}
 
 	/**
-	 * Deletes a lock only while the terminating run still owns it.
+	 * Deletes a lock only while the terminating run owns the exact selected row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -146,20 +151,25 @@ final readonly class OverlapGuard {
 	 * @return  void
 	 */
 	public function release( string $name, string $args_hash, string $run_id ): void {
-		$option_name = $this->option_name( $name, $args_hash );
-		$lock        = self::read_lock( $option_name );
+		$key = $this->option_name( $name, $args_hash );
+		$raw = $this->rows->select( $key );
+		if ( null === $raw ) {
+			return;
+		}
 
+		$lock = self::parse( $raw );
 		if ( null === $lock || $run_id !== $lock['run_id'] ) {
 			return;
 		}
 
-		\delete_option( $option_name );
+		$this->rows->delete( $key, $raw );
 	}
 
 	/**
-	 * Returns whether a valid lock exists without exceeding the supplied staleness window.
+	 * Returns whether a complete lock exists without exceeding the supplied staleness window.
 	 *
-	 * A heartbeat exactly one window old remains fresh; only a greater age is stale.
+	 * A heartbeat exactly one window old remains fresh; only a greater age is stale. Malformed rows
+	 * are not held, so a subsequent claim can reclaim them.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -171,7 +181,12 @@ final readonly class OverlapGuard {
 	 * @return  bool
 	 */
 	public function is_held( string $name, string $args_hash, int $staleness_window ): bool {
-		$lock = self::read_lock( $this->option_name( $name, $args_hash ) );
+		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
+		if ( null === $raw ) {
+			return false;
+		}
+
+		$lock = self::parse( $raw );
 
 		return null !== $lock && ! self::is_stale(
 			$lock,
@@ -185,37 +200,62 @@ final readonly class OverlapGuard {
 	// region HELPERS
 
 	/**
-	 * Refreshes an owned lock and reports whether ownership still matches.
+	 * Replaces the exact stale or malformed row selected by a losing insert.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * The delete predicate prevents this claimant from removing a winner that changes the row after
+	 * selection; a rival that fills the absent row before insertion also wins normally.
 	 *
-	 * @param   string $option_name Lock option name.
-	 * @param   string $run_id      Owning run identifier.
-	 * @param   int    $heartbeat_at Latest liveness timestamp.
+	 * @param   string                                                         $key       Lock option name.
+	 * @param   string                                                         $raw       Exact selected value.
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}|null $old_lock  Parsed stale row, or null when malformed.
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}      $new_lock  Replacement row.
+	 * @param   string                                                         $name      Stable task or batch name.
+	 * @param   string                                                         $args_hash Stable identity of the start arguments.
+	 * @param   string                                                         $run_id    Claiming run identifier.
 	 *
-	 * @return  bool
+	 * @return  ClaimResult
 	 */
-	private function refresh_owned_lock( string $option_name, string $run_id, int $heartbeat_at ): bool {
-		$lock = self::read_lock( $option_name );
-
-		// A revived stale run must not extend the replacement lock after another claimant takes
-		// ownership.
-		if ( null === $lock || $run_id !== $lock['run_id'] ) {
-			return false;
+	private function reclaim(
+		string $key,
+		string $raw,
+		?array $old_lock,
+		array $new_lock,
+		string $name,
+		string $args_hash,
+		string $run_id
+	): ClaimResult {
+		if ( ! $this->rows->delete( $key, $raw ) || ! $this->rows->insert( $key, $new_lock ) ) {
+			return ClaimResult::Held;
 		}
 
-		$lock['heartbeat_at'] = $heartbeat_at;
-		\update_option( $option_name, $lock, false );
+		if ( null === $old_lock ) {
+			$this->logger->warning(
+				'Reclaimed malformed execution-overlap lock.',
+				array(
+					'name'      => $name,
+					'args_hash' => $args_hash,
+					'malformed' => true,
+					'raw_row'   => \substr( $raw, 0, self::MALFORMED_RAW_BYTES ),
+					'run_id'    => $run_id,
+				)
+			);
+		} else {
+			$this->logger->warning(
+				'Reclaimed stale execution-overlap lock.',
+				array(
+					'name'        => $name,
+					'args_hash'   => $args_hash,
+					'dead_run_id' => $old_lock['run_id'],
+					'run_id'      => $run_id,
+				)
+			);
+		}
 
-		return true;
+		return ClaimResult::Reclaimed;
 	}
 
 	/**
 	 * Returns the execution-overlap option name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $name      Stable task or batch name.
 	 * @param   string $args_hash Stable identity of the start arguments.
@@ -228,9 +268,6 @@ final readonly class OverlapGuard {
 
 	/**
 	 * Returns a newly claimed lock row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Claiming run identifier.
 	 * @param   int    $now    Claim timestamp.
@@ -246,17 +283,14 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Returns a complete lock row from its persisted option.
+	 * Parses only the exact three-field persisted lock shape.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $option_name Lock option name.
+	 * @param   string $raw Exact persisted option value.
 	 *
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
-	private static function read_lock( string $option_name ): ?array {
-		$value = \get_option( $option_name, null );
+	private static function parse( string $raw ): ?array {
+		$value = self::decode( $raw );
 		if (
 			! \is_array( $value )
 			|| 3 !== \count( $value )
@@ -275,10 +309,27 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Returns whether the heartbeat age is strictly greater than the supplied window.
+	 * Decodes a raw row without allowing serialized objects to construct classes.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @param   string $raw Exact persisted option value.
+	 *
+	 * @return  mixed
+	 */
+	private static function decode( string $raw ): mixed {
+		\call_user_func( 'set_error_handler', static fn (): bool => true );
+
+		try {
+			// Lock rows contain only scalars and arrays, so class construction is never valid during decoding.
+			return \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
+		} catch ( \Throwable ) {
+			return null;
+		} finally {
+			\call_user_func( 'restore_error_handler' );
+		}
+	}
+
+	/**
+	 * Returns whether the heartbeat age is strictly greater than the supplied window.
 	 *
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $lock             Lock row.
 	 * @param   int                                                       $now              Current timestamp.

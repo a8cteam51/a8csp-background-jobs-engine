@@ -29,6 +29,7 @@ final class LogTest extends TestCase {
 		}
 
 		require_once __DIR__ . '/wp-hook-stubs.php';
+		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
 	}
 
 	/**

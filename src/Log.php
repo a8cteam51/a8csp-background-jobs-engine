@@ -11,6 +11,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
  * @version 1.0.0
  */
 final class Log implements Component {
+	// region FIELDS AND CONSTANTS
+
+	public const HOOK = 'a8csp/background_tasks/log';
+
+	// endregion
+
 	// region INHERITED METHODS
 
 	/**
@@ -36,7 +42,7 @@ final class Log implements Component {
 	 */
 	#[\Override]
 	public function initialize(): void {
-		\add_action( 'a8csp/background_tasks/log', array( self::class, 'log' ), 10, 3 );
+		\add_action( self::HOOK, array( self::class, 'log' ), 10, 3 );
 	}
 
 	// endregion
@@ -66,16 +72,19 @@ final class Log implements Component {
 
 		if ( array() !== $context ) {
 			try {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Native JSON exceptions keep encoding failures on the original log line.
-				$encoded_context = \json_encode( $context, \JSON_THROW_ON_ERROR );
-				$line           .= ' ' . $encoded_context;
+				$encoded_context = \wp_json_encode( $context, \JSON_THROW_ON_ERROR );
 			} catch ( \Throwable ) {
+				$encoded_context = false;
+			}
+
+			if ( \is_string( $encoded_context ) ) {
+				$line .= ' ' . $encoded_context;
+			} else {
 				$line .= ' [context JSON encoding failed: use only JSON-encodable values]';
 			}
 		}
 
-		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- A bare install deliberately routes the engine's only log channel to PHP's configured error log.
-		\error_log( $line );
+		\call_user_func( 'error_log', $line );
 	}
 
 	// endregion

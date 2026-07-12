@@ -12,12 +12,17 @@ final class FixedClock implements ClockInterface {
 	/** Number of clock reads. */
 	public int $calls = 0;
 
+	/** Current Unix timestamp. */
+	public int $timestamp;
+
 	/**
 	 * Constructor.
 	 *
-	 * @param   int $timestamp Current Unix timestamp.
+	 * @param   int|DateTimeImmutable $instant Current Unix timestamp or instant.
 	 */
-	public function __construct( public int $timestamp ) {}
+	public function __construct( int|DateTimeImmutable $instant ) {
+		$this->timestamp = \is_int( $instant ) ? $instant : $instant->getTimestamp();
+	}
 
 	/** {@inheritDoc} */
 	#[\Override]

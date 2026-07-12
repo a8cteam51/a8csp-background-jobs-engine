@@ -59,7 +59,7 @@ final readonly class RunStore {
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
 	public function create( string $run_id, array $start_args, string $args_hash, array $queue ): ?RunState {
-		// PSR-20 standardizes the clock seam while run options persist Unix-second integers.
+		// Run options persist Unix-second integers.
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState(
 			status: RunStatus::Running,

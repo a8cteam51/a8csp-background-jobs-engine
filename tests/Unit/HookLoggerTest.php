@@ -88,4 +88,109 @@ final class HookLoggerTest extends TestCase {
 			$GLOBALS['a8csp_bgte_test_fired_actions']
 		);
 	}
+
+	/**
+	 * A failing Stringable context value leaves its placeholder intact without aborting dispatch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_throwing_stringable_leaves_placeholder_verbatim_and_dispatches_log(): void {
+		$stringable = new class() implements \Stringable {
+			/** @return string */
+			#[\Override]
+			public function __toString(): string {
+				return throw new \RuntimeException( 'String conversion failed.' );
+			}
+		};
+		$context    = array( 'label' => $stringable );
+
+		( new HookLogger() )->info( 'Task {label} failed.', $context );
+
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/log',
+					'args'      => array(
+						'info',
+						'Task {label} failed.',
+						$context,
+					),
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_fired_actions']
+		);
+	}
+
+	/**
+	 * The inherited warning convenience method preserves its named PSR-3 level.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inherited_warning_dispatches_warning_level(): void {
+		( new HookLogger() )->warning( 'Task failed.' );
+
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/log',
+					'args'      => array( 'warning', 'Task failed.', array() ),
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_fired_actions']
+		);
+	}
+
+	/**
+	 * Plain string context values interpolate into matching placeholders.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_plain_string_context_value_is_interpolated(): void {
+		$context = array( 'task' => 'email-digest' );
+
+		( new HookLogger() )->info( 'Running {task}.', $context );
+
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/log',
+					'args'      => array( 'info', 'Running email-digest.', $context ),
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_fired_actions']
+		);
+	}
+
+	/**
+	 * Null context values remain structured data and leave matching placeholders intact.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_null_context_value_leaves_placeholder_verbatim(): void {
+		$context = array( 'task' => null );
+
+		( new HookLogger() )->info( 'Running {task}.', $context );
+
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/log',
+					'args'      => array( 'info', 'Running {task}.', $context ),
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_fired_actions']
+		);
+	}
 }
