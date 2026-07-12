@@ -34,6 +34,17 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_option_call' ) ) {
 		);
 
 		$GLOBALS['a8csp_bgte_test_option_calls'] = $calls;
+
+		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		if ( \is_array( $lifecycle_events ) ) {
+			$lifecycle_events[] = array(
+				'type'     => 'option',
+				'function' => $function_name,
+				'args'     => $args,
+			);
+
+			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
+		}
 	}
 }
 

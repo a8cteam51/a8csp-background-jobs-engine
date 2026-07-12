@@ -264,8 +264,9 @@ final class OverlapGuardTest extends TestCase {
 	public function test_heartbeat_refreshes_only_the_owned_rows_liveness_timestamp(): void {
 		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
 
-		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertTrue( $owned );
 		self::assertSame( self::row( 'run-owner', 100, 200 ), $this->lock() );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}
@@ -275,8 +276,9 @@ final class OverlapGuardTest extends TestCase {
 		$row = self::row( 'run-owner', 100, 200 );
 		$this->store_lock( $row );
 
-		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertTrue( $owned );
 		self::assertSame( $row, $this->lock() );
 		self::assertSame( array( 'select', 'update', 'select' ), $this->operations() );
 	}
@@ -286,16 +288,18 @@ final class OverlapGuardTest extends TestCase {
 		$foreign_raw = self::raw( self::row( 'run-rival', 100, 120 ) );
 		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertFalse( $owned );
 		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
 	/** Heartbeat does not create an absent lock row. */
 	public function test_heartbeat_is_a_no_op_when_the_lock_is_absent(): void {
-		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertFalse( $owned );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
@@ -311,8 +315,9 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertFalse( $owned );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 

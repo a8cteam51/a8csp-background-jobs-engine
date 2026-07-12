@@ -117,25 +117,24 @@ final readonly class OverlapGuard {
 	 * @param   string $args_hash Stable identity of the start arguments.
 	 * @param   string $run_id    Owning run identifier.
 	 *
-	 * @return  void
+	 * @return  bool Whether the heartbeat confirmed continued ownership.
 	 */
-	public function heartbeat( string $name, string $args_hash, string $run_id ): void {
+	public function heartbeat( string $name, string $args_hash, string $run_id ): bool {
 		$key = $this->option_name( $name, $args_hash );
 		$raw = $this->rows->select( $key );
 		if ( null === $raw ) {
-			return;
+			return false;
 		}
 
 		$lock = self::parse( $raw );
 		if ( null === $lock || $run_id !== $lock['run_id'] ) {
-			return;
+			return false;
 		}
 
 		$lock['heartbeat_at'] = $this->clock->now()->getTimestamp();
-		if ( ! $this->rows->replace( $key, $raw, $lock ) ) {
-			// A lost CAS means ownership moved after selection, so this heartbeat must not touch the winner.
-			return;
-		}
+
+		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
+		return $this->rows->replace( $key, $raw, $lock );
 	}
 
 	/**

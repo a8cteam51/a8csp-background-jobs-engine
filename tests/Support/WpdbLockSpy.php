@@ -141,6 +141,16 @@ final class WpdbLockSpy extends \wpdb {
 		$this->run_before( $operation );
 		$this->recorded_queries[] = $query;
 
+		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		if ( \is_array( $lifecycle_events ) ) {
+			$lifecycle_events[] = array(
+				'type'      => 'lock',
+				'operation' => $operation,
+			);
+
+			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
+		}
+
 		$scripted = isset( $this->scripted_results[ $operation ] )
 			? \array_shift( $this->scripted_results[ $operation ] )
 			: null;

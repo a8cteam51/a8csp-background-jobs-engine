@@ -31,6 +31,10 @@ interface TaskInterface {
 	/**
 	 * Handles one invocation of the task.
 	 *
+	 * Terminal failures dispatch `a8csp/background_tasks/failed/{name}` with the run identifier,
+	 * start arguments, and engine error, followed by `a8csp/background_tasks/failed` with the task
+	 * name prepended to the same payload.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

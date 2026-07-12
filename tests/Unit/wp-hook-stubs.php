@@ -120,6 +120,17 @@ if ( ! \function_exists( 'do_action' ) ) {
 		);
 
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = $actions;
+
+		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		if ( \is_array( $lifecycle_events ) ) {
+			$lifecycle_events[] = array(
+				'type'      => 'action',
+				'hook_name' => $hook_name,
+				'args'      => $args,
+			);
+
+			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
+		}
 	}
 }
 
