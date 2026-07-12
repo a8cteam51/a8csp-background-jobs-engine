@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the consumer contracts: Task and Batch interfaces, retry policy with validated full-jitter backoff, run status set, non-retryable escape, and the run-failure payload.

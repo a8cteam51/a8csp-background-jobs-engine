@@ -23,13 +23,14 @@ final class RequirementsCheckTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_requirements_gate_matches_runtime(): void {
-		self::assertTrue( \defined( 'A8CSP_BGTE_REQUIREMENTS' ) );
+		$requirements = \constant( 'A8CSP_BGTE_REQUIREMENTS' );
+		$wp_version   = \get_bloginfo( 'version' );
 
-		if ( \version_compare( $GLOBALS['wp_version'], '7.0', '<' ) ) {
-			self::assertInstanceOf( \WP_Error::class, A8CSP_BGTE_REQUIREMENTS );
+		if ( \version_compare( $wp_version, '7.0', '<' ) ) {
+			self::assertInstanceOf( \WP_Error::class, $requirements );
 			self::assertFalse( \function_exists( 'a8csp_bgte_plugin' ) );
 		} else {
-			self::assertNotInstanceOf( \WP_Error::class, A8CSP_BGTE_REQUIREMENTS );
+			self::assertTrue( $requirements );
 		}
 	}
 }

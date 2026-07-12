@@ -81,7 +81,6 @@ final class LogTest extends TestCase {
 			),
 			$GLOBALS['a8csp_bgte_test_action_registrations']
 		);
-		self::assertIsCallable( $GLOBALS['a8csp_bgte_test_action_registrations'][0]['callback'] );
 	}
 
 	/**

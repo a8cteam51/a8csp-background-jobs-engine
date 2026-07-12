@@ -25,7 +25,16 @@ final class PluginHeaderFloorsTest extends TestCase {
 		$composer = \json_decode( (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/composer.json' ), true, 512, JSON_THROW_ON_ERROR );
 
 		self::assertSame( 1, \preg_match( '/Requires PHP:\s*([\d.]+)/', $header, $matches ) );
-		self::assertSame( '>=' . $matches[1], $composer['require']['php'] );
+		$header_floor = $matches[1] ?? null;
+		self::assertIsString( $header_floor );
+
+		self::assertIsArray( $composer );
+		$requirements = $composer['require'] ?? null;
+		self::assertIsArray( $requirements );
+		$composer_floor = $requirements['php'] ?? null;
+		self::assertIsString( $composer_floor );
+
+		self::assertSame( '>=' . $header_floor, $composer_floor );
 	}
 
 	/**

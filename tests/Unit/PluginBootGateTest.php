@@ -77,11 +77,8 @@ final class PluginBootGateTest extends TestCase {
 	public function test_second_boot_is_a_no_op(): void {
 		$plugin = new Plugin();
 		$plugin->boot();
-
-		$hook_count = \count( $GLOBALS['a8csp_bgte_test_hooks'] );
-
 		$plugin->boot();
 
-		self::assertCount( $hook_count, $GLOBALS['a8csp_bgte_test_hooks'] );
+		self::assertSame( array( 'a8csp/background_tasks/log' ), $GLOBALS['a8csp_bgte_test_hooks'] );
 	}
 }

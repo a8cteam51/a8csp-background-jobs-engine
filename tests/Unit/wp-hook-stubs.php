@@ -27,13 +27,29 @@ if ( ! \function_exists( 'add_action' ) ) {
 	 * @return  true
 	 */
 	function add_action( $hook_name, $callback, $priority = 10, $accepted_args = 1 ) {
-		$GLOBALS['a8csp_bgte_test_hooks'][]                = $hook_name;
-		$GLOBALS['a8csp_bgte_test_action_registrations'][] = array(
+		$hooks                = $GLOBALS['a8csp_bgte_test_hooks'] ?? array();
+		$action_registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? array();
+
+		if ( ! \is_array( $hooks ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test hook ledger as an array before registering an action.' );
+		}
+
+		if ( ! \is_array( $action_registrations ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test action ledger as an array before registering an action.' );
+		}
+
+		$hooks[] = $hook_name;
+
+		$action_registrations[] = array(
 			'hook_name'     => $hook_name,
 			'callback'      => $callback,
 			'priority'      => $priority,
 			'accepted_args' => $accepted_args,
 		);
+
+		$GLOBALS['a8csp_bgte_test_hooks']                = $hooks;
+		$GLOBALS['a8csp_bgte_test_action_registrations'] = $action_registrations;
+
 		return true;
 	}
 }
@@ -53,7 +69,16 @@ if ( ! \function_exists( 'add_filter' ) ) {
 	 * @return  true
 	 */
 	function add_filter( $hook_name, $callback, $priority = 10, $accepted_args = 1 ) {
-		$GLOBALS['a8csp_bgte_test_hooks'][] = $hook_name;
+		$hooks = $GLOBALS['a8csp_bgte_test_hooks'] ?? array();
+
+		if ( ! \is_array( $hooks ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test hook ledger as an array before registering a filter.' );
+		}
+
+		$hooks[] = $hook_name;
+
+		$GLOBALS['a8csp_bgte_test_hooks'] = $hooks;
+
 		return true;
 	}
 }

@@ -103,8 +103,10 @@ final class UninstallTest extends TestCase {
 		);
 
 		self::assertNotEmpty( $users, 'wp-env must provision at least one user to seed user-meta against' );
+		$user_id = $users[0] ?? null;
+		self::assertIsNumeric( $user_id, 'get_users() must return a numeric ID when queried for the ID field' );
 
-		return (int) $users[0];
+		return (int) $user_id;
 	}
 
 	/**
@@ -163,6 +165,17 @@ final class UninstallTest extends TestCase {
 		self::assertArrayHasKey( 'options', $footprint );
 		self::assertArrayHasKey( 'user_meta', $footprint );
 
-		return $footprint;
+		$options = $footprint['options'];
+		self::assertIsList( $options );
+		self::assertContainsOnlyString( $options );
+
+		$user_meta = $footprint['user_meta'];
+		self::assertIsList( $user_meta );
+		self::assertContainsOnlyString( $user_meta );
+
+		return array(
+			'options'   => $options,
+			'user_meta' => $user_meta,
+		);
 	}
 }

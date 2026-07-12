@@ -13,6 +13,7 @@ parameters:
     paths:
         - %currentWorkingDirectory%/a8csp-background-tasks-engine.php
         - %currentWorkingDirectory%/functions-bootstrap.php
+        - %currentWorkingDirectory%/tests
     WPCompat:
         # wp-compat's own fallback guesses "{cwd}/{basename(cwd)}.php", which only holds
         # by coincidence when a repo's directory name matches its entry file; declared
