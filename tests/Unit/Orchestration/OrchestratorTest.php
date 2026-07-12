@@ -353,6 +353,37 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
+	 * The name-specific lock-staleness filter receives its complete documented payload.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_passes_all_documented_arguments_to_the_lock_staleness_filter(): void {
+		$filter_args = null;
+		$this->set_filter_value(
+			'a8csp/background_tasks/lock_staleness/' . self::NAME,
+			static function ( int $default_staleness ) use ( &$filter_args ): int {
+				$filter_args = array(
+					'arity' => \func_num_args(),
+					'args'  => \func_get_args(),
+				);
+
+				return $default_staleness;
+			}
+		);
+
+		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame(
+			array(
+				'arity' => 1,
+				'args'  => array( 15 * \MINUTE_IN_SECONDS ),
+			),
+			$filter_args
+		);
+	}
+
+	/**
 	 * Supplies fresh and stale edges for all three staleness-resolution paths.
 	 *
 	 * @return  array<string, array{staleness_filter: int|null, continue_filter: int|null, heartbeat_age: int, is_reclaimed: bool}>
@@ -620,6 +651,42 @@ final class OrchestratorTest extends TestCase {
 		self::assertIsArray( $new_state );
 		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
 		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
+	}
+
+	/**
+	 * Manual retry consumes the first retained entry when duplicates share a run identifier.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_uses_the_first_entry_matching_the_run_identifier(): void {
+		$store = new FailedRunStore( self::NAME );
+		$store->record(
+			'failed-run',
+			self::NOW - 2,
+			array( 'ordinal' => 'first' ),
+			2,
+			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		);
+		$store->record(
+			'failed-run',
+			self::NOW - 1,
+			array( 'ordinal' => 'second' ),
+			2,
+			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		);
+		$this->backend->calls    = array();
+		$this->randomizer->calls = array();
+		$this->randomizer->value = 43;
+		$this->clock->timestamp  = self::NOW + 100;
+		$new_run_id              = '00000000001700000100-0000000000000000043';
+
+		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $new_run_id, $result->value );
+		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
+		self::assertIsArray( $new_state );
+		self::assertSame( array( 'ordinal' => 'first' ), $new_state['start_args'] ?? null );
 	}
 
 	/**
@@ -1071,11 +1138,14 @@ final class OrchestratorTest extends TestCase {
 		$this->task->retry_policy = $contract_policy;
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 
-		$received_policy = null;
+		$filter_args = null;
 		$this->set_filter_value(
 			'a8csp/background_tasks/retry_policy/' . self::NAME,
-			static function ( RetryPolicy $policy ) use ( &$received_policy ): RetryPolicy {
-				$received_policy = $policy;
+			static function ( RetryPolicy $policy ) use ( &$filter_args ): RetryPolicy {
+				$filter_args = array(
+					'arity' => \func_num_args(),
+					'args'  => \func_get_args(),
+				);
 
 				return new RetryPolicy( max_attempts: 1 );
 			}
@@ -1084,7 +1154,13 @@ final class OrchestratorTest extends TestCase {
 
 		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
-		self::assertSame( $contract_policy, $received_policy );
+		self::assertSame(
+			array(
+				'arity' => 1,
+				'args'  => array( $contract_policy ),
+			),
+			$filter_args
+		);
 		self::assertSame( array(), $this->backend->calls );
 		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
 		self::assertIsArray( $failed_runs );

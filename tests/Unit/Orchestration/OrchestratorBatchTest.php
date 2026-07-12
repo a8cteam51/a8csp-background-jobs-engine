@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
@@ -333,7 +334,10 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp/background_tasks/queue/' . self::NAME,
 			static function ( array $queue, array $start_args, string $run_id ) use ( &$filter_call ): array {
-				$filter_call = array( $queue, $start_args, $run_id );
+				$filter_call = array(
+					'arity' => \func_num_args(),
+					'args'  => \func_get_args(),
+				);
 
 				return array(
 					array( 'chunk' => 'filtered-first' ),
@@ -351,12 +355,15 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertSame(
 			array(
-				array(
-					array( 'chunk' => 'first' ),
-					array( 'chunk' => 'second' ),
+				'arity' => 3,
+				'args'  => array(
+					array(
+						array( 'chunk' => 'first' ),
+						array( 'chunk' => 'second' ),
+					),
+					self::ARGS,
+					self::RUN_ID,
 				),
-				self::ARGS,
-				self::RUN_ID,
 			),
 			$filter_call
 		);
@@ -597,7 +604,10 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp/background_tasks/continue_delay',
 			static function ( int $default_delay, string $name, string $run_id ) use ( &$filter_call ): int {
-				$filter_call = array( $default_delay, $name, $run_id );
+				$filter_call = array(
+					'arity' => \func_num_args(),
+					'args'  => \func_get_args(),
+				);
 
 				return 75;
 			}
@@ -633,7 +643,13 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertSame( 0, $state['chunk_retries'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
-		self::assertSame( array( 60, self::NAME, self::RUN_ID ), $filter_call );
+		self::assertSame(
+			array(
+				'arity' => 3,
+				'args'  => array( 60, self::NAME, self::RUN_ID ),
+			),
+			$filter_call
+		);
 		self::assertSame(
 			array(
 				array(
@@ -1045,12 +1061,19 @@ final class OrchestratorBatchTest extends TestCase {
 		$failed_run = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
 		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		$error = $this->batch->failure_calls[0]['error'];
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				array(
+					'hook_name' => 'a8csp/background_tasks/failed/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS, $error ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/failed',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, $error ),
+				),
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			$this->fired_actions()
 		);
 	}
 
@@ -1117,6 +1140,82 @@ final class OrchestratorBatchTest extends TestCase {
 			$this->batch->success_calls
 		);
 		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/completed/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/completed',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+				),
+			),
+			$this->fired_actions()
+		);
+		self::assertSame(
+			array(
+				'lock:update',
+				'run:running',
+				'batch:success',
+				'hook:completed/' . self::NAME,
+				'hook:completed',
+				'lock:update',
+				'run:completed',
+				'lock:delete',
+				'run:delete',
+				'history',
+			),
+			$this->lifecycle_labels()
+		);
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		$this->assert_terminal_history();
+	}
+
+	/**
+	 * A success-callback throwable is logged without changing the completed run outcome.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_cleanup_action_completes_and_logs_when_success_callback_throws(): void {
+		$this->prepare_started_batch( array() );
+		$this->clock->timestamp = self::NOW + 90;
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->clear_action_observations();
+		$this->clock->timestamp = self::NOW + 120;
+		// An Error carrying the non-retryable marker pins the catch to \Throwable with no marker special-casing.
+		$success_throwable              = new class( 'Success callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
+		$this->batch->success_throwable = $success_throwable;
+
+		$this->orchestrator->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => self::RUN_ID,
+					'start_args' => self::ARGS,
+				),
+			),
+			$this->batch->success_calls
+		);
+		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'error',
+					'message' => 'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
+					'context' => array(
+						'batch_name'        => self::NAME,
+						'run_id'            => self::RUN_ID,
+						'exception_class'   => $success_throwable::class,
+						'exception_message' => 'Success callback exploded.',
+					),
+				),
+			),
+			$this->logger->records
+		);
 		self::assertSame(
 			array(
 				array(
@@ -1327,6 +1426,20 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->tasks->register( new RecordingTask( self::NAME ) );
 
 		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+
+		$this->assert_ambiguous_name_failure( $result );
+		$this->assert_start_boundaries_untouched();
+	}
+
+	/**
+	 * Manual retry rejects and logs a name shared by a task and batch before reading failed state.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_name_resolvable_in_both_registries(): void {
+		$this->tasks->register( new RecordingTask( self::NAME ) );
+
+		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
 
 		$this->assert_ambiguous_name_failure( $result );
 		$this->assert_start_boundaries_untouched();
@@ -1564,10 +1677,16 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				array(
+					'hook_name' => 'a8csp/background_tasks/superseded/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/superseded',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+				),
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			$this->fired_actions()
 		);
 		$this->assert_terminal_history();
 	}
@@ -1582,11 +1701,20 @@ final class OrchestratorBatchTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_ambiguous_name_failure( AbstractResult $result ): void {
+		$message = 'Background-work name "catalog-sync" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.';
+
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( $message, $result->error->message );
 		self::assertSame(
-			'Background-work name "catalog-sync" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.',
-			$result->error->message
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => $message,
+					'context' => array( 'name' => self::NAME ),
+				),
+			),
+			$this->logger->records
 		);
 	}
 

@@ -37,7 +37,8 @@ final readonly class RunState {
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
 	 * @param   string                        $args_hash       Stable identity of the start arguments.
 	 * @param   list<array<array-key, mixed>> $queue           Chunks awaiting processing, oldest first.
-	 * @param   int                           $chunk_retries   Failed attempts already consumed by the current chunk.
+	 * @param   int                           $chunk_retries   Failed attempts consumed by the current batch chunk; for
+	 *                                                         a task, failed handle() attempts in this run.
 	 * @param   int                           $action_seq      Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at      Creation timestamp.
 	 * @param   int                           $heartbeat_at    Latest liveness timestamp.
@@ -106,12 +107,13 @@ final readonly class RunState {
 	}
 
 	/**
-	 * Returns a copy with the supplied current-chunk retry count.
+	 * Returns a copy with the supplied failed-attempt count.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $chunk_retries Failed attempts already consumed by the current chunk.
+	 * @param   int $chunk_retries Failed attempts consumed by the current batch chunk; for a task, failed handle()
+	 *                              attempts in this run.
 	 *
 	 * @return  self
 	 */

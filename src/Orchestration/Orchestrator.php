@@ -427,7 +427,8 @@ final readonly class Orchestrator {
 	 * @param   string $name   Stable task or batch name.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 * @return  AbstractResult<string, EngineError|SchedulingError> Success carries the new run identifier after
+	 *          re-enqueueing; it does not report whether the work ran or succeeded.
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
@@ -454,6 +455,7 @@ final readonly class Orchestrator {
 		foreach ( $entries as $candidate ) {
 			if ( $run_id === $candidate['run_id'] ) {
 				$entry = $candidate;
+				break;
 			}
 		}
 
@@ -535,7 +537,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				new EngineError( $throwable->getMessage(), $throwable::class )
+				$this->throwable_failure( $throwable )
 			);
 
 			return;
@@ -558,7 +560,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				new EngineError( $throwable->getMessage(), $throwable::class )
+				$this->throwable_failure( $throwable )
 			);
 
 			return;
@@ -576,7 +578,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->scheduling_failure( $batch_name, 'continue', $scheduled->error )
+				$this->scheduling_failure( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 		}
 	}
@@ -622,7 +624,7 @@ final readonly class Orchestrator {
 					$run_id,
 					$state,
 					$run_store,
-					$this->scheduling_failure( $batch_name, 'cleanup', $scheduled->error )
+					$this->scheduling_failure( 'Batch', $batch_name, 'cleanup', $scheduled->error )
 				);
 			}
 
@@ -646,7 +648,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->scheduling_failure( $batch_name, 'run', $scheduled->error )
+				$this->scheduling_failure( 'Batch', $batch_name, 'run', $scheduled->error )
 			);
 		}
 	}
@@ -787,7 +789,21 @@ final readonly class Orchestrator {
 		}
 
 		try {
-			$batch->on_success( $run_id, $state->start_args );
+			try {
+				$batch->on_success( $run_id, $state->start_args );
+			} catch ( \Throwable $throwable ) {
+				$this->logger->error(
+					'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
+					array(
+						'batch_name'        => $batch_name,
+						'run_id'            => $run_id,
+						'exception_class'   => $throwable::class,
+						'exception_message' => $throwable->getMessage(),
+					)
+				);
+			}
+
+			// Completed listeners observe the active-run option before terminal cleanup deletes it and appends history.
 			$this->fire_lifecycle_hooks( 'completed', $batch_name, $run_id, $state->start_args );
 		} finally {
 			if ( $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
@@ -817,6 +833,85 @@ final readonly class Orchestrator {
 	// region HELPERS
 
 	/**
+	 * Applies the retry decision ladder after one task or batch attempt fails.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param \Closure(): RetryPolicy $policy_provider
+	 * @phpstan-param \Closure(RunState, EngineError, int): void $terminal_failure
+	 *
+	 * @param   'Task'|'Batch'               $work_type        Work contract type.
+	 * @param   string                       $name             Stable task or batch name.
+	 * @param   string                       $run_id           Run identifier.
+	 * @param   RunState                     $state            Fenced running state.
+	 * @param   RunStore                     $run_store        Active-run store.
+	 * @param   \Throwable                   $throwable        Failed attempt detail.
+	 * @param   \Closure                     $policy_provider  Lazy contract-policy provider.
+	 * @param   \Closure                     $terminal_failure Terminal failure transition.
+	 * @param   array<array-key, mixed>|null $chunk_args       Batch chunk arguments, or null for a task.
+	 *
+	 * @throws  \Throwable When a terminal failure callback or lifecycle listener fails.
+	 *
+	 * @return  void
+	 */
+	private function handle_failed_attempt(
+		string $work_type,
+		string $name,
+		string $run_id,
+		RunState $state,
+		RunStore $run_store,
+		\Throwable $throwable,
+		\Closure $policy_provider,
+		\Closure $terminal_failure,
+		?array $chunk_args = null
+	): void {
+		if ( ! $this->retains_ownership_after_callback( $work_type, $name, $run_id, $state ) ) {
+			return;
+		}
+
+		$attempts_used = $state->chunk_retries + 1;
+		$error         = $this->throwable_failure( $throwable );
+		if ( $throwable instanceof NonRetryableExceptionInterface ) {
+			$terminal_failure( $state, $error, $attempts_used );
+
+			return;
+		}
+
+		try {
+			$policy = $this->retry_policy( $name, $policy_provider() );
+		} catch ( \Throwable $retry_policy_failure ) {
+			$terminal_failure(
+				$state,
+				$this->retry_policy_failure( $work_type, $name, $retry_policy_failure ),
+				$attempts_used
+			);
+
+			return;
+		}
+
+		if ( $attempts_used >= $policy->max_attempts ) {
+			$terminal_failure( $state, $error, $attempts_used );
+
+			return;
+		}
+
+		$retry_state = $state->with_chunk_retries( $attempts_used );
+		$retry_error = $this->reschedule_retry(
+			$work_type,
+			$name,
+			$run_id,
+			$retry_state,
+			$run_store,
+			$policy,
+			$chunk_args
+		);
+		if ( null !== $retry_error ) {
+			$terminal_failure( $retry_state, $retry_error, $attempts_used );
+		}
+	}
+
+	/**
 	 * Executes one task run after shared-hook dispatch.
 	 *
 	 * @since   1.0.0
@@ -840,58 +935,33 @@ final readonly class Orchestrator {
 		try {
 			$task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( ! $this->retains_ownership_after_callback( 'Task', $task_name, $run_id, $state ) ) {
-				return;
-			}
-
-			$attempts_used = $state->chunk_retries + 1;
-			$error         = new EngineError( $throwable->getMessage(), $throwable::class );
-			if ( $throwable instanceof NonRetryableExceptionInterface ) {
-				$this->fail_run( $task_name, $run_id, $state, $run_store, $error, $attempts_used );
-
-				return;
-			}
-
-			try {
-				$policy = $this->retry_policy( $task_name, $task->get_retry_policy() );
-			} catch ( \Throwable $retry_policy_failure ) {
-				$this->fail_run(
-					$task_name,
-					$run_id,
-					$state,
-					$run_store,
-					$this->retry_policy_failure( 'Task', $task_name, $retry_policy_failure ),
-					$attempts_used
-				);
-
-				return;
-			}
-
-			if ( $attempts_used >= $policy->max_attempts ) {
-				$this->fail_run( $task_name, $run_id, $state, $run_store, $error, $attempts_used );
-
-				return;
-			}
-
-			$retry_state = $state->with_chunk_retries( $attempts_used );
-			$retry_error = $this->reschedule_retry(
+			$this->handle_failed_attempt(
 				'Task',
 				$task_name,
 				$run_id,
-				$retry_state,
+				$state,
 				$run_store,
-				$policy
-			);
-			if ( null !== $retry_error ) {
-				$this->fail_run(
+				$throwable,
+				static fn (): RetryPolicy => $task->get_retry_policy(),
+				function (
+					RunState $failure_state,
+					EngineError $error,
+					int $attempts_used
+				) use (
 					$task_name,
 					$run_id,
-					$retry_state,
-					$run_store,
-					$retry_error,
-					$attempts_used
-				);
-			}
+					$run_store
+				): void {
+					$this->fail_run(
+						$task_name,
+						$run_id,
+						$failure_state,
+						$run_store,
+						$error,
+						$attempts_used
+					);
+				}
+			);
 
 			return;
 		}
@@ -930,77 +1000,36 @@ final readonly class Orchestrator {
 		try {
 			$batch->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
-			if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
-				return;
-			}
-
-			$attempts_used = $state->chunk_retries + 1;
-			$error         = new EngineError( $throwable->getMessage(), $throwable::class );
-			if ( $throwable instanceof NonRetryableExceptionInterface ) {
-				$this->fail_batch(
-					$batch,
-					$batch_name,
-					$run_id,
-					$state,
-					$run_store,
-					$error,
-					$attempts_used
-				);
-
-				return;
-			}
-
-			try {
-				$policy = $this->retry_policy( $batch_name, $batch->get_retry_policy() );
-			} catch ( \Throwable $retry_policy_failure ) {
-				$this->fail_batch(
-					$batch,
-					$batch_name,
-					$run_id,
-					$state,
-					$run_store,
-					$this->retry_policy_failure( 'Batch', $batch_name, $retry_policy_failure ),
-					$attempts_used
-				);
-
-				return;
-			}
-
-			if ( $attempts_used >= $policy->max_attempts ) {
-				$this->fail_batch(
-					$batch,
-					$batch_name,
-					$run_id,
-					$state,
-					$run_store,
-					$error,
-					$attempts_used
-				);
-
-				return;
-			}
-
-			$retry_state = $state->with_chunk_retries( $attempts_used );
-			$retry_error = $this->reschedule_retry(
+			$this->handle_failed_attempt(
 				'Batch',
 				$batch_name,
 				$run_id,
-				$retry_state,
+				$state,
 				$run_store,
-				$policy,
-				$chunk_args
-			);
-			if ( null !== $retry_error ) {
-				$this->fail_batch(
+				$throwable,
+				static fn (): RetryPolicy => $batch->get_retry_policy(),
+				function (
+					RunState $failure_state,
+					EngineError $error,
+					int $attempts_used
+				) use (
 					$batch,
 					$batch_name,
 					$run_id,
-					$retry_state,
-					$run_store,
-					$retry_error,
-					$attempts_used
-				);
-			}
+					$run_store
+				): void {
+					$this->fail_batch(
+						$batch,
+						$batch_name,
+						$run_id,
+						$failure_state,
+						$run_store,
+						$error,
+						$attempts_used
+					);
+				},
+				$chunk_args
+			);
 
 			return;
 		}
@@ -1024,7 +1053,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				new EngineError( $throwable->getMessage(), $throwable::class )
+				$this->throwable_failure( $throwable )
 			);
 
 			return;
@@ -1063,7 +1092,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->scheduling_failure( $batch_name, 'continue', $scheduled->error )
+				$this->scheduling_failure( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 		}
 	}
@@ -1388,22 +1417,29 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Converts a failed lifecycle schedule into terminal batch detail.
+	 * Converts a failed lifecycle schedule into terminal failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                     $batch_name Stable batch name.
-	 * @param   'continue'|'run'|'cleanup' $stage Internal action that was not scheduled.
-	 * @param   SchedulingError            $error      Scheduling failure.
+	 * @param   'Task'|'Batch'                     $work_type Work contract type.
+	 * @param   string                             $name      Stable task or batch name.
+	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
+	 * @param   SchedulingError                    $error     Scheduling failure.
 	 *
 	 * @return  EngineError
 	 */
-	private function scheduling_failure( string $batch_name, string $stage, SchedulingError $error ): EngineError {
+	private function scheduling_failure(
+		string $work_type,
+		string $name,
+		string $stage,
+		SchedulingError $error
+	): EngineError {
 		return new EngineError(
 			\sprintf(
-				'Batch "%1$s" could not schedule the %2$s action: %3$s',
-				$batch_name,
+				'%1$s "%2$s" could not schedule the %3$s action: %4$s',
+				$work_type,
+				$name,
 				$stage,
 				$error->message
 			),
@@ -1412,7 +1448,21 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Returns a failure that names the global background-work identity correction.
+	 * Converts one callback throwable into engine failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Callback failure.
+	 *
+	 * @return  EngineError
+	 */
+	private function throwable_failure( \Throwable $throwable ): EngineError {
+		return new EngineError( $throwable->getMessage(), $throwable::class );
+	}
+
+	/**
+	 * Logs and returns a failure that names the global background-work identity correction.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1422,14 +1472,15 @@ final readonly class Orchestrator {
 	 * @return  Failure<EngineError>
 	 */
 	private function ambiguous_name_failure( string $name ): Failure {
-		return new Failure(
-			new EngineError(
-				\sprintf(
-					'Background-work name "%s" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.',
-					$name
-				)
+		$error = new EngineError(
+			\sprintf(
+				'Background-work name "%s" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.',
+				$name
 			)
 		);
+		$this->logger->warning( $error->message, array( 'name' => $name ) );
+
+		return new Failure( $error );
 	}
 
 	/**
@@ -1675,15 +1726,7 @@ final readonly class Orchestrator {
 				10
 			);
 			if ( $scheduled->is_failure() ) {
-				return new EngineError(
-					\sprintf(
-						'%1$s "%2$s" could not schedule the retry action: %3$s',
-						$work_type,
-						$name,
-						$scheduled->error->message
-					),
-					SchedulingError::class
-				);
+				return $this->scheduling_failure( $work_type, $name, 'retry', $scheduled->error );
 			}
 
 			return null;

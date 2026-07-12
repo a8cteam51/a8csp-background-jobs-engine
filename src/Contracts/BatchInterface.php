@@ -80,6 +80,9 @@ interface BatchInterface {
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
+	 * @throws  \Throwable When success handling fails; the engine logs the throwable and the run
+	 *                     still completes — every chunk has already succeeded.
+	 *
 	 * @return  void
 	 */
 	public function on_success( string $run_id, array $start_args ): void;

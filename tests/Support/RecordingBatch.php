@@ -52,6 +52,9 @@ final class RecordingBatch implements BatchInterface {
 	/** Throwable raised after chunk processing is recorded and observed. */
 	public ?\Throwable $process_throwable = null;
 
+	/** Throwable raised after successful-run handling is recorded. */
+	public ?\Throwable $success_throwable = null;
+
 	/**
 	 * Observation run after recording queue generation and before an optional failure.
 	 *
@@ -147,6 +150,10 @@ final class RecordingBatch implements BatchInterface {
 			'start_args' => $start_args,
 		);
 		$this->record_lifecycle_event( 'success' );
+
+		if ( null !== $this->success_throwable ) {
+			throw $this->success_throwable;
+		}
 	}
 
 	/**
