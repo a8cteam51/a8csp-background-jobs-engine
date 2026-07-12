@@ -301,14 +301,20 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Creates and schedules one run for a registered batch.
+	 * A non-unique start whose arguments are already running takes over the incumbent's lock, and the
+	 * incumbent stops at its next fence; a unique start fails while a live incumbent holds the lock.
+	 * A crash between takeover and enqueueing converges through the staleness-reclaim model.
+	 *
+	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
+	 * caller handles the returned failure by starting the batch again.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $batch_name Stable batch name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   bool                    $unique     Whether the backend retains an identical start action.
+	 * @param   bool                    $unique     Whether a fresh incumbent causes Failure instead of replacement and
+	 *                                              backend uniqueness is requested.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
@@ -363,14 +369,14 @@ final readonly class Orchestrator {
 			$run_id,
 			$this->lock_staleness( $batch_name, $run_id )
 		);
-		if ( ClaimResult::Held === $claim ) {
-			$running_run_id = $latest_pointer->get_latest_for_hash( $args_hash );
+		if ( ClaimResult::Held === $claim && $unique ) {
+			$running_run_id = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
 
 			return new Failure(
 				new EngineError(
 					null === $running_run_id
 						? \sprintf(
-							'Batch "%s" has a running lock without a recoverable run identifier; reconcile the lock before starting the same arguments.',
+							'Batch "%s" encountered a held lock whose current owner could not be read; retry the start against the current lock state.',
 							$batch_name
 						)
 						: \sprintf(
@@ -385,13 +391,28 @@ final readonly class Orchestrator {
 		$run_store = $this->stores->run_store( $batch_name );
 		$state     = $run_store->create( $run_id, $start_args, $args_hash, array() );
 		if ( null === $state ) {
-			$this->overlap_guard->release( $batch_name, $args_hash, $run_id );
+			if ( ClaimResult::Held !== $claim ) {
+				$this->overlap_guard->release( $batch_name, $args_hash, $run_id );
+			}
 
 			return new Failure(
 				new EngineError(
 					\sprintf(
 						'Run "%1$s" for batch "%2$s" could not be persisted; remove the conflicting run option before retrying.',
 						$run_id,
+						$batch_name
+					)
+				)
+			);
+		}
+
+		if ( ClaimResult::Held === $claim && ! $this->overlap_guard->replace( $batch_name, $args_hash, $run_id ) ) {
+			$run_store->delete( $run_id );
+
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Batch "%s" lock ownership changed while the replacement was claiming it; retry the start against the current owner.',
 						$batch_name
 					)
 				)
@@ -527,7 +548,7 @@ final readonly class Orchestrator {
 				)
 			);
 		} catch ( \Throwable $throwable ) {
-			if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
@@ -543,7 +564,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -554,6 +575,10 @@ final readonly class Orchestrator {
 		try {
 			$this->fire_lifecycle_hooks( 'started', $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
+			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+				return;
+			}
+
 			$this->fail_batch(
 				$batch,
 				$batch_name,
@@ -563,6 +588,10 @@ final readonly class Orchestrator {
 				$this->throwable_failure( $throwable )
 			);
 
+			return;
+		}
+
+		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -747,6 +776,10 @@ final readonly class Orchestrator {
 	/**
 	 * Handles terminal success for one drained batch run.
 	 *
+	 * Once success handling begins, every remaining write touches only this run's rows, and lock release
+	 * self-guards against a new owner. The outcome remains Completed regardless of current lock ownership;
+	 * recording another outcome would lie.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -806,10 +839,8 @@ final readonly class Orchestrator {
 			// Completed listeners observe the active-run option before terminal cleanup deletes it and appends history.
 			$this->fire_lifecycle_hooks( 'completed', $batch_name, $run_id, $state->start_args );
 		} finally {
-			if ( $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
-				$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
-				$this->finish_terminal_run( $batch_name, $run_id, $state, $run_store );
-			}
+			$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
+			$this->finish_terminal_run( $batch_name, $run_id, $state, $run_store );
 		}
 	}
 
@@ -866,7 +897,7 @@ final readonly class Orchestrator {
 		\Closure $terminal_failure,
 		?array $chunk_args = null
 	): void {
-		if ( ! $this->retains_ownership_after_callback( $work_type, $name, $run_id, $state ) ) {
+		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -881,12 +912,20 @@ final readonly class Orchestrator {
 		try {
 			$policy = $this->retry_policy( $name, $policy_provider() );
 		} catch ( \Throwable $retry_policy_failure ) {
+			if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+				return;
+			}
+
 			$terminal_failure(
 				$state,
 				$this->retry_policy_failure( $work_type, $name, $retry_policy_failure ),
 				$attempts_used
 			);
 
+			return;
+		}
+
+		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -907,6 +946,10 @@ final readonly class Orchestrator {
 			$chunk_args
 		);
 		if ( null !== $retry_error ) {
+			if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $retry_state, $run_store ) ) {
+				return;
+			}
+
 			$terminal_failure( $retry_state, $retry_error, $attempts_used );
 		}
 	}
@@ -966,7 +1009,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( ! $this->retains_ownership_after_callback( 'Task', $task_name, $run_id, $state ) ) {
+		if ( $this->supersede_if_fence_lost( 'Task', $task_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -1034,7 +1077,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -1047,6 +1090,10 @@ final readonly class Orchestrator {
 		try {
 			$delay = $this->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
+			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+				return;
+			}
+
 			$this->fail_batch(
 				$batch,
 				$batch_name,
@@ -1056,6 +1103,10 @@ final readonly class Orchestrator {
 				$this->throwable_failure( $throwable )
 			);
 
+			return;
+		}
+
+		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -1215,20 +1266,17 @@ final readonly class Orchestrator {
 			return null;
 		}
 
-		$latest_run_id = $this->stores
-			->latest_run_pointer( $name )
-			->get_latest_for_hash( $state->args_hash );
-		// Bounded latest pointers routinely evict identities, so a missing pointer defers authority to the lock CAS.
-		if ( null !== $latest_run_id && $run_id !== $latest_run_id ) {
-			$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
-
+		// A lost heartbeat CAS means a replacement or reclaim took the lock, so the run fences itself.
+		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return null;
 		}
 
-		if ( ! $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id ) ) {
-			$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
+		$latest_pointer = $this->stores->latest_run_pointer( $name );
+		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
-			return null;
+		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
+		if ( $run_id !== $latest_run_id ) {
+			$latest_pointer->repair_for_hash( $run_id, $state->args_hash );
 		}
 
 		$state = $run_store->refresh_heartbeat( $run_id );
@@ -1242,7 +1290,7 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Confirms owner-scoped lock authority after a user callback returns.
+	 * Transitions a run to Superseded when its owner-scoped heartbeat fence fails.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1250,29 +1298,37 @@ final readonly class Orchestrator {
 	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 * @param   string         $name      Stable task or batch name.
 	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     State observed before the callback.
+	 * @param   RunState       $state     Running state observed before the fence.
+	 * @param   RunStore       $run_store Active-run store.
+	 * @param   int|null       $at        Liveness timestamp, or null to use the current clock time.
 	 *
-	 * @return  bool Whether the same run still owns the lock.
+	 * @return  bool Whether the failed fence transitioned the run to Superseded.
 	 */
-	private function retains_ownership_after_callback(
+	private function supersede_if_fence_lost(
 		string $work_type,
 		string $name,
 		string $run_id,
-		RunState $state
+		RunState $state,
+		RunStore $run_store,
+		?int $at = null
 	): bool {
-		if ( $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id ) ) {
-			return true;
+		if ( $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at ) ) {
+			return false;
 		}
 
-		$this->logger->info(
-			'Run ownership moved during a user callback; state commit abandoned.',
-			array(
-				\strtolower( $work_type ) . '_name' => $name,
-				'run_id'                            => $run_id,
-			)
+		$latest_run_id = $this->stores
+			->latest_run_pointer( $name )
+			->get_latest_for_hash( $state->args_hash );
+		$this->supersede_run(
+			$name,
+			$run_id,
+			$latest_run_id,
+			$state,
+			$run_store,
+			$work_type
 		);
 
-		return false;
+		return true;
 	}
 
 	/**
@@ -1655,6 +1711,30 @@ final readonly class Orchestrator {
 	}
 
 	/**
+	 * Converts one retry-preparation throwable into terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string         $name      Stable task or batch name.
+	 * @param   \Throwable     $throwable Retry-policy, randomness, hook, or scheduler failure.
+	 *
+	 * @return  EngineError
+	 */
+	private function retry_preparation_failure( string $work_type, string $name, \Throwable $throwable ): EngineError {
+		return new EngineError(
+			\sprintf(
+				'%1$s "%2$s" could not prepare the retry action: %3$s Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+				$work_type,
+				$name,
+				$throwable->getMessage()
+			),
+			$throwable::class
+		);
+	}
+
+	/**
 	 * Persists retry state, fires retry hooks, and schedules the same run action.
 	 *
 	 * @since   1.0.0
@@ -1692,26 +1772,30 @@ final readonly class Orchestrator {
 					)
 				);
 			}
+		} catch ( \Throwable $throwable ) {
+			return $this->retry_preparation_failure( $work_type, $name, $throwable );
+		}
 
-			$fire_at = $now + $delay;
-			if ( ! $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $fire_at ) ) {
-				$this->logger->info(
-					'Retry reschedule dropped after run ownership moved.',
-					array(
-						'name'   => $name,
-						'run_id' => $run_id,
-					)
-				);
+		$fire_at = $now + $delay;
+		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
+			return null;
+		}
 
-				return null;
-			}
-
+		try {
 			$state = $state
 				->with_heartbeat_at( $fire_at )
 				->with_action_seq( $state->action_seq + 1 );
 			$run_store->save( $run_id, $state );
 			$this->fire_retrying_hooks( $name, $run_id, $state->start_args, $attempt, $delay );
+		} catch ( \Throwable $throwable ) {
+			return $this->retry_preparation_failure( $work_type, $name, $throwable );
+		}
 
+		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
+			return null;
+		}
+
+		try {
 			$action_args = array( $name, $run_id );
 			if ( null !== $chunk_args ) {
 				$action_args[] = $chunk_args;
@@ -1731,15 +1815,7 @@ final readonly class Orchestrator {
 
 			return null;
 		} catch ( \Throwable $throwable ) {
-			return new EngineError(
-				\sprintf(
-					'%1$s "%2$s" could not prepare the retry action: %3$s Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
-					$work_type,
-					$name,
-					$throwable->getMessage()
-				),
-				$throwable::class
-			);
+			return $this->retry_preparation_failure( $work_type, $name, $throwable );
 		}
 	}
 
@@ -1848,14 +1924,14 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Fences a non-latest run before firing hooks and releasing active state.
+	 * Fences a run that no longer owns its overlap lock before hooks and active-state release.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string         $name          Stable task or batch name.
 	 * @param   string         $run_id        Run identifier.
-	 * @param   string|null    $latest_run_id Latest run for the argument identity.
+	 * @param   string|null    $latest_run_id Latest discoverable pointer value for the argument identity.
 	 * @param   RunState       $state         Running state.
 	 * @param   RunStore       $run_store     Active-run store.
 	 * @param   'Task'|'Batch' $work_type     Work contract type.
@@ -1873,7 +1949,7 @@ final readonly class Orchestrator {
 		$run_store->save( $run_id, $state->with_status( RunStatus::Superseded ) );
 		$context_name = \strtolower( $work_type ) . '_name';
 		$this->logger->info(
-			'Superseded ' . \strtolower( $work_type ) . ' run before execution.',
+			'Superseded ' . \strtolower( $work_type ) . ' run after its ownership fence failed.',
 			array(
 				$context_name   => $name,
 				'run_id'        => $run_id,

@@ -104,6 +104,51 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
+	/**
+	 * A fresh lock is replaced only while its exact selected row is unchanged.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_moves_a_fresh_lock_to_the_replacement(): void {
+		$this->store_lock( self::row( 'run-live', 1_700_000_000, 1_700_000_090 ) );
+
+		$replaced = $this->guard_at( 1_700_000_100 )->replace(
+			self::NAME,
+			self::ARGS_HASH,
+			'run-new'
+		);
+
+		self::assertTrue( $replaced );
+		self::assertSame( self::row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
+	}
+
+	/**
+	 * A replacement that loses its row CAS cannot displace the winner.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_cas_loser_cannot_displace_the_winner(): void {
+		$winner_raw = self::raw( self::row( 'run-winner', 1_700_000_100, 1_700_000_100 ) );
+		$this->store_lock( self::row( 'run-live', 1_700_000_000, 1_700_000_090 ) );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $database ) use ( $winner_raw ): void {
+				$database->put( self::KEY, $winner_raw );
+			}
+		);
+
+		$replaced = $this->guard_at( 1_700_000_100 )->replace(
+			self::NAME,
+			self::ARGS_HASH,
+			'run-new'
+		);
+
+		self::assertFalse( $replaced );
+		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
+	}
+
 	/** A stale owner is value-conditionally replaced and reported through the warning channel. */
 	public function test_claim_reclaims_a_stale_lock_and_logs_the_dead_run(): void {
 		$logger = new RecordingLogger();

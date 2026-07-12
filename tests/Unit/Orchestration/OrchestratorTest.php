@@ -935,15 +935,16 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
-	 * Ownership loss during task work abandons the terminal save after the callback returns.
+	 * Ownership loss during task work supersedes the incumbent without touching the replacement.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_abandons_terminal_state_after_callback_ownership_loss(): void {
+	public function test_handle_run_action_supersedes_after_task_work_loses_ownership(): void {
 		$this->prepare_run_action();
 		$observed_state        = null;
 		$this->task->on_handle = function ( array $args ) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
+			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		};
 
@@ -951,34 +952,38 @@ final class OrchestratorTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertIsArray( $observed_state );
-		self::assertSame( $observed_state, $this->option( $this->run_option_name() ) );
 		self::assertSame( 'running', $observed_state['status'] ?? null );
 		self::assertSame( self::NOW + 90, $observed_state['heartbeat_at'] ?? null );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->fired_actions() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Run ownership moved during a user callback; state commit abandoned.',
-					'context' => array(
-						'task_name' => self::NAME,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		$this->assert_post_callback_superseded_task();
 	}
 
 	/**
-	 * Retry preparation drops every reschedule side effect when its forward heartbeat loses ownership.
+	 * A throwing task that loses ownership supersedes before entering the retry ladder.
 	 *
 	 * @return  void
 	 */
-	public function test_retry_reschedule_drops_when_the_forward_heartbeat_loses_ownership(): void {
+	public function test_handle_run_action_supersedes_when_throwing_task_loses_ownership(): void {
+		$this->task->throwable = new \RuntimeException( 'Task exploded.' );
+		$this->prepare_run_action();
+		$this->task->on_handle = function ( array $args ): void {
+			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+		};
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array(), $this->backend->calls );
+		$this->assert_post_callback_superseded_task();
+	}
+
+	/**
+	 * Ownership loss in the retry-policy filter supersedes before applying the terminal cap.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_before_retry_policy_cap_failure_after_ownership_loss(): void {
 		$this->task->retry_policy = new RetryPolicy(
 			max_attempts: 2,
 			base_delay: 30,
@@ -989,9 +994,10 @@ final class OrchestratorTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp/background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
+				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-				return $policy;
+				return new RetryPolicy( max_attempts: 1 );
 			}
 		);
 		$this->randomizer->value = 7;
@@ -999,28 +1005,57 @@ final class OrchestratorTest extends TestCase {
 
 		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
-		$state = $this->option( $this->run_option_name() );
-		self::assertIsArray( $state );
-		self::assertSame( 0, $state['chunk_retries'] ?? null );
-		self::assertSame( 1, $state['action_seq'] ?? null );
-		self::assertSame( self::NOW + 90, $state['heartbeat_at'] ?? null );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->fired_actions() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame( array(), $this->randomizer->calls );
+		$this->assert_post_callback_superseded_task();
+	}
+
+	/**
+	 * Ownership loss in retrying listeners supersedes before the retry action is scheduled.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_before_retry_schedule_after_retrying_listener_ownership_loss(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+		$this->set_filter_value(
+			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			function ( RetryPolicy $policy ): RetryPolicy {
+				for ( $index = 0; 3 > $index; ++$index ) {
+					$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $lock_spy ): void {} );
+				}
+				$this->wpdb->before_next(
+					'select',
+					function ( WpdbLockSpy $lock_spy ): void {
+						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+					}
+				);
+
+				return $policy;
+			}
+		);
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
 		self::assertSame(
 			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Retry reschedule dropped after run ownership moved.',
-					'context' => array(
-						'name'   => self::NAME,
-						'run_id' => self::RUN_ID,
-					),
-				),
+				'a8csp/background_tasks/retrying/' . self::NAME,
+				'a8csp/background_tasks/retrying',
+				'a8csp/background_tasks/superseded/' . self::NAME,
+				'a8csp/background_tasks/superseded',
 			),
-			$this->logger->records
+			\array_column( $this->fired_actions(), 'hook_name' )
 		);
+		$this->assert_post_callback_superseded_task();
 	}
 
 	/**
@@ -1287,6 +1322,33 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
+	 * A throwing retry-policy filter that loses ownership supersedes instead of recording failure.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_when_throwing_retry_policy_filter_loses_ownership(): void {
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2 );
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->set_filter_value(
+			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			function ( RetryPolicy $policy ): RetryPolicy {
+				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+
+				throw new \DomainException( 'Retry policy filter exploded.' );
+			}
+		);
+		$this->prepare_run_action();
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->randomizer->calls );
+		$this->assert_post_callback_superseded_task();
+	}
+
+	/**
 	 * A throwing retrying listener terminalizes after both retrying hooks without scheduling.
 	 *
 	 * @return  void
@@ -1334,6 +1396,59 @@ final class OrchestratorTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
+	}
+
+	/**
+	 * Ownership loss after a retrying-listener error supersedes before terminal failure is recorded.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_after_retry_preparation_error_loses_ownership(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+		$this->set_filter_value(
+			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			function ( RetryPolicy $policy ): RetryPolicy {
+				for ( $index = 0; 3 > $index; ++$index ) {
+					$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $lock_spy ): void {} );
+				}
+				$this->wpdb->before_next(
+					'select',
+					function ( WpdbLockSpy $lock_spy ): void {
+						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+					}
+				);
+
+				return $policy;
+			}
+		);
+		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
+			'a8csp/background_tasks/retrying/' . self::NAME => new \RuntimeException(
+				'Retrying listener exploded.'
+			),
+		);
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/retrying/' . self::NAME,
+				'a8csp/background_tasks/retrying',
+				'a8csp/background_tasks/superseded/' . self::NAME,
+				'a8csp/background_tasks/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_post_callback_superseded_task();
 	}
 
 	/**
@@ -1406,7 +1521,7 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
-	 * A retry action that loses the latest pointer exits as Superseded before re-execution.
+	 * A retry action that loses replacement-lock ownership exits as Superseded before re-execution.
 	 *
 	 * @return  void
 	 */
@@ -1422,6 +1537,7 @@ final class OrchestratorTest extends TestCase {
 		$this->randomizer->calls = array();
 		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		$this->replace_lock_owner( 'run-newer', self::NOW + 95 );
 		$this->backend->calls = array();
 
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
@@ -1433,7 +1549,7 @@ final class OrchestratorTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
 				'a8csp/background_tasks/superseded/' . self::NAME,
@@ -1445,7 +1561,7 @@ final class OrchestratorTest extends TestCase {
 			array(
 				array(
 					'level'   => 'info',
-					'message' => 'Superseded task run before execution.',
+					'message' => 'Superseded task run after its ownership fence failed.',
 					'context' => array(
 						'task_name'     => self::NAME,
 						'run_id'        => self::RUN_ID,
@@ -1458,13 +1574,14 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
-	 * A moved latest pointer fences the run before task execution and uses quiet terminal cleanup.
+	 * Moved replacement ownership fences the run before task execution and uses quiet cleanup.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_a_run_that_is_no_longer_latest(): void {
+	public function test_handle_run_action_supersedes_a_run_that_lost_replacement_ownership(): void {
 		$this->prepare_run_action();
 		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
@@ -1472,7 +1589,7 @@ final class OrchestratorTest extends TestCase {
 
 		self::assertSame( array(), $this->task->calls );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
 			array(
@@ -1491,7 +1608,7 @@ final class OrchestratorTest extends TestCase {
 			array(
 				array(
 					'level'   => 'info',
-					'message' => 'Superseded task run before execution.',
+					'message' => 'Superseded task run after its ownership fence failed.',
 					'context' => array(
 						'task_name'     => self::NAME,
 						'run_id'        => self::RUN_ID,
@@ -1506,12 +1623,43 @@ final class OrchestratorTest extends TestCase {
 				'run:superseded',
 				'hook:superseded/' . self::NAME,
 				'hook:superseded',
-				'lock:delete',
 				'run:delete',
 				'history',
 			),
 			$this->lifecycle_labels()
 		);
+		$this->assert_terminal_history();
+	}
+
+	/**
+	 * The lock winner repairs a pointer overwritten by a losing concurrent starter and still executes.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_keeps_the_lock_winner_when_pointer_commit_lags(): void {
+		$this->prepare_run_action();
+		( new LatestRunPointer( self::NAME ) )->record( 'run-losing-starter', self::ARGS_HASH );
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/completed/' . self::NAME,
+				'a8csp/background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			array(
+				'all'     => self::RUN_ID,
+				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
+			),
+			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+		);
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		self::assertSame( array(), $this->logger->records );
 		$this->assert_terminal_history();
 	}
 
@@ -1550,6 +1698,11 @@ final class OrchestratorTest extends TestCase {
 				'a8csp/background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			$run_ids[20],
+			( new LatestRunPointer( self::NAME ) )->get_latest(),
+			'Repairing the evicted owner identity must preserve the globally newest run'
 		);
 	}
 
@@ -1770,6 +1923,7 @@ final class OrchestratorTest extends TestCase {
 				'run:running',
 				'task:handle',
 				'lock:update',
+				...( $throwable instanceof NonRetryableTaskException ? array() : array( 'lock:update' ) ),
 				'run:failed',
 				'failed-store',
 				'hook:failed/' . self::NAME,
@@ -1779,6 +1933,31 @@ final class OrchestratorTest extends TestCase {
 				'history',
 			),
 			$this->lifecycle_labels()
+		);
+		$this->assert_terminal_history();
+	}
+
+	/**
+	 * Asserts a post-callback fence loss terminalizes only the incumbent as Superseded.
+	 *
+	 * @return  void
+	 */
+	private function assert_post_callback_superseded_task(): void {
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/superseded/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/superseded',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+				),
+			),
+			\array_slice( $this->fired_actions(), -2 )
 		);
 		$this->assert_terminal_history();
 	}

@@ -60,6 +60,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( TaskRegistry::class )]
 final class OrchestratorBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
+
 	private const ARGS = array(
 		'site_id' => 7,
 		'mode'    => 'full',
@@ -83,6 +84,7 @@ final class OrchestratorBatchTest extends TestCase {
 	// endregion.
 
 	// region LIFECYCLE.
+
 	/**
 	 * Loads guarded WordPress functions before orchestration classes are instantiated.
 	 *
@@ -149,6 +151,7 @@ final class OrchestratorBatchTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
+
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 	/**
 	 * Hook registration exposes each backend-isolated batch stage and one shared run dispatcher.
@@ -308,14 +311,14 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * A held overlap lock rejects manual start without stopping the incumbent run.
+	 * A held overlap lock rejects a unique start without stopping the incumbent run.
 	 *
 	 * @return  void
 	 */
-	public function test_start_batch_rejects_a_held_overlap_without_stopping_the_previous_run(): void {
+	public function test_start_batch_rejects_a_unique_held_overlap_without_stopping_the_previous_run(): void {
 		$this->seed_running_lock();
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -327,6 +330,220 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/**
+	 * A unique held-overlap failure identifies the lock owner without a latest pointer.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_names_the_lock_owner_when_a_unique_held_overlap_has_no_latest_pointer(): void {
+		$this->seed_running_lock();
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		self::assertIsArray( $options );
+		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Batch "catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
+			$result->error->message
+		);
+		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
+	 * A unique held-overlap failure identifies the lock owner when the latest pointer lags.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_names_the_lock_owner_when_a_unique_held_overlap_has_a_stale_latest_pointer(): void {
+		$this->seed_running_lock();
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		self::assertIsArray( $options );
+		$options[ 'a8csp_bgte_latest_' . self::NAME ] = array(
+			'all'     => 'run-stale',
+			'by_hash' => array( self::ARGS_HASH => 'run-stale' ),
+		);
+		$GLOBALS['a8csp_bgte_test_options']           = $options;
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Batch "catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
+			$result->error->message
+		);
+		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
+	 * A normal start replaces a held lock and schedules a replacement run.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_replaces_a_held_incumbent(): void {
+		$this->seed_running_lock();
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame( self::RUN_ID, $this->lock()['run_id'] ?? null );
+		self::assertSame(
+			array(
+				'all'     => self::RUN_ID,
+				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
+			),
+			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+		);
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp/background_tasks/start',
+						'args'     => array( self::NAME, self::RUN_ID, 1 ),
+						'group'    => self::NAME . '|' . self::RUN_ID,
+						'unique'   => false,
+						'priority' => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertIsArray( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
+	 * A normal start replaces the current lock owner without relying on the bounded latest pointer.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_replaces_a_held_incumbent_after_its_latest_pointer_is_evicted(): void {
+		$this->seed_running_lock();
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		self::assertIsArray( $options );
+		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame( self::RUN_ID, $this->lock()['run_id'] ?? null );
+		self::assertSame(
+			array(
+				'all'     => self::RUN_ID,
+				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
+			),
+			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+		);
+		self::assertCount( 1, $this->backend->calls );
+		self::assertIsArray( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
+	 * A failed replacement schedule releases its owner without resurrecting the incumbent lock.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_does_not_restore_the_incumbent_after_replacement_scheduling_fails(): void {
+		$failure                                 = $this->scheduling_failure_result();
+		$this->backend->results['enqueue_async'] = $failure;
+		$this->seed_running_lock();
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+
+		self::assertSame( $failure, $result );
+		self::assertNull( $this->lock() );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame(
+			array(
+				'all'     => self::RUN_ID,
+				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
+			),
+			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+		);
+	}
+
+	/**
+	 * A replacement persistence failure leaves the incumbent lock and pointer untouched.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_persists_replacement_state_before_taking_the_incumbent_lock(): void {
+		$this->seed_running_lock();
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		self::assertIsArray( $options );
+		$options[ $this->run_option_name() ] = array( 'collision' => true );
+		$GLOBALS['a8csp_bgte_test_options']  = $options;
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			\sprintf(
+				'Run "%1$s" for batch "%2$s" could not be persisted; remove the conflicting run option before retrying.',
+				self::RUN_ID,
+				self::NAME
+			),
+			$result->error->message
+		);
+		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
+		self::assertSame(
+			array(
+				'all'     => 'run-running',
+				'by_hash' => array( self::ARGS_HASH => 'run-running' ),
+			),
+			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+		);
+		self::assertSame( array( 'collision' => true ), $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/**
+	 * A lost replacement CAS removes the provisional run and identifies the retry correction.
+	 *
+	 * @return  void
+	 */
+	public function test_start_batch_removes_provisional_state_when_replacement_ownership_changes(): void {
+		$this->seed_running_lock();
+		$this->wpdb->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ): void {
+				$raw = \maybe_serialize(
+					array(
+						'run_id'       => 'run-concurrent-owner',
+						'claimed_at'   => self::NOW,
+						'heartbeat_at' => self::NOW,
+					)
+				);
+				self::assertIsString( $raw );
+				$wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
+			}
+		);
+
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Batch "catalog-sync" lock ownership changed while the replacement was claiming it; retry the start against the current owner.',
+			$result->error->message
+		);
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
 	}
 
 	/**
@@ -492,11 +709,11 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * Ownership loss during queue generation abandons the queue commit and continuation.
+	 * Ownership loss during queue generation supersedes the incumbent without touching the replacement.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_start_action_abandons_queue_commit_after_callback_ownership_loss(): void {
+	public function test_handle_start_action_supersedes_after_queue_generation_loses_ownership(): void {
 		$this->batch->queue = array( array( 'chunk' => 'generated' ) );
 		$this->start_batch();
 		$this->backend->calls     = array();
@@ -504,6 +721,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$observed_state           = null;
 		$this->batch->on_generate = function ( array $start_args ) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
+			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 		};
 
@@ -511,27 +729,127 @@ final class OrchestratorBatchTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertIsArray( $observed_state );
-		self::assertSame( $observed_state, $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $observed_state['queue'] ?? null );
 		self::assertSame( 1, $observed_state['action_seq'] ?? null );
 		self::assertSame( self::NOW + 30, $observed_state['heartbeat_at'] ?? null );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->fired_actions() );
+		$this->assert_quiet_superseded_run();
+	}
+
+	/**
+	 * A throwing queue generator that loses ownership supersedes instead of recording failure.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_supersedes_when_throwing_queue_generation_loses_ownership(): void {
+		$this->batch->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
+		$this->batch->on_generate        = function ( array $start_args ): void {
+			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
+		};
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
+		self::assertSame( array(), $this->backend->calls );
+		$this->assert_quiet_superseded_run();
+	}
+
+	/**
+	 * Ownership loss in a started listener supersedes before the first continuation is scheduled.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_supersedes_when_started_listener_loses_ownership(): void {
+		$this->batch->queue = array( array( 'chunk' => 'first' ) );
+		$this->set_filter_value(
+			'a8csp/background_tasks/queue/' . self::NAME,
+			function ( array $queue ): array {
+				$this->wpdb->before_next( 'update', static function ( WpdbLockSpy $wpdb ): void {} );
+				$this->wpdb->before_next(
+					'update',
+					function ( WpdbLockSpy $wpdb ): void {
+						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
+					}
+				);
+
+				return $queue;
+			}
+		);
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame(
 			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Run ownership moved during a user callback; state commit abandoned.',
-					'context' => array(
-						'batch_name' => self::NAME,
-						'run_id'     => self::RUN_ID,
-					),
-				),
+				'a8csp/background_tasks/started/' . self::NAME,
+				'a8csp/background_tasks/started',
+				'a8csp/background_tasks/superseded/' . self::NAME,
+				'a8csp/background_tasks/superseded',
 			),
-			$this->logger->records
+			\array_column( $this->fired_actions(), 'hook_name' )
 		);
+		$this->assert_terminal_history();
+	}
+
+	/**
+	 * A throwing started listener that loses ownership supersedes instead of recording failure.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_supersedes_when_throwing_started_listener_loses_ownership(): void {
+		$this->batch->queue = array( array( 'chunk' => 'first' ) );
+		$this->set_filter_value(
+			'a8csp/background_tasks/queue/' . self::NAME,
+			function ( array $queue ): array {
+				$this->wpdb->before_next( 'update', static function ( WpdbLockSpy $wpdb ): void {} );
+				$this->wpdb->before_next(
+					'update',
+					function ( WpdbLockSpy $wpdb ): void {
+						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
+					}
+				);
+
+				return $queue;
+			}
+		);
+		$this->start_batch();
+		$this->backend->calls = array();
+		$this->set_action_throwable(
+			'a8csp/background_tasks/started/' . self::NAME,
+			new \RuntimeException( 'Started listener exploded.' )
+		);
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/started/' . self::NAME,
+				'a8csp/background_tasks/started',
+				'a8csp/background_tasks/superseded/' . self::NAME,
+				'a8csp/background_tasks/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history();
 	}
 
 	/**
@@ -735,11 +1053,11 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * Ownership loss during chunk work abandons buffered queue mutations and continuation.
+	 * Ownership loss during chunk work supersedes the incumbent without committing buffered mutations.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_abandons_queue_commit_after_callback_ownership_loss(): void {
+	public function test_handle_run_action_supersedes_after_chunk_work_loses_ownership(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 		$remaining  = array( 'chunk' => 'remaining' );
 		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
@@ -751,6 +1069,7 @@ final class OrchestratorBatchTest extends TestCase {
 		) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
 			$context->enqueue( array( 'chunk' => 'discarded' ) );
+			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		};
 
@@ -763,27 +1082,36 @@ final class OrchestratorBatchTest extends TestCase {
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertIsArray( $observed_state );
-		self::assertSame( $observed_state, $this->option( $this->run_option_name() ) );
 		self::assertSame( array( $remaining ), $observed_state['queue'] ?? null );
 		self::assertSame( 3, $observed_state['action_seq'] ?? null );
 		self::assertSame( self::NOW + 120, $observed_state['heartbeat_at'] ?? null );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->fired_actions() );
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Run ownership moved during a user callback; state commit abandoned.',
-					'context' => array(
-						'batch_name' => self::NAME,
-						'run_id'     => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		$this->assert_quiet_superseded_run();
+	}
+
+	/**
+	 * A throwing chunk that loses ownership supersedes before the retry decision ladder.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_when_throwing_chunk_loses_ownership(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->batch->process_throwable = new \RuntimeException( 'Chunk exploded.' );
+		$this->batch->on_process        = function (
+			array $processed_args,
+			BatchContextInterface $context
+		): void {
+			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+		};
+		$this->clock->timestamp         = self::NOW + 120;
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+
+		self::assertCount( 1, $this->batch->process_calls );
+		self::assertSame( array(), $this->backend->calls );
+		$this->assert_quiet_superseded_run();
 	}
 
 	/**
@@ -866,6 +1194,56 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertSame( 'Continue-delay filter exploded.', $error->message );
 		self::assertSame( \DomainException::class, $error->exception_class );
 		$this->assert_terminal_history();
+	}
+
+	/**
+	 * Ownership loss in a continue-delay filter supersedes before scheduling the continuation.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_when_continue_delay_filter_loses_ownership(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->set_filter_value(
+			'a8csp/background_tasks/continue_delay',
+			function ( int $default_delay, string $name, string $run_id ): int {
+				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+
+				return 30;
+			}
+		);
+		$this->clock->timestamp = self::NOW + 120;
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
+		$this->assert_quiet_superseded_run();
+	}
+
+	/**
+	 * A throwing continue-delay filter that loses ownership supersedes instead of recording failure.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_when_throwing_continue_delay_filter_loses_ownership(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->set_filter_value(
+			'a8csp/background_tasks/continue_delay',
+			function ( int $default_delay, string $name, string $run_id ): int {
+				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+
+				throw new \DomainException( 'Continue-delay filter exploded.' );
+			}
+		);
+		$this->clock->timestamp = self::NOW + 120;
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+
+		self::assertSame( array(), $this->backend->calls );
+		$this->assert_quiet_superseded_run();
 	}
 
 	/**
@@ -1225,7 +1603,6 @@ final class OrchestratorBatchTest extends TestCase {
 				'batch:success',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
-				'lock:update',
 				'run:completed',
 				'lock:delete',
 				'run:delete',
@@ -1301,7 +1678,6 @@ final class OrchestratorBatchTest extends TestCase {
 				'batch:success',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
-				'lock:update',
 				'run:completed',
 				'lock:delete',
 				'run:delete',
@@ -1313,6 +1689,76 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		$this->assert_terminal_history();
+	}
+
+	/**
+	 * A replacement started by on_success remains untouched while the finishing run commits Completed.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_cleanup_action_completes_when_success_callback_starts_replacement(): void {
+		$this->prepare_started_batch( array() );
+		$this->clock->timestamp = self::NOW + 90;
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->clear_action_observations();
+		$this->clock->timestamp  = self::NOW + 120;
+		$replacement_result      = null;
+		$replacement_state       = null;
+		$replacement_lock        = null;
+		$this->batch->on_success = function (
+			string $finishing_run_id,
+			array $start_args
+		) use (
+			&$replacement_result,
+			&$replacement_state,
+			&$replacement_lock
+		): void {
+			$replacement_result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+			self::assertInstanceOf( Success::class, $replacement_result );
+			self::assertIsString( $replacement_result->value );
+			$replacement_state = $this->option(
+				'a8csp_bgte_run_' . self::NAME . '_' . $replacement_result->value
+			);
+			$replacement_lock  = $this->lock();
+		};
+
+		$this->orchestrator->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertInstanceOf( Success::class, $replacement_result );
+		self::assertIsString( $replacement_result->value );
+		$replacement_run_id = $replacement_result->value;
+		self::assertNotSame( self::RUN_ID, $replacement_run_id );
+		self::assertIsArray( $replacement_lock );
+		self::assertSame( $replacement_run_id, $replacement_lock['run_id'] );
+		self::assertSame( $replacement_lock, $this->lock() );
+		self::assertIsArray( $replacement_state );
+		self::assertSame(
+			$replacement_state,
+			$this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $replacement_run_id )
+		);
+		self::assertSame( 'running', $replacement_state['status'] ?? null );
+		self::assertSame( 1, $replacement_state['action_seq'] ?? null );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/completed/' . self::NAME,
+				'a8csp/background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			array(
+				'started'   => array( self::RUN_ID, $replacement_run_id ),
+				'completed' => array( self::RUN_ID ),
+				'by_hash'   => array(
+					self::ARGS_HASH => array(
+						'started'   => array( self::RUN_ID, $replacement_run_id ),
+						'completed' => array( self::RUN_ID ),
+					),
+				),
+			),
+			$this->option( 'a8csp_bgte_history_' . self::NAME )
+		);
 	}
 
 	/**
@@ -1433,13 +1879,14 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * Losing latest-run ownership at continue exits through Superseded without batch callbacks.
+	 * Losing replacement-lock ownership at continue exits through Superseded without batch callbacks.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_quietly_supersedes_a_non_latest_run(): void {
+	public function test_handle_continue_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$this->prepare_started_batch( array( array( 'chunk' => 'first' ) ) );
 		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 90;
 
@@ -1450,14 +1897,15 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * Losing latest-run ownership at chunk execution prevents the chunk and terminal callbacks.
+	 * Losing replacement-lock ownership at chunk execution prevents chunk and terminal callbacks.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_quietly_supersedes_a_non_latest_run(): void {
+	public function test_handle_run_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
 		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
 
@@ -1481,7 +1929,6 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->assert_ambiguous_name_failure( $result );
 		$this->assert_start_boundaries_untouched();
 	}
-
 
 	/**
 	 * Task enqueue rejects a name shared with a batch before touching runtime boundaries.
@@ -1515,6 +1962,7 @@ final class OrchestratorBatchTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
 	/**
 	 * Advances the queue head into a run action and clears its scheduling observations.
 	 *
@@ -1741,7 +2189,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 */
 	private function assert_quiet_superseded_run(): void {
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );

@@ -117,7 +117,12 @@ final class BatchChunkingTest extends IntegrationTestCase {
 				$batch->process_calls,
 				'A CONTINUE action must leave the process ledger unchanged; dispatch the visible chunk through its RUN action'
 			);
-			$run_action_ids[] = $this->assert_pending_chunk_action( $run_id, $group, $expected_chunk );
+			$run_action_ids[] = $this->assert_pending_chunk_action(
+				self::NAME,
+				$run_id,
+				$group,
+				$expected_chunk
+			);
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one visible chunk action' );
 			self::assertCount( $process_call_count + 1, $batch->process_calls, 'A RUN action must process exactly one batch chunk' );
 			self::assertSame(
@@ -233,63 +238,6 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Completed batch state must contain only its history ring and latest pointer'
 		);
-	}
-
-	// endregion.
-
-	// region HELPERS.
-
-	/**
-	 * Asserts and returns the pending per-chunk action visible between queue and run drives.
-	 *
-	 * @param   string                  $run_id         Run identifier.
-	 * @param   string                  $group          Per-run Action Scheduler group.
-	 * @param   array<array-key, mixed> $expected_chunk Expected chunk arguments.
-	 *
-	 * @return  string
-	 */
-	private function assert_pending_chunk_action( string $run_id, string $group, array $expected_chunk ): string {
-		$store      = $this->action_scheduler_store();
-		$action_ids = $store->query_actions(
-			array(
-				'hook'     => 'a8csp/background_tasks/run',
-				'group'    => $group,
-				'status'   => \ActionScheduler_Store::STATUS_PENDING,
-				'per_page' => -1,
-				'orderby'  => 'action_id',
-				'order'    => 'ASC',
-			)
-		);
-		self::assertIsArray( $action_ids );
-		self::assertCount( 1, $action_ids, 'Queue advancement must expose exactly one pending chunk action' );
-		self::assertIsString( $action_ids[0] ?? null );
-		$action_id = $action_ids[0];
-		$action    = $store->fetch_action( $action_id );
-
-		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp/background_tasks/run', $action->get_hook() );
-		self::assertSame( $group, $action->get_group() );
-		$action_args = $action->get_args();
-		self::assertIsArray( $action_args );
-		self::assertSame( array( self::NAME, $run_id, $expected_chunk ), \array_slice( $action_args, 0, 3 ) );
-		self::assertIsInt( $action_args[3] ?? null, 'A chunk action must carry its lifecycle sequence token' );
-		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
-
-		return $action_id;
-	}
-
-	/**
-	 * Returns the engine's insertion-ordered argument identity for a scalar tree.
-	 *
-	 * @param   array<array-key, mixed> $args Start arguments.
-	 *
-	 * @return  string
-	 */
-	private static function args_hash( array $args ): string {
-		$encoded = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		self::assertIsString( $encoded );
-
-		return \hash( 'sha256', $encoded );
 	}
 
 	// endregion.

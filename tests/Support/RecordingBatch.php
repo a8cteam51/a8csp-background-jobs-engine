@@ -56,6 +56,13 @@ final class RecordingBatch implements BatchInterface {
 	public ?\Throwable $success_throwable = null;
 
 	/**
+	 * Observation run after recording successful-run handling and before an optional failure.
+	 *
+	 * @var (\Closure(string, array<array-key, mixed>): void)|null
+	 */
+	public ?\Closure $on_success = null;
+
+	/**
 	 * Observation run after recording queue generation and before an optional failure.
 	 *
 	 * @var (\Closure(array<array-key, mixed>): void)|null
@@ -150,6 +157,10 @@ final class RecordingBatch implements BatchInterface {
 			'start_args' => $start_args,
 		);
 		$this->record_lifecycle_event( 'success' );
+
+		if ( null !== $this->on_success ) {
+			( $this->on_success )( $run_id, $start_args );
+		}
 
 		if ( null !== $this->success_throwable ) {
 			throw $this->success_throwable;

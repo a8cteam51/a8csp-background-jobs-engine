@@ -12,9 +12,11 @@ use Psr\Log\LoggerInterface;
  *
  * Nobody releases a crashed run's lock; the next claimant replaces it after its heartbeat age
  * exceeds the caller-resolved staleness window. The stale row is deleted only while its exact raw
- * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire only
- * when a crashed process revives after its lock has been reclaimed, so tasks must be idempotent.
- * Malformed rows are not held and follow the same value-conditioned reclaim path.
+ * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire when
+ * a crashed process revives after its lock has been reclaimed. Replace takeover has the same residual
+ * while an incumbent is inside a callback: PHP cannot abort it, so it finishes that callback and then
+ * fences. Consumers' idempotency contract covers both windows. Malformed rows are not held and follow
+ * the same value-conditioned reclaim path.
  *
  * The orchestrator resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -122,6 +124,56 @@ final readonly class OverlapGuard {
 		return $this->rows->replace( $key, $raw, $lock )
 			? ClaimResult::Claimed
 			: ClaimResult::Held;
+	}
+
+	/**
+	 * Returns the owner named by the current complete lock row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name      Stable task or batch name.
+	 * @param   string $args_hash Stable identity of the start arguments.
+	 *
+	 * @return  string|null
+	 */
+	public function owner_run_id( string $name, string $args_hash ): ?string {
+		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
+		if ( null === $raw ) {
+			return null;
+		}
+
+		$lock = self::parse( $raw );
+
+		return $lock['run_id'] ?? null;
+	}
+
+	/**
+	 * Replaces the currently selected lock only while its exact row is unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name               Stable task or batch name.
+	 * @param   string $args_hash          Stable identity of the start arguments.
+	 * @param   string $replacement_run_id Replacement owner.
+	 *
+	 * @return  bool Whether ownership moved to the replacement run.
+	 */
+	public function replace(
+		string $name,
+		string $args_hash,
+		string $replacement_run_id
+	): bool {
+		$key = $this->option_name( $name, $args_hash );
+		$raw = $this->rows->select( $key );
+		if ( null === $raw ) {
+			return false;
+		}
+
+		$now = $this->clock->now()->getTimestamp();
+
+		return $this->rows->replace( $key, $raw, self::new_lock( $replacement_run_id, $now ) );
 	}
 
 	/**

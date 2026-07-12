@@ -7,7 +7,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins latest-run fencing pointers and hash-identity LRU retention.
+ * Pins latest-run discovery pointers and hash-identity LRU retention.
  *
  */
 #[CoversClass( LatestRunPointer::class )]
@@ -106,6 +106,44 @@ final class LatestRunPointerTest extends TestCase {
 		);
 
 		$this->assert_all_option_writes_disable_autoload();
+	}
+
+	/**
+	 * Repair initializes an absent global, preserves an unrelated one, and advances a displaced one.
+	 *
+	 * @return  void
+	 */
+	public function test_hash_repair_changes_the_global_pointer_when_absent_or_naming_the_displaced_run(): void {
+		$empty_pointer = new LatestRunPointer( 'empty-repairs' );
+		$empty_pointer->repair_for_hash( 'run-first-owner', 'hash-first' );
+
+		self::assertSame( 'run-first-owner', $empty_pointer->get_latest() );
+		self::assertSame( 'run-first-owner', $empty_pointer->get_latest_for_hash( 'hash-first' ) );
+
+		$pointer = new LatestRunPointer( 'repairs' );
+		$pointer->record( 'run-old-a', 'hash-a' );
+		$pointer->record( 'run-newest-b', 'hash-b' );
+
+		$pointer->repair_for_hash( 'run-owner-a', 'hash-a' );
+
+		self::assertSame( 'run-newest-b', $pointer->get_latest() );
+		self::assertSame( 'run-owner-a', $pointer->get_latest_for_hash( 'hash-a' ) );
+		self::assertSame( 'run-newest-b', $pointer->get_latest_for_hash( 'hash-b' ) );
+
+		$pointer->repair_for_hash( 'run-owner-b', 'hash-b' );
+
+		self::assertSame( 'run-owner-b', $pointer->get_latest() );
+		self::assertSame( 'run-owner-b', $pointer->get_latest_for_hash( 'hash-b' ) );
+		self::assertSame(
+			array(
+				'all'     => 'run-owner-b',
+				'by_hash' => array(
+					'hash-a' => 'run-owner-a',
+					'hash-b' => 'run-owner-b',
+				),
+			),
+			$this->option( 'a8csp_bgte_latest_repairs' )
+		);
 	}
 
 	/**

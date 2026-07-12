@@ -53,12 +53,16 @@ function a8csp_bgte_enqueue_task(
 /**
  * Creates and schedules one run for a registered batch.
  *
+ * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
+ * caller handles the returned failure by starting the batch again.
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string                  $name       Stable batch name.
  * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
- * @param   bool                    $unique     Whether the backend retains an identical start action.
+ * @param   bool                    $unique     Whether a fresh incumbent causes Failure instead of replacement and
+ *                                              backend uniqueness is requested.
  * @param   int                     $priority   Advisory priority from 0 through 255.
  *
  * @return  AbstractResult<string, EngineError|SchedulingError>
