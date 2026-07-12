@@ -141,7 +141,8 @@ final class ActionSchedulerBackendTest extends TestCase {
 		foreach ( $writes as $function_name => $write ) {
 			$GLOBALS['a8csp_bgte_test_as_calls']   = array();
 			$GLOBALS['a8csp_bgte_test_as_results'] = array(
-				'as_has_scheduled_action' => array( false ),
+				'as_next_scheduled_action' => array( false ),
+				'as_has_scheduled_action'  => array( false ),
 			);
 
 			$backend = new ActionSchedulerBackend(
@@ -158,6 +159,31 @@ final class ActionSchedulerBackendTest extends TestCase {
 			self::assertStringContainsString( $function_name, $error->message );
 			self::assertSame( $function_name, $error->context['missing_function'] );
 			self::assertSame( array(), $this->as_calls( $function_name ) );
+		}
+	}
+
+	/**
+	 * Timed writes fail before querying when the normalized next-action API disappears.
+	 *
+	 * @return  void
+	 */
+	public function test_timed_writes_require_the_next_scheduled_action_function(): void {
+		$backend = new ActionSchedulerBackend(
+			static fn (): bool => true,
+			static fn ( string $function_name ): bool => 'as_next_scheduled_action' !== $function_name,
+			static fn ( string $hook ): int => 1,
+		);
+
+		$writes = array(
+			static fn (): AbstractResult => $backend->schedule_recurring( self::HOOK, 300 ),
+			static fn (): AbstractResult => $backend->schedule_single( self::HOOK, 1_700_000_000 ),
+		);
+
+		foreach ( $writes as $write ) {
+			$error = $this->assert_failure_reason( $write(), SchedulingErrorReason::BackendNotReady );
+
+			self::assertSame( 'as_next_scheduled_action', $error->context['missing_function'] );
+			self::assertSame( array(), $this->as_calls() );
 		}
 	}
 
@@ -183,13 +209,13 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * Existing args-aware actions make recurring and single writes successful no-ops.
+	 * Pending args-aware actions make recurring and single writes successful no-ops.
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_methods_skip_existing_args_aware_actions(): void {
+	public function test_schedule_methods_skip_pending_args_aware_actions(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
-			'as_has_scheduled_action' => array( true, true ),
+			'as_next_scheduled_action' => array( 1_700_000_001, 1_700_000_002 ),
 		);
 
 		$backend = $this->backend( self::READY_FACTS );
@@ -206,11 +232,36 @@ final class ActionSchedulerBackendTest extends TestCase {
 			),
 			\array_map(
 				static fn ( array $call ): array => $call['args'],
-				$this->as_calls( 'as_has_scheduled_action' )
+				$this->as_calls( 'as_next_scheduled_action' )
 			)
 		);
 		self::assertSame( array(), $this->as_calls( 'as_schedule_recurring_action' ) );
 		self::assertSame( array(), $this->as_calls( 'as_schedule_single_action' ) );
+		self::assertSame( array(), $this->as_calls( 'as_has_scheduled_action' ) );
+	}
+
+	/**
+	 * An in-progress match does not suppress the future recurring or single occurrence.
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_methods_insert_when_only_an_in_progress_action_matches(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_next_scheduled_action'     => array( true, true ),
+			'as_schedule_recurring_action' => array( 41 ),
+			'as_schedule_single_action'    => array( 42 ),
+		);
+
+		$backend = $this->backend( self::READY_FACTS );
+
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
+		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
+
+		self::assertInstanceOf( Success::class, $recurring );
+		self::assertInstanceOf( Success::class, $single );
+		self::assertCount( 1, $this->as_calls( 'as_schedule_recurring_action' ) );
+		self::assertCount( 1, $this->as_calls( 'as_schedule_single_action' ) );
+		self::assertSame( array(), $this->as_calls( 'as_has_scheduled_action' ) );
 	}
 
 	/**
@@ -220,7 +271,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 */
 	public function test_scheduling_calls_pass_groups_and_priorities_in_the_action_scheduler_shape(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
-			'as_has_scheduled_action' => array( false, false ),
+			'as_next_scheduled_action' => array( false, false ),
 		);
 
 		$backend = $this->backend( self::READY_FACTS );
@@ -277,8 +328,8 @@ final class ActionSchedulerBackendTest extends TestCase {
 		foreach ( $writes as $function_name => $write ) {
 			$GLOBALS['a8csp_bgte_test_as_calls']   = array();
 			$GLOBALS['a8csp_bgte_test_as_results'] = array(
-				'as_has_scheduled_action' => array( false ),
-				$function_name            => array( 0 ),
+				'as_next_scheduled_action' => array( false ),
+				$function_name             => array( 0 ),
 			);
 
 			$error = $this->assert_failure_reason(
@@ -307,8 +358,8 @@ final class ActionSchedulerBackendTest extends TestCase {
 		foreach ( $writes as $function_name => $write ) {
 			$GLOBALS['a8csp_bgte_test_as_calls']   = array();
 			$GLOBALS['a8csp_bgte_test_as_results'] = array(
-				'as_has_scheduled_action' => array( false ),
-				$function_name            => array( -1 ),
+				'as_next_scheduled_action' => array( false ),
+				$function_name             => array( -1 ),
 			);
 
 			$error = $this->assert_failure_reason(
@@ -333,7 +384,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	#[DataProvider( 'zero_id_diagnostics_provider' )]
 	public function test_zero_id_diagnostics_distinguish_probe_states( array $facts, string $expected_message ): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
-			'as_has_scheduled_action'   => array( false ),
+			'as_next_scheduled_action'  => array( false ),
 			'as_schedule_single_action' => array( 0 ),
 		);
 

@@ -154,25 +154,25 @@ final class OrchestratorBatchTest extends TestCase {
 					'hook_name'     => 'a8csp/background_tasks/start',
 					'callback'      => array( $this->orchestrator, 'handle_start_action' ),
 					'priority'      => 10,
-					'accepted_args' => 2,
+					'accepted_args' => 3,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/continue',
 					'callback'      => array( $this->orchestrator, 'handle_continue_action' ),
 					'priority'      => 10,
-					'accepted_args' => 2,
+					'accepted_args' => 3,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/run',
 					'callback'      => array( $this->orchestrator, 'handle_run_action' ),
 					'priority'      => 10,
-					'accepted_args' => 3,
+					'accepted_args' => 4,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/cleanup',
 					'callback'      => array( $this->orchestrator, 'handle_cleanup_action' ),
 					'priority'      => 10,
-					'accepted_args' => 2,
+					'accepted_args' => 3,
 				),
 			),
 			$this->action_registrations()
@@ -195,7 +195,7 @@ final class OrchestratorBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/start',
-						'args'     => array( self::NAME, self::RUN_ID ),
+						'args'     => array( self::NAME, self::RUN_ID, 1 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => true,
 						'priority' => 23,
@@ -211,6 +211,7 @@ final class OrchestratorBatchTest extends TestCase {
 				'args_hash'     => self::ARGS_HASH,
 				'queue'         => array(),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => self::NOW,
 				'heartbeat_at'  => self::NOW,
 			),
@@ -251,7 +252,7 @@ final class OrchestratorBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/start',
-						'args'     => array( self::NAME, $new_run_id ),
+						'args'     => array( self::NAME, $new_run_id, 1 ),
 						'group'    => self::NAME . '|' . $new_run_id,
 						'unique'   => false,
 						'priority' => 10,
@@ -265,6 +266,7 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
 		self::assertSame( array(), $new_state['queue'] ?? null );
 		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
+		self::assertSame( 1, $new_state['action_seq'] ?? null );
 	}
 
 	/**
@@ -344,7 +346,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertSame(
@@ -369,6 +371,7 @@ final class OrchestratorBatchTest extends TestCase {
 			$state['queue']
 		);
 		self::assertSame( self::NOW + 30, $state['heartbeat_at'] );
+		self::assertSame( 2, $state['action_seq'] );
 		self::assertSame( self::NOW + 30, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(
@@ -376,7 +379,7 @@ final class OrchestratorBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/continue',
-						'args'     => array( self::NAME, self::RUN_ID ),
+						'args'     => array( self::NAME, self::RUN_ID, 2 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
@@ -415,7 +418,7 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -447,7 +450,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_terminal_start_error( 'Queue generation exploded.', \RuntimeException::class );
 	}
@@ -464,11 +467,54 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_terminal_start_error(
 			'Batch queue filter returned a non-array value; return one argument array per chunk.',
 			\UnexpectedValueException::class
+		);
+	}
+
+	/**
+	 * Ownership loss during queue generation abandons the queue commit and continuation.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_abandons_queue_commit_after_callback_ownership_loss(): void {
+		$this->batch->queue = array( array( 'chunk' => 'generated' ) );
+		$this->start_batch();
+		$this->backend->calls     = array();
+		$this->clock->timestamp   = self::NOW + 30;
+		$observed_state           = null;
+		$this->batch->on_generate = function ( array $start_args ) use ( &$observed_state ): void {
+			$observed_state = $this->option( $this->run_option_name() );
+			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
+		};
+
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
+		self::assertIsArray( $observed_state );
+		self::assertSame( $observed_state, $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $observed_state['queue'] ?? null );
+		self::assertSame( 1, $observed_state['action_seq'] ?? null );
+		self::assertSame( self::NOW + 30, $observed_state['heartbeat_at'] ?? null );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Run ownership moved during a user callback; state commit abandoned.',
+					'context' => array(
+						'batch_name' => self::NAME,
+						'run_id'     => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
 		);
 	}
 
@@ -483,10 +529,11 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->prepare_started_batch( array( $first, $second ) );
 		$this->clock->timestamp = self::NOW + 90;
 
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$state = $this->run_state();
 		self::assertSame( array( $second ), $state['queue'] );
+		self::assertSame( 3, $state['action_seq'] );
 		self::assertSame( self::NOW + 90, $state['heartbeat_at'] );
 		self::assertSame( self::NOW + 90, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
@@ -495,7 +542,7 @@ final class OrchestratorBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/run',
-						'args'     => array( self::NAME, self::RUN_ID, $first ),
+						'args'     => array( self::NAME, self::RUN_ID, $first, 3 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
@@ -516,16 +563,17 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
 
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->run_state()['queue'] );
+		self::assertSame( 3, $this->run_state()['action_seq'] );
 		self::assertSame(
 			array(
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/cleanup',
-						'args'     => array( self::NAME, self::RUN_ID ),
+						'args'     => array( self::NAME, self::RUN_ID, 3 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
@@ -567,7 +615,7 @@ final class OrchestratorBatchTest extends TestCase {
 		};
 		$this->clock->timestamp  = self::NOW + 120;
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
@@ -583,6 +631,7 @@ final class OrchestratorBatchTest extends TestCase {
 			$state['queue']
 		);
 		self::assertSame( 0, $state['chunk_retries'] );
+		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
 		self::assertSame( array( 60, self::NAME, self::RUN_ID ), $filter_call );
 		self::assertSame(
@@ -592,7 +641,7 @@ final class OrchestratorBatchTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp/background_tasks/continue',
 						'timestamp' => self::NOW + 195,
-						'args'      => array( self::NAME, self::RUN_ID ),
+						'args'      => array( self::NAME, self::RUN_ID, 4 ),
 						'group'     => self::NAME . '|' . self::RUN_ID,
 						'priority'  => 10,
 					),
@@ -602,6 +651,58 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/**
+	 * Ownership loss during chunk work abandons buffered queue mutations and continuation.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_abandons_queue_commit_after_callback_ownership_loss(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$remaining  = array( 'chunk' => 'remaining' );
+		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
+		$this->clock->timestamp  = self::NOW + 120;
+		$observed_state          = null;
+		$this->batch->on_process = function (
+			array $processed_args,
+			BatchContextInterface $context
+		) use ( &$observed_state ): void {
+			$observed_state = $this->option( $this->run_option_name() );
+			$context->enqueue( array( 'chunk' => 'discarded' ) );
+			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+		};
+
+		$this->orchestrator->handle_run_action(
+			self::NAME,
+			self::RUN_ID,
+			$chunk_args,
+			$this->action_seq()
+		);
+
+		self::assertCount( 1, $this->batch->process_calls );
+		self::assertIsArray( $observed_state );
+		self::assertSame( $observed_state, $this->option( $this->run_option_name() ) );
+		self::assertSame( array( $remaining ), $observed_state['queue'] ?? null );
+		self::assertSame( 3, $observed_state['action_seq'] ?? null );
+		self::assertSame( self::NOW + 120, $observed_state['heartbeat_at'] ?? null );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Run ownership moved during a user callback; state commit abandoned.',
+					'context' => array(
+						'batch_name' => self::NAME,
+						'run_id'     => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -623,7 +724,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->results['schedule_single'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                    = self::NOW + 120;
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -640,7 +741,7 @@ final class OrchestratorBatchTest extends TestCase {
 				'args' => array(
 					'hook'      => 'a8csp/background_tasks/continue',
 					'timestamp' => self::NOW + 180,
-					'args'      => array( self::NAME, self::RUN_ID ),
+					'args'      => array( self::NAME, self::RUN_ID, 4 ),
 					'group'     => self::NAME . '|' . self::RUN_ID,
 					'priority'  => 10,
 				),
@@ -670,7 +771,7 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame(
 			array( array( 'chunk' => 'committed' ) ),
@@ -713,14 +814,15 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->randomizer->value        = 11;
 		$this->randomizer->calls        = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$state = $this->run_state();
 		self::assertSame( 'running', $state['status'] );
 		self::assertSame( array( $remaining ), $state['queue'] );
 		self::assertSame( 1, $state['chunk_retries'] );
-		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
-		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
+		self::assertSame( 4, $state['action_seq'] );
+		self::assertSame( self::NOW + 131, $state['heartbeat_at'] );
+		self::assertSame( self::NOW + 131, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
@@ -731,7 +833,7 @@ final class OrchestratorBatchTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp/background_tasks/run',
 						'timestamp' => self::NOW + 131,
-						'args'      => array( self::NAME, self::RUN_ID, $chunk_args ),
+						'args'      => array( self::NAME, self::RUN_ID, $chunk_args, 4 ),
 						'group'     => self::NAME . '|' . self::RUN_ID,
 						'priority'  => 10,
 					),
@@ -764,6 +866,58 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
+	 * A retry-advanced sequence drops an older continue delivery without touching state or scheduling.
+	 *
+	 * @return  void
+	 */
+	public function test_stale_continue_after_retry_advances_sequence_is_side_effect_free(): void {
+		$chunk_args                = array( 'chunk' => 'current' );
+		$this->batch->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
+		$this->clock->timestamp         = self::NOW + 120;
+		$this->randomizer->value        = 11;
+
+		$this->orchestrator->handle_run_action(
+			self::NAME,
+			self::RUN_ID,
+			$chunk_args,
+			$this->action_seq()
+		);
+
+		$expected_state = $this->run_state();
+		$expected_lock  = $this->lock();
+		self::assertSame( 4, $expected_state['action_seq'] );
+		$this->clear_action_observations();
+
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, 2 );
+
+		self::assertSame( $expected_state, $this->run_state() );
+		self::assertSame( $expected_lock, $this->lock() );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->wpdb->recorded_queries );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Stale lifecycle action delivery dropped.',
+					'context' => array(
+						'expected' => 4,
+						'received' => 2,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
 	 * A successful retry resets the counter before the next chunk executes.
 	 *
 	 * @return  void
@@ -782,7 +936,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->randomizer->value        = 5;
 		$this->randomizer->calls        = array();
 		$this->clock->timestamp         = self::NOW + 120;
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_a );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_a, $this->action_seq() );
 
 		$observed_retries = array();
 
@@ -798,17 +952,17 @@ final class OrchestratorBatchTest extends TestCase {
 
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 125;
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_a );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_a, $this->action_seq() );
 
 		self::assertSame( 0, $this->run_state()['chunk_retries'] );
 		self::assertSame( array( $chunk_b ), $this->run_state()['queue'] );
 
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 185;
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 190;
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_b );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_b, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -846,7 +1000,7 @@ final class OrchestratorBatchTest extends TestCase {
 
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
@@ -882,7 +1036,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->batch->process_throwable = new NonRetryableTaskException( 'Chunk input is permanently invalid.' );
 		$this->clock->timestamp         = self::NOW + 120;
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->batch->failure_calls );
@@ -920,7 +1074,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$caught                 = null;
 
 		try {
-			$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+			$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
@@ -947,11 +1101,11 @@ final class OrchestratorBatchTest extends TestCase {
 	public function test_handle_cleanup_action_completes_in_callback_hook_transition_order(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->orchestrator->handle_cleanup_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -983,12 +1137,44 @@ final class OrchestratorBatchTest extends TestCase {
 				'batch:success',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
+				'lock:update',
 				'run:completed',
 				'lock:delete',
 				'run:delete',
 				'history',
 			),
 			$this->lifecycle_labels()
+		);
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		$this->assert_terminal_history();
+	}
+
+	/**
+	 * A sequential duplicate cleanup delivery cannot repeat success after its run state is consumed.
+	 *
+	 * @return  void
+	 */
+	public function test_duplicate_cleanup_delivery_fires_success_once(): void {
+		$this->prepare_started_batch( array() );
+		$this->clock->timestamp = self::NOW + 90;
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$cleanup_seq = $this->action_seq();
+		$this->clear_action_observations();
+		$this->clock->timestamp = self::NOW + 120;
+
+		$this->orchestrator->handle_cleanup_action( self::NAME, self::RUN_ID, $cleanup_seq );
+		$this->orchestrator->handle_cleanup_action( self::NAME, self::RUN_ID, $cleanup_seq );
+
+		self::assertCount( 1, $this->batch->success_calls );
+		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/completed/' . self::NAME,
+				'a8csp/background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
@@ -1008,7 +1194,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                  = self::NOW + 30;
 
-		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( $this->batch->queue, $this->failed_run_state()['queue'] );
 		$this->assert_terminal_scheduling_failure(
@@ -1017,7 +1203,7 @@ final class OrchestratorBatchTest extends TestCase {
 				'verb' => 'enqueue_async',
 				'args' => array(
 					'hook'     => 'a8csp/background_tasks/continue',
-					'args'     => array( self::NAME, self::RUN_ID ),
+					'args'     => array( self::NAME, self::RUN_ID, 2 ),
 					'group'    => self::NAME . '|' . self::RUN_ID,
 					'unique'   => false,
 					'priority' => 10,
@@ -1036,7 +1222,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                  = self::NOW + 90;
 
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->failed_run_state()['queue'] );
 		$this->assert_terminal_scheduling_failure(
@@ -1045,7 +1231,7 @@ final class OrchestratorBatchTest extends TestCase {
 				'verb' => 'enqueue_async',
 				'args' => array(
 					'hook'     => 'a8csp/background_tasks/run',
-					'args'     => array( self::NAME, self::RUN_ID, array( 'chunk' => 'first' ) ),
+					'args'     => array( self::NAME, self::RUN_ID, array( 'chunk' => 'first' ), 3 ),
 					'group'    => self::NAME . '|' . self::RUN_ID,
 					'unique'   => false,
 					'priority' => 10,
@@ -1064,7 +1250,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                  = self::NOW + 90;
 
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->failed_run_state()['queue'] );
 		$this->assert_terminal_scheduling_failure(
@@ -1073,7 +1259,7 @@ final class OrchestratorBatchTest extends TestCase {
 				'verb' => 'enqueue_async',
 				'args' => array(
 					'hook'     => 'a8csp/background_tasks/cleanup',
-					'args'     => array( self::NAME, self::RUN_ID ),
+					'args'     => array( self::NAME, self::RUN_ID, 3 ),
 					'group'    => self::NAME . '|' . self::RUN_ID,
 					'unique'   => false,
 					'priority' => 10,
@@ -1093,7 +1279,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 90;
 
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_quiet_superseded_run();
 		self::assertSame( array(), $this->backend->calls );
@@ -1111,7 +1297,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$this->assert_quiet_superseded_run();
 		self::assertSame( array(), $this->batch->process_calls );
@@ -1156,7 +1342,7 @@ final class OrchestratorBatchTest extends TestCase {
 	private function prepare_scheduled_chunk( array $queue ): void {
 		$this->prepare_started_batch( $queue );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
 	}
 
@@ -1184,6 +1370,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     chunk_retries: int,
+	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int
 	 * }
@@ -1460,7 +1647,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->batch->queue = $queue;
 		$this->start_batch();
 		$this->clock->timestamp = self::NOW + 30;
-		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$this->backend->calls                        = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
@@ -1477,6 +1664,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     chunk_retries: int,
+	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int
 	 * }
@@ -1496,6 +1684,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     chunk_retries: int,
+	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int
 	 * }
@@ -1507,6 +1696,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$args_hash     = $state['args_hash'] ?? null;
 		$raw_queue     = $state['queue'] ?? null;
 		$chunk_retries = $state['chunk_retries'] ?? null;
+		$action_seq    = $state['action_seq'] ?? null;
 		$created_at    = $state['created_at'] ?? null;
 		$heartbeat_at  = $state['heartbeat_at'] ?? null;
 		self::assertIsString( $status );
@@ -1514,6 +1704,7 @@ final class OrchestratorBatchTest extends TestCase {
 		self::assertIsString( $args_hash );
 		self::assertIsArray( $raw_queue );
 		self::assertIsInt( $chunk_retries );
+		self::assertIsInt( $action_seq );
 		self::assertIsInt( $created_at );
 		self::assertIsInt( $heartbeat_at );
 
@@ -1529,6 +1720,7 @@ final class OrchestratorBatchTest extends TestCase {
 			'args_hash'     => $args_hash,
 			'queue'         => $queue,
 			'chunk_retries' => $chunk_retries,
+			'action_seq'    => $action_seq,
 			'created_at'    => $created_at,
 			'heartbeat_at'  => $heartbeat_at,
 		);
@@ -1541,6 +1733,15 @@ final class OrchestratorBatchTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns the newest scheduled lifecycle action sequence for the live batch run.
+	 *
+	 * @return  int
+	 */
+	private function action_seq(): int {
+		return $this->run_state()['action_seq'];
 	}
 
 	/**
@@ -1567,6 +1768,26 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
+	 * Replaces the current batch lock with one foreign owner.
+	 *
+	 * @param   string $run_id       Foreign run identifier.
+	 * @param   int    $heartbeat_at Foreign heartbeat timestamp.
+	 *
+	 * @return  void
+	 */
+	private function replace_lock_owner( string $run_id, int $heartbeat_at ): void {
+		$raw = \maybe_serialize(
+			array(
+				'run_id'       => $run_id,
+				'claimed_at'   => $heartbeat_at,
+				'heartbeat_at' => $heartbeat_at,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
 	}
 
 	/**

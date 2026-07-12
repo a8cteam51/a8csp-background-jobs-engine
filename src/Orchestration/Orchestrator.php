@@ -22,6 +22,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Coordinates registered tasks and batches from dispatch through terminal cleanup.
  *
+ * Same-sequence redelivery remains at-least-once execution and relies on task and batch idempotency.
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -265,7 +267,7 @@ final readonly class Orchestrator {
 		}
 
 		$latest_pointer->record( $run_id, $args_hash );
-		$action_args = array( $task_name, $run_id );
+		$action_args = array( $task_name, $run_id, $state->action_seq );
 		$group       = $task_name . '|' . $run_id;
 		$scheduled   = 0 === $delay
 			? $this->scheduler->enqueue_async( self::RUN_HOOK, $action_args, $group, $unique, $priority )
@@ -279,7 +281,21 @@ final readonly class Orchestrator {
 		}
 
 		$this->stores->run_history( $task_name )->record_started( $run_id, $args_hash );
-		$this->fire_lifecycle_hooks( 'started', $task_name, $run_id, $args );
+		try {
+			$this->fire_lifecycle_hooks( 'started', $task_name, $run_id, $args );
+		} catch ( \Throwable $throwable ) {
+			$error = new EngineError(
+				\sprintf(
+					'Task "%1$s" started listener failed: %2$s Fix the started-hook listener before enqueueing the task again.',
+					$task_name,
+					$throwable->getMessage()
+				),
+				$throwable::class
+			);
+			$this->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
+
+			return new Failure( $error );
+		}
 
 		return new Success( $run_id );
 	}
@@ -385,7 +401,7 @@ final readonly class Orchestrator {
 		$latest_pointer->record( $run_id, $args_hash );
 		$scheduled = $this->scheduler->enqueue_async(
 			self::START_HOOK,
-			array( $batch_name, $run_id ),
+			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id,
 			$unique,
 			$priority
@@ -480,18 +496,21 @@ final readonly class Orchestrator {
 	 *
 	 * @param   string $batch_name Stable batch name.
 	 * @param   string $run_id    Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_start_action( string $batch_name, string $run_id ): void {
-		$batch = $this->batch_for_action( $batch_name, $run_id, 'start' );
-		if ( null === $batch ) {
+	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
+		$run_store = $this->stores->run_store( $batch_name );
+		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		if ( null === $state ) {
 			return;
 		}
 
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $run_store );
-		if ( null === $state ) {
+		$batch = $this->batch_for_action( $batch_name, $run_id, 'start' );
+		if ( null === $batch ) {
+			$this->fail_orphaned_run( 'Batch', $batch_name, $run_id, $state, $run_store );
+
 			return;
 		}
 
@@ -506,6 +525,10 @@ final readonly class Orchestrator {
 				)
 			);
 		} catch ( \Throwable $throwable ) {
+			if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+				return;
+			}
+
 			$this->fail_batch(
 				$batch,
 				$batch_name,
@@ -518,7 +541,13 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		$state = $state->with_queue( $queue );
+		if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+			return;
+		}
+
+		$state = $state
+			->with_queue( $queue )
+			->with_action_seq( $state->action_seq + 1 );
 		$run_store->save( $run_id, $state );
 		try {
 			$this->fire_lifecycle_hooks( 'started', $batch_name, $run_id, $state->start_args );
@@ -537,7 +566,7 @@ final readonly class Orchestrator {
 
 		$scheduled = $this->scheduler->enqueue_async(
 			self::CONTINUE_HOOK,
-			array( $batch_name, $run_id ),
+			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id
 		);
 		if ( $scheduled->is_failure() ) {
@@ -560,25 +589,30 @@ final readonly class Orchestrator {
 	 *
 	 * @param   string $batch_name Stable batch name.
 	 * @param   string $run_id    Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_continue_action( string $batch_name, string $run_id ): void {
-		$batch = $this->batch_for_action( $batch_name, $run_id, 'continue' );
-		if ( null === $batch ) {
-			return;
-		}
-
+	public function handle_continue_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $run_store );
+		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
+		$batch = $this->batch_for_action( $batch_name, $run_id, 'continue' );
+		if ( null === $batch ) {
+			$this->fail_orphaned_run( 'Batch', $batch_name, $run_id, $state, $run_store );
+
+			return;
+		}
+
 		if ( array() === $state->queue ) {
+			$state = $state->with_action_seq( $state->action_seq + 1 );
+			$run_store->save( $run_id, $state );
 			$scheduled = $this->scheduler->enqueue_async(
 				self::CLEANUP_HOOK,
-				array( $batch_name, $run_id ),
+				array( $batch_name, $run_id, $state->action_seq ),
 				$batch_name . '|' . $run_id
 			);
 			if ( $scheduled->is_failure() ) {
@@ -596,11 +630,13 @@ final readonly class Orchestrator {
 		}
 
 		$chunk_args = $state->queue[0];
-		$state      = $state->with_queue( \array_slice( $state->queue, 1 ) );
+		$state      = $state
+			->with_queue( \array_slice( $state->queue, 1 ) )
+			->with_action_seq( $state->action_seq + 1 );
 		$run_store->save( $run_id, $state );
 		$scheduled = $this->scheduler->enqueue_async(
 			self::RUN_HOOK,
-			array( $batch_name, $run_id, $chunk_args ),
+			array( $batch_name, $run_id, $chunk_args, $state->action_seq ),
 			$batch_name . '|' . $run_id
 		);
 		if ( $scheduled->is_failure() ) {
@@ -621,13 +657,28 @@ final readonly class Orchestrator {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                       $name       Stable task or batch name.
-	 * @param   string                       $run_id     Run identifier.
-	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
+	 * @param   string                      $name                     Stable task or batch name.
+	 * @param   string                      $run_id                   Run identifier.
+	 * @param   array<array-key, mixed>|int $chunk_args_or_action_seq Batch chunk arguments or a task action sequence.
+	 * @param   int|null                    $action_seq               Batch action sequence, or null for a task action.
 	 *
 	 * @return  void
 	 */
-	public function handle_run_action( string $name, string $run_id, ?array $chunk_args = null ): void {
+	public function handle_run_action(
+		string $name,
+		string $run_id,
+		array|int $chunk_args_or_action_seq,
+		?int $action_seq = null
+	): void {
+		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
+		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
+		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
+		$run_store    = $this->stores->run_store( $name );
+		$state        = $this->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store );
+		if ( null === $state ) {
+			return;
+		}
+
 		$task  = $this->tasks->get( $name );
 		$batch = $this->batches->get( $name );
 		if ( null !== $task && null !== $batch ) {
@@ -638,6 +689,7 @@ final readonly class Orchestrator {
 					'run_id' => $run_id,
 				)
 			);
+			$this->fail_orphaned_run( $work_type, $name, $run_id, $state, $run_store );
 
 			return;
 		}
@@ -655,7 +707,7 @@ final readonly class Orchestrator {
 				return;
 			}
 
-			$this->handle_task_run_action( $task, $name, $run_id );
+			$this->handle_task_run_action( $task, $name, $run_id, $state, $run_store );
 
 			return;
 		}
@@ -673,7 +725,7 @@ final readonly class Orchestrator {
 				return;
 			}
 
-			$this->handle_batch_run_action( $batch, $name, $run_id, $chunk_args );
+			$this->handle_batch_run_action( $batch, $name, $run_id, $chunk_args, $state, $run_store );
 
 			return;
 		}
@@ -687,6 +739,7 @@ final readonly class Orchestrator {
 				'run_id' => $run_id,
 			)
 		);
+		$this->fail_orphaned_run( $work_type, $name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -697,18 +750,21 @@ final readonly class Orchestrator {
 	 *
 	 * @param   string $batch_name Stable batch name.
 	 * @param   string $run_id    Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_cleanup_action( string $batch_name, string $run_id ): void {
-		$batch = $this->batch_for_action( $batch_name, $run_id, 'cleanup' );
-		if ( null === $batch ) {
+	public function handle_cleanup_action( string $batch_name, string $run_id, int $action_seq ): void {
+		$run_store = $this->stores->run_store( $batch_name );
+		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		if ( null === $state ) {
 			return;
 		}
 
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $run_store );
-		if ( null === $state ) {
+		$batch = $this->batch_for_action( $batch_name, $run_id, 'cleanup' );
+		if ( null === $batch ) {
+			$this->fail_orphaned_run( 'Batch', $batch_name, $run_id, $state, $run_store );
+
 			return;
 		}
 
@@ -734,8 +790,10 @@ final readonly class Orchestrator {
 			$batch->on_success( $run_id, $state->start_args );
 			$this->fire_lifecycle_hooks( 'completed', $batch_name, $run_id, $state->start_args );
 		} finally {
-			$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
-			$this->finish_terminal_run( $batch_name, $run_id, $state, $run_store );
+			if ( $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+				$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
+				$this->finish_terminal_run( $batch_name, $run_id, $state, $run_store );
+			}
 		}
 	}
 
@@ -748,10 +806,10 @@ final readonly class Orchestrator {
 	 * @return  void
 	 */
 	public function register_hooks(): void {
-		\add_action( self::START_HOOK, array( $this, 'handle_start_action' ), 10, 2 );
-		\add_action( self::CONTINUE_HOOK, array( $this, 'handle_continue_action' ), 10, 2 );
-		\add_action( self::RUN_HOOK, array( $this, 'handle_run_action' ), 10, 3 );
-		\add_action( self::CLEANUP_HOOK, array( $this, 'handle_cleanup_action' ), 10, 2 );
+		\add_action( self::START_HOOK, array( $this, 'handle_start_action' ), 10, 3 );
+		\add_action( self::CONTINUE_HOOK, array( $this, 'handle_continue_action' ), 10, 3 );
+		\add_action( self::RUN_HOOK, array( $this, 'handle_run_action' ), 10, 4 );
+		\add_action( self::CLEANUP_HOOK, array( $this, 'handle_cleanup_action' ), 10, 3 );
 	}
 
 	// endregion
@@ -767,19 +825,25 @@ final readonly class Orchestrator {
 	 * @param   TaskInterface $task      Registered task.
 	 * @param   string        $task_name Stable task name.
 	 * @param   string        $run_id    Run identifier.
+	 * @param   RunState      $state     Fenced running state.
+	 * @param   RunStore      $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function handle_task_run_action( TaskInterface $task, string $task_name, string $run_id ): void {
-		$run_store = $this->stores->run_store( $task_name );
-		$state     = $this->active_run_state( 'Task', $task_name, $run_id, $run_store );
-		if ( null === $state ) {
-			return;
-		}
-
+	private function handle_task_run_action(
+		TaskInterface $task,
+		string $task_name,
+		string $run_id,
+		RunState $state,
+		RunStore $run_store
+	): void {
 		try {
 			$task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
+			if ( ! $this->retains_ownership_after_callback( 'Task', $task_name, $run_id, $state ) ) {
+				return;
+			}
+
 			$attempts_used = $state->chunk_retries + 1;
 			$error         = new EngineError( $throwable->getMessage(), $throwable::class );
 			if ( $throwable instanceof NonRetryableExceptionInterface ) {
@@ -832,6 +896,10 @@ final readonly class Orchestrator {
 			return;
 		}
 
+		if ( ! $this->retains_ownership_after_callback( 'Task', $task_name, $run_id, $state ) ) {
+			return;
+		}
+
 		$this->complete_run( $task_name, $run_id, $state, $run_store );
 	}
 
@@ -845,6 +913,8 @@ final readonly class Orchestrator {
 	 * @param   string                  $batch_name Stable batch name.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $chunk_args Chunk arguments.
+	 * @param   RunState                $state      Fenced running state.
+	 * @param   RunStore                $run_store  Active-run store.
 	 *
 	 * @return  void
 	 */
@@ -852,18 +922,18 @@ final readonly class Orchestrator {
 		BatchInterface $batch,
 		string $batch_name,
 		string $run_id,
-		array $chunk_args
+		array $chunk_args,
+		RunState $state,
+		RunStore $run_store
 	): void {
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $run_store );
-		if ( null === $state ) {
-			return;
-		}
-
 		$context = new BatchContext( $run_id, $state->start_args, $state->queue );
 		try {
 			$batch->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
+			if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+				return;
+			}
+
 			$attempts_used = $state->chunk_retries + 1;
 			$error         = new EngineError( $throwable->getMessage(), $throwable::class );
 			if ( $throwable instanceof NonRetryableExceptionInterface ) {
@@ -935,9 +1005,14 @@ final readonly class Orchestrator {
 			return;
 		}
 
+		if ( ! $this->retains_ownership_after_callback( 'Batch', $batch_name, $run_id, $state ) ) {
+			return;
+		}
+
 		$state = $state
 			->with_queue( $context->get_queue() )
-			->with_chunk_retries( 0 );
+			->with_chunk_retries( 0 )
+			->with_action_seq( $state->action_seq + 1 );
 		$run_store->save( $run_id, $state );
 
 		try {
@@ -977,7 +1052,7 @@ final readonly class Orchestrator {
 		$scheduled = $this->scheduler->schedule_single(
 			self::CONTINUE_HOOK,
 			$now + $delay,
-			array( $batch_name, $run_id ),
+			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id,
 			10
 		);
@@ -1057,7 +1132,7 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Heartbeats and fences one recoverable running state for a lifecycle action.
+	 * Fences and heartbeats one recoverable running state for a lifecycle action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1065,14 +1140,34 @@ final readonly class Orchestrator {
 	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 * @param   string         $name      Stable task or batch name.
 	 * @param   string         $run_id    Run identifier.
+	 * @param   int|null       $action_seq Received lifecycle action sequence.
 	 * @param   RunStore       $run_store Active-run store.
 	 *
 	 * @return  RunState|null
 	 */
-	private function active_run_state( string $work_type, string $name, string $run_id, RunStore $run_store ): ?RunState {
+	private function active_run_state(
+		string $work_type,
+		string $name,
+		string $run_id,
+		?int $action_seq,
+		RunStore $run_store
+	): ?RunState {
 		$state = $run_store->get( $run_id );
 		if ( null === $state ) {
 			$this->log_missing_run( $name, $run_id, $work_type );
+
+			return null;
+		}
+
+		if ( $action_seq !== $state->action_seq ) {
+			$this->logger->info(
+				'Stale lifecycle action delivery dropped.',
+				array(
+					'expected' => $state->action_seq,
+					'received' => $action_seq,
+					'run_id'   => $run_id,
+				)
+			);
 
 			return null;
 		}
@@ -1091,24 +1186,111 @@ final readonly class Orchestrator {
 			return null;
 		}
 
-		$owns_lock = $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id );
-		$state     = $run_store->refresh_heartbeat( $run_id );
+		$latest_run_id = $this->stores
+			->latest_run_pointer( $name )
+			->get_latest_for_hash( $state->args_hash );
+		// Bounded latest pointers routinely evict identities, so a missing pointer defers authority to the lock CAS.
+		if ( null !== $latest_run_id && $run_id !== $latest_run_id ) {
+			$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
+
+			return null;
+		}
+
+		if ( ! $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id ) ) {
+			$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
+
+			return null;
+		}
+
+		$state = $run_store->refresh_heartbeat( $run_id );
 		if ( null === $state ) {
 			$this->log_missing_run( $name, $run_id, $work_type );
 
 			return null;
 		}
 
-		$latest_run_id = $this->stores
-			->latest_run_pointer( $name )
-			->get_latest_for_hash( $state->args_hash );
-		if ( ! $owns_lock || ( null !== $latest_run_id && $run_id !== $latest_run_id ) ) {
-			$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
+		return $state;
+	}
 
-			return null;
+	/**
+	 * Confirms owner-scoped lock authority after a user callback returns.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $run_id    Run identifier.
+	 * @param   RunState       $state     State observed before the callback.
+	 *
+	 * @return  bool Whether the same run still owns the lock.
+	 */
+	private function retains_ownership_after_callback(
+		string $work_type,
+		string $name,
+		string $run_id,
+		RunState $state
+	): bool {
+		if ( $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id ) ) {
+			return true;
 		}
 
-		return $state;
+		$this->logger->info(
+			'Run ownership moved during a user callback; state commit abandoned.',
+			array(
+				\strtolower( $work_type ) . '_name' => $name,
+				'run_id'                            => $run_id,
+			)
+		);
+
+		return false;
+	}
+
+	/**
+	 * Fails a live run whose task or batch registration no longer resolves unambiguously.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $run_id    Run identifier.
+	 * @param   RunState       $state     Fenced running state.
+	 * @param   RunStore       $run_store Active-run store.
+	 *
+	 * @return  void
+	 */
+	private function fail_orphaned_run(
+		string $work_type,
+		string $name,
+		string $run_id,
+		RunState $state,
+		RunStore $run_store
+	): void {
+		$error = new EngineError(
+			\sprintf(
+				'%1$s name "%2$s" is no longer registered unambiguously for run "%3$s"; re-register exactly one %4$s under that name or purge the run.',
+				$work_type,
+				$name,
+				$run_id,
+				\strtolower( $work_type )
+			)
+		);
+
+		$run_store->save( $run_id, $state->with_status( RunStatus::Failed ) );
+		$this->stores->failed_run_store( $name )->record(
+			$run_id,
+			$this->clock->now()->getTimestamp(),
+			$state->start_args,
+			\max( 1, $state->chunk_retries + 1 ),
+			$error
+		);
+
+		try {
+			$this->fire_lifecycle_hooks( 'failed', $name, $run_id, $state->start_args, $error );
+		} finally {
+			$this->finish_terminal_run( $name, $run_id, $state, $run_store );
+		}
 	}
 
 	/**
@@ -1460,19 +1642,34 @@ final readonly class Orchestrator {
 				);
 			}
 
-			$state = $state->with_heartbeat_at( $now );
+			$fire_at = $now + $delay;
+			if ( ! $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $fire_at ) ) {
+				$this->logger->info(
+					'Retry reschedule dropped after run ownership moved.',
+					array(
+						'name'   => $name,
+						'run_id' => $run_id,
+					)
+				);
+
+				return null;
+			}
+
+			$state = $state
+				->with_heartbeat_at( $fire_at )
+				->with_action_seq( $state->action_seq + 1 );
 			$run_store->save( $run_id, $state );
-			$this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id );
 			$this->fire_retrying_hooks( $name, $run_id, $state->start_args, $attempt, $delay );
 
 			$action_args = array( $name, $run_id );
 			if ( null !== $chunk_args ) {
 				$action_args[] = $chunk_args;
 			}
+			$action_args[] = $state->action_seq;
 
 			$scheduled = $this->scheduler->schedule_single(
 				self::RUN_HOOK,
-				$now + $delay,
+				$fire_at,
 				$action_args,
 				$name . '|' . $run_id,
 				10

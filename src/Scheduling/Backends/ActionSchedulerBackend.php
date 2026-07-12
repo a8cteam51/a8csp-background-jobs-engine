@@ -137,12 +137,14 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			);
 		}
 
-		$function_failure = $this->missing_function_failure( 'as_has_scheduled_action' );
+		$function_failure = $this->missing_function_failure( 'as_next_scheduled_action' );
 		if ( null !== $function_failure ) {
 			return $function_failure;
 		}
 
-		if ( \as_has_scheduled_action( $hook, $args, $group ) ) {
+		$next = \as_next_scheduled_action( $hook, $args, $group );
+		// A running action is the current occurrence, so treating its true sentinel as future work starves the chain.
+		if ( \is_int( $next ) ) {
 			return new Success( true );
 		}
 
@@ -179,12 +181,14 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			return $this->backend_not_ready( $this->readiness_facts() );
 		}
 
-		$function_failure = $this->missing_function_failure( 'as_has_scheduled_action' );
+		$function_failure = $this->missing_function_failure( 'as_next_scheduled_action' );
 		if ( null !== $function_failure ) {
 			return $function_failure;
 		}
 
-		if ( \as_has_scheduled_action( $hook, $args, $group ) ) {
+		$next = \as_next_scheduled_action( $hook, $args, $group );
+		// A running action is the current occurrence, so treating its true sentinel as future work starves the chain.
+		if ( \is_int( $next ) ) {
 			return new Success( true );
 		}
 

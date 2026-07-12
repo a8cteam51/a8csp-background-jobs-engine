@@ -75,6 +75,7 @@ final readonly class RunStore {
 			args_hash: $args_hash,
 			queue: $queue,
 			chunk_retries: 0,
+			action_seq: 1,
 			created_at: $now,
 			heartbeat_at: $now,
 		);
@@ -189,6 +190,7 @@ final readonly class RunStore {
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     chunk_retries: int,
+	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int
 	 * }
@@ -200,6 +202,7 @@ final readonly class RunStore {
 			'args_hash'     => $state->args_hash,
 			'queue'         => $state->queue,
 			'chunk_retries' => $state->chunk_retries,
+			'action_seq'    => $state->action_seq,
 			'created_at'    => $state->created_at,
 			'heartbeat_at'  => $state->heartbeat_at,
 		);
@@ -231,6 +234,7 @@ final readonly class RunStore {
 			args_hash: $value['args_hash'],
 			queue: $value['queue'],
 			chunk_retries: $value['chunk_retries'],
+			action_seq: $value['action_seq'],
 			created_at: $value['created_at'],
 			heartbeat_at: $value['heartbeat_at'],
 		);
@@ -248,6 +252,7 @@ final readonly class RunStore {
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     chunk_retries: int,
+	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int
 	 * } $value
@@ -265,6 +270,7 @@ final readonly class RunStore {
 			|| ! \is_array( $value['queue'] ?? null )
 			|| ! \array_is_list( $value['queue'] )
 			|| ! \is_int( $value['chunk_retries'] ?? null )
+			|| ! \is_int( $value['action_seq'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 		) {

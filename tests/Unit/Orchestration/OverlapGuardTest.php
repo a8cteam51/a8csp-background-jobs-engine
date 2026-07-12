@@ -269,6 +269,34 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}
 
+	/**
+	 * An explicit heartbeat timestamp keeps a retry lock held through its expected fire window.
+	 *
+	 * @return  void
+	 */
+	public function test_forward_dated_heartbeat_holds_until_after_expected_fire_plus_window(): void {
+		$clock = new FixedClock( 200 );
+		$guard = new OverlapGuard( $clock, new RecordingLogger(), $this->rows );
+
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
+
+		self::assertTrue( $guard->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', 1_000 ) );
+		self::assertSame( 0, $clock->calls );
+		self::assertSame( self::row( 'run-owner', 100, 1_000 ), $this->lock() );
+		self::assertSame(
+			ClaimResult::Held,
+			$this->guard_at( 500 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 )
+		);
+		self::assertSame(
+			ClaimResult::Held,
+			$this->guard_at( 1_100 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 )
+		);
+		self::assertSame(
+			ClaimResult::Reclaimed,
+			$this->guard_at( 1_101 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 )
+		);
+	}
+
 	/** An identical-second heartbeat is confirmed after MySQL reports zero affected rows. */
 	public function test_identical_second_heartbeat_confirms_the_unchanged_owned_row(): void {
 		$row = self::row( 'run-owner', 100, 200 );

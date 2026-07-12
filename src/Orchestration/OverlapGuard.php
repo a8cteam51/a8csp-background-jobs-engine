@@ -130,13 +130,15 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
-	 * @param   string $args_hash Stable identity of the start arguments.
-	 * @param   string $run_id    Owning run identifier.
+	 * @param   string   $name      Stable task or batch name.
+	 * @param   string   $args_hash Stable identity of the start arguments.
+	 * @param   string   $run_id    Owning run identifier.
+	 * @param   int|null $at        Liveness timestamp, or null to use the current clock time. A future value marks
+	 *                              the next expected retry fire as the run's legitimate sign of life.
 	 *
 	 * @return  bool Whether the heartbeat confirmed continued ownership.
 	 */
-	public function heartbeat( string $name, string $args_hash, string $run_id ): bool {
+	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null ): bool {
 		$key = $this->option_name( $name, $args_hash );
 		$raw = $this->rows->select( $key );
 		if ( null === $raw ) {
@@ -148,7 +150,7 @@ final readonly class OverlapGuard {
 			return false;
 		}
 
-		$lock['heartbeat_at'] = $this->clock->now()->getTimestamp();
+		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
 
 		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
 		return $this->rows->replace( $key, $raw, $lock );

@@ -148,25 +148,25 @@ final class OrchestratorTest extends TestCase {
 					'hook_name'     => 'a8csp/background_tasks/start',
 					'callback'      => array( $this->orchestrator, 'handle_start_action' ),
 					'priority'      => 10,
-					'accepted_args' => 2,
+					'accepted_args' => 3,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/continue',
 					'callback'      => array( $this->orchestrator, 'handle_continue_action' ),
 					'priority'      => 10,
-					'accepted_args' => 2,
+					'accepted_args' => 3,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/run',
 					'callback'      => array( $this->orchestrator, 'handle_run_action' ),
 					'priority'      => 10,
-					'accepted_args' => 3,
+					'accepted_args' => 4,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/cleanup',
 					'callback'      => array( $this->orchestrator, 'handle_cleanup_action' ),
 					'priority'      => 10,
-					'accepted_args' => 2,
+					'accepted_args' => 3,
 				),
 			),
 			$this->action_registrations()
@@ -198,7 +198,7 @@ final class OrchestratorTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/run',
-						'args'     => array( self::NAME, self::RUN_ID ),
+						'args'     => array( self::NAME, self::RUN_ID, 1 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 23,
@@ -214,6 +214,7 @@ final class OrchestratorTest extends TestCase {
 				'args_hash'     => self::ARGS_HASH,
 				'queue'         => array( self::ARGS ),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => self::NOW,
 				'heartbeat_at'  => self::NOW,
 			),
@@ -259,6 +260,47 @@ final class OrchestratorTest extends TestCase {
 				),
 			),
 			$this->fired_actions()
+		);
+	}
+
+	/**
+	 * A throwing task started listener fails and cleans the already-scheduled run.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_terminalizes_when_a_task_started_listener_throws(): void {
+		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
+			'a8csp/background_tasks/started/' . self::NAME => new \RuntimeException(
+				'Started listener exploded.'
+			),
+		);
+
+		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Task "email-digest" started listener failed: Started listener exploded. Fix the started-hook listener before enqueueing the task again.',
+			$result->error->message
+		);
+		self::assertCount( 1, $this->backend->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		$stored_error = $failed_run['error'] ?? null;
+		self::assertIsArray( $stored_error );
+		self::assertSame( $result->error->message, $stored_error['message'] ?? null );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/started/' . self::NAME,
+				'a8csp/background_tasks/started',
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 	}
 
@@ -372,7 +414,7 @@ final class OrchestratorTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp/background_tasks/run',
 						'timestamp' => self::NOW + 120,
-						'args'      => array( self::NAME, self::RUN_ID ),
+						'args'      => array( self::NAME, self::RUN_ID, 1 ),
 						'group'     => self::NAME . '|' . self::RUN_ID,
 						'priority'  => 31,
 					),
@@ -565,7 +607,7 @@ final class OrchestratorTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp/background_tasks/run',
-						'args'     => array( self::NAME, $new_run_id ),
+						'args'     => array( self::NAME, $new_run_id, 1 ),
 						'group'    => self::NAME . '|' . $new_run_id,
 						'unique'   => false,
 						'priority' => 10,
@@ -659,7 +701,7 @@ final class OrchestratorTest extends TestCase {
 			$observed_run  = $this->option( $this->run_option_name() );
 		};
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertIsArray( $observed_lock );
@@ -688,6 +730,7 @@ final class OrchestratorTest extends TestCase {
 				'lock:update',
 				'run:running',
 				'task:handle',
+				'lock:update',
 				'run:completed',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
@@ -698,6 +741,191 @@ final class OrchestratorTest extends TestCase {
 			$this->lifecycle_labels()
 		);
 		$this->assert_terminal_history();
+	}
+
+	/**
+	 * A stale task delivery exits before heartbeats, callbacks, or state writes.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_drops_a_stale_sequence_before_every_side_effect(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock );
+		$state     = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $state );
+		$run_store->save( self::RUN_ID, $state->with_action_seq( 2 ) );
+		$expected = $this->option( $this->run_option_name() );
+
+		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$this->wpdb->recorded_queries                = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, 1 );
+
+		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( $expected, $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->wpdb->recorded_queries );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Stale lifecycle action delivery dropped.',
+					'context' => array(
+						'expected' => 2,
+						'received' => 1,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * An unregistered task action fails its live run instead of orphaning active state.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_live_unregistered_task(): void {
+		$this->prepare_run_action();
+		$action_seq   = $this->action_seq();
+		$orchestrator = new Orchestrator(
+			new TaskRegistry(),
+			new BatchRegistry(),
+			$this->backend,
+			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
+			new StoreFactory( $this->clock ),
+			$this->logger,
+			$this->clock,
+			$this->randomizer,
+		);
+
+		$orchestrator->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		$stored_error = $failed_run['error'] ?? null;
+		self::assertIsArray( $stored_error );
+		self::assertSame(
+			'Task name "email-digest" is no longer registered unambiguously for run "00000000001700000000-0000000000000000042"; re-register exactly one task under that name or purge the run.',
+			$stored_error['message'] ?? null
+		);
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Task run action references an unregistered task; register the task before dispatching its run action.',
+					'context' => array(
+						'task_name' => self::NAME,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * Ownership loss during task work abandons the terminal save after the callback returns.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_abandons_terminal_state_after_callback_ownership_loss(): void {
+		$this->prepare_run_action();
+		$observed_state        = null;
+		$this->task->on_handle = function ( array $args ) use ( &$observed_state ): void {
+			$observed_state = $this->option( $this->run_option_name() );
+			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+		};
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertIsArray( $observed_state );
+		self::assertSame( $observed_state, $this->option( $this->run_option_name() ) );
+		self::assertSame( 'running', $observed_state['status'] ?? null );
+		self::assertSame( self::NOW + 90, $observed_state['heartbeat_at'] ?? null );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Run ownership moved during a user callback; state commit abandoned.',
+					'context' => array(
+						'task_name' => self::NAME,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * Retry preparation drops every reschedule side effect when its forward heartbeat loses ownership.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_reschedule_drops_when_the_forward_heartbeat_loses_ownership(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->prepare_run_action();
+		$this->set_filter_value(
+			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			function ( RetryPolicy $policy ): RetryPolicy {
+				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+
+				return $policy;
+			}
+		);
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		$state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $state );
+		self::assertSame( 0, $state['chunk_retries'] ?? null );
+		self::assertSame( 1, $state['action_seq'] ?? null );
+		self::assertSame( self::NOW + 90, $state['heartbeat_at'] ?? null );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Retry reschedule dropped after run ownership moved.',
+					'context' => array(
+						'name'   => self::NAME,
+						'run_id' => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -716,14 +944,15 @@ final class OrchestratorTest extends TestCase {
 		$this->randomizer->value = 17;
 		$this->randomizer->calls = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$state = $this->option( $this->run_option_name() );
 		self::assertIsArray( $state );
 		self::assertSame( 'running', $state['status'] ?? null );
 		self::assertSame( 1, $state['chunk_retries'] ?? null );
-		self::assertSame( self::NOW + 90, $state['heartbeat_at'] ?? null );
-		self::assertSame( self::NOW + 90, $this->lock()['heartbeat_at'] ?? null );
+		self::assertSame( 2, $state['action_seq'] ?? null );
+		self::assertSame( self::NOW + 107, $state['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 107, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(
 				array(
@@ -731,7 +960,7 @@ final class OrchestratorTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp/background_tasks/run',
 						'timestamp' => self::NOW + 107,
-						'args'      => array( self::NAME, self::RUN_ID ),
+						'args'      => array( self::NAME, self::RUN_ID, 2 ),
 						'group'     => self::NAME . '|' . self::RUN_ID,
 						'priority'  => 10,
 					),
@@ -780,9 +1009,9 @@ final class OrchestratorTest extends TestCase {
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		$this->clock->timestamp = self::NOW + 95;
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS, self::ARGS ), $this->task->calls );
 		self::assertCount( 1, $this->backend->calls );
@@ -822,10 +1051,10 @@ final class OrchestratorTest extends TestCase {
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		$this->task->throwable  = null;
 		$this->clock->timestamp = self::NOW + 95;
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( 0, $this->recorded_run_state( 'completed' )['chunk_retries'] );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
@@ -853,7 +1082,7 @@ final class OrchestratorTest extends TestCase {
 		);
 		$this->prepare_run_action();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( $contract_policy, $received_policy );
 		self::assertSame( array(), $this->backend->calls );
@@ -881,7 +1110,7 @@ final class OrchestratorTest extends TestCase {
 		$this->randomizer->value = 7;
 		$this->randomizer->calls = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertCount( 1, $this->backend->calls );
 		self::assertSame( self::NOW + 97, $this->backend->calls[0]['args']['timestamp'] ?? null );
@@ -926,7 +1155,7 @@ final class OrchestratorTest extends TestCase {
 		$this->prepare_run_action();
 		$this->randomizer->calls = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( array(), $this->randomizer->calls );
@@ -975,7 +1204,7 @@ final class OrchestratorTest extends TestCase {
 			),
 		);
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -1026,7 +1255,7 @@ final class OrchestratorTest extends TestCase {
 			)
 		);
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
@@ -1087,14 +1316,14 @@ final class OrchestratorTest extends TestCase {
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 		$this->backend->calls = array();
 
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
 
 		$this->clock->timestamp = self::NOW + 95;
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame( array(), $this->backend->calls );
@@ -1135,7 +1364,7 @@ final class OrchestratorTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->task->calls );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
@@ -1170,8 +1399,6 @@ final class OrchestratorTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'lock:update',
-				'run:running',
 				'run:superseded',
 				'hook:superseded/' . self::NAME,
 				'hook:superseded',
@@ -1210,7 +1437,7 @@ final class OrchestratorTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, $first_run_id );
+		$this->orchestrator->handle_run_action( self::NAME, $first_run_id, $this->action_seq( $first_run_id ) );
 
 		self::assertSame( array( array( 'identity' => 0 ) ), $this->task->calls );
 		self::assertSame(
@@ -1239,7 +1466,7 @@ final class OrchestratorTest extends TestCase {
 		self::assertIsString( $foreign_lock );
 		$this->wpdb->put( $this->lock_option_name(), $foreign_lock );
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->task->calls );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
@@ -1274,7 +1501,7 @@ final class OrchestratorTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->task->calls );
 		self::assertSame( array(), $this->fired_actions() );
@@ -1317,7 +1544,7 @@ final class OrchestratorTest extends TestCase {
 	public function test_handle_run_action_warns_and_returns_when_run_state_is_missing(): void {
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, 'missing-run' );
+		$this->orchestrator->handle_run_action( self::NAME, 'missing-run', 1 );
 
 		self::assertSame( array(), $this->task->calls );
 		self::assertSame( array(), $this->fired_actions() );
@@ -1345,6 +1572,22 @@ final class OrchestratorTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns the newest scheduled lifecycle action sequence for one live run.
+	 *
+	 * @param   string $run_id Run identifier.
+	 *
+	 * @return  int
+	 */
+	private function action_seq( string $run_id = self::RUN_ID ): int {
+		$state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id );
+		self::assertIsArray( $state );
+		$action_seq = $state['action_seq'] ?? null;
+		self::assertIsInt( $action_seq );
+
+		return $action_seq;
 	}
 
 	/**
@@ -1378,7 +1621,7 @@ final class OrchestratorTest extends TestCase {
 		$this->prepare_run_action();
 		$this->randomizer->calls = array();
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame( array(), $this->backend->calls );
@@ -1419,6 +1662,7 @@ final class OrchestratorTest extends TestCase {
 				'lock:update',
 				'run:running',
 				'task:handle',
+				'lock:update',
 				'run:failed',
 				'failed-store',
 				'hook:failed/' . self::NAME,
@@ -1464,6 +1708,7 @@ final class OrchestratorTest extends TestCase {
 	 *     args_hash: mixed,
 	 *     queue: mixed,
 	 *     chunk_retries: mixed,
+	 *     action_seq: mixed,
 	 *     created_at: mixed,
 	 *     heartbeat_at: mixed
 	 * }
@@ -1491,6 +1736,7 @@ final class OrchestratorTest extends TestCase {
 					'args_hash'     => $state['args_hash'] ?? null,
 					'queue'         => $state['queue'] ?? null,
 					'chunk_retries' => $state['chunk_retries'] ?? null,
+					'action_seq'    => $state['action_seq'] ?? null,
 					'created_at'    => $state['created_at'] ?? null,
 					'heartbeat_at'  => $state['heartbeat_at'] ?? null,
 				);
@@ -1602,6 +1848,26 @@ final class OrchestratorTest extends TestCase {
 		);
 
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
+	 * Replaces the current lock with one foreign owner.
+	 *
+	 * @param   string $run_id       Foreign run identifier.
+	 * @param   int    $heartbeat_at Foreign heartbeat timestamp.
+	 *
+	 * @return  void
+	 */
+	private function replace_lock_owner( string $run_id, int $heartbeat_at ): void {
+		$raw = \maybe_serialize(
+			array(
+				'run_id'       => $run_id,
+				'claimed_at'   => $heartbeat_at,
+				'heartbeat_at' => $heartbeat_at,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( $this->lock_option_name(), $raw );
 	}
 
 	/**

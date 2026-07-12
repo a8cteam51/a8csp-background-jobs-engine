@@ -71,6 +71,7 @@ final class RunStoreTest extends TestCase {
 		self::assertNotNull( $stored );
 		self::assert_state_same( $state, $stored );
 		self::assertSame( RunStatus::Running, $stored->status );
+		self::assertSame( 1, $stored->action_seq );
 		self::assertSame( 1_700_000_100, $stored->created_at );
 		self::assertSame( 1_700_000_100, $stored->heartbeat_at );
 		self::assertSame(
@@ -83,6 +84,7 @@ final class RunStoreTest extends TestCase {
 					array( 'page' => 2 ),
 				),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1_700_000_100,
 				'heartbeat_at'  => 1_700_000_100,
 			),
@@ -160,6 +162,10 @@ final class RunStoreTest extends TestCase {
 		$state = $state->with_chunk_retries( 0 );
 		$store->save( 'run-rmw', $state );
 		self::assertSame( 0, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
+
+		$state = $state->with_action_seq( 2 );
+		$store->save( 'run-rmw', $state );
+		self::assertSame( 2, $this->stored_state( $store, 'run-rmw' )->action_seq );
 
 		$state = $state->with_status( RunStatus::Failed );
 		$store->save( 'run-rmw', $state );
@@ -240,6 +246,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array(),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
@@ -249,6 +256,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array( 'not-a-list' => array() ),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
@@ -258,6 +266,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array( 'not-an-array' ),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
@@ -267,6 +276,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array(),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
@@ -276,6 +286,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => false,
 				'queue'         => array(),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
@@ -285,6 +296,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array(),
 				'chunk_retries' => '0',
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
@@ -294,6 +306,7 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array(),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1.0,
 				'heartbeat_at'  => 1,
 			),
@@ -303,8 +316,19 @@ final class RunStoreTest extends TestCase {
 				'args_hash'     => 'hash',
 				'queue'         => array(),
 				'chunk_retries' => 0,
+				'action_seq'    => 1,
 				'created_at'    => 1,
 				'heartbeat_at'  => '1',
+			),
+			array(
+				'status'        => 'running',
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => '1',
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
 			),
 		);
 
@@ -329,6 +353,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $expected->args_hash, $actual->args_hash );
 		self::assertSame( $expected->queue, $actual->queue );
 		self::assertSame( $expected->chunk_retries, $actual->chunk_retries );
+		self::assertSame( $expected->action_seq, $actual->action_seq );
 		self::assertSame( $expected->created_at, $actual->created_at );
 		self::assertSame( $expected->heartbeat_at, $actual->heartbeat_at );
 	}

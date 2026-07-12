@@ -57,6 +57,7 @@ final class RunStateTest extends TestCase {
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
 				'chunk_retries' => 2,
+				'action_seq'    => 7,
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 			),
@@ -81,6 +82,7 @@ final class RunStateTest extends TestCase {
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 2 ), array( 'page' => 3 ) ),
 				'chunk_retries' => 2,
+				'action_seq'    => 7,
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 			),
@@ -105,6 +107,32 @@ final class RunStateTest extends TestCase {
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
 				'chunk_retries' => 3,
+				'action_seq'    => 7,
+				'created_at'    => 100,
+				'heartbeat_at'  => 125,
+			),
+			self::fields( $copy )
+		);
+	}
+
+	/**
+	 * Action-sequence copies change only the newest scheduled lifecycle delivery.
+	 *
+	 * @return  void
+	 */
+	public function test_with_action_seq_preserves_every_other_field(): void {
+		$original = self::state();
+		$copy     = $original->with_action_seq( 8 );
+
+		self::assertNotSame( $original, $copy );
+		self::assertSame(
+			array(
+				'status'        => RunStatus::Running,
+				'start_args'    => array( 'scope' => 'all' ),
+				'args_hash'     => 'hash-a',
+				'queue'         => array( array( 'page' => 1 ) ),
+				'chunk_retries' => 2,
+				'action_seq'    => 8,
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 			),
@@ -129,6 +157,7 @@ final class RunStateTest extends TestCase {
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
 				'chunk_retries' => 2,
+				'action_seq'    => 7,
 				'created_at'    => 100,
 				'heartbeat_at'  => 150,
 			),
@@ -148,13 +177,14 @@ final class RunStateTest extends TestCase {
 			args_hash: 'hash-a',
 			queue: array( array( 'page' => 1 ) ),
 			chunk_retries: 2,
+			action_seq: 7,
 			created_at: 100,
 			heartbeat_at: 125,
 		);
 	}
 
 	/**
-	 * Returns all seven fields in persisted schema order.
+	 * Returns all eight fields in persisted schema order.
 	 *
 	 * @param   RunState $state Run state.
 	 *
@@ -164,6 +194,7 @@ final class RunStateTest extends TestCase {
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     chunk_retries: int,
+	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int
 	 * }
@@ -175,6 +206,7 @@ final class RunStateTest extends TestCase {
 			'args_hash'     => $state->args_hash,
 			'queue'         => $state->queue,
 			'chunk_retries' => $state->chunk_retries,
+			'action_seq'    => $state->action_seq,
 			'created_at'    => $state->created_at,
 			'heartbeat_at'  => $state->heartbeat_at,
 		);
