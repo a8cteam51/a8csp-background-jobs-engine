@@ -17,7 +17,9 @@ enum SchedulingErrorReason: string {
 	case BackendNotReady    = 'backend_not_ready';
 	case UnsupportedGroup   = 'unsupported_group';
 	case UnsupportedCadence = 'unsupported_cadence';
-	case InvalidInterval    = 'invalid_interval';
-	case PayloadTooLarge    = 'payload_too_large';
-	case ScheduleFailed     = 'schedule_failed';
+	/** Covers invalid time inputs, including intervals and timestamps. */
+	case InvalidInterval = 'invalid_interval';
+	/** Covers payloads unfit for portable storage because of size or shape. */
+	case PayloadTooLarge = 'payload_too_large';
+	case ScheduleFailed  = 'schedule_failed';
 }

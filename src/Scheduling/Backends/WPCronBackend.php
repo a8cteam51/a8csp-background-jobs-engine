@@ -17,6 +17,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
  * WP-Cron addresses recurring events through named schedules, so each interval receives a
  * synthetic name. The schedule filter combines intervals registered during this request with
  * names reconstructed from stored cron events so recurring events remain resolvable later.
+ * WP-Cron has no priority dimension, so priority values are accepted and ignored. The backend
+ * operates on WordPress's default cron-option store; replacements wired through Core's pre_*
+ * cron filters sit outside its clearance guarantee.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -72,6 +75,11 @@ final class WPCronBackend implements BackendInterface {
 			);
 		}
 
+		$next_scheduled = \wp_next_scheduled( $hook, $args );
+		if ( false !== $next_scheduled && 0 < $next_scheduled ) {
+			return new Success( true );
+		}
+
 		$schedule = $this->ensure_schedule( $interval );
 		$result   = \wp_schedule_event( $first_run_timestamp ?? \time(), $schedule, $hook, $args, true );
 
@@ -92,6 +100,11 @@ final class WPCronBackend implements BackendInterface {
 		$group_failure = $this->reject_group( $group );
 		if ( null !== $group_failure ) {
 			return $group_failure;
+		}
+
+		$next_scheduled = \wp_next_scheduled( $hook, $args );
+		if ( false !== $next_scheduled && 0 < $next_scheduled ) {
+			return new Success( true );
 		}
 
 		$result = \wp_schedule_single_event( $timestamp, $hook, $args, true );
@@ -119,11 +132,16 @@ final class WPCronBackend implements BackendInterface {
 			return new Success( true );
 		}
 
-		return $this->schedule_single( $hook, \time(), $args, priority: $priority );
+		$result = \wp_schedule_single_event( \time(), $hook, $args, true );
+
+		return $this->result_for_wp_write( $result, $hook, 'schedule' );
 	}
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * WP-Cron stores no groups, so the hook plus serialized arguments forms the complete event
+	 * identity and the group dimension is a no-op.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -133,11 +151,6 @@ final class WPCronBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
-		$group_failure = $this->reject_group( $group );
-		if ( null !== $group_failure ) {
-			return $group_failure;
-		}
-
 		$wp_error = null;
 		foreach ( $this->matching_timestamps( $hook, $args ) as $timestamp ) {
 			$result = \wp_unschedule_event( $timestamp, $hook, $args, true );
@@ -270,7 +283,7 @@ final class WPCronBackend implements BackendInterface {
 		return new Failure(
 			new SchedulingError(
 				SchedulingErrorReason::UnsupportedGroup,
-				'WP-Cron has no groups; use the Action Scheduler backend or drop the group.',
+				'WP-Cron has no groups; drop the group or ensure Action Scheduler is loaded before scheduling.',
 				array( 'group' => $group ),
 			)
 		);

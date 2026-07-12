@@ -143,6 +143,45 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * The injectable existence seam keeps ready writes from calling a dependency it reports absent.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_ready_writes_fail_safe_when_the_function_probe_reports_a_missing_dependency(): void {
+		$writes = array(
+			'as_schedule_recurring_action' => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_recurring( self::HOOK, 300 ),
+			'as_schedule_single_action'    => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_single( self::HOOK, 1_700_000_000 ),
+			'as_enqueue_async_action'      => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->enqueue_async( self::HOOK ),
+			'as_unschedule_all_actions'    => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->unschedule( self::HOOK ),
+		);
+
+		foreach ( $writes as $function_name => $write ) {
+			$GLOBALS['a8csp_bgte_test_as_calls']   = array();
+			$GLOBALS['a8csp_bgte_test_as_results'] = array(
+				'as_has_scheduled_action' => array( false ),
+			);
+
+			$backend = new ActionSchedulerBackend(
+				static fn (): bool => true,
+				static fn ( string $candidate ): bool => $function_name !== $candidate,
+				static fn ( string $hook ): int => 1,
+			);
+
+			$error = $this->assert_failure_reason(
+				$write( $backend ),
+				SchedulingErrorReason::BackendNotReady
+			);
+
+			self::assertStringContainsString( $function_name, $error->message );
+			self::assertSame( $function_name, $error->context['missing_function'] );
+			self::assertSame( array(), $this->as_calls( $function_name ) );
+		}
+	}
+
+	/**
 	 * Recurring intervals below one fail before a query or schedule call.
 	 *
 	 * @since   1.0.0
@@ -289,6 +328,39 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * A negative identifier cannot prove that Action Scheduler persisted an action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_every_id_returning_write_maps_a_negative_id_to_schedule_failed(): void {
+		$writes = array(
+			'as_schedule_recurring_action' => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_recurring( self::HOOK, 300 ),
+			'as_schedule_single_action'    => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_single( self::HOOK, 1_700_000_000 ),
+			'as_enqueue_async_action'      => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->enqueue_async( self::HOOK ),
+		);
+
+		foreach ( $writes as $function_name => $write ) {
+			$GLOBALS['a8csp_bgte_test_as_calls']   = array();
+			$GLOBALS['a8csp_bgte_test_as_results'] = array(
+				'as_has_scheduled_action' => array( false ),
+				$function_name            => array( -1 ),
+			);
+
+			$error = $this->assert_failure_reason(
+				$write( $this->backend( self::READY_FACTS ) ),
+				SchedulingErrorReason::ScheduleFailed
+			);
+
+			self::assertStringContainsString( 'negative action ID', $error->message );
+			self::assertSame( $function_name, $error->context['action_scheduler_function'] );
+			self::assertCount( 1, $this->as_calls( $function_name ) );
+		}
+	}
+
+	/**
 	 * Zero-ID diagnostics name the probe state that explains the failure.
 	 *
 	 * @since   1.0.0
@@ -427,6 +499,30 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * The empty group cannot disambiguate Action Scheduler's zero sentinel after a unique enqueue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unique_enqueue_rejects_an_empty_group_zero_without_ambiguous_confirmation(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_enqueue_async_action' => array( 0 ),
+			'as_has_scheduled_action' => array( true ),
+		);
+
+		$error = $this->assert_failure_reason(
+			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, unique: true ),
+			SchedulingErrorReason::ScheduleFailed
+		);
+
+		self::assertStringContainsString( 'ambiguous between a duplicate and a store failure', $error->message );
+		self::assertStringContainsString( 'non-empty group for verifiable uniqueness', $error->message );
+		self::assertSame( array(), $this->as_calls( 'as_has_scheduled_action' ) );
+	}
+
+	/**
 	 * A unique zero without a matching queued action remains a scheduling failure.
 	 *
 	 * @since   1.0.0
@@ -441,7 +537,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		);
 
 		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, unique: true ),
+			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, group: 'reports', unique: true ),
 			SchedulingErrorReason::ScheduleFailed
 		);
 
@@ -607,7 +703,25 @@ final class ActionSchedulerBackendTest extends TestCase {
 	private function backend_with_diagnostic_facts( array $facts ): ActionSchedulerBackend {
 		return new ActionSchedulerBackend(
 			static fn (): bool => true,
-			static fn ( string $function_name ): bool => $facts['action_scheduler_functions_exist'],
+			function ( string $function_name ) use ( $facts ): bool {
+				foreach ( $this->as_calls() as $call ) {
+					if (
+						\in_array(
+							$call['function'],
+							array(
+								'as_enqueue_async_action',
+								'as_schedule_recurring_action',
+								'as_schedule_single_action',
+							),
+							true
+						)
+					) {
+						return $facts['action_scheduler_functions_exist'];
+					}
+				}
+
+				return true;
+			},
 			static fn ( string $hook ): int => match ( $hook ) {
 				'action_scheduler_init' => $facts['action_scheduler_init_fired'] ? 1 : 0,
 				'init'                  => $facts['wp_init_fired'] ? 1 : 0,

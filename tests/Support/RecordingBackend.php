@@ -3,9 +3,11 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
 
 /**
  * Call-routing spy with scriptable outcomes.
@@ -41,6 +43,13 @@ final class RecordingBackend implements BackendInterface {
 
 	/** Whether the backend reports itself ready. */
 	public bool $ready = true;
+
+	/**
+	 * Readiness answers returned in call order before the stable readiness value.
+	 *
+	 * @var list<bool>
+	 */
+	public array $readiness_results = array();
 
 	/**
 	 * Records a recurring-schedule request and returns its scripted result.
@@ -222,7 +231,9 @@ final class RecordingBackend implements BackendInterface {
 			'args' => array(),
 		);
 
-		return $this->ready;
+		$readiness = \array_shift( $this->readiness_results );
+
+		return null === $readiness ? $this->ready : $readiness;
 	}
 
 	/** {@inheritDoc} */
@@ -242,6 +253,15 @@ final class RecordingBackend implements BackendInterface {
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	private function result_for( string $verb ): AbstractResult {
+		if ( array() !== $this->readiness_results && ! $this->is_ready() ) {
+			return new Failure(
+				new SchedulingError(
+					SchedulingErrorReason::BackendNotReady,
+					'Select another ready backend before retrying the scheduling write.'
+				)
+			);
+		}
+
 		return $this->results[ $verb ] ?? new Success( true );
 	}
 }

@@ -189,10 +189,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * A unique enqueue delegates atomic deduplication to Action Scheduler. Its identity includes
-	 * arguments and group, and pending or in-progress matches both block insertion. A blocked insert
-	 * returns the same zero used for failures, so the matching action is confirmed before accepting
-	 * the zero as a successful no-op.
+	 * Action Scheduler uses zero for both duplicate suppression and store failures. A non-empty group
+	 * makes the follow-up identity specific enough to distinguish the duplicate safely.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -213,8 +211,11 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 
 		$action_id        = \as_enqueue_async_action( $hook, $args, $group, $unique, $priority );
 		$diagnostic_facts = null;
+		$failure_cause    = null;
 		if ( 0 === $action_id && $unique ) {
-			if ( ! \function_exists( 'as_has_scheduled_action' ) ) {
+			if ( '' === $group ) {
+				$failure_cause = 'a unique enqueue in the empty group returned zero, which is ambiguous between a duplicate and a store failure; use a non-empty group for verifiable uniqueness.';
+			} elseif ( ! ( $this->function_exists_probe )( 'as_has_scheduled_action' ) ) {
 				$diagnostic_facts = $this->readiness_facts();
 
 				$diagnostic_facts['action_scheduler_functions_exist'] = false;
@@ -223,15 +224,14 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			}
 		}
 
-		return $this->result_for_action_id( $action_id, $hook, 'as_enqueue_async_action', $diagnostic_facts );
+		return $this->result_for_action_id( $action_id, $hook, 'as_enqueue_async_action', $diagnostic_facts, $failure_cause );
 	}
 
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler cancels pending actions but cannot recall an action already running. The
-	 * postcondition therefore checks whether a matching pending or in-progress action remains rather
-	 * than treating the void cancellation call itself as proof of success.
+	 * A concurrently completing recurring action may insert a successor after the postcheck; engine
+	 * run fencing absorbs the resurrected occurrence.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -386,7 +386,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  Failure<SchedulingError>|null
 	 */
 	private function missing_function_failure( string $function_name ): ?Failure {
-		if ( \function_exists( $function_name ) ) {
+		if ( ( $this->function_exists_probe )( $function_name ) ) {
 			return null;
 		}
 
@@ -414,10 +414,17 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			$context['missing_function'] = $missing_function;
 		}
 
+		$message = null === $missing_function
+			? 'Action Scheduler is not ready; load or activate Action Scheduler, then call this scheduling operation after action_scheduler_init fires.'
+			: \sprintf(
+				'Action Scheduler function "%s" is unavailable; load or activate a complete Action Scheduler API, then retry after action_scheduler_init fires.',
+				$missing_function
+			);
+
 		return new Failure(
 			new SchedulingError(
 				SchedulingErrorReason::BackendNotReady,
-				'Action Scheduler is not ready; load or activate Action Scheduler, then call this scheduling operation after action_scheduler_init fires.',
+				$message,
 				$context,
 			)
 		);
@@ -429,21 +436,30 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int                                                                                                        $action_id    Action ID, or zero on rejection.
+	 * @param   int                                                                                                        $action_id    Positive action ID, or a non-positive rejection value.
 	 * @param   string                                                                                                     $hook         Hook being scheduled.
 	 * @param   non-empty-string                                                                                           $function_name Procedural function called.
 	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
+	 * @param   non-empty-string|null                                                                                      $failure_cause Known rejection cause.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function result_for_action_id( int $action_id, string $hook, string $function_name, ?array $facts = null ): AbstractResult {
-		if ( 0 !== $action_id ) {
+	private function result_for_action_id( int $action_id, string $hook, string $function_name, ?array $facts = null, ?string $failure_cause = null ): AbstractResult {
+		if ( 0 < $action_id ) {
 			return new Success( true );
 		}
 
 		$facts ??= $this->readiness_facts();
 
-		if ( ! $facts['action_scheduler_functions_exist'] ) {
+		if ( null !== $failure_cause ) {
+			$cause = $failure_cause;
+		} elseif ( 0 > $action_id ) {
+			$cause = \sprintf(
+				'%1$s returned negative action ID %2$d; only a positive ID confirms that Action Scheduler persisted the action.',
+				$function_name,
+				$action_id
+			);
+		} elseif ( ! $facts['action_scheduler_functions_exist'] ) {
 			$cause = 'the Action Scheduler function table is unavailable; load or activate Action Scheduler before retrying.';
 		} elseif ( ! $facts['wp_init_fired'] ) {
 			$cause = 'WordPress init has not fired; call the scheduling operation after action_scheduler_init instead of before init.';

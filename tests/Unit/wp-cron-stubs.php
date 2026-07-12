@@ -277,6 +277,11 @@ if ( ! \function_exists( 'wp_schedule_event' ) ) {
 	 */
 	function wp_schedule_event( $timestamp, $recurrence, $hook, $args = array(), $wp_error = false ) {
 		a8csp_bgte_test_record_cron_call( 'wp_schedule_event', array( $timestamp, $recurrence, $hook, $args, $wp_error ) );
+
+		if ( ! \is_numeric( $timestamp ) || 0 >= $timestamp ) {
+			return $wp_error ? new WP_Error( 'invalid_timestamp', 'Event timestamp must be a valid Unix timestamp.' ) : false;
+		}
+
 		$result = a8csp_bgte_test_scripted_cron_result( 'wp_schedule_event' );
 
 		if ( $result instanceof WP_Error ) {
@@ -309,6 +314,11 @@ if ( ! \function_exists( 'wp_schedule_single_event' ) ) {
 	 */
 	function wp_schedule_single_event( $timestamp, $hook, $args = array(), $wp_error = false ) {
 		a8csp_bgte_test_record_cron_call( 'wp_schedule_single_event', array( $timestamp, $hook, $args, $wp_error ) );
+
+		if ( ! \is_numeric( $timestamp ) || 0 >= $timestamp ) {
+			return $wp_error ? new WP_Error( 'invalid_timestamp', 'Event timestamp must be a valid Unix timestamp.' ) : false;
+		}
+
 		$result = a8csp_bgte_test_scripted_cron_result( 'wp_schedule_single_event' );
 
 		if ( $result instanceof WP_Error ) {
@@ -338,6 +348,8 @@ if ( ! \function_exists( 'wp_next_scheduled' ) ) {
 	 * @return  int|false
 	 */
 	function wp_next_scheduled( $hook, $args = array() ) {
+		a8csp_bgte_test_record_cron_call( 'wp_next_scheduled', array( $hook, $args ) );
+
 		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
 		$cron = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
 		\ksort( $cron, SORT_NUMERIC );
@@ -406,47 +418,5 @@ if ( ! \function_exists( 'wp_unschedule_event' ) ) {
 		$GLOBALS['a8csp_bgte_test_cron_array'] = $cron;
 
 		return true;
-	}
-}
-
-if ( ! \function_exists( 'wp_clear_scheduled_hook' ) ) {
-	/**
-	 * Removes every event matching a hook and its exact arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string      $hook     Hook name.
-	 * @param   list<mixed> $args     Hook arguments.
-	 * @param   bool        $wp_error Whether errors are returned as WP_Error objects.
-	 *
-	 * @return  int|WP_Error
-	 */
-	function wp_clear_scheduled_hook( $hook, $args = array(), $wp_error = false ) {
-		a8csp_bgte_test_record_cron_call( 'wp_clear_scheduled_hook', array( $hook, $args, $wp_error ) );
-		$result = a8csp_bgte_test_scripted_cron_result( 'wp_clear_scheduled_hook' );
-
-		if ( $result instanceof WP_Error ) {
-			return $result;
-		}
-
-		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
-		$cron  = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
-		$count = 0;
-
-		foreach ( $cron as $timestamp => $hooks ) {
-			foreach ( $hooks[ $hook ] ?? array() as $key => $event ) {
-				if ( \maybe_serialize( $args ) !== \maybe_serialize( $event['args'] ) ) {
-					continue;
-				}
-
-				unset( $cron[ $timestamp ][ $hook ][ $key ] );
-				++$count;
-			}
-		}
-
-		$GLOBALS['a8csp_bgte_test_cron_array'] = $cron;
-
-		return $count;
 	}
 }

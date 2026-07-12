@@ -140,6 +140,28 @@ final class RecordingBackendTest extends TestCase {
 	}
 
 	/**
+	 * Queued readiness answers reproduce a backend becoming unavailable between selection and use.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_write_rechecks_a_remaining_queued_readiness_answer(): void {
+		$backend                    = new RecordingBackend();
+		$backend->readiness_results = array( true, false );
+
+		self::assertTrue( $backend->is_ready() );
+
+		$result = $backend->enqueue_async( 'async' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::BackendNotReady, $result->error->reason );
+		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), \array_column( $backend->calls, 'verb' ) );
+	}
+
+	/**
 	 * Write results remain non-discardable on every concrete declaration.
 	 *
 	 * @since   1.0.0

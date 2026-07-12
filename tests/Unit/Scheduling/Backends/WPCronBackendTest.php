@@ -117,22 +117,26 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Unscheduling rejects a group without clearing the ungrouped event.
+	 * Unscheduling uses WP-Cron's hook-and-args identity regardless of the supplied group.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_unschedule_rejects_a_non_empty_group(): void {
+	public function test_unschedule_ignores_a_non_empty_group(): void {
 		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'a' ), true ) );
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
 		$result = ( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ), 'reports' );
 
-		$this->assert_unsupported_group( $result );
-		self::assertSame( 1_700_000_000, \wp_next_scheduled( self::HOOK, array( 'a' ) ) );
-		self::assertSame( array(), $this->cron_calls() );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame( false, \wp_next_scheduled( self::HOOK, array( 'a' ) ) );
+		self::assertSame(
+			array( 1_700_000_000, self::HOOK, array( 'a' ), true ),
+			$this->cron_calls( 'wp_unschedule_event' )[0]['args']
+		);
 	}
 
 	/**
@@ -149,6 +153,32 @@ final class WPCronBackendTest extends TestCase {
 
 		self::assertTrue( $backend->is_scheduled( self::HOOK, array( 'a' ), 'reports' ) );
 		self::assertSame( 1_700_000_000, $backend->get_next_scheduled( self::HOOK, array( 'a' ), 'reports' ) );
+	}
+
+	/**
+	 * Read methods report absence when the cron option has no stored value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_reads_report_absence_without_a_cron_store(): void {
+		unset( $GLOBALS['a8csp_bgte_test_cron_array'] );
+		$backend = new WPCronBackend();
+
+		self::assertFalse( $backend->is_scheduled( self::HOOK, array( 'a' ), 'reports' ) );
+		self::assertNull( $backend->get_next_scheduled( self::HOOK, array( 'a' ), 'reports' ) );
+		self::assertSame(
+			array(
+				array( self::HOOK, array( 'a' ) ),
+				array( self::HOOK, array( 'a' ) ),
+			),
+			\array_map(
+				static fn ( array $call ): array => $call['args'],
+				$this->cron_calls( 'wp_next_scheduled' )
+			)
+		);
 	}
 
 	/**
@@ -387,25 +417,63 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Recurring and single scheduling always call WordPress instead of imposing uniqueness.
+	 * Existing hook-and-args identities make recurring and single scheduling successful no-ops.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_methods_do_not_preemptively_deduplicate_matching_events(): void {
+	public function test_schedule_methods_skip_existing_args_aware_events(): void {
 		$backend          = new WPCronBackend();
 		$first_single_run = \time() + 1_200;
 		$next_single_run  = $first_single_run + 601;
 
 		self::assertInstanceOf( Success::class, $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000 ) );
-		self::assertInstanceOf( Success::class, $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_100 ) );
 		self::assertInstanceOf( Success::class, $backend->schedule_single( self::HOOK, $first_single_run, array( 'b' ) ) );
-		self::assertInstanceOf( Success::class, $backend->schedule_single( self::HOOK, $next_single_run, array( 'b' ) ) );
+		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
-		self::assertCount( 2, $this->cron_calls( 'wp_schedule_event' ) );
-		self::assertCount( 2, $this->cron_calls( 'wp_schedule_single_event' ) );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_100 );
+		$single    = $backend->schedule_single( self::HOOK, $next_single_run, array( 'b' ) );
+
+		self::assertInstanceOf( Success::class, $recurring );
+		self::assertTrue( $recurring->value );
+		self::assertInstanceOf( Success::class, $single );
+		self::assertTrue( $single->value );
+		self::assertSame(
+			array(
+				array( self::HOOK, array( 'a' ) ),
+				array( self::HOOK, array( 'b' ) ),
+			),
+			\array_map(
+				static fn ( array $call ): array => $call['args'],
+				$this->cron_calls( 'wp_next_scheduled' )
+			)
+		);
+		self::assertSame( array(), $this->cron_calls( 'wp_schedule_event' ) );
+		self::assertSame( array(), $this->cron_calls( 'wp_schedule_single_event' ) );
+	}
+
+	/**
+	 * The cron fake rejects timestamps that WordPress Core does not accept.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cron_fake_rejects_non_positive_timestamps(): void {
+		foreach ( array( 0, -1 ) as $timestamp ) {
+			$recurring = \wp_schedule_event( $timestamp, 'missing_recurrence', self::HOOK, array( 'recurring', $timestamp ), true );
+			$single    = \wp_schedule_single_event( $timestamp, self::HOOK, array( 'single', $timestamp ), true );
+
+			self::assertInstanceOf( \WP_Error::class, $recurring );
+			self::assertSame( 'invalid_timestamp', $recurring->get_error_code() );
+			self::assertInstanceOf( \WP_Error::class, $single );
+			self::assertSame( 'invalid_timestamp', $single->get_error_code() );
+		}
+
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cron_array'] );
 	}
 
 	/**
@@ -875,7 +943,7 @@ final class WPCronBackendTest extends TestCase {
 		$error = $this->assert_failure_reason( $result, SchedulingErrorReason::UnsupportedGroup );
 
 		self::assertSame(
-			'WP-Cron has no groups; use the Action Scheduler backend or drop the group.',
+			'WP-Cron has no groups; drop the group or ensure Action Scheduler is loaded before scheduling.',
 			$error->message
 		);
 	}

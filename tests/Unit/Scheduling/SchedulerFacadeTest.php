@@ -65,6 +65,62 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Constructor keys do not affect declaration order or first-ready routing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_ignores_string_and_non_sequential_backend_keys(): void {
+		$first        = new RecordingBackend();
+		$first->ready = false;
+		$second       = new RecordingBackend();
+		$third        = new RecordingBackend();
+
+		$result = ( new SchedulerFacade(
+			array(
+				'preferred' => $first,
+				42          => $second,
+				'later'     => $third,
+			)
+		) )->enqueue_async( self::HOOK );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $second ) );
+		self::assertSame( array(), $third->calls );
+	}
+
+	/**
+	 * Sparse constructor keys leave the declared final backend available for fallback routing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_reindexes_sparse_keys_for_fallback_lookup(): void {
+		$first                          = new RecordingBackend();
+		$last                           = new RecordingBackend();
+		$expected                       = new Success( true );
+		$first->ready                   = false;
+		$last->ready                    = false;
+		$last->results['enqueue_async'] = $expected;
+
+		$result = ( new SchedulerFacade(
+			array(
+				'preferred' => $first,
+				42          => $last,
+			)
+		) )->enqueue_async( self::HOOK );
+
+		self::assertSame( $expected, $result );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $last ) );
+	}
+
+	/**
 	 * A write reaches the first ready backend and leaves every later backend untouched.
 	 *
 	 * @since   1.0.0
@@ -186,6 +242,122 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertSame( $expected, $result );
 		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
 		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $last ) );
+		self::assertSame(
+			array(
+				'hook'     => self::HOOK,
+				'args'     => array( 'run-19' ),
+				'group'    => 'exports',
+				'unique'   => true,
+				'priority' => 40,
+			),
+			$last->calls[1]['args']
+		);
+	}
+
+	/**
+	 * A backend that becomes unready during its write yields to the next ready backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_write_falls_through_when_the_selected_backend_becomes_unready(): void {
+		$first                    = new RecordingBackend();
+		$first->readiness_results = array( true, false );
+		$second                   = new RecordingBackend();
+		$expected                 = new Success( true );
+
+		$second->results['enqueue_async'] = $expected;
+
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->enqueue_async(
+			self::HOOK,
+			array( 'run-20' ),
+			'exports',
+			true,
+			40
+		);
+
+		self::assertSame( $expected, $result );
+		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $second ) );
+		self::assertSame(
+			array(
+				'hook'     => self::HOOK,
+				'args'     => array( 'run-20' ),
+				'group'    => 'exports',
+				'unique'   => true,
+				'priority' => 40,
+			),
+			$second->calls[1]['args']
+		);
+	}
+
+	/**
+	 * Only backend-readiness failures permit a write to reach another backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $reason_value Non-readiness failure backing value.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'non_readiness_failure_provider' )]
+	public function test_write_returns_every_non_readiness_failure_unchanged( string $reason_value ): void {
+		$first    = new RecordingBackend();
+		$second   = new RecordingBackend();
+		$expected = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::from( $reason_value ),
+				'Correct the rejected scheduling request before retrying.'
+			)
+		);
+
+		$first->results['enqueue_async'] = $expected;
+
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->enqueue_async( self::HOOK );
+
+		self::assertSame( $expected, $result );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $first ) );
+		self::assertSame( array(), $second->calls );
+	}
+
+	/**
+	 * When every selected backend declines a write, the last decline retains diagnostic precedence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_write_returns_the_last_failure_when_every_backend_declines(): void {
+		$first        = new RecordingBackend();
+		$second       = new RecordingBackend();
+		$first_result = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::BackendNotReady,
+				'Initialize the first backend before retrying the write.'
+			)
+		);
+		$last_result  = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::BackendNotReady,
+				'Initialize the fallback backend before retrying the write.'
+			)
+		);
+
+		$first->results['schedule_single']  = $first_result;
+		$second->results['schedule_single'] = $last_result;
+
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single(
+			self::HOOK,
+			1_700_000_000
+		);
+
+		self::assertSame( $last_result, $result );
+		self::assertSame( array( 'is_ready', 'schedule_single' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready', 'schedule_single' ), $this->call_verbs( $second ) );
 	}
 
 	/**
@@ -210,6 +382,15 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertTrue( $result );
 		self::assertSame( array( 'is_ready', 'is_scheduled' ), $this->call_verbs( $first ) );
 		self::assertSame( array( 'is_ready', 'is_scheduled' ), $this->call_verbs( $second ) );
+		self::assertSame(
+			array(
+				'hook'  => self::HOOK,
+				'args'  => array( 'run-20' ),
+				'group' => 'reports',
+			),
+			$first->calls[1]['args']
+		);
+		self::assertSame( $first->calls[1]['args'], $second->calls[1]['args'] );
 	}
 
 	/**
@@ -236,6 +417,14 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertSame( 1_700_000_100, $result );
 		foreach ( array( $first, $second, $third ) as $backend ) {
 			self::assertSame( array( 'is_ready', 'get_next_scheduled' ), $this->call_verbs( $backend ) );
+			self::assertSame(
+				array(
+					'hook'  => self::HOOK,
+					'args'  => array( 'run-21' ),
+					'group' => 'imports',
+				),
+				$backend->calls[1]['args']
+			);
 		}
 	}
 
@@ -306,6 +495,15 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
 		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready ) );
 		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
+		self::assertSame(
+			array(
+				'hook'  => self::HOOK,
+				'args'  => array( 'run-22' ),
+				'group' => 'cleanup',
+			),
+			$first->calls[1]['args']
+		);
+		self::assertSame( $first->calls[1]['args'], $second->calls[1]['args'] );
 	}
 
 	/**
@@ -452,9 +650,200 @@ final class SchedulerFacadeTest extends TestCase {
 
 		self::assertStringContainsString( self::HOOK, $error->message );
 		self::assertStringContainsString(
-			'store bulk data in the run option and pass identifying keys only',
+			'pass identifying keys and load bulk data from storage inside the handler',
 			$error->message
 		);
+		self::assertSame( array(), $backend->calls );
+	}
+
+	/**
+	 * Nested objects fail the portable-storage shape guard before JSON size validation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_args_guard_rejects_an_object_nested_inside_arrays(): void {
+		$backend = new RecordingBackend();
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
+			self::HOOK,
+			array(
+				array(
+					'payload' => new \stdClass(),
+				),
+			)
+		);
+		$error   = $this->assert_payload_too_large( $result );
+
+		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
+		self::assertStringContainsString( 'store objects by identifier', $error->message );
+		self::assertSame( array(), $backend->calls );
+	}
+
+	/**
+	 * Nested closures fail the portable-storage shape guard before backend selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_args_guard_rejects_a_nested_closure(): void {
+		$backend = new RecordingBackend();
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
+			self::HOOK,
+			array( array( static fn (): string => 'not portable' ) )
+		);
+		$error   = $this->assert_payload_too_large( $result );
+
+		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
+		self::assertStringContainsString( 'store objects by identifier', $error->message );
+		self::assertSame( array(), $backend->calls );
+	}
+
+	/**
+	 * Resources fail the same portable-storage shape guard before backend selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_args_guard_rejects_a_nested_resource(): void {
+		$resource = \STDIN;
+
+		$backend = new RecordingBackend();
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
+			self::HOOK,
+			array( array( $resource ) )
+		);
+		$error   = $this->assert_payload_too_large( $result );
+
+		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
+		self::assertSame( array(), $backend->calls );
+	}
+
+	/**
+	 * Argument nesting beyond the JSON encoder's depth fails before backend selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_args_guard_rejects_nesting_beyond_the_portable_depth(): void {
+		$args = array( null );
+		for ( $depth = 1; 513 > $depth; ++$depth ) {
+			$args = array( $args );
+		}
+
+		$backend = new RecordingBackend();
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, $args );
+		$error   = $this->assert_payload_too_large( $result );
+
+		self::assertStringContainsString( 'keep nesting within 512 levels', $error->message );
+		self::assertSame( array(), $backend->calls );
+	}
+
+	/**
+	 * Self-referential arrays fail the finite-tree guard before backend selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_args_guard_rejects_a_self_referential_array(): void {
+		$recursive         = array();
+		$recursive['self'] =& $recursive;
+
+		try {
+			$backend = new RecordingBackend();
+			$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
+				self::HOOK,
+				array( $recursive )
+			);
+			$error   = $this->assert_payload_too_large( $result );
+
+			self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
+			self::assertSame( array(), $backend->calls );
+		} finally {
+			unset( $recursive['self'] );
+		}
+	}
+
+	/**
+	 * Nested arrays containing scalar and null leaves remain portable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_args_guard_accepts_nested_scalar_and_null_values(): void {
+		$backend = new RecordingBackend();
+		$args    = array(
+			null,
+			array(
+				'string',
+				42,
+				1.5,
+				true,
+				false,
+				array( 'nullable' => null ),
+			),
+		);
+
+		$result = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, $args );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $args, $backend->calls[1]['args']['args'] );
+	}
+
+	/**
+	 * Non-positive recurring first-run timestamps fail before backend selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $timestamp Invalid first-run timestamp.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'non_positive_timestamp_provider' )]
+	public function test_schedule_recurring_rejects_a_non_positive_first_run_timestamp( int $timestamp ): void {
+		$backend = new RecordingBackend();
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_recurring(
+			self::HOOK,
+			300,
+			first_run_timestamp: $timestamp
+		);
+		$error   = $this->assert_invalid_interval( $result );
+
+		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
+		self::assertSame( array( 'first_run_timestamp' => $timestamp ), $error->context );
+		self::assertSame( array(), $backend->calls );
+	}
+
+	/**
+	 * Non-positive single-run timestamps fail before backend selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $timestamp Invalid run timestamp.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'non_positive_timestamp_provider' )]
+	public function test_schedule_single_rejects_a_non_positive_timestamp( int $timestamp ): void {
+		$backend = new RecordingBackend();
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_single( self::HOOK, $timestamp );
+		$error   = $this->assert_invalid_interval( $result );
+
+		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
+		self::assertSame( array( 'timestamp' => $timestamp ), $error->context );
 		self::assertSame( array(), $backend->calls );
 	}
 
@@ -549,6 +938,39 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Supplies every failure reason that must not fall through write routing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{0: string}>
+	 */
+	public static function non_readiness_failure_provider(): array {
+		return array(
+			'unsupported group'   => array( 'unsupported_group' ),
+			'unsupported cadence' => array( 'unsupported_cadence' ),
+			'invalid interval'    => array( 'invalid_interval' ),
+			'payload too large'   => array( 'payload_too_large' ),
+			'schedule failed'     => array( 'schedule_failed' ),
+		);
+	}
+
+	/**
+	 * Supplies timestamps outside the positive UNIX-seconds domain.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{0: int}>
+	 */
+	public static function non_positive_timestamp_provider(): array {
+		return array(
+			'zero'     => array( 0 ),
+			'negative' => array( -1 ),
+		);
+	}
+
+	/**
 	 * Invokes one guarded write with the supplied hook arguments.
 	 *
 	 * @since   1.0.0
@@ -608,6 +1030,26 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::PayloadTooLarge, $result->error->reason );
+
+		return $result->error;
+	}
+
+	/**
+	 * Returns a timing failure after checking its machine-readable reason.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param AbstractResult<true, SchedulingError> $result
+	 *
+	 * @param   AbstractResult $result Result to inspect.
+	 *
+	 * @return  SchedulingError
+	 */
+	private function assert_invalid_interval( AbstractResult $result ): SchedulingError {
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::InvalidInterval, $result->error->reason );
 
 		return $result->error;
 	}

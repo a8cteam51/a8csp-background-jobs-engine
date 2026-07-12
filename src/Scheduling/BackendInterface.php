@@ -83,7 +83,7 @@ interface BackendInterface {
 	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
 	 * @param   string      $group Backend grouping label.
 	 *
-	 * @return  AbstractResult<true, SchedulingError> Success carrying true when every matching hook is confirmed absent.
+	 * @return  AbstractResult<true, SchedulingError> Success carrying true when every matching hook is confirmed absent across the currently-ready backends.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult;

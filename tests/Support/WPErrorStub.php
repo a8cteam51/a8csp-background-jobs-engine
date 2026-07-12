@@ -11,23 +11,21 @@ final readonly class WPErrorStub {
 	 *
 	 * @param   string|int $code    Error code.
 	 * @param   string     $message Error message.
-	 * @param   mixed      $data    Error data.
 	 */
 	public function __construct(
 		public string|int $code = '',
 		private string $message = '',
-		public mixed $data = '',
 	) {}
 
 	/**
-	 * Returns the stored message for the matching code.
+	 * Returns the stored message.
 	 *
 	 * @param   string|int $code Optional error code.
 	 *
 	 * @return  string
 	 */
 	public function get_error_message( string|int $code = '' ): string {
-		return '' === $code || $this->code === $code ? $this->message : '';
+		return $this->message;
 	}
 
 	/**

@@ -14,7 +14,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
  *
  * Writes target the first ready backend, while reads and clears span every currently ready
  * backend. Hook registration remains unconditional so persisted work keeps resolving when backend
- * preference changes.
+ * preference changes. Before action_scheduler_init, writes fall through to WP-Cron even when
+ * Action Scheduler is installed because routing follows per-request readiness.
  *
  * Action Scheduler treats an empty group as unconstrained in queries but exact in unique inserts,
  * and unscheduling with both empty arguments and an empty group clears every action for the hook.
@@ -27,8 +28,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 final readonly class SchedulerFacade implements BackendInterface {
 	// region FIELDS AND CONSTANTS
 
-	// The incumbent's proven ceiling keeps serialized arguments portable across both backends' storage.
+	// The guard accepts only scalar trees whose JSON form fits the incumbent-proven 8000-character ceiling.
 	private const MAX_ARGUMENTS_JSON_LENGTH = 8_000;
+	// Matching the JSON encoder's depth keeps recursive shape validation finite.
+	private const MAX_ARGUMENTS_JSON_DEPTH = 512;
 
 	/**
 	 * Backends in declaration order for write preference, consultation, and failure precedence.
@@ -76,12 +79,25 @@ final readonly class SchedulerFacade implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
+		if ( null !== $first_run_timestamp && 1 > $first_run_timestamp ) {
+			return $this->timestamp_failure( $hook, 'first_run_timestamp', $first_run_timestamp );
+		}
+
 		$payload_failure = $this->payload_failure( $hook, $args );
 		if ( null !== $payload_failure ) {
 			return $payload_failure;
 		}
 
-		return $this->write_backend()->schedule_recurring( $hook, $interval, $args, $first_run_timestamp, $group, $priority );
+		return $this->write(
+			static fn ( BackendInterface $backend ): AbstractResult => $backend->schedule_recurring(
+				$hook,
+				$interval,
+				$args,
+				$first_run_timestamp,
+				$group,
+				$priority
+			)
+		);
 	}
 
 	/**
@@ -95,12 +111,24 @@ final readonly class SchedulerFacade implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_single( string $hook, int $timestamp, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
+		if ( 1 > $timestamp ) {
+			return $this->timestamp_failure( $hook, 'timestamp', $timestamp );
+		}
+
 		$payload_failure = $this->payload_failure( $hook, $args );
 		if ( null !== $payload_failure ) {
 			return $payload_failure;
 		}
 
-		return $this->write_backend()->schedule_single( $hook, $timestamp, $args, $group, $priority );
+		return $this->write(
+			static fn ( BackendInterface $backend ): AbstractResult => $backend->schedule_single(
+				$hook,
+				$timestamp,
+				$args,
+				$group,
+				$priority
+			)
+		);
 	}
 
 	/**
@@ -119,11 +147,21 @@ final readonly class SchedulerFacade implements BackendInterface {
 			return $payload_failure;
 		}
 
-		return $this->write_backend()->enqueue_async( $hook, $args, $group, $unique, $priority );
+		return $this->write(
+			static fn ( BackendInterface $backend ): AbstractResult => $backend->enqueue_async(
+				$hook,
+				$args,
+				$group,
+				$unique,
+				$priority
+			)
+		);
 	}
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * Success confirms absence across the currently-ready backends.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -213,21 +251,34 @@ final readonly class SchedulerFacade implements BackendInterface {
 	// region HELPERS
 
 	/**
-	 * Returns the backend that receives a scheduling write.
+	 * Executes a scheduling write against the first backend that remains ready.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  BackendInterface
+	 * @phpstan-param \Closure(BackendInterface): AbstractResult<true, SchedulingError> $write
+	 *
+	 * @param   \Closure $write Backend write.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function write_backend(): BackendInterface {
+	private function write( \Closure $write ): AbstractResult {
+		$last_not_ready = null;
+
 		foreach ( $this->backends as $backend ) {
-			if ( $backend->is_ready() ) {
-				return $backend;
+			if ( ! $backend->is_ready() ) {
+				continue;
 			}
+
+			$result = $write( $backend );
+			if ( ! $result->is_failure() || SchedulingErrorReason::BackendNotReady !== $result->error->reason ) {
+				return $result;
+			}
+
+			$last_not_ready = $result;
 		}
 
-		return $this->fallback_backend();
+		return null === $last_not_ready ? $write( $this->fallback_backend() ) : $last_not_ready;
 	}
 
 	/**
@@ -263,6 +314,32 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
+	 * Returns a corrective failure for a timestamp outside positive UNIX seconds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                            $hook      Hook being scheduled.
+	 * @param   'first_run_timestamp'|'timestamp' $field     Timestamp field.
+	 * @param   int                               $timestamp Rejected timestamp.
+	 *
+	 * @return  Failure<SchedulingError>
+	 */
+	private function timestamp_failure( string $hook, string $field, int $timestamp ): Failure {
+		return new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::InvalidInterval,
+				\sprintf(
+					'Scheduling hook "%1$s" requires %2$s in positive UNIX seconds; pass a timestamp of at least 1.',
+					$hook,
+					'first_run_timestamp' === $field ? 'the first-run timestamp' : 'the run timestamp'
+				),
+				array( $field => $timestamp ),
+			)
+		);
+	}
+
+	/**
 	 * Returns a corrective failure when hook arguments cannot fit backend storage.
 	 *
 	 * @since   1.0.0
@@ -274,7 +351,24 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  Failure<SchedulingError>|null
 	 */
 	private function payload_failure( string $hook, array $args ): ?Failure {
-		$encoded_args = \wp_json_encode( $args );
+		if ( ! $this->is_scalar_tree( $args ) ) {
+			return new Failure(
+				new SchedulingError(
+					SchedulingErrorReason::PayloadTooLarge,
+					\sprintf(
+						'Scheduling hook "%1$s" arguments must be a tree of scalars and arrays; store objects by identifier and keep nesting within %2$d levels.',
+						$hook,
+						self::MAX_ARGUMENTS_JSON_DEPTH
+					),
+					array(
+						'hook'          => $hook,
+						'maximum_depth' => self::MAX_ARGUMENTS_JSON_DEPTH,
+					),
+				)
+			);
+		}
+
+		$encoded_args = \wp_json_encode( $args, 0, self::MAX_ARGUMENTS_JSON_DEPTH );
 		if ( \is_string( $encoded_args ) && self::MAX_ARGUMENTS_JSON_LENGTH >= \strlen( $encoded_args ) ) {
 			return null;
 		}
@@ -283,7 +377,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 			new SchedulingError(
 				SchedulingErrorReason::PayloadTooLarge,
 				\sprintf(
-					'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-character limit; store bulk data in the run option and pass identifying keys only.',
+					'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-character limit; pass identifying keys and load bulk data from storage inside the handler.',
 					$hook,
 					self::MAX_ARGUMENTS_JSON_LENGTH
 				),
@@ -293,6 +387,39 @@ final readonly class SchedulerFacade implements BackendInterface {
 				),
 			)
 		);
+	}
+
+	/**
+	 * Returns whether every leaf can be stored portably by each backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<mixed> $values          Values to inspect.
+	 * @param   int          $remaining_depth Array levels still permitted.
+	 *
+	 * @return  bool
+	 */
+	private function is_scalar_tree( array $values, int $remaining_depth = self::MAX_ARGUMENTS_JSON_DEPTH ): bool {
+		if ( 1 > $remaining_depth ) {
+			return false;
+		}
+
+		foreach ( $values as $value ) {
+			if ( \is_array( $value ) ) {
+				if ( ! $this->is_scalar_tree( $value, $remaining_depth - 1 ) ) {
+					return false;
+				}
+
+				continue;
+			}
+
+			if ( null !== $value && ! \is_scalar( $value ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	// endregion
