@@ -6,17 +6,12 @@
  * The shared get stub also exposes the existing cron fake so guarded global functions remain
  * deterministic regardless of PHPUnit's test-class load order.
  *
- * @since   1.0.0
- * @version 1.0.0
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
 if ( ! \function_exists( 'a8csp_bgte_test_record_option_call' ) ) {
 	/**
 	 * Appends an option-function call to the test ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<mixed> $args
 	 *
@@ -52,9 +47,6 @@ if ( ! \function_exists( 'get_option' ) ) {
 	/**
 	 * Returns a stored option or the supplied default.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $option        Option name.
 	 * @param   mixed  $default_value Default value.
 	 *
@@ -77,9 +69,6 @@ if ( ! \function_exists( 'get_option' ) ) {
 if ( ! \function_exists( 'add_option' ) ) {
 	/**
 	 * Adds an option when its name is absent.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string           $option     Option name.
 	 * @param   mixed            $value      Option value.
@@ -127,9 +116,6 @@ if ( ! \function_exists( 'update_option' ) ) {
 	/**
 	 * Creates or replaces an option.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string           $option   Option name.
 	 * @param   mixed            $value    Option value.
 	 * @param   bool|string|null $autoload Autoload policy.
@@ -162,9 +148,6 @@ if ( ! \function_exists( 'update_option' ) ) {
 if ( ! \function_exists( 'delete_option' ) ) {
 	/**
 	 * Deletes an option when it exists.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $option Option name.
 	 *

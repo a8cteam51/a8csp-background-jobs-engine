@@ -10,17 +10,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the consumer-ready non-retryable exception hierarchy.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( NonRetryableTaskException::class )]
 final class NonRetryableTaskExceptionTest extends TestCase {
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -33,9 +28,6 @@ final class NonRetryableTaskExceptionTest extends TestCase {
 
 	/**
 	 * The concrete exception is catchable by both the runtime and retry-bypass contracts.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

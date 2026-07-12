@@ -7,17 +7,12 @@
  * Action registrations retain their callback configuration, while fired actions retain their arguments.
  * The `function_exists()` guards keep this file inert wherever WordPress is loaded.
  *
- * @since   1.0.0
- * @version 1.0.0
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
 if ( ! \function_exists( 'add_action' ) ) {
 	/**
 	 * Records an action registration in the test ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string   $hook_name     The action hook name.
 	 * @param   callable $callback      The callback (recorded but never invoked).
@@ -58,9 +53,6 @@ if ( ! \function_exists( 'add_filter' ) ) {
 	/**
 	 * Records a filter registration and its callback configuration in the test ledgers.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string   $hook_name     The filter hook name.
 	 * @param   callable $callback      The callback (recorded but never invoked).
 	 * @param   int      $priority      The priority.
@@ -99,9 +91,6 @@ if ( ! \function_exists( 'add_filter' ) ) {
 if ( ! \function_exists( 'do_action' ) ) {
 	/**
 	 * Records a fired action and its arguments in the test ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $hook_name Hook name.
 	 * @param   mixed  ...$args   Action arguments.
@@ -147,9 +136,6 @@ if ( ! \function_exists( 'do_action' ) ) {
 if ( ! \function_exists( 'apply_filters' ) ) {
 	/**
 	 * Returns a scripted filter value or applies a scripted callback.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $hook_name Hook name.
 	 * @param   mixed  $value     Value entering the filter.

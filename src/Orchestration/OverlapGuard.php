@@ -25,8 +25,25 @@ use Psr\Log\LoggerInterface;
 final readonly class OverlapGuard {
 	// region FIELDS AND CONSTANTS
 
+	/**
+	 * Maximum malformed lock bytes included in diagnostic context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
 	private const MALFORMED_RAW_BYTES = 200;
-	private const OPTION_PREFIX       = 'a8csp_bgte_lock_';
+
+	/**
+	 * Prefix for execution-overlap lock option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const OPTION_PREFIX = 'a8csp_bgte_lock_';
 
 	// endregion
 
@@ -204,6 +221,9 @@ final readonly class OverlapGuard {
 	 * The delete predicate prevents this claimant from removing a winner that changes the row after
 	 * selection; a rival that fills the absent row before insertion also wins normally.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string                                                         $key       Lock option name.
 	 * @param   string                                                         $raw       Exact selected value.
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}|null $old_lock  Parsed stale row, or null when malformed.
@@ -256,6 +276,9 @@ final readonly class OverlapGuard {
 	/**
 	 * Returns the execution-overlap option name.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $name      Stable task or batch name.
 	 * @param   string $args_hash Stable identity of the start arguments.
 	 *
@@ -267,6 +290,9 @@ final readonly class OverlapGuard {
 
 	/**
 	 * Returns a newly claimed lock row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Claiming run identifier.
 	 * @param   int    $now    Claim timestamp.
@@ -283,6 +309,9 @@ final readonly class OverlapGuard {
 
 	/**
 	 * Parses only the exact three-field persisted lock shape.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $raw Exact persisted option value.
 	 *
@@ -310,6 +339,9 @@ final readonly class OverlapGuard {
 	/**
 	 * Decodes a raw row without allowing serialized objects to construct classes.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $raw Exact persisted option value.
 	 *
 	 * @return  mixed
@@ -329,6 +361,9 @@ final readonly class OverlapGuard {
 
 	/**
 	 * Returns whether the heartbeat age is strictly greater than the supplied window.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $lock             Lock row.
 	 * @param   int                                                       $now              Current timestamp.

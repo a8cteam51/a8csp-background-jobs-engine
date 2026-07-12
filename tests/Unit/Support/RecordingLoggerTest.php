@@ -9,16 +9,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the reusable logger recorder used by orchestration tests.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversNothing]
 final class RecordingLoggerTest extends TestCase {
 	/**
 	 * Repeated calls append complete records in invocation order.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

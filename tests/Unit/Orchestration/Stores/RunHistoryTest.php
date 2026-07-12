@@ -9,17 +9,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins global and per-hash run-history buffers.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( RunHistory::class )]
 final class RunHistoryTest extends TestCase {
 
 	/**
 	 * Loads guarded WordPress option and filter functions before the history is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -36,9 +31,6 @@ final class RunHistoryTest extends TestCase {
 	/**
 	 * Resets request-local option and filter state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -54,9 +46,6 @@ final class RunHistoryTest extends TestCase {
 	/**
 	 * Empty history readers return newest-last lists with no entries.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_readers_return_empty_lists_without_history(): void {
@@ -70,9 +59,6 @@ final class RunHistoryTest extends TestCase {
 
 	/**
 	 * Started and completed writes persist the mirrored by-hash schema under the literal key.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -105,9 +91,6 @@ final class RunHistoryTest extends TestCase {
 	/**
 	 * Global and per-hash buffers retain the newest thirty entries.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_ring_buffers_evict_the_oldest_entry_past_thirty(): void {
@@ -138,9 +121,6 @@ final class RunHistoryTest extends TestCase {
 
 	/**
 	 * A smaller filtered cap truncates existing buffers on the write that observes it.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -188,9 +168,6 @@ final class RunHistoryTest extends TestCase {
 	/**
 	 * Per-hash buffers retain only runs recorded for their own argument identity.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_by_hash_buffers_are_isolated_and_newest_last(): void {
@@ -215,9 +192,6 @@ final class RunHistoryTest extends TestCase {
 	 * Distinct argument identities are LRU-evicted past twenty buckets, and re-recording an
 	 * existing identity refreshes its recency.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_hash_buckets_evict_the_least_recently_recorded_identity_past_twenty(): void {
@@ -240,9 +214,6 @@ final class RunHistoryTest extends TestCase {
 	/**
 	 * Returns one stored option value.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
@@ -256,9 +227,6 @@ final class RunHistoryTest extends TestCase {
 
 	/**
 	 * Returns the recorded autoload flag for one option.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $option_name Option name.
 	 *
@@ -274,9 +242,6 @@ final class RunHistoryTest extends TestCase {
 	/**
 	 * Asserts that every option write explicitly disables autoload.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	private function assert_all_option_writes_disable_autoload(): void {
@@ -291,9 +256,6 @@ final class RunHistoryTest extends TestCase {
 
 	/**
 	 * Returns every recorded option-function call.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{function: string, args: list<mixed>}>
 	 */

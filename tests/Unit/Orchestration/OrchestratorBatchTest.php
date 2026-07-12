@@ -37,8 +37,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the observable batch lifecycle across scheduling, storage, hooks, locks, and callbacks.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( Orchestrator::class )]
 #[UsesClass( BatchContext::class )]
@@ -79,9 +77,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Loads guarded WordPress functions before orchestration classes are instantiated.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -99,9 +94,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Resets every observable boundary and constructs one registered batch lifecycle.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -148,9 +140,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Hook registration exposes each backend-isolated batch stage and one shared run dispatcher.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_register_hooks_wires_all_internal_batch_actions(): void {
@@ -189,9 +178,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Starting a batch persists its identity and schedules queue generation as its own action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -234,9 +220,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * An initial scheduling failure is returned unchanged after active state is compensated.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_start_batch_surfaces_scheduling_failure_and_removes_active_state(): void {
@@ -265,9 +248,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A held overlap lock rejects manual start without stopping the incumbent run.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_start_batch_rejects_a_held_overlap_without_stopping_the_previous_run(): void {
@@ -289,9 +269,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * The start action materializes and filters the queue before exposing the started lifecycle.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -376,9 +353,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A throwing started listener terminalizes the run before its first continue is scheduled.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_when_a_started_listener_throws(): void {
@@ -415,9 +389,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A queue-generation throwable fails the run without exposing a partial started lifecycle.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_when_queue_generation_throws(): void {
@@ -433,9 +404,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * A non-array queue-filter result fails the run before scheduling continue.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -456,9 +424,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Continue removes exactly one queue head and carries it into a distinct run action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -495,9 +460,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Continue sends a drained run to cleanup without creating a run action.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_schedules_cleanup_for_an_empty_queue(): void {
@@ -526,9 +488,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * A normal chunk return commits buffered mutations and delays the next continue action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -598,9 +557,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A failed delayed-continue schedule terminalizes the committed successful chunk.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_when_continue_scheduling_fails(): void {
@@ -645,9 +601,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A throwing continue-delay filter terminalizes the committed chunk instead of stalling it.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_when_continue_delay_filter_throws(): void {
@@ -685,9 +638,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * A throwing chunk discards buffered mutations before the ordered terminal failure path.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -753,9 +703,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A throwing named failed listener still permits its generic companion and terminal cleanup.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_failed_named_listener_throw_still_fires_generic_hook_and_cleans_up(): void {
@@ -792,9 +739,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Cleanup calls batch success and completed hooks before its terminal-success transition.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -853,9 +797,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A failed first-continuation schedule terminates the generated run without leaving active state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_when_continue_scheduling_fails(): void {
@@ -886,9 +827,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * A failed run schedule terminates after dequeue so no active chain remains stalled.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_fails_terminally_when_run_scheduling_fails(): void {
@@ -916,9 +854,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * A failed cleanup schedule terminates a drained run instead of orphaning it.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -948,9 +883,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Losing latest-run ownership at continue exits through Superseded without batch callbacks.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_quietly_supersedes_a_non_latest_run(): void {
@@ -967,9 +899,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Losing latest-run ownership at chunk execution prevents the chunk and terminal callbacks.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -990,9 +919,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Batch start rejects a name shared with a task before touching runtime boundaries.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_start_batch_rejects_a_name_resolvable_in_both_registries(): void {
@@ -1006,9 +932,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Task enqueue rejects a name shared with a batch before touching runtime boundaries.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -1024,9 +947,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Advances the queue head into a run action and clears its scheduling observations.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
 	 *
 	 * @return  void
@@ -1040,9 +960,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Clears observations created by the preceding internal action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -1058,9 +975,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Returns the failed status write made before terminal option deletion.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  array{
 	 *     status: string,
@@ -1098,9 +1012,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Reduces the unified boundary ledger to lifecycle-significant labels.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<string>
 	 */
@@ -1170,9 +1081,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Returns a deterministic scheduling failure for one lifecycle action.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  Failure<SchedulingError>
 	 */
 	private function scheduling_failure_result(): Failure {
@@ -1186,9 +1094,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Asserts queue startup failed terminally before scheduling a continuation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param class-string $exception_class
 	 *
@@ -1219,9 +1124,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Asserts one failed scheduling stage leaves only terminal diagnostics and history.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   'continue'|'run'|'cleanup'                      $stage         Scheduled action stage.
 	 * @param   array{verb: string, args: array<string, mixed>} $expected_call Complete scheduling request.
@@ -1263,9 +1165,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Asserts a fenced run exits without processing or terminal batch callbacks.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	private function assert_quiet_superseded_run(): void {
@@ -1287,9 +1186,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Asserts the shared name-space failure identifies the required registration fix.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @phpstan-param AbstractResult<mixed, mixed> $result
 	 *
 	 * @param   AbstractResult $result Rejected public operation.
@@ -1308,9 +1204,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Asserts validation returns before every observable run-start boundary.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	private function assert_start_boundaries_untouched(): void {
@@ -1324,9 +1217,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Asserts both terminal history buffers contain the deterministic run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -1349,9 +1239,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Starts one deterministic batch run.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	private function start_batch(): void {
@@ -1362,9 +1249,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Generates a queue and clears observations before its first continue action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
 	 *
@@ -1385,9 +1269,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Returns the deterministic run option's complete state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array{
 	 *     status: string,
 	 *     start_args: array<array-key, mixed>,
@@ -1404,9 +1285,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Reconstructs a complete typed state from the WordPress option boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   mixed $state Persisted run state.
 	 *
@@ -1457,9 +1335,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Returns the deterministic run option name.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  string
 	 */
 	private function run_option_name(): string {
@@ -1468,9 +1343,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Stores one fresh incumbent lock and its recoverable latest-run pointer.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -1497,9 +1369,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Returns the current deterministic lock row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
@@ -1532,9 +1401,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Returns one persisted option value.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $name Option name.
 	 *
 	 * @return  mixed
@@ -1548,9 +1414,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Returns fired lifecycle actions.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */
@@ -1575,9 +1438,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Returns internal action registrations.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}>
 	 */
@@ -1607,9 +1467,6 @@ final class OrchestratorBatchTest extends TestCase {
 	/**
 	 * Scripts one WordPress filter value through a typed global boundary.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $hook_name Hook name.
 	 * @param   mixed  $value     Scripted value.
 	 *
@@ -1625,9 +1482,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 	/**
 	 * Scripts one listener throwable through the unit action boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string     $hook_name Hook name.
 	 * @param   \Throwable $throwable Listener failure.

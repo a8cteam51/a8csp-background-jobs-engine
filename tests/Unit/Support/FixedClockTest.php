@@ -9,16 +9,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the deterministic clock fixture used by orchestration tests.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversNothing]
 final class FixedClockTest extends TestCase {
 	/**
 	 * Construction from a zoned instant retains its Unix timestamp.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

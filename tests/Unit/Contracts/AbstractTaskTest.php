@@ -11,8 +11,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the retry policy inherited by task implementations.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( AbstractTask::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -20,9 +18,6 @@ final class AbstractTaskTest extends TestCase {
 
 	/**
 	 * Loads WordPress constants before the default retry policy is first instantiated.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -38,9 +33,6 @@ final class AbstractTaskTest extends TestCase {
 	/**
 	 * A task that supplies only its identity and handler receives a fresh default policy.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_default_policy_matches_a_new_retry_policy_field_for_field(): void {
@@ -49,8 +41,6 @@ final class AbstractTaskTest extends TestCase {
 			/**
 			 * {@inheritDoc}
 			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 */
 			#[\Override]
 			public function get_name(): string {
@@ -59,9 +49,6 @@ final class AbstractTaskTest extends TestCase {
 
 			/**
 			 * {@inheritDoc}
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $args Invocation arguments.
 			 */

@@ -18,7 +18,10 @@ final class BatchRegistry {
 	/**
 	 * Registered batches keyed by stable name.
 	 *
-	 * @var array<string, BatchInterface>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<string, BatchInterface>
 	 */
 	private array $batches = array();
 

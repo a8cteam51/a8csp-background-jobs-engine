@@ -14,8 +14,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the two Result variants and their branch-then-property consumption contract.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( AbstractResult::class )]
 #[CoversClass( Success::class )]
@@ -25,9 +23,6 @@ use PHPUnit\Framework\TestCase;
 final class ResultTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -41,9 +36,6 @@ final class ResultTest extends TestCase {
 	/**
 	 * A success selects only the successful branch predicates.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_success_truth_table(): void {
@@ -52,9 +44,6 @@ final class ResultTest extends TestCase {
 
 	/**
 	 * A failure selects only the failed branch predicates.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -73,9 +62,6 @@ final class ResultTest extends TestCase {
 	/**
 	 * Null remains a value rather than becoming an absent success payload.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_success_carries_null_exactly(): void {
@@ -86,9 +72,6 @@ final class ResultTest extends TestCase {
 
 	/**
 	 * Structured values retain their keys, values, and ordering.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -105,9 +88,6 @@ final class ResultTest extends TestCase {
 	/**
 	 * A failure exposes the same scheduling error instance supplied by its caller.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_failure_carries_its_exact_error(): void {
@@ -123,9 +103,6 @@ final class ResultTest extends TestCase {
 	/**
 	 * Predicate checks expose each variant's payload without a second type check.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_predicate_branches_expose_the_narrowed_payload(): void {
@@ -140,9 +117,6 @@ final class ResultTest extends TestCase {
 
 	/**
 	 * Reads the payload selected by the result predicate.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param AbstractResult<int, SchedulingError> $result
 	 *
@@ -160,9 +134,6 @@ final class ResultTest extends TestCase {
 
 	/**
 	 * Asserts both predicates through the shared result contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param AbstractResult<mixed, mixed> $result
 	 *

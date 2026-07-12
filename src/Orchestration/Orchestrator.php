@@ -27,15 +27,95 @@ use Psr\Log\LoggerInterface;
 final readonly class Orchestrator {
 	// region FIELDS AND CONSTANTS
 
-	private const CONTINUE_DELAY       = 60;
-	private const CONTINUE_HOOK        = self::HOOK_PREFIX . 'continue';
-	private const CLEANUP_HOOK         = self::HOOK_PREFIX . 'cleanup';
-	private const HOOK_PREFIX          = 'a8csp/background_tasks/';
-	private const MAX_PRIORITY         = 255;
-	private const RUN_HOOK             = self::HOOK_PREFIX . 'run';
+	/**
+	 * Default delay between completed batch chunks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const CONTINUE_DELAY = 60;
+
+	/**
+	 * Internal hook that resumes a batch after its inter-chunk delay.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const CONTINUE_HOOK = self::HOOK_PREFIX . 'continue';
+
+	/**
+	 * Internal hook that reconciles a terminal batch run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const CLEANUP_HOOK = self::HOOK_PREFIX . 'cleanup';
+
+	/**
+	 * Prefix for internal orchestration hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const HOOK_PREFIX = 'a8csp/background_tasks/';
+
+	/**
+	 * Highest scheduler priority accepted by the orchestration API.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_PRIORITY = 255;
+
+	/**
+	 * Internal hook that executes task work or one batch chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const RUN_HOOK = self::HOOK_PREFIX . 'run';
+
+	/**
+	 * Decimal width reserved for a run identifier's random suffix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
 	private const RUN_ID_RANDOM_DIGITS = 19;
-	private const RUN_ID_TIME_DIGITS   = 20;
-	private const START_HOOK           = self::HOOK_PREFIX . 'start';
+
+	/**
+	 * Decimal width reserved for a run identifier's timestamp prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const RUN_ID_TIME_DIGITS = 20;
+
+	/**
+	 * Internal hook that generates and starts a batch queue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const START_HOOK = self::HOOK_PREFIX . 'start';
 
 	// endregion
 
@@ -610,6 +690,9 @@ final readonly class Orchestrator {
 	/**
 	 * Executes one task run after shared-hook dispatch.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   TaskInterface $task      Registered task.
 	 * @param   string        $task_name Stable task name.
 	 * @param   string        $run_id    Run identifier.
@@ -636,6 +719,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Executes one batch chunk and schedules the next continue after a normal return.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   BatchInterface          $batch      Registered batch.
 	 * @param   string                  $batch_name Stable batch name.
@@ -733,6 +819,9 @@ final readonly class Orchestrator {
 	/**
 	 * Resolves the positive inter-chunk delay for one batch run.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $batch_name Stable batch name.
 	 * @param   string $run_id    Run identifier.
 	 *
@@ -751,6 +840,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Returns a batch only when one internal action resolves unambiguously.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $batch_name Stable batch name.
 	 * @param   string $run_id    Run identifier.
@@ -789,6 +881,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Heartbeats and fences one recoverable running state for a lifecycle action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 * @param   string         $name      Stable task or batch name.
@@ -842,6 +937,9 @@ final readonly class Orchestrator {
 	/**
 	 * Returns a normalized queue from the queue filter boundary.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   mixed $chunks Filtered queue value.
 	 *
 	 * @throws  \UnexpectedValueException When the filter does not return an array.
@@ -860,6 +958,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Returns one normalized oldest-first queue from an iterable source.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   iterable<mixed> $chunks Generated or filtered chunks.
 	 *
@@ -884,6 +985,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Persists one terminal batch failure before callbacks, hooks, and active-state cleanup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   BatchInterface $batch      Failed batch.
 	 * @param   string         $batch_name Stable batch name.
@@ -925,6 +1029,9 @@ final readonly class Orchestrator {
 	/**
 	 * Converts a failed lifecycle schedule into terminal batch detail.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string                     $batch_name Stable batch name.
 	 * @param   'continue'|'run'|'cleanup' $stage Internal action that was not scheduled.
 	 * @param   SchedulingError            $error      Scheduling failure.
@@ -946,6 +1053,9 @@ final readonly class Orchestrator {
 	/**
 	 * Returns a failure that names the global background-work identity correction.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $name Ambiguous task and batch name.
 	 *
 	 * @return  Failure<EngineError>
@@ -963,6 +1073,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Returns the SHA-256 identity of insertion-ordered JSON with preserved float fractions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string                  $name      Stable task or batch name.
 	 * @param   array<array-key, mixed> $args      Start arguments.
@@ -1001,6 +1114,9 @@ final readonly class Orchestrator {
 	 *
 	 * JSON encoding runs first so recursive or excessively deep arrays never reach this traversal.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   array<array-key, mixed> $values Argument values.
 	 *
 	 * @return  bool
@@ -1026,6 +1142,9 @@ final readonly class Orchestrator {
 	/**
 	 * Returns a lexically time-ordered identifier with a 63-bit random suffix.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   int $timestamp Run creation timestamp.
 	 *
 	 * @return  string
@@ -1040,6 +1159,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Resolves the per-run lock window above twice the continue delay.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $name   Stable task or batch name.
 	 * @param   string $run_id Run identifier.
@@ -1068,6 +1190,9 @@ final readonly class Orchestrator {
 	/**
 	 * Marks a successful run before firing hooks and releasing its active state.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string   $task_name Stable task name.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Running state.
@@ -1087,6 +1212,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Persists failure detail before firing hooks and releasing active state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string     $task_name Stable task name.
 	 * @param   string     $run_id    Run identifier.
@@ -1122,6 +1250,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Fences a non-latest run before firing hooks and releasing active state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string         $name          Stable task or batch name.
 	 * @param   string         $run_id        Run identifier.
@@ -1161,6 +1292,9 @@ final readonly class Orchestrator {
 	/**
 	 * Releases lock and run storage before appending the existing terminal-history buffer.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string   $name      Stable task or batch name.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Terminalizing run state.
@@ -1176,6 +1310,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Fires the name-specific lifecycle hook before its generic companion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @phpstan-param 'started'|'completed'|'failed'|'superseded' $event
 	 *
@@ -1213,6 +1350,9 @@ final readonly class Orchestrator {
 
 	/**
 	 * Records the reconciliation path for missing or malformed active state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string         $name      Stable task or batch name.
 	 * @param   string         $run_id    Run identifier.

@@ -5,8 +5,6 @@
  *
  * The guards keep this file inert wherever WordPress is loaded.
  *
- * @since   1.0.0
- * @version 1.0.0
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 

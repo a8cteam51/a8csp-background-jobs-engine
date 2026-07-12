@@ -10,17 +10,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the scheduling failure payload and its closed reason vocabulary.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( SchedulingError::class )]
 #[CoversClass( SchedulingErrorReason::class )]
 final class SchedulingErrorTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -33,9 +28,6 @@ final class SchedulingErrorTest extends TestCase {
 
 	/**
 	 * The error exposes the exact reason, message, and structured context supplied by its caller.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -58,9 +50,6 @@ final class SchedulingErrorTest extends TestCase {
 	/**
 	 * Callers that have no structured detail receive an empty context.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_context_defaults_to_an_empty_array(): void {
@@ -74,9 +63,6 @@ final class SchedulingErrorTest extends TestCase {
 
 	/**
 	 * The reason set and its log-facing values remain an explicit closed contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

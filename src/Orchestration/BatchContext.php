@@ -18,21 +18,30 @@ final class BatchContext implements BatchContextInterface {
 	/**
 	 * Attempt-local queue in processing order.
 	 *
-	 * @var list<array<array-key, mixed>>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     list<array<array-key, mixed>>
 	 */
 	private array $queue;
 
 	/**
 	 * Separate front mutations reverse once at commit without shifting the base queue repeatedly.
 	 *
-	 * @var list<array<array-key, mixed>>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     list<array<array-key, mixed>>
 	 */
 	private array $prepended = array();
 
 	/**
 	 * Separate back mutations leave the base queue unchanged until commit.
 	 *
-	 * @var list<array<array-key, mixed>>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     list<array<array-key, mixed>>
 	 */
 	private array $appended = array();
 
@@ -62,25 +71,45 @@ final class BatchContext implements BatchContextInterface {
 
 	// region INHERITED METHODS
 
-	/** {@inheritDoc} */
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	#[\Override]
 	public function enqueue( array $chunk_args ): void {
 		$this->appended[] = $chunk_args;
 	}
 
-	/** {@inheritDoc} */
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	#[\Override]
 	public function prepend( array $chunk_args ): void {
 		$this->prepended[] = $chunk_args;
 	}
 
-	/** {@inheritDoc} */
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	#[\Override]
 	public function get_run_id(): string {
 		return $this->run_id;
 	}
 
-	/** {@inheritDoc} */
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	#[\Override]
 	public function get_start_args(): array {
 		return $this->start_args;

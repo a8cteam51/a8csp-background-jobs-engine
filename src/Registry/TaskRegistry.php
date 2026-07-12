@@ -18,7 +18,10 @@ final class TaskRegistry {
 	/**
 	 * Registered tasks keyed by stable name.
 	 *
-	 * @var array<string, TaskInterface>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<string, TaskInterface>
 	 */
 	private array $tasks = array();
 

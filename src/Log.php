@@ -11,12 +11,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
  * @version 1.0.0
  */
 final class Log implements Component {
-	// region FIELDS AND CONSTANTS
-
-	public const HOOK = 'a8csp/background_tasks/log';
-
-	// endregion
-
 	// region INHERITED METHODS
 
 	/**
@@ -42,7 +36,7 @@ final class Log implements Component {
 	 */
 	#[\Override]
 	public function initialize(): void {
-		\add_action( self::HOOK, array( self::class, 'log' ), 10, 3 );
+		\add_action( 'a8csp/background_tasks/log', array( self::class, 'log' ), 10, 3 );
 	}
 
 	// endregion

@@ -9,16 +9,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * Exercises the always-on log channel and its bare-install error-log fallback.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( Log::class )]
 final class LogTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording action stub.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -35,9 +30,6 @@ final class LogTest extends TestCase {
 	/**
 	 * Starts each test with empty hook-registration ledgers.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -51,9 +43,6 @@ final class LogTest extends TestCase {
 	/**
 	 * The log channel is available on every site.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_is_always_needed(): void {
@@ -62,9 +51,6 @@ final class LogTest extends TestCase {
 
 	/**
 	 * Initialization registers exactly one callable for all three channel arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -87,9 +73,6 @@ final class LogTest extends TestCase {
 	/**
 	 * A populated context is JSON-encoded after the level and message.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_log_writes_a_single_line_with_context(): void {
@@ -111,9 +94,6 @@ final class LogTest extends TestCase {
 	/**
 	 * An empty context leaves no JSON tail or trailing space.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_log_omits_an_empty_context(): void {
@@ -124,9 +104,6 @@ final class LogTest extends TestCase {
 
 	/**
 	 * Line breaks remain visible without splitting the error-log record.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -142,9 +119,6 @@ final class LogTest extends TestCase {
 	/**
 	 * An unencodable context retains the message and identifies the encoding failure.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_log_reports_an_unencodable_context_without_throwing(): void {
@@ -158,9 +132,6 @@ final class LogTest extends TestCase {
 
 	/**
 	 * A context value that throws during serialization cannot interrupt the channel.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

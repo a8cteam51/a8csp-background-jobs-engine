@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Align documentation with the house grammar: full docblocks with since and version tags on every constant, property, and method in source; test files drop version tags per the framework test convention; the log hook is documented at its literal fire site instead of a constant.

@@ -16,8 +16,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the WP-Cron backend contract without loading WordPress.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( WPCronBackend::class )]
 #[UsesClass( BackendInterface::class )]
@@ -30,9 +28,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Loads guarded WordPress cron functions before the backend is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -47,9 +42,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Resets all request-local cron state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -70,9 +62,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * A recurring write ignores its group and schedules the hook-and-args identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -96,9 +85,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * A single write ignores its group and schedules the hook-and-args identity.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_schedule_single_ignores_a_non_empty_group(): void {
@@ -119,9 +105,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * An async write ignores its group and schedules the hook-and-args identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -146,9 +129,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Unscheduling uses WP-Cron's hook-and-args identity regardless of the supplied group.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_unschedule_ignores_a_non_empty_group(): void {
@@ -169,9 +149,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Read methods query the ungrouped WP-Cron identity regardless of the supplied group.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_reads_ignore_the_group(): void {
@@ -184,9 +161,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Read methods report absence when the cron option has no stored value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -211,9 +185,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Zero and negative recurring intervals surface the domain-specific reason.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_schedule_recurring_rejects_intervals_below_one_second(): void {
@@ -233,9 +204,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * A recurring write installs and uses the interval's synthetic schedule.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -259,9 +227,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Recurrence filters run before the fake exposes the stored event.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -290,9 +255,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * An unavailable recurrence is rejected before the fake stores an event.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_recurring_schedule_requires_a_registered_recurrence_before_storage(): void {
@@ -305,9 +267,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * A null first-run timestamp schedules the recurring event at the current time.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -326,9 +285,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * A single write schedules the exact event and carries true on success.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_schedule_single_schedules_the_event_and_returns_true(): void {
@@ -345,9 +301,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * A fresh callback reconstructs every distinct synthetic interval from stored events.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -379,9 +332,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Raw option corruption is ignored without hiding valid synthetic schedules.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -427,9 +377,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Per-request hook registration remains idempotent without a scheduling call.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_register_hooks_wires_the_cron_schedules_filter_once(): void {
@@ -445,9 +392,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Existing hook-and-args identities make recurring and single scheduling successful no-ops.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -484,9 +428,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * The cron fake rejects timestamps that WordPress Core does not accept.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_cron_fake_rejects_non_positive_timestamps(): void {
@@ -505,9 +446,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Core's duplicate window includes both ten-minute boundaries and serialized arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -537,9 +475,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * A non-future request conflicts with every identical historical event.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_single_event_duplicate_scan_includes_all_past_events(): void {
@@ -554,9 +489,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Different hooks and differently serialized arguments remain distinct identities.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_single_event_duplicate_identity_uses_the_hook_and_serialized_arguments(): void {
@@ -569,9 +501,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Events beyond either ten-minute boundary do not block a future request.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -590,9 +519,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Near-future and past requests use Core's asymmetric now-based duplicate bounds.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -618,9 +544,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Unique async enqueue retains an existing event with identical hook arguments.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_unique_async_enqueue_skips_an_identical_event(): void {
@@ -636,9 +559,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Unique async enqueue schedules when the existing event has different arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -662,9 +582,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Non-unique async enqueue delegates even when an identical event already exists.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_non_unique_async_enqueue_does_not_preemptively_deduplicate(): void {
@@ -679,9 +596,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Core duplicate failures explain how a caller can change or accept the identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -701,9 +615,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Unscheduling clears every stacked occurrence with exact arguments and verifies absence.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -736,9 +647,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * A successful-looking clear that makes no progress is reported instead of looping forever.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_unschedule_fails_when_the_event_remains_scheduled(): void {
@@ -757,9 +665,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * A mid-loop clear error is retained only when a fresh snapshot still finds the event.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -798,9 +703,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * A raced clear error succeeds when the event vanished before Core handled it.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_unschedule_succeeds_when_a_snapshot_event_vanishes_before_clear(): void {
@@ -823,9 +725,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * New matching events do not expand the finite deletion snapshot.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -862,9 +761,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * A WordPress scheduling error becomes an actionable scheduling failure.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_schedule_maps_a_wordpress_error_to_schedule_failed(): void {
@@ -885,9 +781,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * A single-event WordPress error preserves the backend message and failure reason.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -913,9 +806,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Advisory priorities accept arbitrary values without reaching WP-Cron calls.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -945,9 +835,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Core availability makes WP-Cron consultable regardless of runner configuration.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_is_ready_is_always_true(): void {
@@ -956,9 +843,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Returns a result's scheduling error after checking its reason.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param AbstractResult<true, SchedulingError> $result
 	 *
@@ -978,9 +862,6 @@ final class WPCronBackendTest extends TestCase {
 	/**
 	 * Returns the callback recorded for the WP-Cron schedules filter.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @phpstan-return callable(array<string, array{interval: int, display: string}>): array<string, array{interval: int, display: string}>
 	 *
 	 * @return  callable
@@ -994,9 +875,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Returns the registration recorded for the WP-Cron schedules filter.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  array{hook_name: string, callback: mixed, priority: int, accepted_args: int}
 	 */
@@ -1017,9 +895,6 @@ final class WPCronBackendTest extends TestCase {
 
 	/**
 	 * Returns recorded cron calls, optionally filtered by function.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string|null $function_name Function name, or null for every call.
 	 *

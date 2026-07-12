@@ -11,8 +11,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins complete immutable copies for every RunState mutation surface.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
@@ -20,9 +18,6 @@ final class RunStateTest extends TestCase {
 
 	/**
 	 * Satisfies the production file's ABSPATH boot guard before first autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -36,9 +31,6 @@ final class RunStateTest extends TestCase {
 	/**
 	 * The value shape is closed to inheritance and mutation.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_class_is_final_and_readonly(): void {
@@ -50,9 +42,6 @@ final class RunStateTest extends TestCase {
 
 	/**
 	 * Status copies change only the lifecycle state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -78,9 +67,6 @@ final class RunStateTest extends TestCase {
 	/**
 	 * Queue copies change only the pending chunks.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_with_queue_preserves_every_other_field(): void {
@@ -104,9 +90,6 @@ final class RunStateTest extends TestCase {
 
 	/**
 	 * Retry copies change only the current-chunk counter.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -132,9 +115,6 @@ final class RunStateTest extends TestCase {
 	/**
 	 * Heartbeat copies change only the liveness timestamp.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_with_heartbeat_at_preserves_every_other_field(): void {
@@ -159,9 +139,6 @@ final class RunStateTest extends TestCase {
 	/**
 	 * Returns the shared source state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  RunState
 	 */
 	private static function state(): RunState {
@@ -178,9 +155,6 @@ final class RunStateTest extends TestCase {
 
 	/**
 	 * Returns all seven fields in persisted schema order.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   RunState $state Run state.
 	 *

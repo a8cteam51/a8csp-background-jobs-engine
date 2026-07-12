@@ -21,7 +21,10 @@ final readonly class LockRows {
 	/**
 	 * Site identifier captured when this row seam is constructed.
 	 *
-	 * @var int
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
 	 */
 	private int $site_id;
 
@@ -184,6 +187,9 @@ final readonly class LockRows {
 	/**
 	 * Returns a lock row's exact persisted representation.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the row to a string.
@@ -202,6 +208,9 @@ final readonly class LockRows {
 	/**
 	 * Throws when a blog switch makes the injected wpdb point at a different site's tables.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  void
@@ -218,6 +227,9 @@ final readonly class LockRows {
 
 	/**
 	 * Removes stale request and persistent-cache views after a direct table write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $key Lock option name.
 	 *

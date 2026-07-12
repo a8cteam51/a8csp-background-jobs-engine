@@ -19,8 +19,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins ordered routing and payload protection at the scheduling facade boundary.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( SchedulerFacade::class )]
 #[UsesClass( BackendInterface::class )]
@@ -34,9 +32,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Keeps facade tests independent of a WordPress bootstrap while satisfying production guards.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -53,9 +48,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Keeps the WP-Cron fallback isolated from process-global fake state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -71,9 +63,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Empty configuration identifies the baseline backend the caller must supply.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_constructor_rejects_an_empty_backend_list_with_the_fix(): void {
@@ -87,9 +76,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Constructor keys do not affect declaration order or first-ready routing.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -116,9 +102,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Sparse constructor keys leave the declared final backend available for fallback routing.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_constructor_reindexes_sparse_keys_for_fallback_lookup(): void {
@@ -143,9 +126,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * A write reaches the first ready backend and leaves every later backend untouched.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -192,9 +172,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Write preference advances past an unready backend without invoking its write API.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_write_uses_the_second_backend_when_the_first_is_not_ready(): void {
@@ -232,9 +209,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * A grouped async write reaches WP-Cron when the preferred backend is unavailable.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_grouped_enqueue_async_falls_back_to_wp_cron(): void {
@@ -258,9 +232,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * With no ready backend, the last backend receives the write and supplies its own failure.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -305,9 +276,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * A backend that becomes unready during its write yields to the next ready backend.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_write_falls_through_when_the_selected_backend_becomes_unready(): void {
@@ -344,9 +312,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Only backend-readiness failures permit a write to reach another backend.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $reason_value Non-readiness failure backing value.
 	 *
 	 * @return  void
@@ -373,9 +338,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * When every selected backend declines a write, the last decline retains diagnostic precedence.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -411,9 +373,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Scheduled state is the union of the currently ready backends.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_is_scheduled_returns_true_when_only_the_second_backend_reports_it(): void {
@@ -443,9 +402,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * The next run is the earliest concrete answer across every ready backend.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -479,9 +435,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * The next run remains absent when every ready backend has no timestamp.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_get_next_scheduled_returns_null_when_all_answers_are_null(): void {
@@ -495,9 +448,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Read operations test readiness but never query an unready backend.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -520,9 +470,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * A successful clear reaches every ready backend.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -557,9 +504,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * First-failure precedence stops clearing before later ready backends are mutated.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_unschedule_returns_the_first_failure_without_clearing_remaining_backends(): void {
@@ -583,9 +527,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Failure precedence retains earlier clears but stops before every later ready backend.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -612,9 +553,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * With no ready backend, the final backend supplies the clear failure diagnostics.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -643,9 +581,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Facade readiness follows whether any configured backend is ready.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_is_ready_returns_true_when_any_backend_is_ready(): void {
@@ -661,9 +596,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Hook registration reaches every backend without consulting readiness.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -681,9 +613,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Every scheduling write rejects oversized arguments before backend selection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async' $verb Write method to exercise.
 	 *
@@ -707,9 +636,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Nested objects fail the portable-storage shape guard before JSON size validation.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_args_guard_rejects_an_object_nested_inside_arrays(): void {
@@ -732,9 +658,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Nested closures fail the portable-storage shape guard before backend selection.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_args_guard_rejects_a_nested_closure(): void {
@@ -752,9 +675,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Resources fail the same portable-storage shape guard before backend selection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -775,9 +695,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Argument nesting beyond the JSON encoder's depth fails before backend selection.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_args_guard_rejects_nesting_beyond_the_portable_depth(): void {
@@ -796,9 +713,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Self-referential arrays fail the finite-tree guard before backend selection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -823,9 +737,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Nested arrays containing scalar and null leaves remain portable.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -852,9 +763,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Non-positive recurring first-run timestamps fail before backend selection.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int $timestamp Invalid first-run timestamp.
 	 *
 	 * @return  void
@@ -877,9 +785,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Non-positive single-run timestamps fail before backend selection.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int $timestamp Invalid run timestamp.
 	 *
 	 * @return  void
@@ -898,9 +803,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * The documented ceiling remains accepted and routes normally.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_args_guard_accepts_an_exactly_8000_character_json_payload(): void {
@@ -915,9 +817,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * JSON encoding failures use the same corrective payload failure as oversized arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -935,9 +834,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Oversized identities remain available to clear and query operations.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -972,9 +868,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Supplies every scheduling write guarded by the facade.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{0: 'schedule_recurring'|'schedule_single'|'enqueue_async'}>
 	 */
 	public static function guarded_write_provider(): array {
@@ -987,9 +880,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Supplies every failure reason that must not fall through write routing.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  array<string, array{0: string}>
 	 */
@@ -1006,9 +896,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Supplies timestamps outside the positive UNIX-seconds domain.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{0: int}>
 	 */
 	public static function non_positive_timestamp_provider(): array {
@@ -1020,9 +907,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Invokes one guarded write with the supplied hook arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async' $verb
 	 * @phpstan-param list<mixed> $args
@@ -1044,9 +928,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Builds one list whose default JSON encoding has the requested length.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int $json_length Requested encoded length.
 	 *
 	 * @return  list<string>
@@ -1065,9 +946,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Returns a payload failure after checking its machine-readable reason.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @phpstan-param AbstractResult<true, SchedulingError> $result
 	 *
 	 * @param   AbstractResult $result Result to inspect.
@@ -1085,9 +963,6 @@ final class SchedulerFacadeTest extends TestCase {
 	/**
 	 * Returns a timing failure after checking its machine-readable reason.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @phpstan-param AbstractResult<true, SchedulingError> $result
 	 *
 	 * @param   AbstractResult $result Result to inspect.
@@ -1104,9 +979,6 @@ final class SchedulerFacadeTest extends TestCase {
 
 	/**
 	 * Returns a backend's recorded verb sequence.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   RecordingBackend $backend Backend to inspect.
 	 *

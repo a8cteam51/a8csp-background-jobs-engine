@@ -9,17 +9,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins latest-run fencing pointers and hash-identity LRU retention.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( LatestRunPointer::class )]
 final class LatestRunPointerTest extends TestCase {
 
 	/**
 	 * Loads guarded WordPress option functions before the pointer is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -35,9 +30,6 @@ final class LatestRunPointerTest extends TestCase {
 	/**
 	 * Resets request-local option state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -52,9 +44,6 @@ final class LatestRunPointerTest extends TestCase {
 	/**
 	 * Empty pointer reads report no latest run.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_reads_return_null_without_a_pointer(): void {
@@ -66,9 +55,6 @@ final class LatestRunPointerTest extends TestCase {
 
 	/**
 	 * Recording overwrites the all pointer while retaining per-hash identities.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -97,9 +83,6 @@ final class LatestRunPointerTest extends TestCase {
 	/**
 	 * The twenty-first distinct hash evicts the oldest identity.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_distinct_hashes_evict_the_oldest_past_twenty(): void {
@@ -127,9 +110,6 @@ final class LatestRunPointerTest extends TestCase {
 
 	/**
 	 * Re-recording an existing hash moves it behind every older identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -163,9 +143,6 @@ final class LatestRunPointerTest extends TestCase {
 	/**
 	 * Returns one stored option value.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
@@ -179,9 +156,6 @@ final class LatestRunPointerTest extends TestCase {
 
 	/**
 	 * Returns one stored per-hash pointer map.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $option_name Option name.
 	 *
@@ -199,9 +173,6 @@ final class LatestRunPointerTest extends TestCase {
 	/**
 	 * Returns the recorded autoload flag for one option.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
@@ -215,9 +186,6 @@ final class LatestRunPointerTest extends TestCase {
 
 	/**
 	 * Asserts that every option write explicitly disables autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -233,9 +201,6 @@ final class LatestRunPointerTest extends TestCase {
 
 	/**
 	 * Returns every recorded option-function call.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{function: string, args: list<mixed>}>
 	 */

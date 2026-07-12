@@ -25,8 +25,6 @@ final class LockRowWakeupProbe {
 /**
  * Pins execution-overlap ownership, liveness, reclaim, and release behavior.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( ClaimResult::class )]

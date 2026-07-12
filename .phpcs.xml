@@ -22,7 +22,6 @@
 				<element value="a8csp_"/>
 				<element value="a8csp_bgte_"/>
 				<element value="A8C\SpecialProjects\BackgroundTasksEngine"/>
-				<element value="Log::HOOK"/>
 			</property>
 		</properties>
 	</rule>

@@ -16,7 +16,24 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores;
 final readonly class LatestRunPointer {
 	// region FIELDS AND CONSTANTS
 
-	private const HASH_LIMIT    = 20;
+	/**
+	 * Maximum number of argument identities retained with latest-run pointers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const HASH_LIMIT = 20;
+
+	/**
+	 * Prefix for latest-run pointer option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
 	private const OPTION_PREFIX = 'a8csp_bgte_latest_';
 
 	// endregion

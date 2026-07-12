@@ -13,8 +13,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins consolidated run-option persistence and typed read-modify-write state.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( RunStore::class )]
 #[UsesClass( RunState::class )]
@@ -23,9 +21,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Loads guarded WordPress option functions before the store is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -41,9 +36,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Resets request-local option state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -57,9 +49,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Creation persists the exact schema and hydrates every typed field unchanged.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -111,9 +100,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Creation failure leaves an existing run option untouched and returns no state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_create_reports_failure_without_overwriting_an_existing_option(): void {
@@ -134,9 +120,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Queue, retry, status, and heartbeat copies remain observable after every save.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -196,9 +179,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Heartbeat refresh leaves missing and corrupted options untouched.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_refresh_heartbeat_does_not_recreate_unrecoverable_runs(): void {
@@ -222,9 +202,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Deletion removes the exact run option and later reads report absence.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_delete_removes_the_run_option(): void {
@@ -244,9 +221,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Missing and malformed option values cannot hydrate a typed run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -344,9 +318,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Asserts every persisted RunState field independently.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   RunState $expected Expected state.
 	 * @param   RunState $actual   Actual state.
 	 *
@@ -365,9 +336,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Returns one stored option value.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
@@ -380,9 +348,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Returns the recorded autoload flag for one option.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $option_name Option name.
 	 *
@@ -398,9 +363,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Returns the current option ledger.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<array-key, mixed>
 	 */
 	private function options(): array {
@@ -412,9 +374,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Returns one run state after asserting that it remains recoverable.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   RunStore $store  Run store.
 	 * @param   string   $run_id Run identifier.
@@ -431,9 +390,6 @@ final class RunStoreTest extends TestCase {
 	/**
 	 * Returns calls for one option function in recording order.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $function_name Function name.
 	 *
 	 * @return  list<array{function: string, args: list<mixed>}>
@@ -449,9 +405,6 @@ final class RunStoreTest extends TestCase {
 
 	/**
 	 * Returns every recorded option-function call.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{function: string, args: list<mixed>}>
 	 */

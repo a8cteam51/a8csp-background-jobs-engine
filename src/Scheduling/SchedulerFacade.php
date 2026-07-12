@@ -28,15 +28,33 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 final readonly class SchedulerFacade implements BackendInterface {
 	// region FIELDS AND CONSTANTS
 
-	// The guard accepts only scalar trees whose JSON form fits the incumbent-proven 8000-character ceiling.
+	/**
+	 * The guard accepts only scalar trees whose JSON form fits the incumbent-proven 8000-character ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
 	private const MAX_ARGUMENTS_JSON_LENGTH = 8_000;
-	// Matching the JSON encoder's depth keeps recursive shape validation finite.
+
+	/**
+	 * Matching the JSON encoder's depth keeps recursive shape validation finite.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
 	private const MAX_ARGUMENTS_JSON_DEPTH = 512;
 
 	/**
 	 * Backends in declaration order for write preference, consultation, and failure precedence.
 	 *
-	 * @var non-empty-list<BackendInterface>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     non-empty-list<BackendInterface>
 	 */
 	private array $backends;
 

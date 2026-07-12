@@ -9,17 +9,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins attempt-local batch queue mutations and run metadata.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( BatchContext::class )]
 final class BatchContextTest extends TestCase {
 
 	/**
 	 * Satisfies the production boot guard before the context is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -33,9 +28,6 @@ final class BatchContextTest extends TestCase {
 	/**
 	 * Accessors retain the exact run identity and start arguments supplied by orchestration.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_accessors_return_the_attempt_run_metadata(): void {
@@ -48,9 +40,6 @@ final class BatchContextTest extends TestCase {
 
 	/**
 	 * Appends retain call order while each prepend becomes the new queue head.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

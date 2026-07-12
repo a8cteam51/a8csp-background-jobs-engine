@@ -12,17 +12,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins task identity validation and instance lookup.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( TaskRegistry::class )]
 final class TaskRegistryTest extends TestCase {
 
 	/**
 	 * Satisfies production boot guards before task contracts are autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -35,9 +30,6 @@ final class TaskRegistryTest extends TestCase {
 
 	/**
 	 * Registration retains the exact task instance under its stable name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -53,9 +45,6 @@ final class TaskRegistryTest extends TestCase {
 
 	/**
 	 * Invalid names identify the accepted spelling needed to register the task.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $name Invalid task name.
 	 *
@@ -74,9 +63,6 @@ final class TaskRegistryTest extends TestCase {
 	/**
 	 * Supplies names outside the complete stable-name grammar.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{name: string}>
 	 */
 	public static function invalid_names(): array {
@@ -91,9 +77,6 @@ final class TaskRegistryTest extends TestCase {
 
 	/**
 	 * Duplicate registration identifies the one-name-one-instance correction.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -111,9 +94,6 @@ final class TaskRegistryTest extends TestCase {
 
 	/**
 	 * Creates a task with the supplied identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $name Task name.
 	 *

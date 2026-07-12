@@ -29,21 +29,53 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
 final class WPCronBackend implements BackendInterface {
 	// region FIELDS AND CONSTANTS
 
-	private const SCHEDULE_PREFIX  = 'a8csp_bgte_every_';
+	/**
+	 * Prefix for synthetic recurrence schedule names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const SCHEDULE_PREFIX = 'a8csp_bgte_every_';
+
+	/**
+	 * Pattern matching valid synthetic recurrence schedule names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
 	private const SCHEDULE_PATTERN = '/^a8csp_bgte_every_([1-9]\d*)s$/';
+
+	/**
+	 * WordPress filter that supplies registered recurrence schedules.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
 	private const SCHEDULES_FILTER = 'cron_schedules';
 
 	/**
 	 * Intervals registered during this request, used as a set.
 	 *
-	 * @var array<int, true>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<int, true>
 	 */
 	private array $registered_intervals = array();
 
 	/**
 	 * Whether this instance has registered its schedule filter.
 	 *
-	 * @var bool
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     bool
 	 */
 	private bool $schedules_filter_registered = false;
 

@@ -6,17 +6,12 @@
  * Each guarded stub records its positional arguments and shifts a scripted return value. The
  * guards keep this file inert when a consumer loads the real Action Scheduler API.
  *
- * @since   1.0.0
- * @version 1.0.0
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
 if ( ! \function_exists( 'a8csp_bgte_test_record_as_call' ) ) {
 	/**
 	 * Appends an Action Scheduler function call to the test ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<mixed> $args
 	 *
@@ -40,9 +35,6 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_as_call' ) ) {
 if ( ! \function_exists( 'a8csp_bgte_test_scripted_as_result' ) ) {
 	/**
 	 * Shifts the next scripted result for an Action Scheduler function.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $function_name Function name.
 	 * @param   mixed  $fallback      Fallback when no result is scripted.
@@ -72,9 +64,6 @@ if ( ! \function_exists( 'did_action' ) ) {
 	/**
 	 * Returns the scripted fire count for a WordPress action.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $hook_name Action name.
 	 *
 	 * @return  int
@@ -90,9 +79,6 @@ if ( ! \function_exists( 'did_action' ) ) {
 if ( ! \function_exists( 'as_enqueue_async_action' ) ) {
 	/**
 	 * Records and resolves an async enqueue.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string      $hook     Hook name.
 	 * @param   list<mixed> $args     Hook arguments.
@@ -121,9 +107,6 @@ if ( ! \function_exists( 'as_schedule_single_action' ) ) {
 	/**
 	 * Records and resolves a single schedule.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int         $timestamp Run timestamp.
 	 * @param   string      $hook      Hook name.
 	 * @param   list<mixed> $args      Hook arguments.
@@ -151,9 +134,6 @@ if ( ! \function_exists( 'as_schedule_single_action' ) ) {
 if ( ! \function_exists( 'as_schedule_recurring_action' ) ) {
 	/**
 	 * Records and resolves a recurring schedule.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   int         $timestamp           First-run timestamp.
 	 * @param   int         $interval_in_seconds Recurrence interval.
@@ -184,9 +164,6 @@ if ( ! \function_exists( 'as_unschedule_all_actions' ) ) {
 	/**
 	 * Records an all-matches unschedule request.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string      $hook  Hook name.
 	 * @param   list<mixed> $args  Hook arguments.
 	 * @param   string      $group Action group.
@@ -201,9 +178,6 @@ if ( ! \function_exists( 'as_unschedule_all_actions' ) ) {
 if ( ! \function_exists( 'as_next_scheduled_action' ) ) {
 	/**
 	 * Records and resolves a next-scheduled query.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string           $hook  Hook name.
 	 * @param   list<mixed>|null $args  Hook arguments, or null for any arguments.
@@ -226,9 +200,6 @@ if ( ! \function_exists( 'as_next_scheduled_action' ) ) {
 if ( ! \function_exists( 'as_has_scheduled_action' ) ) {
 	/**
 	 * Records and resolves an args-aware scheduled-state query.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string           $hook  Hook name.
 	 * @param   list<mixed>|null $args  Hook arguments, or null for any arguments.

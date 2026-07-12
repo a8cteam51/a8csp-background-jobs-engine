@@ -7,15 +7,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * Guards agreement between the plugin header floors and composer.json.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 final class PluginHeaderFloorsTest extends TestCase {
 	/**
 	 * The PHP floor declared in the plugin header must match composer.json.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -39,9 +34,6 @@ final class PluginHeaderFloorsTest extends TestCase {
 
 	/**
 	 * Locates the main plugin file without hardcoding its name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */

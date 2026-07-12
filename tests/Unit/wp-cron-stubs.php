@@ -7,8 +7,6 @@
  * exposing scripted WordPress errors and a call ledger. Function guards keep it inert when
  * WordPress supplies the real cron API.
  *
- * @since   1.0.0
- * @version 1.0.0
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
@@ -24,9 +22,6 @@ if ( ! \function_exists( '__' ) ) {
 	/**
 	 * Returns source text unchanged.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $text   Source text.
 	 * @param   string $domain Text domain.
 	 *
@@ -40,9 +35,6 @@ if ( ! \function_exists( '__' ) ) {
 if ( ! \function_exists( 'maybe_serialize' ) ) {
 	/**
 	 * Serializes fake option values with WordPress's array and object behavior.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   mixed $data Value to serialize when required.
 	 *
@@ -61,9 +53,6 @@ if ( ! \function_exists( 'maybe_serialize' ) ) {
 if ( ! \function_exists( 'a8csp_bgte_test_record_cron_call' ) ) {
 	/**
 	 * Appends a cron-function call to the test ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<mixed> $args
 	 *
@@ -87,9 +76,6 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_cron_call' ) ) {
 if ( ! \function_exists( 'a8csp_bgte_test_scripted_cron_result' ) ) {
 	/**
 	 * Shifts the next scripted result for a cron function.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $function_name Function name.
 	 *
@@ -117,9 +103,6 @@ if ( ! \function_exists( 'a8csp_bgte_test_scripted_cron_result' ) ) {
 if ( ! \function_exists( 'a8csp_bgte_test_store_cron_event' ) ) {
 	/**
 	 * Stores an event in the fake cron array.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<mixed> $args
 	 *
@@ -151,9 +134,6 @@ if ( ! \function_exists( 'a8csp_bgte_test_store_cron_event' ) ) {
 if ( ! \function_exists( 'a8csp_bgte_test_filtered_cron_schedules' ) ) {
 	/**
 	 * Applies the registered cron-schedule callbacks in priority order.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  array<string, array{interval: int, display: string}>
 	 */
@@ -193,9 +173,6 @@ if ( ! \function_exists( 'a8csp_bgte_test_filtered_cron_schedules' ) ) {
 if ( ! \function_exists( 'a8csp_bgte_test_has_duplicate_cron_event' ) ) {
 	/**
 	 * Returns whether Core's single-event window contains the same serialized identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<mixed> $args
 	 *
@@ -244,9 +221,6 @@ if ( ! \function_exists( 'wp_schedule_event' ) ) {
 	/**
 	 * Stores a recurring event unless a scripted error is present.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int         $timestamp  Unix timestamp.
 	 * @param   string      $recurrence Recurrence name.
 	 * @param   string      $hook       Hook name.
@@ -282,9 +256,6 @@ if ( ! \function_exists( 'wp_schedule_single_event' ) ) {
 	/**
 	 * Stores a single event unless a scripted error is present.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int         $timestamp Unix timestamp.
 	 * @param   string      $hook      Hook name.
 	 * @param   list<mixed> $args      Hook arguments.
@@ -319,9 +290,6 @@ if ( ! \function_exists( 'wp_next_scheduled' ) ) {
 	/**
 	 * Returns the earliest event matching a hook and its exact arguments.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string      $hook Hook name.
 	 * @param   list<mixed> $args Hook arguments.
 	 *
@@ -349,9 +317,6 @@ if ( ! \function_exists( 'wp_next_scheduled' ) ) {
 if ( ! \function_exists( 'wp_unschedule_event' ) ) {
 	/**
 	 * Removes one exact event unless a scripted error or no-progress mode is present.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   int         $timestamp Unix timestamp.
 	 * @param   string      $hook      Hook name.

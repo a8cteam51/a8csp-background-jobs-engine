@@ -17,16 +17,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the reusable scheduling backend recorder used by facade tests.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversNothing]
 final class RecordingBackendTest extends TestCase {
 	/**
 	 * Satisfies production boot guards before the backend interface is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -39,9 +34,6 @@ final class RecordingBackendTest extends TestCase {
 
 	/**
 	 * Write verbs default to successful results and retain every supplied argument.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -108,9 +100,6 @@ final class RecordingBackendTest extends TestCase {
 	/**
 	 * Each write verb returns only the result scripted for that verb.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_write_results_are_scripted_independently(): void {
@@ -142,9 +131,6 @@ final class RecordingBackendTest extends TestCase {
 	/**
 	 * Queued readiness answers reproduce a backend becoming unavailable between selection and use.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_write_rechecks_a_remaining_queued_readiness_answer(): void {
@@ -163,9 +149,6 @@ final class RecordingBackendTest extends TestCase {
 
 	/**
 	 * Write results remain non-discardable on every concrete declaration.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -198,9 +181,6 @@ final class RecordingBackendTest extends TestCase {
 
 	/**
 	 * Query, readiness, and lifecycle calls return scripted state and remain visible in order.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

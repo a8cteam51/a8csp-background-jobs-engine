@@ -50,8 +50,17 @@ final class HookLogger extends AbstractLogger {
 			}
 		}
 
+		/**
+		 * Fires when the engine emits a log event.
+		 *
+		 * @since   1.0.0
+		 *
+		 * @param   string                  $level   The log level.
+		 * @param   string                  $message The interpolated log message.
+		 * @param   array<array-key, mixed> $context The structured context.
+		 */
 		\do_action(
-			Log::HOOK,
+			'a8csp/background_tasks/log',
 			(string) $level,
 			\strtr( (string) $message, $replacements ),
 			$context

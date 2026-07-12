@@ -35,8 +35,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the observable single-task lifecycle across scheduling, storage, hooks, locks, and logs.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( Orchestrator::class )]
 #[UsesClass( EngineError::class )]
@@ -75,9 +73,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Loads guarded WordPress functions before orchestration classes are instantiated.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -95,9 +90,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Resets every observable boundary and constructs one registered task lifecycle.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -142,9 +134,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Hook registration exposes every internal lifecycle action through the orchestrator.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_register_hooks_wires_the_internal_lifecycle_actions(): void {
@@ -183,9 +172,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * A fresh enqueue persists the run, records fencing and history, fires hooks, and queues one action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -276,9 +262,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Real lock outcomes pin the default, filtered, and continue-delay-floored windows.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int|null $staleness_filter Scripted per-task staleness value.
 	 * @param   int|null $continue_filter  Scripted continue-delay value.
 	 * @param   int      $heartbeat_age    Existing lock heartbeat age.
@@ -327,9 +310,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Supplies fresh and stale edges for all three staleness-resolution paths.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{staleness_filter: int|null, continue_filter: int|null, heartbeat_age: int, is_reclaimed: bool}>
 	 */
 	public static function lock_window_boundaries(): array {
@@ -376,9 +356,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Positive delay selects single scheduling at the clock-relative timestamp.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_enqueue_with_delay_routes_to_single_scheduling(): void {
@@ -405,9 +382,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Unique async enqueue reaches the scheduling seam unchanged.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_enqueue_passes_unique_to_async_scheduling(): void {
@@ -419,9 +393,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * An unknown task fails before clocks, randomness, persistence, locks, hooks, or scheduling.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -439,9 +410,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Priority validation names the complete engine range before touching any boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   int $priority Rejected priority.
 	 *
@@ -466,9 +434,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Supplies values immediately outside both inclusive priority boundaries.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{priority: int}>
 	 */
 	public static function invalid_priorities(): array {
@@ -480,9 +445,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * A scheduling failure is returned unchanged after active run state is compensated.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -515,9 +477,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Enqueue rejects values that cannot remain portable through JSON and option storage.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_enqueue_rejects_non_scalar_argument_trees_before_claiming_a_lock(): void {
@@ -539,9 +498,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Delay overflow fails before randomness, locking, persistence, hooks, or scheduling.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -567,9 +523,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Enqueue declares its result non-discardable at the engine boundary.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_enqueue_declares_no_discard_directly(): void {
@@ -580,9 +533,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Run handling refreshes both heartbeats before task execution and completes in terminal order.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -641,9 +591,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * An ordinary throwable enters the complete terminal failure path without retry scheduling.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_for_an_ordinary_exception(): void {
@@ -653,9 +600,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * A non-retryable throwable enters the same immediate terminal failure path.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_for_a_non_retryable_exception(): void {
@@ -664,9 +608,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * A moved latest pointer fences the run before task execution and uses quiet terminal cleanup.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -728,9 +669,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Confirmed lock ownership keeps a valid run executable after its bounded pointer is evicted.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_does_not_supersede_an_owned_run_after_pointer_eviction(): void {
@@ -769,9 +707,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Losing lock ownership fences a run even while its latest pointer has not moved.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_after_lock_ownership_is_lost(): void {
@@ -803,9 +738,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * A persisted terminal state never re-enters task execution before reconciliation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $status Persisted terminal status.
 	 *
@@ -848,9 +780,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Supplies every terminal state accepted by persisted run data.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{status: string}>
 	 */
 	public static function terminal_statuses(): array {
@@ -864,9 +793,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * A missing or corrupt run logs reconciliation guidance without creating another transition.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -897,9 +823,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Returns the internal run option name for the deterministic enqueue.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  string
 	 */
 	private function run_option_name(): string {
@@ -908,9 +831,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Enqueues the deterministic run and clears enqueue observations before action handling.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -930,9 +850,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Asserts one throwable's failed-store entry, hooks, cleanup, and global transition order.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   \Throwable $throwable Task failure.
 	 *
@@ -997,9 +914,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Asserts that the existing completed buffer records the terminal exit.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	private function assert_terminal_history(): void {
@@ -1020,9 +934,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Reduces the unified boundary ledger to lifecycle-significant labels.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<string>
 	 */
@@ -1089,9 +1000,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Returns the argument-identity lock option name.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
@@ -1100,9 +1008,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Stores a foreign running lock and its latest-run pointer.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   int $heartbeat_age Existing heartbeat age in seconds.
 	 *
@@ -1134,9 +1039,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Returns the decoded lock row for the deterministic argument identity.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
 	private function lock(): ?array {
@@ -1165,9 +1067,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Returns one persisted option value.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $name Option name.
 	 *
 	 * @return  mixed
@@ -1181,9 +1080,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Returns fired lifecycle actions.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */
@@ -1208,9 +1104,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Returns internal action registrations.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}>
 	 */
@@ -1240,9 +1133,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Scripts one WordPress filter value through a typed global boundary.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $hook_name Hook name.
 	 * @param   mixed  $value     Scripted value.
 	 *
@@ -1258,9 +1148,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Asserts that validation returned before every observable enqueue boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

@@ -10,17 +10,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins retry-policy validation, exponential-delay ceilings, and full-jitter bounds.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( RetryPolicy::class )]
 final class RetryPolicyTest extends TestCase {
 
 	/**
 	 * Loads WordPress constants before the retry policy is first instantiated.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -36,9 +31,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * The constructor defaults match the engine's retry contract.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_defaults_match_the_retry_contract(): void {
@@ -53,9 +45,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * At least one attempt is required.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_rejects_fewer_than_one_attempt(): void {
@@ -66,9 +55,6 @@ final class RetryPolicyTest extends TestCase {
 
 	/**
 	 * A negative attempt ceiling is invalid.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -81,9 +67,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * The base delay must be positive.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_rejects_a_non_positive_base_delay(): void {
@@ -94,9 +77,6 @@ final class RetryPolicyTest extends TestCase {
 
 	/**
 	 * A negative base delay is invalid.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -109,9 +89,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * The exponential multiplier cannot reduce later delay ceilings.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_rejects_a_multiplier_below_one(): void {
@@ -122,9 +99,6 @@ final class RetryPolicyTest extends TestCase {
 
 	/**
 	 * A negative multiplier is invalid.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -137,9 +111,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * The maximum delay cannot truncate the first attempt below its base delay.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_rejects_a_maximum_delay_below_the_base_delay(): void {
@@ -150,9 +121,6 @@ final class RetryPolicyTest extends TestCase {
 
 	/**
 	 * Every validation boundary accepts its minimum legal value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -173,9 +141,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * Attempt zero cannot identify a failed attempt before a retry.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_rejects_attempt_zero(): void {
@@ -190,9 +155,6 @@ final class RetryPolicyTest extends TestCase {
 
 	/**
 	 * The final permitted attempt has no next attempt to delay.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -209,9 +171,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * Each attempt passes a zero floor and the capped exponential ceiling to the jitter source.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_delay_math_reaches_and_remains_at_the_cap(): void {
@@ -220,18 +179,12 @@ final class RetryPolicyTest extends TestCase {
 			/**
 			 * Recorded inclusive bounds.
 			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
 			 * @var list<array{min: int, max: int}>
 			 */
 			public array $calls = array();
 
 			/**
 			 * Records the bounds and returns the upper boundary.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.
@@ -292,9 +245,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * The returned delay is the exact sample supplied by the jitter source.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_returns_the_scripted_full_jitter_sample(): void {
@@ -310,9 +260,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * A multiplier of one keeps every retry ceiling at the base delay.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_multiplier_one_keeps_the_ceiling_constant(): void {
@@ -320,9 +267,6 @@ final class RetryPolicyTest extends TestCase {
 
 			/**
 			 * Returns the upper boundary.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.
@@ -350,9 +294,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * An exponential step that equals the maximum delay uses that exact ceiling.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_delay_ceiling_can_land_exactly_on_the_cap(): void {
@@ -360,9 +301,6 @@ final class RetryPolicyTest extends TestCase {
 
 			/**
 			 * Returns the upper boundary.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.
@@ -388,9 +326,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * A product below a non-divisible cap does not saturate early.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_delay_ceiling_remains_below_a_non_divisible_cap(): void {
@@ -398,9 +333,6 @@ final class RetryPolicyTest extends TestCase {
 
 			/**
 			 * Returns the upper boundary.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.
@@ -426,9 +358,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * Large attempt numbers saturate before integer multiplication can overflow.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_large_attempt_saturates_with_an_integer_ceiling(): void {
@@ -437,18 +366,12 @@ final class RetryPolicyTest extends TestCase {
 			/**
 			 * Last received upper boundary.
 			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
 			 * @var int|null
 			 */
 			public ?int $max = null;
 
 			/**
 			 * Records and returns the upper boundary.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.
@@ -479,9 +402,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * Real random draws stay within the inclusive full-jitter bounds.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_random_delays_remain_within_the_full_jitter_bounds(): void {
@@ -489,9 +409,6 @@ final class RetryPolicyTest extends TestCase {
 
 			/**
 			 * Returns a cryptographically secure integer inside the requested bounds.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.
@@ -527,9 +444,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * Expects an invalid-argument failure with one exact message.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $message Expected exception message.
 	 *
 	 * @return  void
@@ -542,9 +456,6 @@ final class RetryPolicyTest extends TestCase {
 	/**
 	 * Returns a scripted integer source.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   int $sample Scripted return value.
 	 *
 	 * @return  RandomizerInterface
@@ -555,18 +466,12 @@ final class RetryPolicyTest extends TestCase {
 			/**
 			 * Constructor.
 			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
 			 * @param   int $sample Scripted return value.
 			 */
 			public function __construct( private int $sample ) {}
 
 			/**
 			 * Returns the scripted sample.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
 			 *
 			 * @param   int $min Inclusive lower boundary.
 			 * @param   int $max Inclusive upper boundary.

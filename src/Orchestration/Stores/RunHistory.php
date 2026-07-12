@@ -13,13 +13,35 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores;
 final readonly class RunHistory {
 	// region FIELDS AND CONSTANTS
 
-	private const DEFAULT_SIZE  = 30;
+	/**
+	 * Default maximum number of runs retained in each history buffer.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const DEFAULT_SIZE = 30;
+
+	/**
+	 * Prefix for run-history option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
 	private const OPTION_PREFIX = 'a8csp_bgte_history_';
 
 	/**
 	 * Distinct argument identities are evicted least-recently-recorded past this count; without
 	 * a bucket cap the by_hash map grows one entry per identity forever, which is the unbounded
 	 * option-row growth this store exists to prevent.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
 	 */
 	private const MAX_HASH_BUCKETS = 20;
 

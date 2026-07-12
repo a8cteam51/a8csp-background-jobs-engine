@@ -11,8 +11,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins failed-run retry data, ordering, and bounded retention.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( FailedRunStore::class )]
 #[UsesClass( EngineError::class )]
@@ -20,9 +18,6 @@ final class FailedRunStoreTest extends TestCase {
 
 	/**
 	 * Loads guarded WordPress option functions before the store is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -38,9 +33,6 @@ final class FailedRunStoreTest extends TestCase {
 	/**
 	 * Resets request-local option state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -55,9 +47,6 @@ final class FailedRunStoreTest extends TestCase {
 	/**
 	 * Empty storage returns a newest-last list with no entries.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_all_returns_an_empty_list_without_failures(): void {
@@ -66,9 +55,6 @@ final class FailedRunStoreTest extends TestCase {
 
 	/**
 	 * Record and remove preserve the exact manual-retry schema under the literal key.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -126,9 +112,6 @@ final class FailedRunStoreTest extends TestCase {
 	/**
 	 * The twenty-first failure evicts the oldest entry and retains newest-last order.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_ring_buffer_evicts_the_oldest_entry_past_twenty(): void {
@@ -162,9 +145,6 @@ final class FailedRunStoreTest extends TestCase {
 	/**
 	 * Removing an absent run leaves both the option and write ledger untouched.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_remove_of_absent_run_is_a_no_op(): void {
@@ -181,9 +161,6 @@ final class FailedRunStoreTest extends TestCase {
 
 	/**
 	 * Removing from an oversized persisted buffer applies the write-time cap.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -221,9 +198,6 @@ final class FailedRunStoreTest extends TestCase {
 	/**
 	 * Returns one stored option value.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
@@ -237,9 +211,6 @@ final class FailedRunStoreTest extends TestCase {
 
 	/**
 	 * Returns the recorded autoload flag for one option.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $option_name Option name.
 	 *
@@ -255,9 +226,6 @@ final class FailedRunStoreTest extends TestCase {
 	/**
 	 * Asserts that every option write explicitly disables autoload.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	private function assert_all_option_writes_disable_autoload(): void {
@@ -272,9 +240,6 @@ final class FailedRunStoreTest extends TestCase {
 
 	/**
 	 * Returns every recorded option-function call.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  list<array{function: string, args: list<mixed>}>
 	 */

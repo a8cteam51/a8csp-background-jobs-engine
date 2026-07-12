@@ -11,8 +11,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the direct SQL, raw-value CAS, cache, and site-binding lock-row seam.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( LockRows::class )]
 final class LockRowsTest extends TestCase {

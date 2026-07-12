@@ -9,17 +9,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the engine failure detail and its absent exception-class default.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( EngineError::class )]
 final class EngineErrorTest extends TestCase {
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -32,9 +27,6 @@ final class EngineErrorTest extends TestCase {
 
 	/**
 	 * Message and exception class retain the caller's exact values.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -51,9 +43,6 @@ final class EngineErrorTest extends TestCase {
 
 	/**
 	 * Callers without an exception class receive a null default.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

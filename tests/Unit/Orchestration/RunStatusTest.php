@@ -9,17 +9,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the run-status vocabulary and terminal-state boundary.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( RunStatus::class )]
 final class RunStatusTest extends TestCase {
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -32,9 +27,6 @@ final class RunStatusTest extends TestCase {
 
 	/**
 	 * The five cases and their persisted values remain an exact closed set.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -65,9 +57,6 @@ final class RunStatusTest extends TestCase {
 
 	/**
 	 * Running is the sole status from which the orchestrator can transition.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

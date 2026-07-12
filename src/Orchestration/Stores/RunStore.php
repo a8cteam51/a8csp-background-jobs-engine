@@ -21,6 +21,14 @@ use Psr\Clock\ClockInterface;
 final readonly class RunStore {
 	// region FIELDS AND CONSTANTS
 
+	/**
+	 * Prefix for active-run option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
 	private const OPTION_PREFIX = 'a8csp_bgte_run_';
 
 	// endregion

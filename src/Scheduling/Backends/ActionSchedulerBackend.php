@@ -28,7 +28,10 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * Procedural functions required by this backend.
 	 *
-	 * @var list<non-empty-string>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     list<non-empty-string>
 	 */
 	private const REQUIRED_FUNCTIONS = array(
 		'as_enqueue_async_action',
@@ -42,21 +45,30 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * Predicate backing {@see self::is_ready()}.
 	 *
-	 * @var \Closure(): bool
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     \Closure(): bool
 	 */
 	private \Closure $readiness_probe;
 
 	/**
 	 * Predicate reporting whether one runtime function exists.
 	 *
-	 * @var \Closure(string): bool
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     \Closure(string): bool
 	 */
 	private \Closure $function_exists_probe;
 
 	/**
 	 * Predicate reporting how many times one WordPress action fired.
 	 *
-	 * @var \Closure(string): int
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     \Closure(string): int
 	 */
 	private \Closure $did_action_probe;
 

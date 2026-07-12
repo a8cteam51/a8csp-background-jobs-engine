@@ -12,8 +12,6 @@ use PHPUnit\Framework\TestCase;
  * Exercises the real `Plugin::boot()` path outside WordPress through the recording hook stubs. The
  * component registry boots in place, and a second boot is a no-op.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( Plugin::class )]
 #[UsesClass( Log::class )]
@@ -21,9 +19,6 @@ final class PluginBootGateTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording hook stubs before
 	 * the component classes are first autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -39,9 +34,6 @@ final class PluginBootGateTest extends TestCase {
 	/**
 	 * Starts each test with an empty hook-registration ledger.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -55,9 +47,6 @@ final class PluginBootGateTest extends TestCase {
 	/**
 	 * The component registry registers the engine's log channel.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_boot_registers_the_log_channel_hook(): void {
@@ -68,9 +57,6 @@ final class PluginBootGateTest extends TestCase {
 
 	/**
 	 * A second boot on the same instance leaves the hook-registration ledger unchanged.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

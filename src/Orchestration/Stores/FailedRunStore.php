@@ -18,7 +18,24 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 final readonly class FailedRunStore {
 	// region FIELDS AND CONSTANTS
 
-	private const ENTRY_LIMIT   = 20;
+	/**
+	 * Maximum number of failed runs retained for manual retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const ENTRY_LIMIT = 20;
+
+	/**
+	 * Prefix for failed-run option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
 	private const OPTION_PREFIX = 'a8csp_bgte_failed_';
 
 	// endregion

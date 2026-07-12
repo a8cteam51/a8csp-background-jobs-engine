@@ -15,25 +15,18 @@ use PHPUnit\Framework\TestCase;
  * test method runs `#[RunInSeparateProcess]` — the constant must not leak into the rest of
  * the suite, where its presence would be indistinguishable from an actual uninstall.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 final class UninstallTest extends TestCase {
 	/**
 	 * A canary option the footprint never lists. Its survival is what proves the test
 	 * exercises "delete only what's owned" rather than "delete everything".
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 */
 	private const CANARY_OPTION = 'a8csp_bgte_test_uninstall_canary';
 
 	/**
 	 * Removes the canary regardless of how the test finished, since this suite runs against
 	 * a persistent wp-env database with no per-test transaction rollback (see tests/README.md).
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -49,9 +42,6 @@ final class UninstallTest extends TestCase {
 	 * With today's honestly-empty footprint the seed/assert loops below run zero iterations —
 	 * the proof today is that `uninstall.php` executes cleanly against a live WordPress and the
 	 * canary survives; the loops activate for real the day the first footprint entry lands.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -89,9 +79,6 @@ final class UninstallTest extends TestCase {
 	 * fixture always provisions the default admin (ID 1); querying for one keeps the test
 	 * independent of that assumption instead of hard-coding it.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  int
 	 */
 	private static function an_existing_user_id(): int {
@@ -122,9 +109,6 @@ final class UninstallTest extends TestCase {
 	 * grows complex enough that this string-slicing extraction becomes fragile, use a
 	 * `token_get_all()`-based reader as the eval-free alternative instead of trying to make
 	 * the eval safer.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  array{options: list<string>, user_meta: list<string>}
 	 */

@@ -9,16 +9,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the PSR-3 adapter onto the engine's public log hook.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( HookLogger::class )]
 final class HookLoggerTest extends TestCase {
 	/**
 	 * Satisfies the production boot guard and loads the recording action stub.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -34,9 +29,6 @@ final class HookLoggerTest extends TestCase {
 	/**
 	 * Starts each test with an empty fired-action ledger.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -48,9 +40,6 @@ final class HookLoggerTest extends TestCase {
 
 	/**
 	 * Logging interpolates supported placeholders and retains the complete context on the exact hook.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -92,9 +81,6 @@ final class HookLoggerTest extends TestCase {
 	/**
 	 * A failing Stringable context value leaves its placeholder intact without aborting dispatch.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_throwing_stringable_leaves_placeholder_verbatim_and_dispatches_log(): void {
@@ -127,9 +113,6 @@ final class HookLoggerTest extends TestCase {
 	/**
 	 * The inherited warning convenience method preserves its named PSR-3 level.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  void
 	 */
 	public function test_inherited_warning_dispatches_warning_level(): void {
@@ -148,9 +131,6 @@ final class HookLoggerTest extends TestCase {
 
 	/**
 	 * Plain string context values interpolate into matching placeholders.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -172,9 +152,6 @@ final class HookLoggerTest extends TestCase {
 
 	/**
 	 * Null context values remain structured data and leave matching placeholders intact.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

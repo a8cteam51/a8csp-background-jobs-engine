@@ -14,17 +14,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins batch identity validation and instance lookup.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 #[CoversClass( BatchRegistry::class )]
 final class BatchRegistryTest extends TestCase {
 
 	/**
 	 * Satisfies production boot guards before batch contracts are autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -37,9 +32,6 @@ final class BatchRegistryTest extends TestCase {
 
 	/**
 	 * Registration retains the exact batch instance under its stable name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -55,9 +47,6 @@ final class BatchRegistryTest extends TestCase {
 
 	/**
 	 * Invalid names identify the accepted spelling needed to register the batch.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $name Invalid batch name.
 	 *
@@ -76,9 +65,6 @@ final class BatchRegistryTest extends TestCase {
 	/**
 	 * Supplies names outside the complete stable-name grammar.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
 	 * @return  array<string, array{name: string}>
 	 */
 	public static function invalid_names(): array {
@@ -93,9 +79,6 @@ final class BatchRegistryTest extends TestCase {
 
 	/**
 	 * Duplicate registration identifies the one-name-one-instance correction.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -113,9 +96,6 @@ final class BatchRegistryTest extends TestCase {
 
 	/**
 	 * Creates a batch with the supplied identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @param   string $name Batch name.
 	 *

@@ -10,15 +10,10 @@ use PHPUnit\Framework\TestCase;
  * Runs in both matrix entries: at-floor it must pass, below-floor (WP 6.9.4)
  * it must yield a WP_Error without loading the plugin proper.
  *
- * @since   1.0.0
- * @version 1.0.0
  */
 final class RequirementsCheckTest extends TestCase {
 	/**
 	 * The requirements constant reflects the runtime it booted on.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
