@@ -53,6 +53,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
 final class OrchestratorTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const ARGS = array(
 		'site_id' => 7,
 		'mode'    => 'full',
@@ -71,6 +73,10 @@ final class OrchestratorTest extends TestCase {
 	private TaskRegistry $registry;
 	private WpdbLockSpy $wpdb;
 	private Orchestrator $orchestrator;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
 	 * Loads guarded WordPress functions before orchestration classes are instantiated.
@@ -133,6 +139,11 @@ final class OrchestratorTest extends TestCase {
 			$this->randomizer,
 		);
 	}
+
+	// endregion.
+
+	// region TESTS.
+	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/**
 	 * Hook registration exposes every internal lifecycle action through the orchestrator.
@@ -307,11 +318,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * Real lock outcomes pin the default, filtered, and continue-delay-floored windows.
 	 *
-	 * @param   int|null $staleness_filter Scripted per-task staleness value.
-	 * @param   int|null $continue_filter  Scripted continue-delay value.
-	 * @param   int      $heartbeat_age    Existing lock heartbeat age.
-	 * @param   bool     $is_reclaimed     Whether the age exceeds the resolved window.
-	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'lock_window_boundaries' )]
@@ -426,6 +432,30 @@ final class OrchestratorTest extends TestCase {
 				'heartbeat_age'    => 151,
 				'is_reclaimed'     => true,
 			),
+			'zero-delay filtered fresh edge'      => array(
+				'staleness_filter' => 1,
+				'continue_filter'  => 0,
+				'heartbeat_age'    => 1,
+				'is_reclaimed'     => false,
+			),
+			'zero-delay filtered stale edge'      => array(
+				'staleness_filter' => 1,
+				'continue_filter'  => 0,
+				'heartbeat_age'    => 2,
+				'is_reclaimed'     => true,
+			),
+			'zero-delay default fresh edge'       => array(
+				'staleness_filter' => null,
+				'continue_filter'  => 0,
+				'heartbeat_age'    => 900,
+				'is_reclaimed'     => false,
+			),
+			'zero-delay default stale edge'       => array(
+				'staleness_filter' => null,
+				'continue_filter'  => 0,
+				'heartbeat_age'    => 901,
+				'is_reclaimed'     => true,
+			),
 		);
 	}
 
@@ -486,8 +516,6 @@ final class OrchestratorTest extends TestCase {
 
 	/**
 	 * Priority validation names the complete engine range before touching any boundary.
-	 *
-	 * @param   int $priority Rejected priority.
 	 *
 	 * @return  void
 	 */
@@ -1560,8 +1588,6 @@ final class OrchestratorTest extends TestCase {
 	/**
 	 * A persisted terminal state never re-enters task execution before reconciliation.
 	 *
-	 * @param   string $status Persisted terminal status.
-	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'terminal_statuses' )]
@@ -1640,6 +1666,11 @@ final class OrchestratorTest extends TestCase {
 			$this->logger->records
 		);
 	}
+
+	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
+	// endregion.
+
+	// region HELPERS.
 
 	/**
 	 * Returns the internal run option name for the deterministic enqueue.
@@ -2069,4 +2100,6 @@ final class OrchestratorTest extends TestCase {
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame( array(), $this->fired_actions() );
 	}
+
+	// endregion.
 }

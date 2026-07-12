@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use PHPUnit\Framework\TestCase;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 
 /**
  * Verifies the requirements gate degrades gracefully on a below-floor runtime.
@@ -11,7 +11,9 @@ use PHPUnit\Framework\TestCase;
  * it must yield a WP_Error without loading the plugin proper.
  *
  */
-final class RequirementsCheckTest extends TestCase {
+final class RequirementsCheckTest extends IntegrationTestCase {
+	// region TESTS.
+
 	/**
 	 * The requirements constant reflects the runtime it booted on.
 	 *
@@ -28,4 +30,6 @@ final class RequirementsCheckTest extends TestCase {
 			self::assertTrue( $requirements );
 		}
 	}
+
+	// endregion.
 }

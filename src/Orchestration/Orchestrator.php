@@ -1069,7 +1069,7 @@ final readonly class Orchestrator {
 				$run_store,
 				new EngineError(
 					\sprintf(
-						'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller positive delay from the continue-delay filter.',
+						'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.',
 						$batch_name
 					)
 				)
@@ -1098,7 +1098,7 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Resolves the positive inter-chunk delay for one batch run.
+	 * Resolves the non-negative inter-chunk delay for one batch run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1116,7 +1116,7 @@ final readonly class Orchestrator {
 			$run_id
 		);
 
-		return \is_int( $delay ) && 0 < $delay ? $delay : self::CONTINUE_DELAY;
+		return \is_int( $delay ) && 0 <= $delay ? $delay : self::CONTINUE_DELAY;
 	}
 
 	/**

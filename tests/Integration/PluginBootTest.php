@@ -3,14 +3,16 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use PHPUnit\Framework\TestCase;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 
 /**
  * Verifies the plugin boots on a supported runtime inside wp-env: the requirements gate passes,
  * the named accessor is wired, and repeated access returns the booted plugin instance.
  *
  */
-final class PluginBootTest extends TestCase {
+final class PluginBootTest extends IntegrationTestCase {
+	// region TESTS.
+
 	/**
 	 * On an at-floor runtime the requirements gate passes, `plugins_loaded` is wired to the named
 	 * accessor `a8csp_bgte_plugin()` (hooked directly; WordPress ignores an action callback's
@@ -39,4 +41,6 @@ final class PluginBootTest extends TestCase {
 
 		self::assertSame( $plugin, a8csp_bgte_plugin() );
 	}
+
+	// endregion.
 }

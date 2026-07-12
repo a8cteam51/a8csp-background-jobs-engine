@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
-use PHPUnit\Framework\TestCase;
 
 /**
  * Verifies the real `uninstall.php` end-to-end: every option and user-meta key its inline
@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  * the suite, where its presence would be indistinguishable from an actual uninstall.
  *
  */
-final class UninstallTest extends TestCase {
+final class UninstallTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/**
@@ -64,13 +64,15 @@ final class UninstallTest extends TestCase {
 	 * @return  void
 	 */
 	protected function tearDown(): void {
-		self::clear_scheduled_work();
-		delete_option( self::CANARY_OPTION );
-		foreach ( self::DYNAMIC_OPTIONS as $option ) {
-			delete_option( $option );
+		try {
+			self::clear_scheduled_work();
+			delete_option( self::CANARY_OPTION );
+			foreach ( self::DYNAMIC_OPTIONS as $option ) {
+				delete_option( $option );
+			}
+		} finally {
+			parent::tearDown();
 		}
-
-		parent::tearDown();
 	}
 
 	// endregion.

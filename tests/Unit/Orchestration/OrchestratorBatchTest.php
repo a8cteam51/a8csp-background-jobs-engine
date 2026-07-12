@@ -34,6 +34,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -58,6 +59,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
 final class OrchestratorBatchTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
 	private const ARGS = array(
 		'site_id' => 7,
 		'mode'    => 'full',
@@ -78,6 +80,9 @@ final class OrchestratorBatchTest extends TestCase {
 	private WpdbLockSpy $wpdb;
 	private Orchestrator $orchestrator;
 
+	// endregion.
+
+	// region LIFECYCLE.
 	/**
 	 * Loads guarded WordPress functions before orchestration classes are instantiated.
 	 *
@@ -141,6 +146,10 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 	}
 
+	// endregion.
+
+	// region TESTS.
+	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 	/**
 	 * Hook registration exposes each backend-isolated batch stage and one shared run dispatcher.
 	 *
@@ -667,6 +676,62 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/**
+	 * Continue-delay filter values resolve to their exact scheduling offsets.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'continue_delay_filter_values' )]
+	public function test_handle_run_action_resolves_continue_delay_filter_values(
+		mixed $filtered_delay,
+		int $expected_delay
+	): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->set_filter_value( 'a8csp/background_tasks/continue_delay', $filtered_delay );
+		$this->clock->timestamp = self::NOW + 120;
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'schedule_single',
+					'args' => array(
+						'hook'      => 'a8csp/background_tasks/continue',
+						'timestamp' => self::NOW + 120 + $expected_delay,
+						'args'      => array( self::NAME, self::RUN_ID, 4 ),
+						'group'     => self::NAME . '|' . self::RUN_ID,
+						'priority'  => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+	}
+
+	/**
+	 * Supplies accepted and invalid continue-delay filter values.
+	 *
+	 * @return  array<string, array{filtered_delay: int|string, expected_delay: int}>
+	 */
+	public static function continue_delay_filter_values(): array {
+		return array(
+			'zero schedules at now'              => array(
+				'filtered_delay' => 0,
+				'expected_delay' => 0,
+			),
+			'negative falls back to the default' => array(
+				'filtered_delay' => -1,
+				'expected_delay' => 60,
+			),
+			'non-integer falls back to default'  => array(
+				'filtered_delay' => '75',
+				'expected_delay' => 60,
+			),
+		);
 	}
 
 	/**
@@ -1417,6 +1482,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->assert_start_boundaries_untouched();
 	}
 
+
 	/**
 	 * Task enqueue rejects a name shared with a batch before touching runtime boundaries.
 	 *
@@ -1445,6 +1511,10 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->assert_start_boundaries_untouched();
 	}
 
+	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
+	// endregion.
+
+	// region HELPERS.
 	/**
 	 * Advances the queue head into a run action and clears its scheduling observations.
 	 *
@@ -2046,4 +2116,6 @@ final class OrchestratorBatchTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = $throwables;
 	}
+
+	// endregion.
 }
