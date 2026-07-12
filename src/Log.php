@@ -11,6 +11,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
  * @version 1.0.0
  */
 final class Log implements Component {
+	// region INHERITED METHODS
+
 	/**
 	 * Keeps the channel available on every site.
 	 *
@@ -36,6 +38,10 @@ final class Log implements Component {
 	public function initialize(): void {
 		\add_action( 'a8csp/background_tasks/log', array( self::class, 'log' ), 10, 3 );
 	}
+
+	// endregion
+
+	// region HOOKS
 
 	/**
 	 * Writes a log-channel event to PHP's configured error log.
@@ -71,4 +77,6 @@ final class Log implements Component {
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- A bare install deliberately routes the engine's only log channel to PHP's configured error log.
 		\error_log( $line );
 	}
+
+	// endregion
 }

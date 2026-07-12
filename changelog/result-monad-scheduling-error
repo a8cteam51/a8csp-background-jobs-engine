@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the Result monad (Success/Failure with PHPStan narrowing) and the SchedulingError value object with its closed reason enum.
