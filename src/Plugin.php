@@ -23,7 +23,9 @@ final class Plugin {
 	 *
 	 * @var     array<int, class-string<Component>>
 	 */
-	private const COMPONENTS = array();
+	private const COMPONENTS = array(
+		Log::class,
+	);
 
 	/**
 	 * Whether `boot()` has already run.

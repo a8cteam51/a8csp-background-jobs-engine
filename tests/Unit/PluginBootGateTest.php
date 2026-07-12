@@ -2,18 +2,21 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Log;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the real `Plugin::boot()` path outside WordPress through the recording hook stubs. An
- * empty component registry registers no hooks, and a second boot is a no-op.
+ * Exercises the real `Plugin::boot()` path outside WordPress through the recording hook stubs. The
+ * component registry boots in place, and a second boot is a no-op.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
 #[CoversClass( Plugin::class )]
+#[UsesClass( Log::class )]
 final class PluginBootGateTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording hook stubs before
@@ -24,6 +27,7 @@ final class PluginBootGateTest extends TestCase {
 	 *
 	 * @return  void
 	 */
+	#[\Override]
 	public static function setUpBeforeClass(): void {
 		if ( ! \defined( 'ABSPATH' ) ) {
 			\define( 'ABSPATH', __DIR__ . '/' );
@@ -40,24 +44,26 @@ final class PluginBootGateTest extends TestCase {
 	 *
 	 * @return  void
 	 */
+	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_hooks'] = array();
+		$GLOBALS['a8csp_bgte_test_hooks']                = array();
+		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 	}
 
 	/**
-	 * An empty component registry boots without registering hooks.
+	 * The component registry registers the engine's log channel.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_boot_with_empty_component_registry_registers_no_hooks(): void {
+	public function test_boot_registers_the_log_channel_hook(): void {
 		( new Plugin() )->boot();
 
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_hooks'] );
+		self::assertSame( array( 'a8csp/background_tasks/log' ), $GLOBALS['a8csp_bgte_test_hooks'] );
 	}
 
 	/**

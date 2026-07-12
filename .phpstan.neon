@@ -2,6 +2,7 @@ includes:
     - vendor/a8csp/configs/php/quality-assurance/phpstan.dist.neon
 
 parameters:
+    level: max
     bootstrapFiles:
         - %currentWorkingDirectory%/.phpstan-bootstrap.php
     scanDirectories:

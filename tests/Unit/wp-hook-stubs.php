@@ -4,6 +4,7 @@
  * Recording `add_action()` and `add_filter()` stubs for Unit tests that boot the real component
  * list outside WordPress. Each stub appends its hook name to the
  * `$GLOBALS['a8csp_bgte_test_hooks']` ledger so tests can assert which hooks a boot registered.
+ * Action registrations also retain their callback configuration for component-level assertions.
  * The `function_exists()` guards keep this file inert wherever WordPress is loaded.
  *
  * @since   1.0.0
@@ -20,13 +21,19 @@ if ( ! \function_exists( 'add_action' ) ) {
 	 *
 	 * @param   string   $hook_name     The action hook name.
 	 * @param   callable $callback      The callback (recorded but never invoked).
-	 * @param   int      $priority      The priority (ignored).
-	 * @param   int      $accepted_args The accepted argument count (ignored).
+	 * @param   int      $priority      The priority.
+	 * @param   int      $accepted_args The accepted argument count.
 	 *
 	 * @return  true
 	 */
 	function add_action( $hook_name, $callback, $priority = 10, $accepted_args = 1 ) {
-		$GLOBALS['a8csp_bgte_test_hooks'][] = $hook_name;
+		$GLOBALS['a8csp_bgte_test_hooks'][]                = $hook_name;
+		$GLOBALS['a8csp_bgte_test_action_registrations'][] = array(
+			'hook_name'     => $hook_name,
+			'callback'      => $callback,
+			'priority'      => $priority,
+			'accepted_args' => $accepted_args,
+		);
 		return true;
 	}
 }
