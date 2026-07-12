@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the scheduler facade: ordered backend composition with first-ready write routing, union reads, first-failure-wins unscheduling, unconditional hook wiring, and the facade-level args-size guard.

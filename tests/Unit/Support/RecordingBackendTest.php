@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use PHPUnit\Framework\Attributes\CoversNothing;
@@ -151,6 +152,7 @@ final class RecordingBackendTest extends TestCase {
 			BackendInterface::class,
 			ActionSchedulerBackend::class,
 			WPCronBackend::class,
+			SchedulerFacade::class,
 			RecordingBackend::class,
 		);
 		$verbs = array(
