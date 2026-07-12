@@ -162,14 +162,16 @@ final class RunHistoryTest extends TestCase {
 			array(
 				'started'   => array( 'started-b2', 'started-a3' ),
 				'completed' => array( 'completed-a2', 'completed-b2' ),
+				// by_hash keys are ordered by recording recency (the LRU eviction order);
+				// the final write re-inserted hash-a at the tail.
 				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array( 'started-a2', 'started-a3' ),
-						'completed' => array( 'completed-a1', 'completed-a2' ),
-					),
 					'hash-b' => array(
 						'started'   => array( 'started-b1', 'started-b2' ),
 						'completed' => array( 'completed-b1', 'completed-b2' ),
+					),
+					'hash-a' => array(
+						'started'   => array( 'started-a2', 'started-a3' ),
+						'completed' => array( 'completed-a1', 'completed-a2' ),
 					),
 				),
 			),

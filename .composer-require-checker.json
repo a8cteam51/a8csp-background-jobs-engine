@@ -26,7 +26,14 @@
         "WP_PLUGIN_DIR",
         "DAY_IN_SECONDS",
         "HOUR_IN_SECONDS",
+        "MINUTE_IN_SECONDS",
         "MONTH_IN_SECONDS",
-        "WEEK_IN_SECONDS"
+        "WEEK_IN_SECONDS",
+        "as_enqueue_async_action",
+        "as_has_scheduled_action",
+        "as_next_scheduled_action",
+        "as_schedule_recurring_action",
+        "as_schedule_single_action",
+        "as_unschedule_all_actions"
     ]
 }
