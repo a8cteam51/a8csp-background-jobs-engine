@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the run-state persistence layer: the run option store with its RunState value object, the latest-run fencing pointer, LRU-bounded run history, and the failed-run store.

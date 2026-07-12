@@ -13,6 +13,7 @@
  */
 
 require_once __DIR__ . '/wp-hook-stubs.php';
+require_once __DIR__ . '/wp-options-stubs.php';
 require_once \dirname( __DIR__ ) . '/Support/WPErrorStub.php';
 
 if ( ! \class_exists( 'WP_Error' ) ) {
@@ -54,27 +55,6 @@ if ( ! \function_exists( 'maybe_serialize' ) ) {
 		}
 
 		return $data;
-	}
-}
-
-if ( ! \function_exists( 'get_option' ) ) {
-	/**
-	 * Returns the fake cron option or the supplied default.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $option        Option name.
-	 * @param   mixed  $default_value Default value.
-	 *
-	 * @return  mixed
-	 */
-	function get_option( $option, $default_value = false ) {
-		if ( 'cron' !== $option || ! \array_key_exists( 'a8csp_bgte_test_cron_array', $GLOBALS ) ) {
-			return $default_value;
-		}
-
-		return $GLOBALS['a8csp_bgte_test_cron_array'];
 	}
 }
 

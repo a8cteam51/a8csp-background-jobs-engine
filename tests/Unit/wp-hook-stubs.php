@@ -95,3 +95,29 @@ if ( ! \function_exists( 'add_filter' ) ) {
 		return true;
 	}
 }
+
+if ( ! \function_exists( 'apply_filters' ) ) {
+	/**
+	 * Returns a scripted filter value or applies a scripted callback.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook_name Hook name.
+	 * @param   mixed  $value     Value entering the filter.
+	 * @param   mixed  ...$args   Additional filter arguments.
+	 *
+	 * @return  mixed
+	 */
+	function apply_filters( $hook_name, $value, ...$args ) {
+		/** @var array<string, mixed> $filter_values */
+		$filter_values = $GLOBALS['a8csp_bgte_test_filter_values'] ?? array();
+		if ( ! \array_key_exists( $hook_name, $filter_values ) ) {
+			return $value;
+		}
+
+		$filter = $filter_values[ $hook_name ];
+
+		return \is_callable( $filter ) ? $filter( $value, ...$args ) : $filter;
+	}
+}
