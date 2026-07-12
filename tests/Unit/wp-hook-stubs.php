@@ -56,28 +56,41 @@ if ( ! \function_exists( 'add_action' ) ) {
 
 if ( ! \function_exists( 'add_filter' ) ) {
 	/**
-	 * Records a filter registration in the test ledger.
+	 * Records a filter registration and its callback configuration in the test ledgers.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string   $hook_name     The filter hook name.
 	 * @param   callable $callback      The callback (recorded but never invoked).
-	 * @param   int      $priority      The priority (ignored).
-	 * @param   int      $accepted_args The accepted argument count (ignored).
+	 * @param   int      $priority      The priority.
+	 * @param   int      $accepted_args The accepted argument count.
 	 *
 	 * @return  true
 	 */
 	function add_filter( $hook_name, $callback, $priority = 10, $accepted_args = 1 ) {
-		$hooks = $GLOBALS['a8csp_bgte_test_hooks'] ?? array();
+		$hooks                = $GLOBALS['a8csp_bgte_test_hooks'] ?? array();
+		$filter_registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? array();
 
 		if ( ! \is_array( $hooks ) ) {
 			throw new \UnexpectedValueException( 'Initialize the test hook ledger as an array before registering a filter.' );
 		}
 
+		if ( ! \is_array( $filter_registrations ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test filter ledger as an array before registering a filter.' );
+		}
+
 		$hooks[] = $hook_name;
 
-		$GLOBALS['a8csp_bgte_test_hooks'] = $hooks;
+		$filter_registrations[] = array(
+			'hook_name'     => $hook_name,
+			'callback'      => $callback,
+			'priority'      => $priority,
+			'accepted_args' => $accepted_args,
+		);
+
+		$GLOBALS['a8csp_bgte_test_hooks']                = $hooks;
+		$GLOBALS['a8csp_bgte_test_filter_registrations'] = $filter_registrations;
 
 		return true;
 	}

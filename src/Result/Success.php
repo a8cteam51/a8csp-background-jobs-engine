@@ -14,7 +14,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Result;
  * @since   1.0.0
  * @version 1.0.0
  *
- * @template TValue
+ * @template-covariant TValue
  * @extends AbstractResult<TValue, never>
  */
 final readonly class Success extends AbstractResult {
