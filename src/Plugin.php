@@ -25,6 +25,7 @@ final class Plugin {
 	 */
 	private const COMPONENTS = array(
 		Log::class,
+		EngineComponent::class,
 	);
 
 	/**

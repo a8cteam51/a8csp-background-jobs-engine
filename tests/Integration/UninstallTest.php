@@ -7,8 +7,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Verifies the real `uninstall.php` end-to-end: every option and user-meta key its inline
- * footprint lists is gone after it runs, and a sentinel key NOT in the footprint survives —
- * proving the file deletes what it owns and nothing else.
+ * footprint lists is gone after it runs, scheduled engine work is reclaimed, and a sentinel key
+ * NOT in the footprint survives — proving the file deletes what it owns and nothing else.
  *
  * `uninstall.php` guards on `defined( 'WP_UNINSTALL_PLUGIN' )`, a constant WordPress itself
  * only defines during a real plugin-delete request. This test defines it by hand, so the one
@@ -17,31 +17,73 @@ use PHPUnit\Framework\TestCase;
  *
  */
 final class UninstallTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * A canary option the footprint never lists. Its survival is what proves the test
 	 * exercises "delete only what's owned" rather than "delete everything".
 	 *
 	 */
-	private const CANARY_OPTION = 'a8csp_bgte_test_uninstall_canary';
+	private const CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
 
 	/**
-	 * Removes the canary regardless of how the test finished, since this suite runs against
-	 * a persistent wp-env database with no per-test transaction rollback (see tests/README.md).
+	 * Representative dynamically named option rows owned by orchestration stores.
+	 *
+	 * @var list<string>
+	 */
+	private const DYNAMIC_OPTIONS = array(
+		'a8csp_bgte_run_uninstall-test_run-1',
+		'a8csp_bgte_latest_uninstall-test',
+		'a8csp_bgte_history_uninstall-test',
+		'a8csp_bgte_lock_uninstall-test_args-hash',
+		'a8csp_bgte_failed_uninstall-test',
+	);
+
+	/** Internal lifecycle hooks that may retain scheduled work. */
+	private const LIFECYCLE_HOOKS = array(
+		'a8csp/background_tasks/start',
+		'a8csp/background_tasks/continue',
+		'a8csp/background_tasks/run',
+		'a8csp/background_tasks/cleanup',
+	);
+
+	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */
+	private const SCHEDULE_ARGS = array( 'uninstall-test', 'run-1', 1 );
+
+	/** Runtime groups prove Action Scheduler cleanup reaches work outside its empty group. */
+	private const SCHEDULE_GROUP = 'uninstall-test|run-1';
+
+	// endregion.
+
+	// region LIFECYCLE.
+
+	/**
+	 * Removes options and scheduled work regardless of how the test finished, since this suite
+	 * runs against a persistent wp-env database with no per-test transaction rollback.
 	 *
 	 * @return  void
 	 */
 	protected function tearDown(): void {
+		self::clear_scheduled_work();
 		delete_option( self::CANARY_OPTION );
+		foreach ( self::DYNAMIC_OPTIONS as $option ) {
+			delete_option( $option );
+		}
 
 		parent::tearDown();
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * Seeds a sentinel for every key the real footprint lists plus the canary, runs the real
 	 * `uninstall.php`, then asserts the footprint's keys are gone and the canary survived.
-	 * With today's honestly-empty footprint the seed/assert loops below run zero iterations —
-	 * the proof today is that `uninstall.php` executes cleanly against a live WordPress and the
-	 * canary survives; the loops activate for real the day the first footprint entry lands.
+	 * Dynamic rows are seeded separately because their runtime suffixes cannot appear in the fixed
+	 * footprint list. It also seeds every lifecycle hook in both scheduler stores. The canary
+	 * resembles the prefix but replaces its underscores, proving the cleanup query treats those
+	 * underscores literally rather than as SQL LIKE wildcards.
 	 *
 	 * @return  void
 	 */
@@ -49,6 +91,7 @@ final class UninstallTest extends TestCase {
 	public function test_uninstall_deletes_only_its_own_footprint(): void {
 		$footprint = self::read_inline_footprint();
 		$user_id   = self::an_existing_user_id();
+		self::clear_scheduled_work();
 
 		foreach ( $footprint['options'] as $option ) {
 			update_option( $option, 'sentinel' );
@@ -57,8 +100,32 @@ final class UninstallTest extends TestCase {
 		foreach ( $footprint['user_meta'] as $meta_key ) {
 			update_user_meta( $user_id, $meta_key, 'sentinel' );
 		}
+		foreach ( self::DYNAMIC_OPTIONS as $option ) {
+			update_option( $option, 'sentinel' );
+		}
 
 		update_option( self::CANARY_OPTION, 'sentinel' );
+
+		$scheduled_at = \time() + \HOUR_IN_SECONDS;
+		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+			self::assertTrue(
+				\wp_schedule_single_event( $scheduled_at, $hook, self::SCHEDULE_ARGS, true ),
+				"wp-env must seed a WP-Cron event for '{$hook}'"
+			);
+
+			$action_id = \as_schedule_single_action(
+				$scheduled_at,
+				$hook,
+				self::SCHEDULE_ARGS,
+				self::SCHEDULE_GROUP
+			);
+			self::assertGreaterThan( 0, $action_id, "wp-env must seed an Action Scheduler action for '{$hook}'" );
+			self::assertSame( $scheduled_at, \wp_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
+			self::assertIsInt(
+				\as_next_scheduled_action( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ),
+				"Action Scheduler must retain the seeded '{$hook}' action before uninstall"
+			);
+		}
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
@@ -70,8 +137,39 @@ final class UninstallTest extends TestCase {
 		foreach ( $footprint['user_meta'] as $meta_key ) {
 			self::assertSame( '', get_user_meta( $user_id, $meta_key, true ), "uninstall.php must delete the '{$meta_key}' user-meta key" );
 		}
+		foreach ( self::DYNAMIC_OPTIONS as $option ) {
+			self::assertFalse( get_option( $option ), "uninstall.php must delete the dynamically named '{$option}' option" );
+		}
+		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+			self::assertFalse(
+				\wp_next_scheduled( $hook, self::SCHEDULE_ARGS ),
+				"uninstall.php must remove every WP-Cron event for '{$hook}'"
+			);
+			self::assertFalse(
+				\as_next_scheduled_action( $hook ),
+				"uninstall.php must remove every pending Action Scheduler action for '{$hook}'"
+			);
+		}
 
 		self::assertSame( 'sentinel', get_option( self::CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Clears scheduler state that may persist across interrupted integration runs.
+	 *
+	 * @return  void
+	 */
+	private static function clear_scheduled_work(): void {
+		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+			\wp_unschedule_hook( $hook );
+			if ( \function_exists( 'as_unschedule_all_actions' ) ) {
+				\as_unschedule_all_actions( $hook );
+			}
+		}
 	}
 
 	/**
@@ -162,4 +260,6 @@ final class UninstallTest extends TestCase {
 			'user_meta' => $user_meta,
 		);
 	}
+
+	// endregion.
 }

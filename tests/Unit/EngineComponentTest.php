@@ -1,0 +1,358 @@
+<?php declare( strict_types=1 );
+
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
+use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Exercises the retained engine composition root through the real plugin boot path.
+ *
+ */
+#[CoversClass( EngineComponent::class )]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState( false )]
+final class EngineComponentTest extends TestCase {
+	// region LIFECYCLE.
+
+	/**
+	 * Loads guarded WordPress functions and the procedural API in each isolated process.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public static function setUpBeforeClass(): void {
+		if ( ! \defined( 'ABSPATH' ) ) {
+			\define( 'ABSPATH', __DIR__ . '/' );
+		}
+
+		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-hook-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
+		require_once __DIR__ . '/wp-time-constant-stubs.php';
+		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/includes/api.php';
+	}
+
+	/**
+	 * Resets hook ledgers and supplies the site-bound database seam.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function setUp(): void {
+		parent::setUp();
+
+		$GLOBALS['a8csp_bgte_test_options']              = array();
+		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
+		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
+		$GLOBALS['a8csp_bgte_test_hooks']                = array();
+		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
+		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
+		$GLOBALS['a8csp_bgte_test_is_multisite']         = false;
+		$GLOBALS['a8csp_bgte_test_cache']                = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_array']           = array();
+		$GLOBALS['a8csp_bgte_test_cron_calls']           = array();
+		$GLOBALS['a8csp_bgte_test_cron_results']         = array();
+		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
+		$GLOBALS['a8csp_bgte_test_as_calls']             = array();
+		$GLOBALS['a8csp_bgte_test_as_results']           = array();
+		$GLOBALS['a8csp_bgte_test_did_actions']          = array();
+		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
+
+		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = false;
+		unset(
+			$GLOBALS['a8csp_bgte_test_before_add_option'],
+			$GLOBALS['a8csp_bgte_test_cron_before_unschedule']
+		);
+	}
+
+	// endregion.
+
+	// region TESTS.
+
+	/**
+	 * The composition root is enabled on every supported site.
+	 *
+	 * @return  void
+	 */
+	public function test_component_is_always_needed(): void {
+		self::assertTrue( ( new EngineComponent() )->is_needed() );
+	}
+
+	/**
+	 * Plugin boot publishes one engine and registers scheduler and lifecycle hooks.
+	 *
+	 * @return  void
+	 */
+	public function test_plugin_boot_publishes_one_engine_and_registers_runtime_hooks(): void {
+		( new Plugin() )->boot();
+
+		$first   = \a8csp_bgte_engine();
+		$second  = \a8csp_bgte_engine();
+		$actions = $this->registrations( 'a8csp_bgte_test_action_registrations' );
+		$filters = $this->registrations( 'a8csp_bgte_test_filter_registrations' );
+
+		self::assertInstanceOf( Engine::class, $first );
+		self::assertSame( $first, $second );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/log',
+				'a8csp/background_tasks/start',
+				'a8csp/background_tasks/continue',
+				'a8csp/background_tasks/run',
+				'a8csp/background_tasks/cleanup',
+			),
+			\array_column( $actions, 'hook_name' )
+		);
+		self::assertSame(
+			array( 'cron_schedules' ),
+			\array_column( $filters, 'hook_name' )
+		);
+		self::assertSame(
+			array( 3, 3, 4, 3 ),
+			\array_column( \array_slice( $actions, 1 ), 'accepted_args' )
+		);
+	}
+
+	/**
+	 * Reinitialization retains the engine without duplicating runtime hooks.
+	 *
+	 * @return  void
+	 */
+	public function test_component_initialization_is_idempotent(): void {
+		$component = new EngineComponent();
+		$component->initialize();
+
+		$engine = EngineComponent::get_engine();
+		$component->initialize();
+
+		self::assertInstanceOf( Engine::class, $engine );
+		self::assertSame( $engine, EngineComponent::get_engine() );
+		self::assertCount( 4, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
+		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
+	}
+
+	/**
+	 * Public task, batch, and retry calls traverse the composed WP-Cron graph unchanged.
+	 *
+	 * @return  void
+	 */
+	public function test_live_wp_cron_graph_round_trips_public_task_batch_and_retry_apis(): void {
+		( new Plugin() )->boot();
+
+		$engine = \a8csp_bgte_engine();
+		self::assertInstanceOf( Engine::class, $engine );
+
+		$task_args        = array( 'site_id' => 7 );
+		$batch_start_args = array( 'site_id' => 8 );
+		$engine->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$engine->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+
+		$task_result = \a8csp_bgte_enqueue_task( 'email-digest', $task_args );
+
+		self::assertInstanceOf( Success::class, $task_result );
+		self::assertIsString( $task_result->value );
+		$task_run = \get_option( 'a8csp_bgte_run_email-digest_' . $task_result->value, null );
+		self::assertIsArray( $task_run );
+		self::assertSame( $task_args, $task_run['start_args'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'schedule' => false,
+					'args'     => array( 'email-digest', $task_result->value, 1 ),
+				),
+			),
+			$this->cron_events_for_hook( 'a8csp/background_tasks/run' )
+		);
+
+		$batch_result = \a8csp_bgte_start_batch(
+			name: 'catalog-sync',
+			start_args: $batch_start_args
+		);
+
+		self::assertInstanceOf( Success::class, $batch_result );
+		self::assertIsString( $batch_result->value );
+		$batch_run = \get_option( 'a8csp_bgte_run_catalog-sync_' . $batch_result->value, null );
+		self::assertIsArray( $batch_run );
+		self::assertSame( $batch_start_args, $batch_run['start_args'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'schedule' => false,
+					'args'     => array( 'catalog-sync', $batch_result->value, 1 ),
+				),
+			),
+			$this->cron_events_for_hook( 'a8csp/background_tasks/start' )
+		);
+		self::assertSame( 2, $this->cron_event_count() );
+
+		$options_before_retry    = $GLOBALS['a8csp_bgte_test_options'];
+		$cron_before_retry       = \get_option( 'cron', array() );
+		$cron_calls_before_retry = $GLOBALS['a8csp_bgte_test_cron_calls'];
+
+		$retry_result = \a8csp_bgte_retry_failed_run( 'unknown', 'missing-run' );
+
+		self::assertInstanceOf( Failure::class, $retry_result );
+		self::assertInstanceOf( EngineError::class, $retry_result->error );
+		self::assertSame(
+			'Background-work "unknown" is not registered; register the matching task or batch before retrying its failed run.',
+			$retry_result->error->message
+		);
+		self::assertSame( $options_before_retry, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $cron_before_retry, \get_option( 'cron', array() ) );
+		self::assertSame( $cron_calls_before_retry, $GLOBALS['a8csp_bgte_test_cron_calls'] );
+	}
+
+	/**
+	 * The composed scheduler writes to Action Scheduler before the always-ready WP-Cron fallback.
+	 *
+	 * @return  void
+	 */
+	public function test_live_graph_prefers_action_scheduler_before_wp_cron(): void {
+		require_once __DIR__ . '/as-function-stubs.php';
+
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+			'init'                  => 1,
+			'action_scheduler_init' => 1,
+		);
+
+		( new Plugin() )->boot();
+
+		$engine = \a8csp_bgte_engine();
+		self::assertInstanceOf( Engine::class, $engine );
+		$engine->tasks()->register( new RecordingTask( 'preferred-backend' ) );
+
+		$result = \a8csp_bgte_enqueue_task( 'preferred-backend', array( 'source' => 'test' ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+		self::assertSame(
+			array(
+				array(
+					'function' => 'as_enqueue_async_action',
+					'args'     => array(
+						'a8csp/background_tasks/run',
+						array( 'preferred-backend', $result->value, 1 ),
+						'preferred-backend|' . $result->value,
+						false,
+						10,
+					),
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_as_calls']
+		);
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cron_calls'] );
+		self::assertSame( array(), \get_option( 'cron', array() ) );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Returns typed hook registrations from one test ledger.
+	 *
+	 * @param   string $global_name Global ledger name.
+	 *
+	 * @return  list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}>
+	 */
+	private function registrations( string $global_name ): array {
+		$registrations = $GLOBALS[ $global_name ] ?? null;
+		self::assertIsArray( $registrations );
+		$typed_registrations = array();
+		foreach ( $registrations as $registration ) {
+			self::assertIsArray( $registration );
+			$hook_name     = $registration['hook_name'] ?? null;
+			$priority      = $registration['priority'] ?? null;
+			$accepted_args = $registration['accepted_args'] ?? null;
+			self::assertIsString( $hook_name );
+			self::assertIsInt( $priority );
+			self::assertIsInt( $accepted_args );
+			$typed_registrations[] = array(
+				'hook_name'     => $hook_name,
+				'callback'      => $registration['callback'] ?? null,
+				'priority'      => $priority,
+				'accepted_args' => $accepted_args,
+			);
+		}
+
+		return $typed_registrations;
+	}
+
+	/**
+	 * Returns stored WP-Cron events for one hook.
+	 *
+	 * @param   string $hook Hook name.
+	 *
+	 * @return  list<array{schedule: string|false, args: list<mixed>}>
+	 */
+	private function cron_events_for_hook( string $hook ): array {
+		$cron = \get_option( 'cron', array() );
+		self::assertIsArray( $cron );
+
+		$matching_events = array();
+		foreach ( $cron as $hooks ) {
+			self::assertIsArray( $hooks );
+			$events = $hooks[ $hook ] ?? array();
+			self::assertIsArray( $events );
+			foreach ( $events as $event ) {
+				self::assertIsArray( $event );
+				$schedule = $event['schedule'] ?? null;
+				if ( false !== $schedule && ! \is_string( $schedule ) ) {
+					self::fail( 'A stored cron event schedule must be a recurrence name or false.' );
+				}
+
+				$args = $event['args'] ?? null;
+				self::assertIsArray( $args );
+				self::assertIsList( $args );
+				$matching_events[] = array(
+					'schedule' => $schedule,
+					'args'     => $args,
+				);
+			}
+		}
+
+		return $matching_events;
+	}
+
+	/**
+	 * Returns the number of events stored across the WP-Cron option.
+	 *
+	 * @return  int
+	 */
+	private function cron_event_count(): int {
+		$cron = \get_option( 'cron', array() );
+		self::assertIsArray( $cron );
+
+		$count = 0;
+		foreach ( $cron as $hooks ) {
+			self::assertIsArray( $hooks );
+			foreach ( $hooks as $events ) {
+				self::assertIsArray( $events );
+				$count += \count( $events );
+			}
+		}
+
+		return $count;
+	}
+
+	// endregion.
+}

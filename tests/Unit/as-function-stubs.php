@@ -29,6 +29,18 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_as_call' ) ) {
 		);
 
 		$GLOBALS['a8csp_bgte_test_as_calls'] = $calls;
+
+		$site_calls = $GLOBALS['a8csp_bgte_test_as_site_calls'] ?? null;
+		if ( \is_array( $site_calls ) ) {
+			$blog_id      = \get_current_blog_id();
+			$site_calls[] = array(
+				'function' => $function_name,
+				'blog_id'  => $blog_id,
+				'args'     => $args,
+			);
+
+			$GLOBALS['a8csp_bgte_test_as_site_calls'] = $site_calls;
+		}
 	}
 }
 

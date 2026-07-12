@@ -70,6 +70,18 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_cron_call' ) ) {
 		);
 
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = $calls;
+
+		$site_calls = $GLOBALS['a8csp_bgte_test_cron_site_calls'] ?? null;
+		if ( \is_array( $site_calls ) ) {
+			$blog_id      = \get_current_blog_id();
+			$site_calls[] = array(
+				'function' => $function_name,
+				'blog_id'  => $blog_id,
+				'args'     => $args,
+			);
+
+			$GLOBALS['a8csp_bgte_test_cron_site_calls'] = $site_calls;
+		}
 	}
 }
 
@@ -363,5 +375,39 @@ if ( ! \function_exists( 'wp_unschedule_event' ) ) {
 		$GLOBALS['a8csp_bgte_test_cron_array'] = $cron;
 
 		return true;
+	}
+}
+
+if ( ! \function_exists( 'wp_unschedule_hook' ) ) {
+	/**
+	 * Removes every event for one hook, regardless of arguments.
+	 *
+	 * @param   string $hook     Hook name.
+	 * @param   bool   $wp_error Whether errors are returned as WP_Error objects.
+	 *
+	 * @return  int
+	 */
+	function wp_unschedule_hook( $hook, $wp_error = false ) {
+		a8csp_bgte_test_record_cron_call( 'wp_unschedule_hook', array( $hook, $wp_error ) );
+
+		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
+		$cron    = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
+		$removed = 0;
+		foreach ( $cron as $timestamp => $hooks ) {
+			$events = $hooks[ $hook ] ?? array();
+			if ( ! \is_array( $events ) ) {
+				continue;
+			}
+
+			$removed += \count( $events );
+			unset( $cron[ $timestamp ][ $hook ] );
+			if ( array() === $cron[ $timestamp ] ) {
+				unset( $cron[ $timestamp ] );
+			}
+		}
+
+		$GLOBALS['a8csp_bgte_test_cron_array'] = $cron;
+
+		return $removed;
 	}
 }

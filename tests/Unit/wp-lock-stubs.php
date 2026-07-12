@@ -22,6 +22,112 @@ if ( ! \function_exists( 'get_current_blog_id' ) ) {
 	}
 }
 
+if ( ! \function_exists( 'is_multisite' ) ) {
+	/** Returns whether the multisite test branch is enabled. */
+	function is_multisite(): bool {
+		$is_multisite = $GLOBALS['a8csp_bgte_test_is_multisite'] ?? false;
+		if ( ! \is_bool( $is_multisite ) ) {
+			throw new \UnexpectedValueException( 'Initialize the multisite test flag as a boolean.' );
+		}
+
+		return $is_multisite;
+	}
+}
+
+if ( ! \function_exists( 'get_sites' ) ) {
+	/**
+	 * Returns scripted site IDs and records the query arguments.
+	 *
+	 * @param   array<string, mixed> $args Site-query arguments.
+	 *
+	 * @return  list<int>
+	 */
+	function get_sites( $args = array() ): array {
+		$calls = $GLOBALS['a8csp_bgte_test_get_sites_calls'] ?? array();
+		if ( ! \is_array( $calls ) ) {
+			throw new \UnexpectedValueException( 'Initialize the get-sites test ledger as an array.' );
+		}
+
+		$calls[] = $args;
+
+		$GLOBALS['a8csp_bgte_test_get_sites_calls'] = $calls;
+
+		$site_ids = $GLOBALS['a8csp_bgte_test_site_ids'] ?? array( 1 );
+		if ( ! \is_array( $site_ids ) || ! \array_is_list( $site_ids ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test site IDs as a list.' );
+		}
+
+		foreach ( $site_ids as $site_id ) {
+			if ( ! \is_int( $site_id ) ) {
+				throw new \UnexpectedValueException( 'Initialize every test site ID as an integer.' );
+			}
+		}
+
+		return $site_ids;
+	}
+}
+
+if ( ! \function_exists( 'switch_to_blog' ) ) {
+	/**
+	 * Switches the test site and its options-table property.
+	 *
+	 * @param   int $new_blog_id Site ID to select.
+	 *
+	 * @return  true
+	 */
+	function switch_to_blog( $new_blog_id ) {
+		$stack = $GLOBALS['a8csp_bgte_test_blog_stack'] ?? array();
+		$calls = $GLOBALS['a8csp_bgte_test_blog_switch_calls'] ?? array();
+		if ( ! \is_array( $stack ) || ! \is_array( $calls ) ) {
+			throw new \UnexpectedValueException( 'Initialize the blog-switch test ledgers as arrays.' );
+		}
+
+		$stack[] = \get_current_blog_id();
+
+		$calls[] = $new_blog_id;
+
+		$GLOBALS['a8csp_bgte_test_blog_stack']        = $stack;
+		$GLOBALS['a8csp_bgte_test_blog_switch_calls'] = $calls;
+		$GLOBALS['a8csp_bgte_test_blog_id']           = $new_blog_id;
+
+		$wpdb = $GLOBALS['wpdb'] ?? null;
+		if ( \is_object( $wpdb ) && \property_exists( $wpdb, 'options' ) ) {
+			$wpdb->options = 1 === $new_blog_id ? 'wp_options' : 'wp_' . $new_blog_id . '_options';
+		}
+
+		return true;
+	}
+}
+
+if ( ! \function_exists( 'restore_current_blog' ) ) {
+	/** Restores the previous test site and its options-table property. */
+	function restore_current_blog(): bool {
+		$stack = $GLOBALS['a8csp_bgte_test_blog_stack'] ?? array();
+		$calls = $GLOBALS['a8csp_bgte_test_blog_restore_calls'] ?? array();
+		if ( ! \is_array( $stack ) || ! \is_array( $calls ) ) {
+			throw new \UnexpectedValueException( 'Initialize the blog-restore test ledgers as arrays.' );
+		}
+
+		$blog_id = \array_pop( $stack );
+		if ( ! \is_int( $blog_id ) ) {
+			return false;
+		}
+
+		$calls[] = $blog_id;
+
+		$GLOBALS['a8csp_bgte_test_blog_stack']         = $stack;
+		$GLOBALS['a8csp_bgte_test_blog_restore_calls'] = $calls;
+		$GLOBALS['a8csp_bgte_test_blog_id']            = $blog_id;
+
+		$wpdb = $GLOBALS['wpdb'] ?? null;
+		if ( \is_object( $wpdb ) && \property_exists( $wpdb, 'options' ) ) {
+			$wpdb->options = 1 === $blog_id ? 'wp_options' : 'wp_' . $blog_id . '_options';
+		}
+
+		return true;
+	}
+}
+
 if ( ! \function_exists( 'maybe_serialize' ) ) {
 	/**
 	 * Serializes arrays and objects using WordPress option-row semantics.

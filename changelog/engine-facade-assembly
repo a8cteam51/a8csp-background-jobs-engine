@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the consumer surface: the Engine facade with task and batch APIs, the composition-root component, procedural wrappers with pre-boot failure semantics, and the uninstall footprint with a network-wide prefix sweep and scheduled-work reclamation.

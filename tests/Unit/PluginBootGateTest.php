@@ -2,9 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
 use A8C\SpecialProjects\BackgroundTasksEngine\Log;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -14,7 +18,10 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Plugin::class )]
+#[UsesClass( EngineComponent::class )]
 #[UsesClass( Log::class )]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState( false )]
 final class PluginBootGateTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording hook stubs before
@@ -29,6 +36,7 @@ final class PluginBootGateTest extends TestCase {
 		}
 
 		require_once __DIR__ . '/wp-hook-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
 	}
 
 	/**
@@ -42,17 +50,30 @@ final class PluginBootGateTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
+		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
 	}
 
 	/**
-	 * The component registry registers the engine's log channel.
+	 * The component registry registers logging, scheduler, and orchestration hooks.
 	 *
 	 * @return  void
 	 */
-	public function test_boot_registers_the_log_channel_hook(): void {
+	public function test_boot_registers_the_plugin_component_hooks(): void {
 		( new Plugin() )->boot();
 
-		self::assertSame( array( 'a8csp/background_tasks/log' ), $GLOBALS['a8csp_bgte_test_hooks'] );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/log',
+				'cron_schedules',
+				'a8csp/background_tasks/start',
+				'a8csp/background_tasks/continue',
+				'a8csp/background_tasks/run',
+				'a8csp/background_tasks/cleanup',
+			),
+			$GLOBALS['a8csp_bgte_test_hooks']
+		);
 	}
 
 	/**
@@ -65,6 +86,16 @@ final class PluginBootGateTest extends TestCase {
 		$plugin->boot();
 		$plugin->boot();
 
-		self::assertSame( array( 'a8csp/background_tasks/log' ), $GLOBALS['a8csp_bgte_test_hooks'] );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/log',
+				'cron_schedules',
+				'a8csp/background_tasks/start',
+				'a8csp/background_tasks/continue',
+				'a8csp/background_tasks/run',
+				'a8csp/background_tasks/cleanup',
+			),
+			$GLOBALS['a8csp_bgte_test_hooks']
+		);
 	}
 }
