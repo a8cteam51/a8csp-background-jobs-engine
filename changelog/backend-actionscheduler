@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the Action Scheduler backend: injectable readiness probe, args-aware idempotent scheduling, unique-flag passthrough with duplicate disambiguation, priority passthrough, and diagnostic zero-id failures.

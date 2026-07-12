@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
@@ -148,6 +149,7 @@ final class RecordingBackendTest extends TestCase {
 	public function test_write_verbs_repeat_the_no_discard_attribute_on_every_backend_type(): void {
 		$types = array(
 			BackendInterface::class,
+			ActionSchedulerBackend::class,
 			WPCronBackend::class,
 			RecordingBackend::class,
 		);
