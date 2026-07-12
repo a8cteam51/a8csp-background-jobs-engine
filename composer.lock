@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "24e1b2edf4f94b4029b1cf67eb63b894",
+    "content-hash": "ea644a91af754e062791fc463fd32011",
     "packages": [],
     "packages-dev": [
         {
@@ -2018,50 +2018,6 @@
                 "source": "https://github.com/phar-io/version/tree/3.2.1"
             },
             "time": "2022-02-21T01:04:05+00:00"
-        },
-        {
-            "name": "php-stubs/woocommerce-stubs",
-            "version": "v10.9.2",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/php-stubs/woocommerce-stubs.git",
-                "reference": "8e52e5bfbcd0f5cb65a8bec696761867e3096ab7"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/php-stubs/woocommerce-stubs/zipball/8e52e5bfbcd0f5cb65a8bec696761867e3096ab7",
-                "reference": "8e52e5bfbcd0f5cb65a8bec696761867e3096ab7",
-                "shasum": ""
-            },
-            "require": {
-                "php-stubs/wordpress-stubs": "^5.3 || ^6.0"
-            },
-            "require-dev": {
-                "php": "~7.1 || ~8.0",
-                "php-stubs/generator": "^0.9.0"
-            },
-            "suggest": {
-                "symfony/polyfill-php73": "Symfony polyfill backporting some PHP 7.3+ features to lower PHP versions",
-                "szepeviktor/phpstan-wordpress": "WordPress extensions for PHPStan"
-            },
-            "type": "library",
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "description": "WooCommerce function and class declaration stubs for static analysis.",
-            "homepage": "https://github.com/php-stubs/woocommerce-stubs",
-            "keywords": [
-                "PHPStan",
-                "static analysis",
-                "woocommerce",
-                "wordpress"
-            ],
-            "support": {
-                "issues": "https://github.com/php-stubs/woocommerce-stubs/issues",
-                "source": "https://github.com/php-stubs/woocommerce-stubs/tree/v10.9.2"
-            },
-            "time": "2026-07-02T23:18:25+00:00"
         },
         {
             "name": "php-stubs/wordpress-stubs",
@@ -7905,16 +7861,16 @@
             "time": "2026-05-22T10:28:41+00:00"
         },
         {
-            "name": "wp-plugin/woocommerce",
-            "version": "10.9.4",
+            "name": "wp-plugin/action-scheduler",
+            "version": "4.0.0",
             "source": {
                 "type": "svn",
-                "url": "https://plugins.svn.wordpress.org/woocommerce/",
-                "reference": "tags/10.9.4"
+                "url": "https://plugins.svn.wordpress.org/action-scheduler/",
+                "reference": "tags/4.0.0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://downloads.wordpress.org/plugin/woocommerce.10.9.4.zip"
+                "url": "https://downloads.wordpress.org/plugin/action-scheduler.4.0.0.zip"
             },
             "require": {
                 "composer/installers": "~1.0|~2.0"
@@ -7926,14 +7882,14 @@
                     "name": "Automattic"
                 }
             ],
-            "description": "Everything you need to launch an online store in days and keep it growing for years. From your first sale to millions in revenue, Woo is with you.",
-            "homepage": "https://woocommerce.com/",
+            "description": "Action Scheduler - Job Queue for WordPress",
+            "homepage": "https://actionscheduler.org",
             "support": {
-                "changelog": "https://wordpress.org/plugins/woocommerce/#developers",
-                "issues": "https://wordpress.org/support/plugin/woocommerce",
-                "source": "https://plugins.svn.wordpress.org/woocommerce"
+                "changelog": "https://wordpress.org/plugins/action-scheduler/#developers",
+                "issues": "https://wordpress.org/support/plugin/action-scheduler",
+                "source": "https://plugins.svn.wordpress.org/action-scheduler"
             },
-            "time": "2026-07-07T17:20:35+00:00"
+            "time": "2026-06-16T15:05:50+00:00"
         }
     ],
     "aliases": [],

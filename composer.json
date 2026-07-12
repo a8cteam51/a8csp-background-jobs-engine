@@ -40,8 +40,7 @@
 
     "wp-cli/i18n-command": "^2",
 
-    "wp-plugin/woocommerce": "10.9.*",
-    "php-stubs/woocommerce-stubs": "^10",
+    "wp-plugin/action-scheduler": "4.0.*",
 
     "roave/security-advisories": "dev-latest"
   },
@@ -49,10 +48,7 @@
   "autoload": {
     "psr-4": {
       "A8C\\SpecialProjects\\BackgroundTasksEngine\\": "src/"
-    },
-    "classmap": [
-      "models/"
-    ]
+    }
   },
   "autoload-dev": {
     "psr-4": {
@@ -98,6 +94,7 @@
     "test:requirements": "npm --prefix=. run test:requirements",
 
     "quality-check": [
+      "@composer validate --strict",
       "@lint:php",
       "@test:unit"
     ],

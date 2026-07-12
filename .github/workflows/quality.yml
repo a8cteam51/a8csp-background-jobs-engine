@@ -19,14 +19,6 @@ jobs:
     with:
       scripts: '["lint:php:phpcs", "lint:php:phpcs:tests", "lint:php:phpstan", "lint:php:composer-require-checker"]'
 
-  lint-scripts-styles:
-    name: JS + CSS Lint
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-scripts-styles-lint.yml@trunk
-
-  block-json:
-    name: block.json schema
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-block-json-check.yml@trunk
-
   php-syntax:
     name: PHP Syntax
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-php-syntax-check.yml@trunk
@@ -54,11 +46,9 @@ jobs:
 
       # Only the entry file and functions-bootstrap.php must parse below the plugin's PHP
       # floor; functions.php, uninstall.php, and index.php load after the requirements gate
-      # and are excluded. Discover the entry by its WordPress "Plugin Name:" header because
-      # generation renames the file per repo without rewriting .github/.
-      # functions-bootstrap.php shares the below-floor constraint but keeps its static name
-      # across generation, so it is linted explicitly by name because its missing plugin header
-      # otherwise lets it silently escape this matrix.
+      # and are excluded. Discover the entry by its WordPress "Plugin Name:" header because its
+      # filename is repository-specific. functions-bootstrap.php shares the below-floor constraint
+      # but lacks the plugin header, so lint it explicitly to keep it inside this matrix.
       - name: Check the below-floor files for syntax errors
         run: |
           set -euo pipefail

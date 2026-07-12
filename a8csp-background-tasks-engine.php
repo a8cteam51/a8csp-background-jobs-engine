@@ -28,8 +28,6 @@
  * License URI:             https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:             a8csp-background-tasks-engine
  * Domain Path:             /languages
- * WC requires at least:    10.0
- * WC tested up to:         10.9
  */
 
 \defined( 'ABSPATH' ) || exit;
@@ -40,24 +38,13 @@
 \define( 'A8CSP_BGTE_DIR_URL', plugin_dir_url( __FILE__ ) );
 
 // The gate's helper functions live in functions-bootstrap.php, which shares this file's
-// below-floor parse constraint; they must exist before the compatibility hook and the
-// requirements gate below can call them.
+// below-floor parse constraint; they must exist before the requirements gate can call them.
 require_once A8CSP_BGTE_DIR_PATH . '/functions-bootstrap.php';
 
 // Translations for the /languages directory declared via the Domain Path header above are
 // resolved just-in-time: WordPress registers this plugin's language directory from its header
 // before the plugin loads, and the first call to a translation function for this text domain
 // triggers loading the matching translation file for the current locale.
-
-// Declare compatibility with WC features.
-add_action(
-	'before_woocommerce_init',
-	static function () {
-		if ( \class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
-			\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
-		}
-	}
-);
 
 // Load the autoloader.
 if ( ! \is_file( A8CSP_BGTE_DIR_PATH . '/vendor/autoload.php' ) ) {

@@ -23,11 +23,7 @@ final class Plugin {
 	 *
 	 * @var     array<int, class-string<Component>>
 	 */
-	private const COMPONENTS = array(
-		Blocks::class,
-		Settings::class,
-		Integrations\WC_Settings_Section::class,
-	);
+	private const COMPONENTS = array();
 
 	/**
 	 * Whether `boot()` has already run.
@@ -46,8 +42,8 @@ final class Plugin {
 	/**
 	 * Returns true if the plugin should boot on the current site.
 	 *
-	 * A plugin that is gated as a whole — e.g. one that requires WooCommerce for everything it
-	 * does — expresses that check here once instead of in every component.
+	 * A plugin that is gated as a whole expresses that check here once instead of in every
+	 * component.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

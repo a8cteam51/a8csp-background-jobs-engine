@@ -5,10 +5,10 @@
   "testsEnvironment": false,
   "mappings": {
     "wp-content/plugins/a8csp-background-tasks-engine": ".",
-    "wp-content/plugins/woocommerce": "./vendor/wp-plugin/woocommerce"
+    "wp-content/plugins/action-scheduler": "./vendor/wp-plugin/action-scheduler"
   },
   "lifecycleScripts": {
-    "afterStart": "wp-env run cli wp plugin activate woocommerce a8csp-background-tasks-engine"
+    "afterStart": "wp-env run cli wp plugin activate action-scheduler a8csp-background-tasks-engine"
   },
   "config": {
     "WP_DEBUG": true,

@@ -1,13 +1,12 @@
 # Tests
 
-The test rig has three PHPUnit suites plus a Playwright end-to-end suite, run against wp-env
-fixtures at three WordPress-version tiers.
+The test rig has three PHPUnit suites run against wp-env fixtures at two WordPress-version tiers.
 
 ## Suites
 
 - **Unit** (`tests/Unit/`) — no WordPress, no wp-env. Runs against plain PHPUnit `TestCase` with
   recording `add_action()`/`add_filter()` stubs (`tests/Unit/wp-hook-stubs.php`) instead of Mockery
-  or Brain Monkey, so the real `Plugin::boot()` loop is exercised outside WordPress.
+  or Brain Monkey, so the real `Plugin::boot()` path is exercised outside WordPress.
   Fast; this is the suite `composer quality-check` runs on every push.
 - **Integration** (`tests/Integration/`) — boots inside wp-env against a supported WordPress
   version and exercises the plugin's real boot path. `UninstallTest` runs the real
@@ -17,24 +16,6 @@ fixtures at three WordPress-version tiers.
 - **Requirements** (`tests/Integration/RequirementsCheckTest.php`, run as its own suite) — boots
   inside wp-env against a below-floor WordPress version to verify the requirements gate degrades
   gracefully instead of fataling.
-- **End-to-End** (`tests/EndToEnd/`) — Playwright, driving a real browser against the dev wp-env
-  instance.
-
-## WooCommerce-less boot proof
-
-`PluginBootWithoutWooCommerceTest` verifies that the plugin and its WooCommerce-independent
-components (Blocks and Settings) boot when WooCommerce is inactive. It self-skips whenever
-WooCommerce is active. To exercise the proof, deactivate WooCommerce in the tests wp-env instance,
-run that test directly, then reactivate WooCommerce before continuing with the Integration suite:
-
-```sh
-npm run wp-env:tests:start
-wp-env --config .wp-env.tests.json run cli wp plugin deactivate woocommerce
-wp-env --config .wp-env.tests.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine vendor/bin/phpunit --filter=PluginBootWithoutWooCommerceTest
-wp-env --config .wp-env.tests.json run cli wp plugin activate woocommerce
-composer test:integration
-npm run wp-env:tests:stop
-```
 
 ## Running the suites
 
@@ -60,17 +41,11 @@ composer test:requirements
 npm run wp-env:belowfloor:stop
 ```
 
-End-to-end (Playwright starts and stops the dev wp-env instance itself via its `webServer` config):
-
-```sh
-npm run test:e2e
-```
-
 ## Ports
 
 | Environment | Config                    | Port |
 | ----------- | ------------------------- | ---- |
-| Dev / E2E   | `.wp-env.json`            | 8893 |
+| Dev         | `.wp-env.json`            | 8893 |
 | Tests       | `.wp-env.tests.json`      | 8890 |
 | Below-floor | `.wp-env.belowfloor.json` | 8891 |
 

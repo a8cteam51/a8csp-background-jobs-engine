@@ -31,6 +31,11 @@
  * @return  ($property is null ? PluginMetaData : ($property is PluginMetaKey ? PluginMetaData[PluginMetaKey] : null))
  */
 function a8csp_bgte_get_plugin_metadata( $property = null ) {
+	/**
+	 * Cache variants separately because translations become available after init.
+	 *
+	 * @var array<string, PluginMetaData> $plugin_data
+	 */
 	static $plugin_data = array();
 
 	$can_translate = 0 < did_action( 'init' );
@@ -41,7 +46,7 @@ function a8csp_bgte_get_plugin_metadata( $property = null ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		$plugin_file               = trailingslashit( WP_PLUGIN_DIR ) . \constant( 'A8CSP_BGTE_BASENAME' );
+		$plugin_file               = trailingslashit( WP_PLUGIN_DIR ) . A8CSP_BGTE_BASENAME;
 		$plugin_data[ $cache_key ] = get_plugin_data( $plugin_file, false, $can_translate );
 	}
 
@@ -178,6 +183,11 @@ function a8csp_bgte_output_requirements_error( $error ) {
 				$requirements_error .= ' ' . __( 'Your environment does not meet all the system requirements listed below:', 'a8csp-background-tasks-engine' );
 				$requirements_error .= '<ul class="ul-disc">';
 
+				/**
+				 * WP_Error accepts only integer or string error codes.
+				 *
+				 * @var int|string $error_code
+				 */
 				foreach ( $error->get_error_codes() as $error_code ) {
 					$error_data = $error->get_error_data( $error_code );
 					if ( ! \is_array( $error_data ) ) {

@@ -1,12 +1,9 @@
 {
     "scan-files": [
         "vendor/php-stubs/wordpress-stubs/wordpress-stubs.php",
-        "vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php",
         "functions.php",
         "a8csp-background-tasks-engine.php",
-        "functions-bootstrap.php",
-        "includes/assets.php",
-        "includes/settings.php"
+        "functions-bootstrap.php"
     ],
     "symbol-whitelist": [
         "ARRAY_A",
@@ -30,11 +27,6 @@
         "DAY_IN_SECONDS",
         "HOUR_IN_SECONDS",
         "MONTH_IN_SECONDS",
-        "WEEK_IN_SECONDS",
-        "Automattic\\WooCommerce\\Blocks\\Assets\\Api",
-        "Automattic\\WooCommerce\\EmailEditor\\Engine\\Renderer\\ContentRenderer\\Rendering_Context",
-        "Automattic\\WooCommerce\\Internal\\DataStores\\Orders\\CustomOrdersTableController",
-        "Automattic\\WooCommerce\\Internal\\DataStores\\Orders\\DataSynchronizer",
-        "Automattic\\WooCommerce\\Internal\\Features\\FeaturesController"
+        "WEEK_IN_SECONDS"
     ]
 }

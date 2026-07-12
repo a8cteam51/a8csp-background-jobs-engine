@@ -2,8 +2,10 @@ includes:
     - vendor/a8csp/configs/php/quality-assurance/phpstan.dist.neon
 
 parameters:
+    bootstrapFiles:
+        - %currentWorkingDirectory%/.phpstan-bootstrap.php
     scanDirectories:
-        - vendor/wp-plugin/woocommerce
+        - vendor/wp-plugin/action-scheduler
     # The included config autodetects only the fixed-name root files (functions-bootstrap.php,
     # functions.php); the entry file's name is per-repo, so both gate files are pinned here
     # explicitly and WPCompat.pluginFile below names the entry for the same reason.

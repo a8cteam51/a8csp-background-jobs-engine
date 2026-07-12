@@ -7,9 +7,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the real `Plugin::boot()` component loop outside WordPress through the recording hook
- * stubs — the open-gate components register their hooks, a closed-gate component registers nothing,
- * and a second boot is a no-op.
+ * Exercises the real `Plugin::boot()` path outside WordPress through the recording hook stubs. An
+ * empty component registry registers no hooks, and a second boot is a no-op.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -48,24 +47,17 @@ final class PluginBootGateTest extends TestCase {
 	}
 
 	/**
-	 * Open-gate components register their hooks while the WooCommerce-gated component registers
-	 * nothing when WooCommerce is absent.
+	 * An empty component registry boots without registering hooks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_boot_initializes_open_gate_components_and_skips_closed_gates(): void {
+	public function test_boot_with_empty_component_registry_registers_no_hooks(): void {
 		( new Plugin() )->boot();
 
-		self::assertContains( 'init', $GLOBALS['a8csp_bgte_test_hooks'] );
-		self::assertContains( 'enqueue_block_editor_assets', $GLOBALS['a8csp_bgte_test_hooks'] );
-		self::assertContains( 'admin_init', $GLOBALS['a8csp_bgte_test_hooks'] );
-
-		foreach ( $GLOBALS['a8csp_bgte_test_hooks'] as $hook_name ) {
-			self::assertStringStartsNotWith( 'woocommerce_', $hook_name );
-		}
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_hooks'] );
 	}
 
 	/**

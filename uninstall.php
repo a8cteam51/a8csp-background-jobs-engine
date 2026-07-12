@@ -20,12 +20,7 @@
  * may reference plugin code.
  */
 $a8csp_bgte_footprint = array(
-	'options'   => array(
-		// Settings owns:
-		'a8csp_bgte_example_option',
-		// Integrations\WC_Settings_Section owns:
-		'a8csp_bgte_wc_example_option',
-	),
+	'options'   => array(),
 	'user_meta' => array(),
 );
 

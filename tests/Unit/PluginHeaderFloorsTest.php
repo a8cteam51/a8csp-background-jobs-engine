@@ -29,7 +29,7 @@ final class PluginHeaderFloorsTest extends TestCase {
 	}
 
 	/**
-	 * Locates the main plugin file without hardcoding its name (fill-in-scaffold renames it).
+	 * Locates the main plugin file without hardcoding its name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

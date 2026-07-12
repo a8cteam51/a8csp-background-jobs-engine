@@ -22,7 +22,7 @@ if ( ! \function_exists( 'a8csp_bgte_get_plugin_metadata' ) ) {
 	 * @return  string|null
 	 */
 	function a8csp_bgte_get_plugin_metadata( $property = null ) {
-		return 'WC requires at least' === $property ? '10.0' : null;
+		return null;
 	}
 }
 
