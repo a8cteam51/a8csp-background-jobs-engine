@@ -26,12 +26,17 @@ final class RecordingTask implements TaskInterface {
 	 */
 	public ?\Closure $on_handle = null;
 
+	/** Retry policy returned to the orchestrator. */
+	public RetryPolicy $retry_policy;
+
 	/**
 	 * Constructor.
 	 *
 	 * @param   string $name Stable task name.
 	 */
-	public function __construct( private readonly string $name ) {}
+	public function __construct( private readonly string $name ) {
+		$this->retry_policy = new RetryPolicy();
+	}
 
 	/** {@inheritDoc} */
 	#[\Override]
@@ -73,6 +78,6 @@ final class RecordingTask implements TaskInterface {
 	/** {@inheritDoc} */
 	#[\Override]
 	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy();
+		return $this->retry_policy;
 	}
 }

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
@@ -43,6 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
+#[UsesClass( RetryPolicy::class )]
 #[UsesClass( RunHistory::class )]
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
@@ -102,6 +104,7 @@ final class OrchestratorTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
 		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
+		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
@@ -532,6 +535,115 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
+	 * Manual retry enqueues a fresh task run and removes the consumed failed entry.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_reenqueues_a_task_and_removes_the_failed_entry(): void {
+		$store = new FailedRunStore( self::NAME );
+		$store->record(
+			'failed-run',
+			self::NOW - 1,
+			self::ARGS,
+			2,
+			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		);
+		$this->backend->calls    = array();
+		$this->randomizer->calls = array();
+		$this->randomizer->value = 43;
+		$this->clock->timestamp  = self::NOW + 100;
+		$new_run_id              = '00000000001700000100-0000000000000000043';
+
+		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $new_run_id, $result->value );
+		self::assertSame( array(), $store->all() );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp/background_tasks/run',
+						'args'     => array( self::NAME, $new_run_id ),
+						'group'    => self::NAME . '|' . $new_run_id,
+						'unique'   => false,
+						'priority' => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
+		self::assertIsArray( $new_state );
+		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
+		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
+	}
+
+	/**
+	 * A missing failed entry names the retained run identifier that can be retried.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_missing_entry_and_names_what_exists(): void {
+		$store = new FailedRunStore( self::NAME );
+		$store->record(
+			'retained-run',
+			self::NOW - 1,
+			self::ARGS,
+			2,
+			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		);
+		$this->backend->calls    = array();
+		$this->randomizer->calls = array();
+
+		$result = $this->orchestrator->retry_failed( self::NAME, 'missing-run' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Failed run "missing-run" for background-work "email-digest" is not retained; retry one of the retained run identifiers: "retained-run".',
+			$result->error->message
+		);
+		self::assertCount( 1, $store->all() );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->randomizer->calls );
+	}
+
+	/**
+	 * A delegated enqueue failure leaves the original failed task entry retryable.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_retains_the_task_entry_when_enqueue_fails(): void {
+		$store = new FailedRunStore( self::NAME );
+		$store->record(
+			'failed-run',
+			self::NOW - 1,
+			self::ARGS,
+			2,
+			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		);
+		$expected_entries = $store->all();
+		$failure          = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Restore the scheduler before retrying the task.'
+			)
+		);
+
+		$this->backend->calls                    = array();
+		$this->backend->results['enqueue_async'] = $failure;
+		$this->randomizer->value                 = 43;
+		$this->clock->timestamp                  = self::NOW + 100;
+
+		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+
+		self::assertSame( $failure, $result );
+		self::assertSame( $expected_entries, $store->all() );
+	}
+
+	/**
 	 * Run handling refreshes both heartbeats before task execution and completes in terminal order.
 	 *
 	 * @return  void
@@ -589,11 +701,365 @@ final class OrchestratorTest extends TestCase {
 	}
 
 	/**
-	 * An ordinary throwable enters the complete terminal failure path without retry scheduling.
+	 * An ordinary throwable below the cap persists retry state and reschedules the same run.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_fails_terminally_for_an_ordinary_exception(): void {
+	public function test_handle_run_action_reschedules_an_ordinary_failure_below_the_cap(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 17;
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		$state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $state );
+		self::assertSame( 'running', $state['status'] ?? null );
+		self::assertSame( 1, $state['chunk_retries'] ?? null );
+		self::assertSame( self::NOW + 90, $state['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 90, $this->lock()['heartbeat_at'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'schedule_single',
+					'args' => array(
+						'hook'      => 'a8csp/background_tasks/run',
+						'timestamp' => self::NOW + 107,
+						'args'      => array( self::NAME, self::RUN_ID ),
+						'group'     => self::NAME . '|' . self::RUN_ID,
+						'priority'  => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertSame(
+			array(
+				array(
+					'min' => 0,
+					'max' => 30,
+				),
+			),
+			$this->randomizer->calls
+		);
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/retrying/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS, 1, 17 ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/retrying',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, 1, 17 ),
+				),
+			),
+			$this->fired_actions()
+		);
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+	}
+
+	/**
+	 * A two-attempt policy executes exactly twice and records the exhausted cap.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_stops_exactly_at_the_max_attempts_boundary(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 5;
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->clock->timestamp = self::NOW + 95;
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertSame( array( self::ARGS, self::ARGS ), $this->task->calls );
+		self::assertCount( 1, $this->backend->calls );
+		self::assertSame( 'schedule_single', $this->backend->calls[0]['verb'] );
+		self::assertSame(
+			array(
+				array(
+					'min' => 0,
+					'max' => 30,
+				),
+			),
+			$this->randomizer->calls
+		);
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 2, $failed_run['attempts'] ?? null );
+		self::assertSame( self::NOW + 95, $failed_run['failed_at'] ?? null );
+	}
+
+	/**
+	 * A successful retry clears the invocation's failed-attempt counter before completion.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_resets_the_counter_after_a_successful_retry(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 5;
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		$this->task->throwable  = null;
+		$this->clock->timestamp = self::NOW + 95;
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertSame( 0, $this->recorded_run_state( 'completed' )['chunk_retries'] );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+	}
+
+	/**
+	 * A name-specific RetryPolicy replacement controls the cap for that task.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_honors_the_name_specific_retry_policy_filter(): void {
+		$contract_policy = new RetryPolicy( max_attempts: 3 );
+
+		$this->task->retry_policy = $contract_policy;
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+
+		$received_policy = null;
+		$this->set_filter_value(
+			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			static function ( RetryPolicy $policy ) use ( &$received_policy ): RetryPolicy {
+				$received_policy = $policy;
+
+				return new RetryPolicy( max_attempts: 1 );
+			}
+		);
+		$this->prepare_run_action();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertSame( $contract_policy, $received_policy );
+		self::assertSame( array(), $this->backend->calls );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+	}
+
+	/**
+	 * A foreign policy-filter return falls back to the contract policy and names the correction.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_falls_back_and_warns_for_a_foreign_retry_policy(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->set_filter_value( 'a8csp/background_tasks/retry_policy/' . self::NAME, 'invalid-policy' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertCount( 1, $this->backend->calls );
+		self::assertSame( self::NOW + 97, $this->backend->calls[0]['args']['timestamp'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'min' => 0,
+					'max' => 30,
+				),
+			),
+			$this->randomizer->calls
+		);
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.',
+					'context' => array(
+						'name'          => self::NAME,
+						'returned_type' => 'string',
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * A throwing retry-policy filter terminalizes the run instead of leaving it stalled.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_throwing_retry_policy_filter(): void {
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2 );
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->set_filter_value(
+			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			static function ( RetryPolicy $policy ): RetryPolicy {
+				throw new \DomainException( 'Retry policy filter exploded.' );
+			}
+		);
+		$this->prepare_run_action();
+		$this->randomizer->calls = array();
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->randomizer->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		$stored_error = $failed_run['error'] ?? null;
+		self::assertIsArray( $stored_error );
+		self::assertSame( \DomainException::class, $stored_error['class'] ?? null );
+		self::assertSame(
+			'Task "email-digest" could not resolve the retry policy: Retry policy filter exploded. Fix the retry policy provider or filter before retrying the failed run manually.',
+			$stored_error['message'] ?? null
+		);
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+	}
+
+	/**
+	 * A throwing retrying listener terminalizes after both retrying hooks without scheduling.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_throwing_retrying_listener(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+
+		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
+			'a8csp/background_tasks/retrying/' . self::NAME => new \RuntimeException(
+				'Retrying listener exploded.'
+			),
+		);
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		$stored_error = $failed_run['error'] ?? null;
+		self::assertIsArray( $stored_error );
+		self::assertSame( \RuntimeException::class, $stored_error['class'] ?? null );
+		self::assertSame(
+			'Task "email-digest" could not prepare the retry action: Retrying listener exploded. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+			$stored_error['message'] ?? null
+		);
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/retrying/' . self::NAME,
+				'a8csp/background_tasks/retrying',
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+	}
+
+	/**
+	 * A retry scheduling failure terminalizes the run and identifies the failed stage.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_retry_reschedule_failure(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+
+		$this->backend->results['schedule_single'] = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Restore the scheduler before retrying the task.'
+			)
+		);
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		$stored_error = $failed_run['error'] ?? null;
+		self::assertIsArray( $stored_error );
+		self::assertSame(
+			'Task "email-digest" could not schedule the retry action: Restore the scheduler before retrying the task.',
+			$stored_error['message'] ?? null
+		);
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/retrying/' . self::NAME,
+				'a8csp/background_tasks/retrying',
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+	}
+
+	/**
+	 * A one-attempt ordinary policy enters the existing terminal failure path.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_fails_terminally_when_the_policy_has_no_retry(): void {
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
+
 		$this->assert_terminal_task_failure( new \RuntimeException( 'Database unavailable.' ) );
 	}
 
@@ -604,6 +1070,58 @@ final class OrchestratorTest extends TestCase {
 	 */
 	public function test_handle_run_action_fails_terminally_for_a_non_retryable_exception(): void {
 		$this->assert_terminal_task_failure( new NonRetryableTaskException( 'The request is permanently invalid.' ) );
+	}
+
+	/**
+	 * A retry action that loses the latest pointer exits as Superseded before re-execution.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_supersedes_before_a_scheduled_retry_executes(): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->prepare_run_action();
+		$this->randomizer->value = 5;
+		$this->randomizer->calls = array();
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		$this->backend->calls = array();
+
+		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+
+		$this->clock->timestamp = self::NOW + 95;
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/superseded/' . self::NAME,
+				'a8csp/background_tasks/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'info',
+					'message' => 'Superseded task run before execution.',
+					'context' => array(
+						'task_name'     => self::NAME,
+						'run_id'        => self::RUN_ID,
+						'latest_run_id' => 'run-newer',
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -858,10 +1376,13 @@ final class OrchestratorTest extends TestCase {
 	private function assert_terminal_task_failure( \Throwable $throwable ): void {
 		$this->task->throwable = $throwable;
 		$this->prepare_run_action();
+		$this->randomizer->calls = array();
 
 		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID );
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->randomizer->calls );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
@@ -930,6 +1451,53 @@ final class OrchestratorTest extends TestCase {
 			),
 			$this->option( 'a8csp_bgte_history_' . self::NAME )
 		);
+	}
+
+	/**
+	 * Returns the recorded run-state write for one lifecycle status.
+	 *
+	 * @param   string $status Expected lifecycle status.
+	 *
+	 * @return  array{
+	 *     status: mixed,
+	 *     start_args: mixed,
+	 *     args_hash: mixed,
+	 *     queue: mixed,
+	 *     chunk_retries: mixed,
+	 *     created_at: mixed,
+	 *     heartbeat_at: mixed
+	 * }
+	 */
+	private function recorded_run_state( string $status ): array {
+		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $calls );
+		foreach ( $calls as $call ) {
+			self::assertIsArray( $call );
+			if ( 'update_option' !== ( $call['function'] ?? null ) ) {
+				continue;
+			}
+
+			$args = $call['args'] ?? null;
+			self::assertIsArray( $args );
+			if ( $this->run_option_name() !== ( $args[0] ?? null ) ) {
+				continue;
+			}
+
+			$state = $args[1] ?? null;
+			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status ) {
+				return array(
+					'status'        => $state['status'] ?? null,
+					'start_args'    => $state['start_args'] ?? null,
+					'args_hash'     => $state['args_hash'] ?? null,
+					'queue'         => $state['queue'] ?? null,
+					'chunk_retries' => $state['chunk_retries'] ?? null,
+					'created_at'    => $state['created_at'] ?? null,
+					'heartbeat_at'  => $state['heartbeat_at'] ?? null,
+				);
+			}
+		}
+
+		self::fail( 'The run never persisted the expected lifecycle state.' );
 	}
 
 	/**

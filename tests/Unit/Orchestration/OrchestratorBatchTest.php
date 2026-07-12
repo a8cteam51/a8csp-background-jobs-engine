@@ -3,12 +3,14 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
@@ -47,6 +49,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
+#[UsesClass( RetryPolicy::class )]
 #[UsesClass( RunHistory::class )]
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
@@ -215,6 +218,53 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 		self::assertSame( array(), $this->batch->generate_calls );
 		self::assertSame( array(), $this->fired_actions() );
+	}
+
+	/**
+	 * Manual retry starts a fresh batch run and removes the consumed failed entry.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_restarts_a_batch_and_removes_the_failed_entry(): void {
+		$store = new FailedRunStore( self::NAME );
+		$store->record(
+			'failed-run',
+			self::NOW - 1,
+			self::ARGS,
+			2,
+			new EngineError( 'Chunk processing exploded.', \RuntimeException::class )
+		);
+		$this->backend->calls    = array();
+		$this->randomizer->calls = array();
+		$this->randomizer->value = 43;
+		$this->clock->timestamp  = self::NOW + 100;
+		$new_run_id              = '00000000001700000100-0000000000000000043';
+
+		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $new_run_id, $result->value );
+		self::assertSame( array(), $store->all() );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp/background_tasks/start',
+						'args'     => array( self::NAME, $new_run_id ),
+						'group'    => self::NAME . '|' . $new_run_id,
+						'unique'   => false,
+						'priority' => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
+		self::assertIsArray( $new_state );
+		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
+		self::assertSame( array(), $new_state['queue'] ?? null );
+		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
 	}
 
 	/**
@@ -637,13 +687,19 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * A throwing chunk discards buffered mutations before the ordered terminal failure path.
+	 * A throwing chunk discards buffered mutations before rescheduling the same chunk.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_discards_context_mutations_and_fails_terminally(): void {
+	public function test_handle_run_action_discards_context_mutations_and_reschedules_the_chunk(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 		$remaining  = array( 'chunk' => 'remaining' );
+
+		$this->batch->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
 		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
 		$this->batch->on_process        = static function (
 			array $processed_args,
@@ -654,49 +710,193 @@ final class OrchestratorBatchTest extends TestCase {
 		};
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
 		$this->clock->timestamp         = self::NOW + 120;
+		$this->randomizer->value        = 11;
+		$this->randomizer->calls        = array();
 
 		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
 
-		self::assertSame( array( $remaining ), $this->failed_run_state()['queue'] );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
+		$state = $this->run_state();
+		self::assertSame( 'running', $state['status'] );
+		self::assertSame( array( $remaining ), $state['queue'] );
+		self::assertSame( 1, $state['chunk_retries'] );
+		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
+		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->batch->success_calls );
-		self::assertCount( 1, $this->batch->failure_calls );
-		$failure = $this->batch->failure_calls[0];
-		self::assertSame( self::RUN_ID, $failure['run_id'] );
-		self::assertSame( self::ARGS, $failure['start_args'] );
-		self::assertSame( 'Chunk processing exploded.', $failure['error']->message );
-		self::assertSame( \RuntimeException::class, $failure['error']->exception_class );
+		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => self::RUN_ID,
-					'failed_at'  => self::NOW + 120,
-					'start_args' => self::ARGS,
-					'attempts'   => 1,
-					'error'      => array(
-						'class'   => \RuntimeException::class,
-						'message' => 'Chunk processing exploded.',
+					'verb' => 'schedule_single',
+					'args' => array(
+						'hook'      => 'a8csp/background_tasks/run',
+						'timestamp' => self::NOW + 131,
+						'args'      => array( self::NAME, self::RUN_ID, $chunk_args ),
+						'group'     => self::NAME . '|' . self::RUN_ID,
+						'priority'  => 10,
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_failed_' . self::NAME )
+			$this->backend->calls
 		);
 		self::assertSame(
 			array(
-				'lock:update',
-				'run:running',
-				'batch:process',
-				'run:failed',
-				'failed-store',
-				'batch:failure',
-				'hook:failed/' . self::NAME,
-				'hook:failed',
-				'lock:delete',
-				'run:delete',
-				'history',
+				array(
+					'hook_name' => 'a8csp/background_tasks/retrying/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS, 1, 11 ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/retrying',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, 1, 11 ),
+				),
 			),
-			$this->lifecycle_labels()
+			$this->fired_actions()
+		);
+		self::assertSame(
+			array(
+				array(
+					'min' => 0,
+					'max' => 30,
+				),
+			),
+			$this->randomizer->calls
+		);
+	}
+
+	/**
+	 * A successful retry resets the counter before the next chunk executes.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_resets_retries_before_the_next_chunk(): void {
+		$chunk_a = array( 'chunk' => 'a' );
+		$chunk_b = array( 'chunk' => 'b' );
+
+		$this->batch->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->prepare_scheduled_chunk( array( $chunk_a, $chunk_b ) );
+		$this->batch->process_throwable = new \RuntimeException( 'Chunk A failed once.' );
+		$this->randomizer->value        = 5;
+		$this->randomizer->calls        = array();
+		$this->clock->timestamp         = self::NOW + 120;
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_a );
+
+		$observed_retries = array();
+
+		$this->batch->process_throwable = null;
+		$this->batch->on_process        = function (
+			array $chunk_args,
+			BatchContextInterface $context
+		) use ( &$observed_retries ): void {
+			$chunk_name = $chunk_args['chunk'] ?? null;
+			self::assertIsString( $chunk_name );
+			$observed_retries[ $chunk_name ] = $this->run_state()['chunk_retries'];
+		};
+
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 125;
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_a );
+
+		self::assertSame( 0, $this->run_state()['chunk_retries'] );
+		self::assertSame( array( $chunk_b ), $this->run_state()['queue'] );
+
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 185;
+		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID );
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 190;
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_b );
+
+		self::assertSame(
+			array(
+				'a' => 1,
+				'b' => 0,
+			),
+			$observed_retries
+		);
+		self::assertSame(
+			array( $chunk_a, $chunk_a, $chunk_b ),
+			\array_column( $this->batch->process_calls, 'chunk_args' )
+		);
+	}
+
+	/**
+	 * A failed retry schedule terminalizes the batch at the consumed-attempt count.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_chunk_retry_schedule_failure(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+
+		$this->batch->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
+
+		$this->randomizer->value = 7;
+		$this->randomizer->calls = array();
+
+		$this->backend->results['schedule_single'] = $this->scheduling_failure_result();
+
+		$this->clock->timestamp = self::NOW + 120;
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertSame(
+			'Batch "catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.',
+			$this->batch->failure_calls[0]['error']->message
+		);
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/retrying/' . self::NAME,
+				'a8csp/background_tasks/retrying',
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+	}
+
+	/**
+	 * A non-retryable chunk failure bypasses the policy on its first attempt.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_non_retryable_chunk_without_rescheduling(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->batch->process_throwable = new NonRetryableTaskException( 'Chunk input is permanently invalid.' );
+		$this->clock->timestamp         = self::NOW + 120;
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $chunk_args );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->batch->failure_calls );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/failed/' . self::NAME,
+				'a8csp/background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 	}
 
@@ -707,6 +907,8 @@ final class OrchestratorBatchTest extends TestCase {
 	 */
 	public function test_failed_named_listener_throw_still_fires_generic_hook_and_cleans_up(): void {
 		$chunk_args = array( 'chunk' => 'current' );
+
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
 		$this->batch->process_throwable = new \DomainException( 'Chunk failed.' );
 		$listener_throwable             = new \RuntimeException( 'Failed listener exploded.' );

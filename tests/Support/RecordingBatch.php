@@ -66,12 +66,17 @@ final class RecordingBatch implements BatchInterface {
 	 */
 	public ?\Closure $on_process = null;
 
+	/** Retry policy returned to the orchestrator. */
+	public RetryPolicy $retry_policy;
+
 	/**
 	 * Constructor.
 	 *
 	 * @param   string $name Stable batch name.
 	 */
-	public function __construct( private readonly string $name ) {}
+	public function __construct( private readonly string $name ) {
+		$this->retry_policy = new RetryPolicy();
+	}
 
 	/** {@inheritDoc} */
 	#[\Override]
@@ -166,7 +171,7 @@ final class RecordingBatch implements BatchInterface {
 	/** {@inheritDoc} */
 	#[\Override]
 	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy();
+		return $this->retry_policy;
 	}
 
 	/**

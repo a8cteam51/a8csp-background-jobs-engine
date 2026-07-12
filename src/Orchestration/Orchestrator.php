@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
@@ -402,6 +403,76 @@ final readonly class Orchestrator {
 	}
 
 	/**
+	 * Starts a fresh run from one retained failed run's original arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Stable task or batch name.
+	 * @param   string $run_id Retained failed-run identifier.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
+	public function retry_failed( string $name, string $run_id ): AbstractResult {
+		$task  = $this->tasks->get( $name );
+		$batch = $this->batches->get( $name );
+		if ( null !== $task && null !== $batch ) {
+			return $this->ambiguous_name_failure( $name );
+		}
+
+		if ( null === $task && null === $batch ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.',
+						$name
+					)
+				)
+			);
+		}
+
+		$failed_store = $this->stores->failed_run_store( $name );
+		$entries      = $failed_store->all();
+		$entry        = null;
+		foreach ( $entries as $candidate ) {
+			if ( $run_id === $candidate['run_id'] ) {
+				$entry = $candidate;
+			}
+		}
+
+		if ( null === $entry ) {
+			$retained_run_ids = \array_column( $entries, 'run_id' );
+			$correction       = array() === $retained_run_ids
+				? 'retry a run identifier returned by the failed-run store after a terminal failure is recorded.'
+				: \sprintf(
+					'retry one of the retained run identifiers: "%s".',
+					\implode( '", "', $retained_run_ids )
+				);
+
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Failed run "%1$s" for background-work "%2$s" is not retained; %3$s',
+						$run_id,
+						$name,
+						$correction
+					)
+				)
+			);
+		}
+
+		$result = null !== $task
+			? $this->enqueue( $name, $entry['start_args'] )
+			: $this->start_batch( $name, $entry['start_args'] );
+		if ( $result->is_success() ) {
+			$failed_store->remove( $run_id );
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Handles queue generation for one scheduled batch run.
 	 *
 	 * @since   1.0.0
@@ -709,7 +780,54 @@ final readonly class Orchestrator {
 		try {
 			$task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->fail_run( $task_name, $run_id, $state, $run_store, $throwable );
+			$attempts_used = $state->chunk_retries + 1;
+			$error         = new EngineError( $throwable->getMessage(), $throwable::class );
+			if ( $throwable instanceof NonRetryableExceptionInterface ) {
+				$this->fail_run( $task_name, $run_id, $state, $run_store, $error, $attempts_used );
+
+				return;
+			}
+
+			try {
+				$policy = $this->retry_policy( $task_name, $task->get_retry_policy() );
+			} catch ( \Throwable $retry_policy_failure ) {
+				$this->fail_run(
+					$task_name,
+					$run_id,
+					$state,
+					$run_store,
+					$this->retry_policy_failure( 'Task', $task_name, $retry_policy_failure ),
+					$attempts_used
+				);
+
+				return;
+			}
+
+			if ( $attempts_used >= $policy->max_attempts ) {
+				$this->fail_run( $task_name, $run_id, $state, $run_store, $error, $attempts_used );
+
+				return;
+			}
+
+			$retry_state = $state->with_chunk_retries( $attempts_used );
+			$retry_error = $this->reschedule_retry(
+				'Task',
+				$task_name,
+				$run_id,
+				$retry_state,
+				$run_store,
+				$policy
+			);
+			if ( null !== $retry_error ) {
+				$this->fail_run(
+					$task_name,
+					$run_id,
+					$retry_state,
+					$run_store,
+					$retry_error,
+					$attempts_used
+				);
+			}
 
 			return;
 		}
@@ -746,14 +864,73 @@ final readonly class Orchestrator {
 		try {
 			$batch->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->fail_batch(
-				$batch,
+			$attempts_used = $state->chunk_retries + 1;
+			$error         = new EngineError( $throwable->getMessage(), $throwable::class );
+			if ( $throwable instanceof NonRetryableExceptionInterface ) {
+				$this->fail_batch(
+					$batch,
+					$batch_name,
+					$run_id,
+					$state,
+					$run_store,
+					$error,
+					$attempts_used
+				);
+
+				return;
+			}
+
+			try {
+				$policy = $this->retry_policy( $batch_name, $batch->get_retry_policy() );
+			} catch ( \Throwable $retry_policy_failure ) {
+				$this->fail_batch(
+					$batch,
+					$batch_name,
+					$run_id,
+					$state,
+					$run_store,
+					$this->retry_policy_failure( 'Batch', $batch_name, $retry_policy_failure ),
+					$attempts_used
+				);
+
+				return;
+			}
+
+			if ( $attempts_used >= $policy->max_attempts ) {
+				$this->fail_batch(
+					$batch,
+					$batch_name,
+					$run_id,
+					$state,
+					$run_store,
+					$error,
+					$attempts_used
+				);
+
+				return;
+			}
+
+			$retry_state = $state->with_chunk_retries( $attempts_used );
+			$retry_error = $this->reschedule_retry(
+				'Batch',
 				$batch_name,
 				$run_id,
-				$state,
+				$retry_state,
 				$run_store,
-				new EngineError( $throwable->getMessage(), $throwable::class )
+				$policy,
+				$chunk_args
 			);
+			if ( null !== $retry_error ) {
+				$this->fail_batch(
+					$batch,
+					$batch_name,
+					$run_id,
+					$retry_state,
+					$run_store,
+					$retry_error,
+					$attempts_used
+				);
+			}
 
 			return;
 		}
@@ -995,6 +1172,7 @@ final readonly class Orchestrator {
 	 * @param   RunState       $state      Running state.
 	 * @param   RunStore       $run_store  Active-run store.
 	 * @param   EngineError    $error      Failure detail.
+	 * @param   int|null       $attempts   Attempts consumed before failure, or null to derive the count.
 	 *
 	 * @return  void
 	 */
@@ -1004,14 +1182,15 @@ final readonly class Orchestrator {
 		string $run_id,
 		RunState $state,
 		RunStore $run_store,
-		EngineError $error
+		EngineError $error,
+		?int $attempts = null
 	): void {
 		$run_store->save( $run_id, $state->with_status( RunStatus::Failed ) );
 		$this->stores->failed_run_store( $batch_name )->record(
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
-			\max( 1, $state->chunk_retries + 1 ),
+			$attempts ?? \max( 1, $state->chunk_retries + 1 ),
 			$error
 		);
 
@@ -1188,6 +1367,184 @@ final readonly class Orchestrator {
 	}
 
 	/**
+	 * Resolves a valid name-specific policy from the contract policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string      $name            Stable task or batch name.
+	 * @param   RetryPolicy $contract_policy Policy supplied by the work contract.
+	 *
+	 * @return  RetryPolicy
+	 */
+	private function retry_policy( string $name, RetryPolicy $contract_policy ): RetryPolicy {
+		$filtered_policy = \apply_filters(
+			'a8csp/background_tasks/retry_policy/' . $name,
+			$contract_policy
+		);
+		if ( $filtered_policy instanceof RetryPolicy ) {
+			return $filtered_policy;
+		}
+
+		$this->logger->warning(
+			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.',
+			array(
+				'name'          => $name,
+				'returned_type' => \get_debug_type( $filtered_policy ),
+			)
+		);
+
+		return $contract_policy;
+	}
+
+	/**
+	 * Converts a retry-policy boundary throwable into terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string         $name      Stable task or batch name.
+	 * @param   \Throwable     $throwable Retry-policy provider or filter failure.
+	 *
+	 * @return  EngineError
+	 */
+	private function retry_policy_failure( string $work_type, string $name, \Throwable $throwable ): EngineError {
+		return new EngineError(
+			\sprintf(
+				'%1$s "%2$s" could not resolve the retry policy: %3$s Fix the retry policy provider or filter before retrying the failed run manually.',
+				$work_type,
+				$name,
+				$throwable->getMessage()
+			),
+			$throwable::class
+		);
+	}
+
+	/**
+	 * Persists retry state, fires retry hooks, and schedules the same run action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch'               $work_type  Work contract type.
+	 * @param   string                       $name       Stable task or batch name.
+	 * @param   string                       $run_id     Run identifier.
+	 * @param   RunState                     $state      State carrying the consumed-attempt count.
+	 * @param   RunStore                     $run_store  Active-run store.
+	 * @param   RetryPolicy                  $policy     Resolved retry policy.
+	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
+	 *
+	 * @return  EngineError|null Terminal retry detail, or null after a successful reschedule.
+	 */
+	private function reschedule_retry(
+		string $work_type,
+		string $name,
+		string $run_id,
+		RunState $state,
+		RunStore $run_store,
+		RetryPolicy $policy,
+		?array $chunk_args = null
+	): ?EngineError {
+		try {
+			$attempt = $state->chunk_retries;
+			$delay   = $policy->delay_for_attempt( $attempt, $this->randomizer );
+			$now     = $this->clock->now()->getTimestamp();
+			if ( $delay > \PHP_INT_MAX - $now ) {
+				return new EngineError(
+					\sprintf(
+						'%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.',
+						$work_type,
+						$name
+					)
+				);
+			}
+
+			$state = $state->with_heartbeat_at( $now );
+			$run_store->save( $run_id, $state );
+			$this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id );
+			$this->fire_retrying_hooks( $name, $run_id, $state->start_args, $attempt, $delay );
+
+			$action_args = array( $name, $run_id );
+			if ( null !== $chunk_args ) {
+				$action_args[] = $chunk_args;
+			}
+
+			$scheduled = $this->scheduler->schedule_single(
+				self::RUN_HOOK,
+				$now + $delay,
+				$action_args,
+				$name . '|' . $run_id,
+				10
+			);
+			if ( $scheduled->is_failure() ) {
+				return new EngineError(
+					\sprintf(
+						'%1$s "%2$s" could not schedule the retry action: %3$s',
+						$work_type,
+						$name,
+						$scheduled->error->message
+					),
+					SchedulingError::class
+				);
+			}
+
+			return null;
+		} catch ( \Throwable $throwable ) {
+			return new EngineError(
+				\sprintf(
+					'%1$s "%2$s" could not prepare the retry action: %3$s Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+					$work_type,
+					$name,
+					$throwable->getMessage()
+				),
+				$throwable::class
+			);
+		}
+	}
+
+	/**
+	 * Fires the name-specific retrying hook before its generic companion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $name       Stable task or batch name.
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   int                     $attempt    One-indexed number of the failed attempt.
+	 * @param   int                     $delay      Delay before the next attempt in seconds.
+	 *
+	 * @return  void
+	 */
+	private function fire_retrying_hooks(
+		string $name,
+		string $run_id,
+		array $start_args,
+		int $attempt,
+		int $delay
+	): void {
+		try {
+			\do_action(
+				'a8csp/background_tasks/retrying/' . $name,
+				$run_id,
+				$start_args,
+				$attempt,
+				$delay
+			);
+		} finally {
+			\do_action(
+				'a8csp/background_tasks/retrying',
+				$name,
+				$run_id,
+				$start_args,
+				$attempt,
+				$delay
+			);
+		}
+	}
+
+	/**
 	 * Marks a successful run before firing hooks and releasing its active state.
 	 *
 	 * @since   1.0.0
@@ -1201,6 +1558,7 @@ final readonly class Orchestrator {
 	 * @return  void
 	 */
 	private function complete_run( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
+		$state = $state->with_chunk_retries( 0 );
 		$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
 
 		try {
@@ -1216,11 +1574,12 @@ final readonly class Orchestrator {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $task_name Stable task name.
-	 * @param   string     $run_id    Run identifier.
-	 * @param   RunState   $state     Running state.
-	 * @param   RunStore   $run_store Active-run store.
-	 * @param   \Throwable $throwable Task failure.
+	 * @param   string      $task_name    Stable task name.
+	 * @param   string      $run_id       Run identifier.
+	 * @param   RunState    $state        Running state.
+	 * @param   RunStore    $run_store    Active-run store.
+	 * @param   EngineError $error         Task failure detail.
+	 * @param   int         $attempts_used Attempts consumed by the invocation.
 	 *
 	 * @return  void
 	 */
@@ -1229,15 +1588,15 @@ final readonly class Orchestrator {
 		string $run_id,
 		RunState $state,
 		RunStore $run_store,
-		\Throwable $throwable
+		EngineError $error,
+		int $attempts_used
 	): void {
-		$error = new EngineError( $throwable->getMessage(), $throwable::class );
 		$run_store->save( $run_id, $state->with_status( RunStatus::Failed ) );
 		$this->stores->failed_run_store( $task_name )->record(
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
-			1,
+			$attempts_used,
 			$error
 		);
 
