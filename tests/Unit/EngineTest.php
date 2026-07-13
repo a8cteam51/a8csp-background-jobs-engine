@@ -130,6 +130,7 @@ final class EngineTest extends TestCase {
 				$logger
 			),
 			new Batches( $batches, $orchestrator ),
+			$orchestrator,
 		);
 	}
 
@@ -316,12 +317,23 @@ final class EngineTest extends TestCase {
 	}
 
 	/**
-	 * Manual retry preserves the orchestration failure at the public task API.
+	 * Manual retry declares its result non-discardable at the engine boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_declares_no_discard_directly(): void {
+		$method = new \ReflectionMethod( Engine::class, 'retry_failed' );
+
+		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
+	}
+
+	/**
+	 * Manual retry preserves the orchestration failure at the public engine API.
 	 *
 	 * @return  void
 	 */
 	public function test_retry_failed_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->tasks()->retry_failed( 'unknown', 'run-1' );
+		$result = $this->engine->retry_failed( 'unknown', 'run-1' );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -348,7 +360,7 @@ final class EngineTest extends TestCase {
 			new EngineError( 'Maintenance failed.' )
 		);
 
-		$result = $this->engine->tasks()->retry_failed( MaintenanceTask::NAME, 'failed-maintenance-run' );
+		$result = $this->engine->retry_failed( MaintenanceTask::NAME, 'failed-maintenance-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );

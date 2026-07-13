@@ -35,19 +35,19 @@ final readonly class Schedule {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name     Stable schedule name.
-	 * @param   Cadence                 $cadence  Recurrence definition.
-	 * @param   string                  $task     Stable target task name.
-	 * @param   array<array-key, mixed> $args     Target task arguments.
-	 * @param   OverlapPolicy           $overlap  Overlapping-run policy.
-	 * @param   CatchUpPolicy           $catch_up Missed-occurrence policy.
-	 * @param   int                     $priority Advisory priority from 0 through 255.
+	 * @param   string                  $name       Stable schedule name.
+	 * @param   Recurrence              $recurrence Recurrence definition.
+	 * @param   string                  $task       Stable target task name.
+	 * @param   array<array-key, mixed> $args       Target task arguments.
+	 * @param   OverlapPolicy           $overlap    Overlapping-run policy.
+	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
+	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @throws  \InvalidArgumentException When the definition is not portable or violates a boundary.
 	 */
 	public function __construct(
 		public string $name,
-		public Cadence $cadence,
+		public Recurrence $recurrence,
 		public string $task,
 		public array $args = array(),
 		public OverlapPolicy $overlap = OverlapPolicy::Skip,
@@ -97,25 +97,25 @@ final readonly class Schedule {
 		try {
 			$encoded = \wp_json_encode(
 				array(
-					'name'     => $this->name,
-					'cadence'  => $this->cadence->fingerprint_value(),
-					'task'     => $this->task,
-					'args'     => $this->args,
-					'overlap'  => $this->overlap->value,
-					'catch_up' => $this->catch_up->value,
-					'priority' => $this->priority,
+					'name'       => $this->name,
+					'recurrence' => $this->recurrence->fingerprint_value(),
+					'task'       => $this->task,
+					'args'       => $this->args,
+					'overlap'    => $this->overlap->value,
+					'catch_up'   => $this->catch_up->value,
+					'priority'   => $this->priority,
 				),
 				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
 			);
 		} catch ( \JsonException ) {
 			throw new \InvalidArgumentException(
-				'Schedule definition must be JSON-encodable; pass valid UTF-8 task and cadence strings.'
+				'Schedule definition must be JSON-encodable; pass valid UTF-8 task and recurrence strings.'
 			);
 		}
 
 		if ( ! \is_string( $encoded ) ) {
 			throw new \InvalidArgumentException(
-				'Schedule definition must be JSON-encodable; pass valid UTF-8 task and cadence strings.'
+				'Schedule definition must be JSON-encodable; pass valid UTF-8 task and recurrence strings.'
 			);
 		}
 

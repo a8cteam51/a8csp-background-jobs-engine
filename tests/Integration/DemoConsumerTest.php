@@ -247,7 +247,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertInstanceOf(
 			Success::class,
 			$stopped_schedule,
-			'Public owner sync must stop the one-second proof cadence after its occurrence fires'
+			'Public owner sync must stop the one-second proof recurrence after its occurrence fires'
 		);
 		self::assertSame( 1, $this->run_next_engine_action(), 'The scheduler must execute the scheduled demo task' );
 		$this->assert_site_health_snapshot( SiteHealthPingTask::SNAPSHOT_TRANSIENT );

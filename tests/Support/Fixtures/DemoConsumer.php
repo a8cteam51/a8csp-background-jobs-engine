@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
@@ -131,7 +131,7 @@ final readonly class DemoConsumer {
 			array(
 				new Schedule(
 					self::SCHEDULE_NAME,
-					Cadence::every( $this->site_health_interval ),
+					Recurrence::every( $this->site_health_interval ),
 					SiteHealthPingTask::NAME,
 					array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ),
 					OverlapPolicy::Skip,

@@ -93,21 +93,5 @@ final readonly class Tasks {
 		return $this->orchestrator->enqueue( $name, $args, $delay, $unique, $priority );
 	}
 
-	/**
-	 * Starts a fresh run from one retained failed run's original arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name   Stable task or batch name.
-	 * @param   string $run_id Retained failed-run identifier.
-	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
-	 */
-	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		return $this->orchestrator->retry_failed( $name, $run_id );
-	}
-
 	// endregion
 }

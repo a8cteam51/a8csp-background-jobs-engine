@@ -5,12 +5,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Fixed-interval or calendar-expression cadence for one schedule.
+ * Fixed-interval or calendar-expression recurrence for one schedule.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Cadence {
+final readonly class Recurrence {
 	// region MAGIC METHODS
 
 	/**
@@ -19,7 +19,7 @@ final readonly class Cadence {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'every'|'cron' $type  Cadence representation.
+	 * @param   'every'|'cron' $type  Recurrence representation.
 	 * @param   int|string     $value Positive seconds or cron expression.
 	 */
 	private function __construct(
@@ -32,7 +32,7 @@ final readonly class Cadence {
 	// region FACTORIES
 
 	/**
-	 * Creates a fixed elapsed-time cadence.
+	 * Creates a fixed elapsed-time recurrence.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -46,7 +46,7 @@ final readonly class Cadence {
 	public static function every( int $seconds ): self {
 		if ( 1 > $seconds ) {
 			throw new \InvalidArgumentException(
-				'Cadence interval must be positive; pass a value of at least one second.'
+				'Recurrence interval must be positive; pass a value of at least one second.'
 			);
 		}
 
@@ -54,7 +54,7 @@ final readonly class Cadence {
 	}
 
 	/**
-	 * Creates a calendar cron-expression cadence.
+	 * Creates a calendar cron-expression recurrence.
 	 *
 	 * Backend capability is evaluated when the schedule is synchronized.
 	 *
@@ -98,7 +98,7 @@ final readonly class Cadence {
 	}
 
 	/**
-	 * Returns the stable cadence representation included in schedule fingerprints.
+	 * Returns the stable recurrence representation included in schedule fingerprints.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

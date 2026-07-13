@@ -918,11 +918,11 @@ final class SchedulerFacadeTest extends TestCase {
 	 */
 	public static function non_readiness_failure_provider(): array {
 		return array(
-			'unsupported group'   => array( 'unsupported_group' ),
-			'unsupported cadence' => array( 'unsupported_cadence' ),
-			'invalid interval'    => array( 'invalid_interval' ),
-			'payload too large'   => array( 'payload_too_large' ),
-			'schedule failed'     => array( 'schedule_failed' ),
+			'unsupported group'      => array( 'unsupported_group' ),
+			'unsupported recurrence' => array( 'unsupported_recurrence' ),
+			'invalid interval'       => array( 'invalid_interval' ),
+			'payload too large'      => array( 'payload_too_large' ),
+			'schedule failed'        => array( 'schedule_failed' ),
 		);
 	}
 

@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
@@ -48,7 +48,7 @@ final class EngineComponentTest extends TestCase {
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
 		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/includes/api.php';
+		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
 
 	/**
@@ -308,7 +308,7 @@ final class EngineComponentTest extends TestCase {
 		);
 		self::assertSame( 3, $this->cron_event_count() );
 
-		$schedule        = new Schedule( 'connection-monitor', Cadence::every( 300 ), 'email-digest' );
+		$schedule        = new Schedule( 'connection-monitor', Recurrence::every( 300 ), 'email-digest' );
 		$schedule_result = \a8csp_bgte_sync_schedules( 'consumer-plugin', array( $schedule ) );
 
 		self::assertInstanceOf( Success::class, $schedule_result );
@@ -334,7 +334,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsArray( $maintenance );
 		$expected_maintenance = new Schedule(
 			'maintenance',
-			Cadence::every( \HOUR_IN_SECONDS ),
+			Recurrence::every( \HOUR_IN_SECONDS ),
 			MaintenanceTask::NAME,
 			array(),
 			OverlapPolicy::Skip,

@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TaskDispatchSkipped;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
@@ -149,7 +149,7 @@ final readonly class Schedules {
 		$interval_by_name = array();
 		$next_due_by_name = array();
 		foreach ( $declared as $name => $schedule ) {
-			$interval = $schedule->cadence->interval();
+			$interval = $schedule->recurrence->interval();
 			if ( null === $interval ) {
 				return $this->cron_failure( $schedule );
 			}
@@ -167,7 +167,7 @@ final readonly class Schedules {
 					new SchedulingError(
 						SchedulingErrorReason::InvalidInterval,
 						\sprintf(
-							'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Cadence::every() value.',
+							'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every() value.',
 							$schedule->name
 						),
 						array(
@@ -350,7 +350,7 @@ final readonly class Schedules {
 				array(
 					new Schedule(
 						'maintenance',
-						Cadence::every( \HOUR_IN_SECONDS ),
+						Recurrence::every( \HOUR_IN_SECONDS ),
 						MaintenanceTask::NAME,
 						array(),
 						OverlapPolicy::Skip,
@@ -498,10 +498,10 @@ final readonly class Schedules {
 			return;
 		}
 
-		$interval = $schedule->cadence->interval();
+		$interval = $schedule->recurrence->interval();
 		if ( null === $interval ) {
 			$this->logger->error(
-				'Schedule occurrence cannot resolve a fixed interval; synchronize the schedule with Cadence::every().',
+				'Schedule occurrence cannot resolve a fixed interval; synchronize the schedule with Recurrence::every().',
 				array(
 					'owner' => $owner,
 					'name'  => $name,
@@ -526,7 +526,7 @@ final readonly class Schedules {
 		$next_due = self::realigned_next_due( $registration['next_due'], $interval, $now );
 		if ( null === $next_due ) {
 			$this->logger->error(
-				'Schedule cadence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
+				'Schedule recurrence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
 				array(
 					'owner'    => $owner,
 					'name'     => $name,
@@ -572,7 +572,7 @@ final readonly class Schedules {
 				);
 			}
 			$this->logger->info(
-				'Misfired schedule occurrence skipped and realigned to its cadence.',
+				'Misfired schedule occurrence skipped and realigned to its recurrence.',
 				array(
 					'owner'    => $owner,
 					'name'     => $name,
@@ -633,7 +633,7 @@ final readonly class Schedules {
 	}
 
 	/**
-	 * Immediately dispatches one declared schedule target without changing its cadence.
+	 * Immediately dispatches one declared schedule target without changing its recurrence.
 	 *
 	 * Schedule-driven tasks must be idempotent because manual dispatch uses the same overlap and
 	 * at-least-once execution machinery as recurring occurrences.
@@ -830,11 +830,11 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $next_due Current cadence instant.
-	 * @param   int $interval Positive cadence interval.
+	 * @param   int $next_due Current due instant.
+	 * @param   int $interval Positive recurrence interval.
 	 * @param   int $now      Occurrence delivery timestamp.
 	 *
-	 * @return  int|null Future cadence instant, or null when positive Unix seconds overflow.
+	 * @return  int|null Future due instant, or null when positive Unix seconds overflow.
 	 */
 	private static function realigned_next_due( int $next_due, int $interval, int $now ): ?int {
 		if ( $next_due > $now ) {
@@ -864,7 +864,7 @@ final readonly class Schedules {
 	}
 
 	/**
-	 * Returns the unsupported-cadence failure for a cron declaration.
+	 * Returns the unsupported-recurrence failure for a cron declaration.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -877,21 +877,21 @@ final readonly class Schedules {
 		$supported = $this->scheduler->supports_cron_expressions();
 		$message   = $supported
 			? \sprintf(
-				'Schedule "%s" uses a cron expression unavailable through the v1 recurring-interval port; use Cadence::every().',
+				'Schedule "%s" uses a cron expression unavailable through the v1 recurring-interval port; use Recurrence::every().',
 				$schedule->name
 			)
 			: \sprintf(
-				'Schedule "%s" uses a cron expression unsupported by every ready backend; use Cadence::every() or configure a backend that supports cron expressions.',
+				'Schedule "%s" uses a cron expression unsupported by every ready backend; use Recurrence::every() or configure a backend that supports cron expressions.',
 				$schedule->name
 			);
 
 		return new Failure(
 			new SchedulingError(
-				SchedulingErrorReason::UnsupportedCadence,
+				SchedulingErrorReason::UnsupportedRecurrence,
 				$message,
 				array(
 					'schedule'   => $schedule->name,
-					'expression' => $schedule->cadence->expression(),
+					'expression' => $schedule->recurrence->expression(),
 				),
 			)
 		);

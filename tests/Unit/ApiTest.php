@@ -38,7 +38,7 @@ final class ApiTest extends TestCase {
 		}
 
 		require_once __DIR__ . '/wp-cron-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/includes/api.php';
+		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
 
 	/**

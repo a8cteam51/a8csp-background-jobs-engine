@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
@@ -177,12 +177,12 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$schedule_a = new Schedule(
 			'orphan-a',
-			Cadence::every( 300 ),
+			Recurrence::every( 300 ),
 			'integration-declarative-orphan-task-a'
 		);
 		$schedule_b = new Schedule(
 			'orphan-b',
-			Cadence::every( 600 ),
+			Recurrence::every( 600 ),
 			'integration-declarative-orphan-task-b'
 		);
 		$this->assert_sync_succeeds( self::ORPHAN_OWNER, array( $schedule_a, $schedule_b ) );
@@ -244,7 +244,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$original    = new Schedule(
 			'fingerprint',
-			Cadence::every( 300 ),
+			Recurrence::every( 300 ),
 			'integration-declarative-fingerprint-task',
 			array( 'mode' => 'original' ),
 			OverlapPolicy::Skip,
@@ -253,7 +253,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		);
 		$replacement = new Schedule(
 			'fingerprint',
-			Cadence::every( 900 ),
+			Recurrence::every( 900 ),
 			'integration-declarative-fingerprint-task',
 			array( 'mode' => 'replacement' ),
 			OverlapPolicy::Replace,
@@ -290,12 +290,12 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertNotSame(
 			$original_row['fingerprint'] ?? null,
 			$replacement_row['fingerprint'] ?? null,
-			'Changed cadence, arguments, and policies must produce a new persisted fingerprint'
+			'Changed recurrence, arguments, and policies must produce a new persisted fingerprint'
 		);
 		self::assertNotSame(
 			$original_row['next_due'] ?? null,
 			$replacement_row['next_due'] ?? null,
-			'Fingerprint replacement must schedule from the changed cadence'
+			'Fingerprint replacement must schedule from the changed recurrence'
 		);
 		$replacement_snapshot = $this->action_snapshot( $replacement_action_id );
 		self::assertSame(
@@ -306,7 +306,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertSame(
 			900,
 			$replacement_snapshot['recurrence'],
-			'The replacement backend occurrence must recur on the changed cadence'
+			'The replacement backend occurrence must recur on the changed recurrence'
 		);
 		self::assertSame(
 			22,
@@ -325,7 +325,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$declaration = new Schedule(
 			'noop',
-			Cadence::every( 420 ),
+			Recurrence::every( 420 ),
 			'integration-declarative-noop-task',
 			array( 'scope' => 'stable' ),
 			OverlapPolicy::Allow,
@@ -343,7 +343,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$identical = new Schedule(
 			'noop',
-			Cadence::every( 420 ),
+			Recurrence::every( 420 ),
 			'integration-declarative-noop-task',
 			array( 'scope' => 'stable' ),
 			OverlapPolicy::Allow,
@@ -384,12 +384,12 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$schedule_a = new Schedule(
 			'scoped-a',
-			Cadence::every( 360 ),
+			Recurrence::every( 360 ),
 			'integration-declarative-scoped-task-a'
 		);
 		$schedule_b = new Schedule(
 			'scoped-b',
-			Cadence::every( 720 ),
+			Recurrence::every( 720 ),
 			'integration-declarative-scoped-task-b',
 			array( 'owner' => 'b' ),
 			OverlapPolicy::Skip,

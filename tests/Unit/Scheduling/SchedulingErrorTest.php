@@ -73,7 +73,7 @@ final class SchedulingErrorTest extends TestCase {
 			array(
 				SchedulingErrorReason::BackendNotReady,
 				SchedulingErrorReason::UnsupportedGroup,
-				SchedulingErrorReason::UnsupportedCadence,
+				SchedulingErrorReason::UnsupportedRecurrence,
 				SchedulingErrorReason::InvalidInterval,
 				SchedulingErrorReason::PayloadTooLarge,
 				SchedulingErrorReason::ScheduleFailed,
@@ -84,7 +84,7 @@ final class SchedulingErrorTest extends TestCase {
 			array(
 				'backend_not_ready',
 				'unsupported_group',
-				'unsupported_cadence',
+				'unsupported_recurrence',
 				'invalid_interval',
 				'payload_too_large',
 				'schedule_failed',

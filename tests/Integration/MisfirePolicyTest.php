@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
@@ -27,12 +27,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 /**
- * Verifies fixed-cadence misfire policy, hook payloads, counters, and the strict grace boundary.
+ * Verifies fixed-recurrence misfire policy, hook payloads, counters, and the strict grace boundary.
  */
 final class MisfirePolicyTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Fixed interval shared by deterministic cadence probes. */
+	/** Fixed interval shared by deterministic recurrence probes. */
 	private const INTERVAL = 300;
 
 	/** Owner isolated to the RunOnce occurrence. */
@@ -73,11 +73,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * RunOnce dispatches one late occurrence and realigns its next due instant to cadence.
+	 * RunOnce dispatches one late occurrence and realigns its next due instant to the recurrence.
 	 *
 	 * @return  void
 	 */
-	public function test_run_once_executes_one_late_occurrence_and_realigns_cadence(): void {
+	public function test_run_once_executes_one_late_occurrence_and_realigns_recurrence(): void {
 		$now    = \time();
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
@@ -88,7 +88,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine->tasks()->register( $task );
 		$schedule = new Schedule(
 			self::RUN_ONCE_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::RUN_ONCE_TASK,
 			array( 'policy' => 'run-once' ),
 			OverlapPolicy::Skip
@@ -137,7 +137,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine->tasks()->register( $task );
 		$schedule = new Schedule(
 			self::SKIP_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::SKIP_TASK,
 			array( 'policy' => 'skip' ),
 			OverlapPolicy::Skip,
@@ -175,7 +175,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			array(
 				array(
 					'level'   => 'info',
-					'message' => 'Misfired schedule occurrence skipped and realigned to its cadence.',
+					'message' => 'Misfired schedule occurrence skipped and realigned to its recurrence.',
 					'context' => array(
 						'owner'    => self::SKIP_OWNER,
 						'name'     => self::SKIP_SCHEDULE,
@@ -207,13 +207,13 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine->tasks()->register( $beyond_task );
 		$exact  = new Schedule(
 			self::EXACT_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::EXACT_TASK,
 			catch_up: CatchUpPolicy::Skip
 		);
 		$beyond = new Schedule(
 			self::BEYOND_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::BEYOND_TASK,
 			catch_up: CatchUpPolicy::Skip
 		);
@@ -310,7 +310,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		return new Engine(
 			new Tasks( $tasks, $orchestrator ),
 			$schedules,
-			new Batches( $batches, $orchestrator )
+			new Batches( $batches, $orchestrator ),
+			$orchestrator
 		);
 	}
 
@@ -410,9 +411,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Returns the first cadence instant strictly after the deterministic current time.
+	 * Returns the first due instant strictly after the deterministic current time.
 	 *
-	 * @param   int $next_due Aged cadence instant.
+	 * @param   int $next_due Aged due instant.
 	 * @param   int $now      Deterministic current time.
 	 *
 	 * @return  int

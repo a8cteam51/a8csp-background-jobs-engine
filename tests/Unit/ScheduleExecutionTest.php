@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
@@ -36,7 +36,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Schedules::class )]
-#[UsesClass( Cadence::class )]
+#[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( OccurrenceLease::class )]
@@ -144,7 +144,7 @@ final class ScheduleExecutionTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * An on-time occurrence dispatches, advances its cadence token, and releases its lease once.
+	 * An on-time occurrence dispatches, advances its next-due token, and releases its lease once.
 	 *
 	 * @return  void
 	 */
@@ -369,7 +369,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A throwing misfire listener cannot prevent cadence realignment and counter persistence.
+	 * A throwing misfire listener cannot prevent recurrence realignment and counter persistence.
 	 *
 	 * @return  void
 	 */
@@ -516,7 +516,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
 		$current     = new Schedule(
 			self::NAME,
-			Cadence::every( 600 ),
+			Recurrence::every( 600 ),
 			self::TASK,
 			self::ARGS,
 			OverlapPolicy::Allow,
@@ -537,7 +537,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A held Skip occurrence advances cadence and records a benign overlap skip.
+	 * A held Skip occurrence advances recurrence and records a benign overlap skip.
 	 *
 	 * @return  void
 	 */
@@ -616,7 +616,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A dispatch failure leaves cadence timing unchanged for a later occurrence retry.
+	 * A dispatch failure leaves recurrence timing unchanged for a later occurrence retry.
 	 *
 	 * @return  void
 	 */
@@ -638,7 +638,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * Run-now dispatches immediately, records last-fired, and preserves cadence.
+	 * Run-now dispatches immediately, records last-fired, and preserves recurrence.
 	 *
 	 * @return  void
 	 */
@@ -761,7 +761,7 @@ final class ScheduleExecutionTest extends TestCase {
 	): Schedule {
 		return new Schedule(
 			self::NAME,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::TASK,
 			self::ARGS,
 			$overlap,

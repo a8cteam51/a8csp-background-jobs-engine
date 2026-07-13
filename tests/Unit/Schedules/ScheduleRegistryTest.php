@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( ScheduleRegistry::class )]
-#[UsesClass( Cadence::class )]
+#[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( RegistrationUpdateOutcome::class )]
 final class ScheduleRegistryTest extends TestCase {
@@ -174,7 +174,7 @@ final class ScheduleRegistryTest extends TestCase {
 			),
 		);
 
-		$schedule = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$state    = array(
 			'nightly' => array(
 				'fingerprint' => $schedule->fingerprint(),
@@ -253,7 +253,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_replace_owner_reports_a_failed_option_update(): void {
 		$GLOBALS['a8csp_bgte_test_update_option_results'] = array( 'a8csp_bgte_schedules' => false );
-		$schedule = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$state    = array(
 			'nightly' => array(
 				'fingerprint' => $schedule->fingerprint(),
@@ -287,7 +287,7 @@ final class ScheduleRegistryTest extends TestCase {
 			'a8csp_bgte_schedules' => array( 'foreign-owner' => array() ),
 		);
 
-		$schedule = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$state    = array(
 			'nightly' => array(
 				'fingerprint' => $schedule->fingerprint(),

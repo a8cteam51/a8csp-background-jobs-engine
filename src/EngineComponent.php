@@ -116,6 +116,7 @@ final class EngineComponent implements Component {
 			new Tasks( $tasks, $orchestrator ),
 			$schedule_api,
 			new Batches( $batches, $orchestrator ),
+			$orchestrator,
 		);
 
 		$scheduler->register_hooks();

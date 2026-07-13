@@ -12,7 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
@@ -32,7 +32,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Schedules::class )]
-#[UsesClass( Cadence::class )]
+#[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( Success::class )]
@@ -110,7 +110,7 @@ final class SchedulesTest extends TestCase {
 		$backend = new RecordingBackend();
 		$clock   = new FixedClock( self::NOW );
 		$api     = $this->new_schedules( $this->new_registry(), $backend, $clock );
-		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 
 		$added = $api->sync( 'owner-a', array( $initial ) );
 
@@ -191,7 +191,7 @@ final class SchedulesTest extends TestCase {
 
 		$changed_schedule = new Schedule(
 			'nightly',
-			Cadence::every( 600 ),
+			Recurrence::every( 600 ),
 			'refresh-index',
 			priority: 20
 		);
@@ -254,7 +254,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_persisted_registration_without_backend_is_recreated_at_the_persisted_next_due(): void {
 		$backend   = new RecordingBackend();
-		$schedule  = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$schedule  = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$persisted = array(
 			'a8csp_bgte_schedules' => array(
 				'owner-a' => array(
@@ -307,14 +307,14 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
-	 * An unregistered backend occurrence is cleared before the declared cadence is persisted.
+	 * An unregistered backend occurrence is cleared before the declared recurrence is persisted.
 	 *
 	 * @return  void
 	 */
 	public function test_backend_without_persisted_registration_is_cleared_and_recreated(): void {
 		$backend            = new RecordingBackend();
 		$backend->scheduled = true;
-		$schedule           = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$schedule           = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$api                = $this->new_schedules(
 			$this->new_registry(),
 			$backend,
@@ -383,8 +383,8 @@ final class SchedulesTest extends TestCase {
 		$backend            = new RecordingBackend();
 		$backend->scheduled = true;
 
-		$initial   = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
-		$changed   = new Schedule( 'nightly', Cadence::every( 600 ), 'refresh-index' );
+		$initial   = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$changed   = new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh-index' );
 		$persisted = array(
 			'a8csp_bgte_schedules' => array(
 				'owner-a' => array(
@@ -442,8 +442,8 @@ final class SchedulesTest extends TestCase {
 	public function test_sync_orphan_removal_is_strictly_owner_scoped(): void {
 		$backend = new RecordingBackend();
 		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
-		$owner_a = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
-		$owner_b = new Schedule( 'hourly', Cadence::every( 3_600 ), 'refresh-index' );
+		$owner_a = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$owner_b = new Schedule( 'hourly', Recurrence::every( 3_600 ), 'refresh-index' );
 
 		$result_a = $api->sync( 'owner-a', array( $owner_a ) );
 		$result_b = $api->sync( 'owner-b', array( $owner_b ) );
@@ -490,7 +490,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_numeric_identifiers_round_trip_without_orphaning_backend_state(): void {
 		$backend  = new RecordingBackend();
-		$schedule = new Schedule( '456', Cadence::every( 300 ), 'refresh-index' );
+		$schedule = new Schedule( '456', Recurrence::every( 300 ), 'refresh-index' );
 		$created  = ( $this->new_schedules(
 			$this->new_registry(),
 			$backend,
@@ -516,10 +516,10 @@ final class SchedulesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_cron_cadence_fails_as_data_without_mutating_backend_or_registry(): void {
+	public function test_cron_recurrence_fails_as_data_without_mutating_backend_or_registry(): void {
 		$backend = new RecordingBackend();
 		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
-		$fixed   = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$fixed   = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 
 		$seeded = $api->sync( 'owner-a', array( $fixed ) );
 		self::assertInstanceOf( Success::class, $seeded );
@@ -528,14 +528,14 @@ final class SchedulesTest extends TestCase {
 
 		$result = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::cron( '0 3 * * *' ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::cron( '0 3 * * *' ), 'refresh-index' ) )
 		);
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::UnsupportedCadence, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::UnsupportedRecurrence, $result->error->reason );
 		self::assertSame(
-			'Schedule "nightly" uses a cron expression unsupported by every ready backend; use Cadence::every() or configure a backend that supports cron expressions.',
+			'Schedule "nightly" uses a cron expression unsupported by every ready backend; use Recurrence::every() or configure a backend that supports cron expressions.',
 			$result->error->message
 		);
 		self::assertSame(
@@ -555,9 +555,9 @@ final class SchedulesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_unchanged_cron_cadence_still_fails_as_data(): void {
+	public function test_unchanged_cron_recurrence_still_fails_as_data(): void {
 		$backend  = new RecordingBackend();
-		$schedule = new Schedule( 'nightly', Cadence::cron( '0 3 * * *' ), 'refresh-index' );
+		$schedule = new Schedule( 'nightly', Recurrence::cron( '0 3 * * *' ), 'refresh-index' );
 
 		$GLOBALS['a8csp_bgte_test_options'] = array(
 			'a8csp_bgte_schedules' => array(
@@ -578,7 +578,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::UnsupportedCadence, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::UnsupportedRecurrence, $result->error->reason );
 		self::assertSame(
 			array(
 				array(
@@ -599,7 +599,7 @@ final class SchedulesTest extends TestCase {
 	public function test_first_due_overflow_fails_before_backend_mutation(): void {
 		$backend = new RecordingBackend();
 		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
-		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
 		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
@@ -607,7 +607,7 @@ final class SchedulesTest extends TestCase {
 
 		$result = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::every( \PHP_INT_MAX ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::every( \PHP_INT_MAX ), 'refresh-index' ) )
 		);
 
 		self::assertInstanceOf( Failure::class, $result );
@@ -626,7 +626,7 @@ final class SchedulesTest extends TestCase {
 		$backend = new RecordingBackend();
 		$clock   = new FixedClock( self::NOW );
 		$api     = $this->new_schedules( $this->new_registry(), $backend, $clock );
-		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
 		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
@@ -635,7 +635,7 @@ final class SchedulesTest extends TestCase {
 
 		$result = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::every( 600 ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh-index' ) )
 		);
 
 		self::assertInstanceOf( Failure::class, $result );
@@ -656,7 +656,7 @@ final class SchedulesTest extends TestCase {
 
 		$result = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) )
 		);
 
 		self::assertInstanceOf( Success::class, $result );
@@ -677,7 +677,7 @@ final class SchedulesTest extends TestCase {
 		$backend  = new RecordingBackend();
 		$name     = \str_repeat( 'n', 253 );
 		$key      = 'o:' . $name;
-		$schedule = new Schedule( $name, Cadence::every( 300 ), 'refresh-index' );
+		$schedule = new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
 
 		$result = ( $this->new_schedules(
 			$this->new_registry(),
@@ -706,8 +706,8 @@ final class SchedulesTest extends TestCase {
 			(void) $api->sync(
 				'o',
 				array(
-					new Schedule( 'valid', Cadence::every( 300 ), 'refresh-index' ),
-					new Schedule( $name, Cadence::every( 300 ), 'refresh-index' ),
+					new Schedule( 'valid', Recurrence::every( 300 ), 'refresh-index' ),
+					new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' ),
 				)
 			);
 			self::fail( 'Oversized registration key did not throw.' );
@@ -778,7 +778,7 @@ final class SchedulesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sync_rejects_duplicate_names_with_the_fix(): void {
-		$schedule = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$backend  = new RecordingBackend();
 		$api      = $this->new_schedules(
 			$this->new_registry(),
@@ -809,7 +809,7 @@ final class SchedulesTest extends TestCase {
 	public function test_failed_replacement_leaves_no_stale_fingerprint_and_the_old_declaration_repairs(): void {
 		$backend = new RecordingBackend();
 		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
-		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
+		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
 		$this->clear_backend_calls( $backend );
@@ -825,7 +825,7 @@ final class SchedulesTest extends TestCase {
 
 		$result = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::every( 600 ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh-index' ) )
 		);
 
 		self::assertSame( $failure, $result );
@@ -858,7 +858,7 @@ final class SchedulesTest extends TestCase {
 
 		$result = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) )
 		);
 
 		self::assertInstanceOf( Failure::class, $result );
@@ -885,7 +885,7 @@ final class SchedulesTest extends TestCase {
 		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$seeded  = $api->sync(
 			'owner-a',
-			array( new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' ) )
+			array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) )
 		);
 		self::assertInstanceOf( Success::class, $seeded );
 

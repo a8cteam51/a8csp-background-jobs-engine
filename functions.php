@@ -1,6 +1,10 @@
 <?php declare( strict_types=1 );
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
+use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -29,20 +33,49 @@ function a8csp_bgte_plugin(): Plugin {
 
 	return $plugin;
 }
+
+/**
+ * Returns the consumer engine after its component has initialized.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @return  Engine|null
+ */
+function a8csp_bgte_engine(): ?Engine {
+	if ( 0 === did_action( 'plugins_loaded' ) ) {
+		_doing_it_wrong(
+			__FUNCTION__,
+			'Call a8csp_bgte_engine() after plugins_loaded, when the engine has booted.',
+			'1.0.0'
+		);
+
+		return null;
+	}
+
+	return EngineComponent::get_engine();
+}
+
+/**
+ * Returns the shared engine-unavailable failure for the procedural wrappers.
+ *
+ * @internal Wrapper fallback seam.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @return  Failure<EngineError>
+ */
+function a8csp_bgte_engine_unavailable_failure(): Failure {
+	return new Failure( new EngineError( 'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.' ) );
+}
+
 // endregion
 
 // region OTHER
 
-$a8csp_bgte_includes = \glob( A8CSP_BGTE_DIR_PATH . 'includes/*.php' );
-if ( false !== $a8csp_bgte_includes ) {
-	\sort( $a8csp_bgte_includes ); // Glob order is filesystem-dependent, so sort for a deterministic load order.
-	foreach ( $a8csp_bgte_includes as $a8csp_bgte_include ) {
-		if ( \str_starts_with( \basename( $a8csp_bgte_include ), '_' ) ) {
-			continue; // An underscore prefix opts a file out of automatic loading.
-		}
-
-		require_once $a8csp_bgte_include;
-	}
-}
+require_once __DIR__ . '/includes/task-functions.php';
+require_once __DIR__ . '/includes/batch-functions.php';
+require_once __DIR__ . '/includes/schedule-functions.php';
 
 // endregion

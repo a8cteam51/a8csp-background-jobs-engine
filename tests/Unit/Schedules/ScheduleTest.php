@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Schedules;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Schedule::class )]
-#[UsesClass( Cadence::class )]
+#[UsesClass( Recurrence::class )]
 #[UsesClass( CatchUpPolicy::class )]
 #[UsesClass( OverlapPolicy::class )]
 final class ScheduleTest extends TestCase {
@@ -41,16 +41,16 @@ final class ScheduleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_constructor_retains_the_complete_definition_and_defaults(): void {
-		$cadence  = Cadence::every( 300 );
-		$schedule = new Schedule(
+		$recurrence = Recurrence::every( 300 );
+		$schedule   = new Schedule(
 			name: 'refresh_index-2',
-			cadence: $cadence,
+			recurrence: $recurrence,
 			task: 'refresh-index',
 			args: array( 'site_id' => 7 ),
 		);
 
 		self::assertSame( 'refresh_index-2', $schedule->name );
-		self::assertSame( $cadence, $schedule->cadence );
+		self::assertSame( $recurrence, $schedule->recurrence );
 		self::assertSame( 'refresh-index', $schedule->task );
 		self::assertSame( array( 'site_id' => 7 ), $schedule->args );
 		self::assertSame( OverlapPolicy::Skip, $schedule->overlap );
@@ -72,7 +72,7 @@ final class ScheduleTest extends TestCase {
 			'Schedule name is invalid; pass a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
 		);
 
-		new Schedule( $name, Cadence::every( 300 ), 'refresh-index' );
+		new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
 	}
 
 	/**
@@ -101,7 +101,7 @@ final class ScheduleTest extends TestCase {
 			'Schedule "nightly" priority -1 is invalid; pass a value from 0 through 255.'
 		);
 
-		new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', priority: -1 );
+		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: -1 );
 	}
 
 	/**
@@ -115,7 +115,7 @@ final class ScheduleTest extends TestCase {
 			'Schedule "nightly" priority 256 is invalid; pass a value from 0 through 255.'
 		);
 
-		new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', priority: 256 );
+		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: 256 );
 	}
 
 	/**
@@ -124,8 +124,8 @@ final class ScheduleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_constructor_accepts_both_priority_boundaries(): void {
-		self::assertSame( 0, ( new Schedule( 'lowest', Cadence::every( 1 ), 'task', priority: 0 ) )->priority );
-		self::assertSame( 255, ( new Schedule( 'highest', Cadence::every( 1 ), 'task', priority: 255 ) )->priority );
+		self::assertSame( 0, ( new Schedule( 'lowest', Recurrence::every( 1 ), 'task', priority: 0 ) )->priority );
+		self::assertSame( 255, ( new Schedule( 'highest', Recurrence::every( 1 ), 'task', priority: 255 ) )->priority );
 	}
 
 	/**
@@ -139,7 +139,7 @@ final class ScheduleTest extends TestCase {
 			'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.'
 		);
 
-		new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( new \stdClass() ) );
+		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( new \stdClass() ) );
 	}
 
 	/**
@@ -153,7 +153,7 @@ final class ScheduleTest extends TestCase {
 			'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.'
 		);
 
-		new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( \INF ) );
+		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( \INF ) );
 	}
 
 	/**
@@ -176,13 +176,13 @@ final class ScheduleTest extends TestCase {
 	public function test_each_field_change_changes_the_fingerprint(): void {
 		$baseline = $this->schedule();
 		$changed  = array(
-			new Schedule( 'nightly-2', Cadence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ) ),
-			new Schedule( 'nightly', Cadence::every( 301 ), 'refresh-index', array( 'site_id' => 7 ) ),
-			new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index-2', array( 'site_id' => 7 ) ),
-			new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( 'site_id' => 8 ) ),
-			new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), OverlapPolicy::Allow ),
-			new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), catch_up: CatchUpPolicy::Skip ),
-			new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), priority: 11 ),
+			new Schedule( 'nightly-2', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ) ),
+			new Schedule( 'nightly', Recurrence::every( 301 ), 'refresh-index', array( 'site_id' => 7 ) ),
+			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index-2', array( 'site_id' => 7 ) ),
+			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 8 ) ),
+			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), OverlapPolicy::Allow ),
+			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), catch_up: CatchUpPolicy::Skip ),
+			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), priority: 11 ),
 		);
 
 		foreach ( $changed as $schedule ) {
@@ -196,8 +196,8 @@ final class ScheduleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_fingerprint_preserves_zero_fractions(): void {
-		$integer = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( 'value' => 1 ) );
-		$float   = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index', array( 'value' => 1.0 ) );
+		$integer = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'value' => 1 ) );
+		$float   = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'value' => 1.0 ) );
 
 		self::assertNotSame( $integer->fingerprint(), $float->fingerprint() );
 	}
@@ -210,7 +210,7 @@ final class ScheduleTest extends TestCase {
 	private function schedule(): Schedule {
 		return new Schedule(
 			name: 'nightly',
-			cadence: Cadence::every( 300 ),
+			recurrence: Recurrence::every( 300 ),
 			task: 'refresh-index',
 			args: array( 'site_id' => 7 ),
 		);

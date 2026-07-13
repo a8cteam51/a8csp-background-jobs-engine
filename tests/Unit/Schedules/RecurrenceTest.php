@@ -2,16 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Schedules;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins fixed-interval and cron cadence construction.
+ * Pins fixed-interval and cron recurrence construction.
  *
  */
-#[CoversClass( Cadence::class )]
-final class CadenceTest extends TestCase {
+#[CoversClass( Recurrence::class )]
+final class RecurrenceTest extends TestCase {
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
@@ -31,16 +31,16 @@ final class CadenceTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_every_retains_a_positive_interval(): void {
-		$cadence = Cadence::every( 1 );
+		$recurrence = Recurrence::every( 1 );
 
-		self::assertSame( 1, $cadence->interval() );
-		self::assertNull( $cadence->expression() );
+		self::assertSame( 1, $recurrence->interval() );
+		self::assertNull( $recurrence->expression() );
 		self::assertSame(
 			array(
 				'type'  => 'every',
 				'value' => 1,
 			),
-			$cadence->fingerprint_value()
+			$recurrence->fingerprint_value()
 		);
 	}
 
@@ -50,16 +50,16 @@ final class CadenceTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cron_retains_the_expression(): void {
-		$cadence = Cadence::cron( '0 3 * * *' );
+		$recurrence = Recurrence::cron( '0 3 * * *' );
 
-		self::assertNull( $cadence->interval() );
-		self::assertSame( '0 3 * * *', $cadence->expression() );
+		self::assertNull( $recurrence->interval() );
+		self::assertSame( '0 3 * * *', $recurrence->expression() );
 		self::assertSame(
 			array(
 				'type'  => 'cron',
 				'value' => '0 3 * * *',
 			),
-			$cadence->fingerprint_value()
+			$recurrence->fingerprint_value()
 		);
 	}
 
@@ -71,10 +71,10 @@ final class CadenceTest extends TestCase {
 	public function test_every_rejects_zero_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs(
-			'Cadence interval must be positive; pass a value of at least one second.'
+			'Recurrence interval must be positive; pass a value of at least one second.'
 		);
 
-		Cadence::every( 0 );
+		Recurrence::every( 0 );
 	}
 
 	/**
@@ -85,9 +85,9 @@ final class CadenceTest extends TestCase {
 	public function test_every_rejects_a_negative_interval_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs(
-			'Cadence interval must be positive; pass a value of at least one second.'
+			'Recurrence interval must be positive; pass a value of at least one second.'
 		);
 
-		Cadence::every( -1 );
+		Recurrence::every( -1 );
 	}
 }

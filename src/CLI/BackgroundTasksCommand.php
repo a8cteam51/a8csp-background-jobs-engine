@@ -378,7 +378,7 @@ final class BackgroundTasksCommand {
 			return;
 		}
 
-		$result = $engine->tasks()->retry_failed( $name, $run_id );
+		$result = $engine->retry_failed( $name, $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;

@@ -15,7 +15,7 @@ A background-work engine for WordPress sites: Tasks, Schedules, and Batches on p
 
 A Task is one named unit of background work. A consumer registers a `TaskInterface` instance and dispatches it with arguments through the engine facade or the procedural API.
 
-A Schedule is an owner-scoped declaration that dispatches a registered Task on a fixed cadence. The declaration includes the task arguments, overlap policy, catch-up policy, and advisory priority.
+A Schedule is an owner-scoped declaration that dispatches a registered Task on a fixed recurrence. The declaration includes the task arguments, overlap policy, catch-up policy, and advisory priority.
 
 A Batch is named work split into independently processed chunks. A consumer registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after success or failure.
 
@@ -28,7 +28,7 @@ The executable fixture contains the complete [`SiteHealthPingTask`](tests/Suppor
 ```php
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
@@ -75,7 +75,7 @@ final readonly class DemoConsumer {
 			array(
 				new Schedule(
 					self::SCHEDULE_NAME,
-					Cadence::every( $this->site_health_interval ),
+					Recurrence::every( $this->site_health_interval ),
 					SiteHealthPingTask::NAME,
 					array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ),
 					OverlapPolicy::Skip,
@@ -178,7 +178,7 @@ interface BatchContextInterface {
 ```php
 public function __construct(
 	public string $name,
-	public Cadence $cadence,
+	public Recurrence $recurrence,
 	public string $task,
 	public array $args = array(),
 	public OverlapPolicy $overlap = OverlapPolicy::Skip,
@@ -187,7 +187,7 @@ public function __construct(
 )
 ```
 
-Use `Cadence::every( $seconds )` for v1 schedule synchronization. `Cadence::cron( $expression )` can represent a calendar expression, but v1 synchronization returns a failure because the recurring backend port currently supports fixed intervals only.
+Use `Recurrence::every( $seconds )` for v1 schedule synchronization. `Recurrence::cron( $expression )` can represent a calendar expression, but v1 synchronization returns a failure because the recurring backend port currently supports fixed intervals only.
 
 ## Idempotency invariant
 
@@ -205,7 +205,7 @@ Overlap applies to a matching task name and argument identity. Catch-up determin
 
 `Allow` gives each run an independent overlap identity. `Skip` leaves the active run in place. `Replace` transfers ownership; an incumbent already inside a callback reaches its next fencing boundary rather than being interrupted mid-callback.
 
-An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp/background_tasks/misfire_grace/{schedule}`. `RunOnce` attempts one make-up occurrence and realigns the cadence without replaying every missed interval. `Skip` drops the occurrence, realigns the cadence, and emits the misfired hooks.
+An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp/background_tasks/misfire_grace/{schedule}`. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
 
 ## Hooks and filters
 
@@ -270,4 +270,4 @@ Use `wp background-tasks failed purge --all` to purge every retained failed-run 
 
 A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total (including the first), a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw an exception implementing `NonRetryableExceptionInterface` to bypass the remaining attempts for a permanent failure.
 
-After the final attempt, the engine writes the terminal failure to the per-name failed store. It then invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$engine->tasks()->retry_failed( $name, $run_id )`, `a8csp_bgte_retry_failed_run( $name, $run_id )`, or `wp background-tasks failed retry <name> <run-id>`. A successful retry result means the new run was scheduled; lifecycle hooks report its eventual outcome.
+After the final attempt, the engine writes the terminal failure to the per-name failed store. It then invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$engine->retry_failed( $name, $run_id )`, `a8csp_bgte_retry_failed_run( $name, $run_id )`, or `wp background-tasks failed retry <name> <run-id>`. A successful retry result means the new run was scheduled; lifecycle hooks report its eventual outcome.
