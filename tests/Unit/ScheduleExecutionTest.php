@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
@@ -127,6 +128,7 @@ final class ScheduleExecutionTest extends TestCase {
 			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
 			$this->logger,
 			$this->clock,
+			new LockWindows( $this->clock ),
 			new RecordingRandomizer( 42 ),
 		);
 		$this->api    = new Schedules(
@@ -805,6 +807,7 @@ final class ScheduleExecutionTest extends TestCase {
 			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
 			$this->logger,
 			$this->clock,
+			new LockWindows( $this->clock ),
 			new RecordingRandomizer( 42 ),
 		);
 

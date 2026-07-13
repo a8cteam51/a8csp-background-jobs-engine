@@ -932,14 +932,7 @@ final readonly class Schedules {
 	 */
 	private function registry_failure( string $owner ): Failure {
 		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				\sprintf(
-					'Schedule registry for owner "%s" could not be persisted; repair WordPress option writes and retry synchronization.',
-					$owner
-				),
-				array( 'owner' => $owner ),
-			)
+			SchedulingError::registry_read( $owner )
 		);
 	}
 

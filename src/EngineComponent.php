@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
@@ -101,6 +102,7 @@ final class EngineComponent implements Component {
 			$stores,
 			$logger,
 			$clock,
+			new LockWindows( $clock ),
 			$randomizer,
 		);
 		$tasks->register( new MaintenanceTask( $wpdb, $orchestrator, $guard, $logger ) );

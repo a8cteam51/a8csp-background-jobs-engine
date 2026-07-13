@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskExceptio
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
@@ -145,6 +146,7 @@ final class OrchestratorBatchTest extends TestCase {
 			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
 			$this->logger,
 			$this->clock,
+			new LockWindows( $this->clock ),
 			$this->randomizer,
 		);
 	}

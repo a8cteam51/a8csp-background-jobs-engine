@@ -61,6 +61,22 @@ final readonly class RunState {
 	// region METHODS
 
 	/**
+	 * Increments an attempt count without overflowing schema-valid integer state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $chunk_retries Failed attempts already consumed.
+	 *
+	 * @return  int
+	 */
+	public static function increment_attempts_safely( int $chunk_retries ): int {
+		return \PHP_INT_MAX === $chunk_retries
+			? \PHP_INT_MAX
+			: \max( 1, $chunk_retries + 1 );
+	}
+
+	/**
 	 * Returns a copy with the supplied lifecycle state.
 	 *
 	 * @since   1.0.0

@@ -33,16 +33,6 @@ final readonly class Orchestrator {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Default delay between completed batch chunks.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const CONTINUE_DELAY = 60;
-
-	/**
 	 * Internal hook that resumes a batch after its inter-chunk delay.
 	 *
 	 * @since   1.0.0
@@ -144,6 +134,7 @@ final readonly class Orchestrator {
 	 * @param   StoreFactory        $stores        Name-bound store factory.
 	 * @param   LoggerInterface     $logger        Log event sink.
 	 * @param   ClockInterface      $clock         Timestamp source.
+	 * @param   LockWindows         $lock_windows  Filterable run-lock timing policy.
 	 * @param   RandomizerInterface $randomizer   Run identifier randomness.
 	 */
 	public function __construct(
@@ -154,6 +145,7 @@ final readonly class Orchestrator {
 		private StoreFactory $stores,
 		private LoggerInterface $logger,
 		private ClockInterface $clock,
+		private LockWindows $lock_windows,
 		private RandomizerInterface $randomizer,
 	) {}
 
@@ -271,7 +263,10 @@ final readonly class Orchestrator {
 	): AbstractResult {
 		$batch = $this->batches->get( $batch_name );
 		if ( null !== $batch && null !== $this->tasks->get( $batch_name ) ) {
-			return $this->ambiguous_name_failure( $batch_name );
+			$error = EngineError::ambiguous_name( $batch_name );
+			$this->logger->warning( $error->message, array( 'name' => $batch_name ) );
+
+			return new Failure( $error );
 		}
 
 		if ( null === $batch ) {
@@ -310,7 +305,7 @@ final readonly class Orchestrator {
 			$batch_name,
 			$args_hash,
 			$run_id,
-			$this->lock_staleness( $batch_name, $run_id )
+			$this->lock_windows->lock_staleness( $batch_name, $run_id )
 		);
 		if ( ClaimResult::Held === $claim && $unique ) {
 			$running_run_id = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
@@ -383,7 +378,10 @@ final readonly class Orchestrator {
 		$task  = $this->tasks->get( $name );
 		$batch = $this->batches->get( $name );
 		if ( null !== $task && null !== $batch ) {
-			return $this->ambiguous_name_failure( $name );
+			$error = EngineError::ambiguous_name( $name );
+			$this->logger->warning( $error->message, array( 'name' => $name ) );
+
+			return new Failure( $error );
 		}
 
 		if ( null === $task && null === $batch ) {
@@ -485,7 +483,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->throwable_failure( $throwable )
+				EngineError::from_throwable( $throwable )
 			);
 
 			return;
@@ -515,7 +513,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->throwable_failure( $throwable )
+				EngineError::from_throwable( $throwable )
 			);
 
 			return;
@@ -537,7 +535,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->scheduling_failure( 'Batch', $batch_name, 'continue', $scheduled->error )
+				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 		}
 	}
@@ -586,7 +584,7 @@ final readonly class Orchestrator {
 					$run_id,
 					$state,
 					$run_store,
-					$this->scheduling_failure( 'Batch', $batch_name, 'cleanup', $scheduled->error )
+					EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error )
 				);
 			}
 
@@ -613,7 +611,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->scheduling_failure( 'Batch', $batch_name, 'run', $scheduled->error )
+				EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error )
 			);
 		}
 	}
@@ -831,7 +829,7 @@ final readonly class Orchestrator {
 			$name,
 			$args_hash,
 			$run_id,
-			$this->lock_staleness( $name, $run_id )
+			$this->lock_windows->lock_staleness( $name, $run_id )
 		) ) {
 			return;
 		}
@@ -882,7 +880,7 @@ final readonly class Orchestrator {
 		}
 
 		if ( RunStatus::Running === $state->status ) {
-			$staleness = $this->lock_staleness( $name, $run_id );
+			$staleness = $this->lock_windows->lock_staleness( $name, $run_id );
 			$fence     = $this->overlap_guard->fence_abandoned_run(
 				$name,
 				$state->args_hash,
@@ -900,7 +898,7 @@ final readonly class Orchestrator {
 			$work_type = null !== $batch && null === $this->tasks->get( $name ) ? 'Batch' : 'Task';
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the incumbent is still inside its callback; a fresh run heartbeat leaves terminalization to that worker's next ownership fence.
-				if ( ! self::heartbeat_is_stale( $state->heartbeat_at, $this->clock->now()->getTimestamp(), $staleness ) ) {
+				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 					return $state->args_hash;
 				}
 
@@ -934,7 +932,7 @@ final readonly class Orchestrator {
 					'run_id' => $run_id,
 				)
 			);
-			$attempts = self::increment_attempts_safely( $state->chunk_retries );
+			$attempts = RunState::increment_attempts_safely( $state->chunk_retries );
 			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
 				$this->fail_batch(
 					$batch,
@@ -1029,7 +1027,10 @@ final readonly class Orchestrator {
 	): AbstractResult {
 		$task = $this->tasks->get( $task_name );
 		if ( null !== $task && null !== $this->batches->get( $task_name ) ) {
-			return $this->ambiguous_name_failure( $task_name );
+			$error = EngineError::ambiguous_name( $task_name );
+			$this->logger->warning( $error->message, array( 'name' => $task_name ) );
+
+			return new Failure( $error );
 		}
 
 		if ( null === $task ) {
@@ -1085,7 +1086,7 @@ final readonly class Orchestrator {
 			$task_name,
 			$args_hash,
 			$run_id,
-			$this->lock_staleness( $task_name, $run_id )
+			$this->lock_windows->lock_staleness( $task_name, $run_id )
 		);
 		if ( ClaimResult::Held === $claim && OverlapPolicy::Skip === $overlap ) {
 			$running_run_id = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
@@ -1103,7 +1104,7 @@ final readonly class Orchestrator {
 			return new Success(
 				new TaskDispatchSkipped(
 					$running_run_id,
-					$this->held_task_error( $task_name, $running_run_id )
+					EngineError::held_task( $task_name, $running_run_id )
 				)
 			);
 		}
@@ -1268,27 +1269,6 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Returns the public held-lock task failure without relying on message inspection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $task_name     Stable task name.
-	 * @param   string $running_run_id Discoverable incumbent run identifier.
-	 *
-	 * @return  EngineError
-	 */
-	private function held_task_error( string $task_name, string $running_run_id ): EngineError {
-		return new EngineError(
-			\sprintf(
-				'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments.',
-				$task_name,
-				$running_run_id
-			)
-		);
-	}
-
-	/**
 	 * Applies the retry decision ladder after one task or batch attempt fails.
 	 *
 	 * @since   1.0.0
@@ -1327,7 +1307,7 @@ final readonly class Orchestrator {
 		}
 
 		$attempts_used = $state->chunk_retries + 1;
-		$error         = $this->throwable_failure( $throwable );
+		$error         = EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
 			$terminal_failure( $state, $error, $attempts_used );
 
@@ -1343,7 +1323,7 @@ final readonly class Orchestrator {
 
 			$terminal_failure(
 				$state,
-				$this->retry_policy_failure( $work_type, $name, $retry_policy_failure ),
+				EngineError::retry_policy( $work_type, $name, $retry_policy_failure ),
 				$attempts_used
 			);
 
@@ -1517,7 +1497,7 @@ final readonly class Orchestrator {
 		$state = $replacement;
 
 		try {
-			$delay = $this->continue_delay( $batch_name, $run_id );
+			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
 			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
@@ -1529,7 +1509,7 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->throwable_failure( $throwable )
+				EngineError::from_throwable( $throwable )
 			);
 
 			return;
@@ -1572,31 +1552,9 @@ final readonly class Orchestrator {
 				$run_id,
 				$state,
 				$run_store,
-				$this->scheduling_failure( 'Batch', $batch_name, 'continue', $scheduled->error )
+				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 		}
-	}
-
-	/**
-	 * Resolves the non-negative inter-chunk delay for one batch run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
-	 *
-	 * @return  int
-	 */
-	private function continue_delay( string $batch_name, string $run_id ): int {
-		$delay = \apply_filters(
-			'a8csp/background_tasks/continue_delay',
-			self::CONTINUE_DELAY,
-			$batch_name,
-			$run_id
-		);
-
-		return \is_int( $delay ) && 0 <= $delay ? $delay : self::CONTINUE_DELAY;
 	}
 
 	/**
@@ -1800,7 +1758,7 @@ final readonly class Orchestrator {
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
-			self::increment_attempts_safely( $state->chunk_retries ),
+			RunState::increment_attempts_safely( $state->chunk_retries ),
 			$error
 		);
 
@@ -1904,7 +1862,7 @@ final readonly class Orchestrator {
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
-			$attempts ?? self::increment_attempts_safely( $state->chunk_retries ),
+			$attempts ?? RunState::increment_attempts_safely( $state->chunk_retries ),
 			$error
 		);
 
@@ -1917,73 +1875,6 @@ final readonly class Orchestrator {
 		} finally {
 			$this->finish_terminal_run( $batch_name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
-	}
-
-	/**
-	 * Converts a failed lifecycle schedule into terminal failure detail.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'Task'|'Batch'                     $work_type Work contract type.
-	 * @param   string                             $name      Stable task or batch name.
-	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
-	 * @param   SchedulingError                    $error     Scheduling failure.
-	 *
-	 * @return  EngineError
-	 */
-	private function scheduling_failure(
-		string $work_type,
-		string $name,
-		string $stage,
-		SchedulingError $error
-	): EngineError {
-		return new EngineError(
-			\sprintf(
-				'%1$s "%2$s" could not schedule the %3$s action: %4$s',
-				$work_type,
-				$name,
-				$stage,
-				$error->message
-			),
-			SchedulingError::class
-		);
-	}
-
-	/**
-	 * Converts one callback throwable into engine failure detail.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   \Throwable $throwable Callback failure.
-	 *
-	 * @return  EngineError
-	 */
-	private function throwable_failure( \Throwable $throwable ): EngineError {
-		return new EngineError( $throwable->getMessage(), $throwable::class );
-	}
-
-	/**
-	 * Logs and returns a failure that names the global background-work identity correction.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Ambiguous task and batch name.
-	 *
-	 * @return  Failure<EngineError>
-	 */
-	private function ambiguous_name_failure( string $name ): Failure {
-		$error = new EngineError(
-			\sprintf(
-				'Background-work name "%s" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.',
-				$name
-			)
-		);
-		$this->logger->warning( $error->message, array( 'name' => $name ) );
-
-		return new Failure( $error );
 	}
 
 	/**
@@ -2043,69 +1934,6 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Resolves the per-run lock window above twice the continue delay.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name   Stable task or batch name.
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  int
-	 */
-	private function lock_staleness( string $name, string $run_id ): int {
-		$continue_delay = $this->continue_delay( $name, $run_id );
-
-		$default_staleness = 15 * \MINUTE_IN_SECONDS;
-		$staleness         = \apply_filters(
-			'a8csp/background_tasks/lock_staleness/' . $name,
-			$default_staleness
-		);
-		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
-			$staleness = $default_staleness;
-		}
-
-		$floor = $continue_delay > \intdiv( \PHP_INT_MAX, 2 )
-			? \PHP_INT_MAX
-			: 2 * $continue_delay;
-
-		return \max( $staleness, $floor );
-	}
-
-	/**
-	 * Returns whether one run heartbeat exceeds the resolved strict staleness window.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $heartbeat_at Latest run heartbeat timestamp.
-	 * @param   int $now          Current timestamp.
-	 * @param   int $staleness    Positive staleness window.
-	 *
-	 * @return  bool
-	 */
-	private static function heartbeat_is_stale( int $heartbeat_at, int $now, int $staleness ): bool {
-		return $now > \PHP_INT_MIN + $staleness
-			&& $heartbeat_at < $now - $staleness;
-	}
-
-	/**
-	 * Increments an attempt count without overflowing schema-valid integer state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $chunk_retries Failed attempts already consumed.
-	 *
-	 * @return  int
-	 */
-	private static function increment_attempts_safely( int $chunk_retries ): int {
-		return \PHP_INT_MAX === $chunk_retries
-			? \PHP_INT_MAX
-			: \max( 1, $chunk_retries + 1 );
-	}
-
-	/**
 	 * Resolves a valid name-specific policy from the contract policy.
 	 *
 	 * @since   1.0.0
@@ -2134,54 +1962,6 @@ final readonly class Orchestrator {
 		);
 
 		return $contract_policy;
-	}
-
-	/**
-	 * Converts a retry-policy boundary throwable into terminal failure detail.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   \Throwable     $throwable Retry-policy provider or filter failure.
-	 *
-	 * @return  EngineError
-	 */
-	private function retry_policy_failure( string $work_type, string $name, \Throwable $throwable ): EngineError {
-		return new EngineError(
-			\sprintf(
-				'%1$s "%2$s" could not resolve the retry policy: %3$s Fix the retry policy provider or filter before retrying the failed run manually.',
-				$work_type,
-				$name,
-				$throwable->getMessage()
-			),
-			$throwable::class
-		);
-	}
-
-	/**
-	 * Converts one retry-preparation throwable into terminal failure detail.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   \Throwable     $throwable Retry-policy, randomness, hook, or scheduler failure.
-	 *
-	 * @return  EngineError
-	 */
-	private function retry_preparation_failure( string $work_type, string $name, \Throwable $throwable ): EngineError {
-		return new EngineError(
-			\sprintf(
-				'%1$s "%2$s" could not prepare the retry action: %3$s Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
-				$work_type,
-				$name,
-				$throwable->getMessage()
-			),
-			$throwable::class
-		);
 	}
 
 	/**
@@ -2229,7 +2009,7 @@ final readonly class Orchestrator {
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => $this->retry_preparation_failure( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_preparation( $work_type, $name, $throwable ),
 			);
 		}
 
@@ -2251,7 +2031,7 @@ final readonly class Orchestrator {
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => $this->retry_preparation_failure( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_preparation( $work_type, $name, $throwable ),
 			);
 		}
 
@@ -2276,7 +2056,7 @@ final readonly class Orchestrator {
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,
-					'error' => $this->scheduling_failure( $work_type, $name, 'retry', $scheduled->error ),
+					'error' => EngineError::scheduling( $work_type, $name, 'retry', $scheduled->error ),
 				);
 			}
 
@@ -2284,7 +2064,7 @@ final readonly class Orchestrator {
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => $this->retry_preparation_failure( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_preparation( $work_type, $name, $throwable ),
 			);
 		}
 	}

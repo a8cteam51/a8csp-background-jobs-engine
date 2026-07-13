@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
@@ -291,6 +292,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			new StoreFactory( $clock, $rows ),
 			$logger,
 			$clock,
+			new LockWindows( $clock ),
 			$randomizer
 		);
 		$schedules    = new Schedules(

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
@@ -962,6 +963,7 @@ final class SchedulesTest extends TestCase {
 			new StoreFactory( $clock, new OptionRows( $wpdb ) ),
 			$logger,
 			$clock,
+			new LockWindows( $clock ),
 			new RecordingRandomizer( 42 ),
 		);
 

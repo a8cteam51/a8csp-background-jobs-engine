@@ -35,4 +35,29 @@ final readonly class SchedulingError {
 	) {}
 
 	// endregion
+
+	// region METHODS
+
+	/**
+	 * Returns the failed registry-postcondition detail for one owner.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Stable consumer identifier.
+	 *
+	 * @return  self
+	 */
+	public static function registry_read( string $owner ): self {
+		return new self(
+			SchedulingErrorReason::ScheduleFailed,
+			\sprintf(
+				'Schedule registry for owner "%s" could not be persisted; repair WordPress option writes and retry synchronization.',
+				$owner
+			),
+			array( 'owner' => $owner ),
+		);
+	}
+
+	// endregion
 }
