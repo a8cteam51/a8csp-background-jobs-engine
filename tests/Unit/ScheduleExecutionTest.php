@@ -144,7 +144,7 @@ final class ScheduleExecutionTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * An on-time occurrence dispatches once and advances the persisted cadence token.
+	 * An on-time occurrence dispatches, advances its cadence token, and releases its lease once.
 	 *
 	 * @return  void
 	 */
@@ -167,6 +167,15 @@ final class ScheduleExecutionTest extends TestCase {
 				'skips'       => 0,
 			),
 			$this->registration()
+		);
+		$lease_key = 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY );
+		self::assertCount(
+			1,
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'DELETE ' )
+					&& \str_contains( $query, $lease_key )
+			)
 		);
 	}
 

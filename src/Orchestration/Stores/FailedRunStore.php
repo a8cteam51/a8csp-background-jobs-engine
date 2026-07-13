@@ -163,7 +163,7 @@ final readonly class FailedRunStore {
 		}
 
 		for ( $attempt = 0; $attempt < self::PURGE_ATTEMPTS; ++$attempt ) {
-			$count = \count( self::entries_from_option( \maybe_unserialize( $raw ) ) );
+			$count = \count( self::entries_from_option( RawOptionDecoder::decode( $raw ) ) );
 			if ( $this->rows->delete( $key, $raw ) ) {
 				return $count;
 			}

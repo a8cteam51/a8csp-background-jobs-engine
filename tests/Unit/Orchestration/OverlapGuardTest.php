@@ -376,6 +376,40 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
+	/** A failed heartbeat read preserves the current fence without attempting a refresh. */
+	public function test_heartbeat_preserves_the_fence_without_refresh_after_read_failure(): void {
+		$logger    = new RecordingLogger();
+		$owned_raw = self::raw( self::row( 'run-owner', 100, 120 ) );
+		$this->wpdb->put( self::KEY, $owned_raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient read failure';
+			}
+		);
+
+		$owned = $this->guard_at( 200, $logger )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertTrue( $owned );
+		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'Skipped execution-overlap lock heartbeat refresh after an authoritative read failure.',
+					'context' => array(
+						'key'       => self::KEY,
+						'name'      => self::NAME,
+						'args_hash' => self::ARGS_HASH,
+						'run_id'    => 'run-owner',
+					),
+				),
+			),
+			$logger->records
+		);
+	}
+
 	/** A heartbeat that loses its CAS leaves the replacement owner's row unchanged. */
 	public function test_heartbeat_cas_loss_is_a_no_op(): void {
 		$winner_raw = self::raw( self::row( 'run-winner', 200, 200 ) );
@@ -422,6 +456,39 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
+	/** A failed release read leaves the lock for the staleness sweep and names the leaked key. */
+	public function test_release_warns_that_the_staleness_sweep_reclaims_a_read_failure_leak(): void {
+		$logger    = new RecordingLogger();
+		$owned_raw = self::raw( self::row( 'run-owner', 100, 120 ) );
+		$this->wpdb->put( self::KEY, $owned_raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient read failure';
+			}
+		);
+
+		$this->guard_at( 200, $logger )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
+					'context' => array(
+						'key'       => self::KEY,
+						'name'      => self::NAME,
+						'args_hash' => self::ARGS_HASH,
+						'run_id'    => 'run-owner',
+					),
+				),
+			),
+			$logger->records
+		);
+	}
+
 	/** A release that loses its CAS leaves the replacement owner's row unchanged. */
 	public function test_release_cas_loss_is_a_no_op(): void {
 		$winner_raw = self::raw( self::row( 'run-winner', 200, 200 ) );
@@ -463,6 +530,19 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, self::raw( $row ) );
 
 		self::assertFalse( $this->guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+	}
+
+	/** A failed authoritative held-state read fails closed without writing. */
+	public function test_is_held_reports_held_after_read_failure(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient read failure';
+			}
+		);
+
+		self::assertTrue( $this->guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
 	/** Maintenance distinguishes owned, transferred, and absent locks with typed outcomes. */

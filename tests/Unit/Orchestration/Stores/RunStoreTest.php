@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration\Sto
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -19,6 +20,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( RunStore::class )]
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
+#[UsesClass( RawOptionDecoder::class )]
 final class RunStoreTest extends TestCase {
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;

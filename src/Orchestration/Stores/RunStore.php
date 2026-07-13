@@ -129,7 +129,7 @@ final readonly class RunStore {
 
 		return array(
 			'raw'   => $raw,
-			'state' => self::from_option( self::decode_raw( $raw ) ),
+			'state' => self::from_option( RawOptionDecoder::decode( $raw ) ),
 		);
 	}
 
@@ -331,28 +331,6 @@ final readonly class RunStore {
 		}
 
 		return $raw;
-	}
-
-	/**
-	 * Decodes a raw run row without constructing serialized objects.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $raw Exact persisted option value.
-	 *
-	 * @return  mixed
-	 */
-	private static function decode_raw( string $raw ): mixed {
-		\call_user_func( 'set_error_handler', static fn (): bool => true );
-
-		try {
-			return \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
-		} catch ( \Throwable ) {
-			return null;
-		} finally {
-			\call_user_func( 'restore_error_handler' );
-		}
 	}
 
 	/**

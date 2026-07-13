@@ -105,7 +105,7 @@ final class WPCronBackend implements BackendInterface {
 		}
 
 		$next_scheduled = \wp_next_scheduled( $hook, $args );
-		if ( false !== $next_scheduled && 0 < $next_scheduled ) {
+		if ( false !== $next_scheduled ) {
 			return new Success( true );
 		}
 
@@ -127,7 +127,7 @@ final class WPCronBackend implements BackendInterface {
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_single( string $hook, int $timestamp, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
 		$next_scheduled = \wp_next_scheduled( $hook, $args );
-		if ( false !== $next_scheduled && 0 < $next_scheduled ) {
+		if ( false !== $next_scheduled ) {
 			return new Success( true );
 		}
 
@@ -138,6 +138,9 @@ final class WPCronBackend implements BackendInterface {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * WP-Cron suppresses identical single events inside its ten-minute window, so a duplicate error
+	 * accepts the pending event for a non-unique request.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -152,6 +155,9 @@ final class WPCronBackend implements BackendInterface {
 		}
 
 		$result = \wp_schedule_single_event( \time(), $hook, $args, true );
+		if ( ! $unique && $result instanceof \WP_Error && 'duplicate_event' === $result->get_error_code() ) {
+			return new Success( true );
+		}
 
 		return $this->result_for_wp_write( $result, $hook, 'schedule' );
 	}

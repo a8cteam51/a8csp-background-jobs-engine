@@ -188,12 +188,26 @@ final readonly class OverlapGuard {
 	 * @param   int|null $at        Liveness timestamp, or null to use the current clock time. A future value marks
 	 *                              the next expected retry fire as the run's legitimate sign of life.
 	 *
-	 * @return  bool Whether the heartbeat confirmed continued ownership.
+	 * @return  bool Whether execution may continue under the current fence.
 	 */
 	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null ): bool {
 		$key = $this->option_name( $name, $args_hash );
 		$raw = $this->rows->select( $key );
 		if ( null === $raw ) {
+			if ( $this->rows->last_select_failed() ) {
+				$this->logger->debug(
+					'Skipped execution-overlap lock heartbeat refresh after an authoritative read failure.',
+					array(
+						'key'       => $key,
+						'name'      => $name,
+						'args_hash' => $args_hash,
+						'run_id'    => $run_id,
+					)
+				);
+
+				return true;
+			}
+
 			return false;
 		}
 
@@ -224,6 +238,18 @@ final readonly class OverlapGuard {
 		$key = $this->option_name( $name, $args_hash );
 		$raw = $this->rows->select( $key );
 		if ( null === $raw ) {
+			if ( $this->rows->last_select_failed() ) {
+				$this->logger->warning(
+					'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
+					array(
+						'key'       => $key,
+						'name'      => $name,
+						'args_hash' => $args_hash,
+						'run_id'    => $run_id,
+					)
+				);
+			}
+
 			return;
 		}
 
@@ -239,7 +265,8 @@ final readonly class OverlapGuard {
 	 * Returns whether a complete lock exists without exceeding the supplied staleness window.
 	 *
 	 * A heartbeat exactly one window old remains fresh; only a greater age is stale. Malformed rows
-	 * are not held, so a subsequent claim can reclaim them.
+	 * are not held, so a subsequent claim can reclaim them. An authoritative read failure reports
+	 * held so callers fail closed.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -253,7 +280,7 @@ final readonly class OverlapGuard {
 	public function is_held( string $name, string $args_hash, int $staleness_window ): bool {
 		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
 		if ( null === $raw ) {
-			return false;
+			return $this->rows->last_select_failed();
 		}
 
 		$lock = self::parse( $raw );

@@ -46,6 +46,26 @@ final class BatchRegistryTest extends TestCase {
 	}
 
 	/**
+	 * Registration accepts the storage-safe boundary and names the shortening fix beyond it.
+	 *
+	 * @return  void
+	 */
+	public function test_register_accepts_110_bytes_and_rejects_111_with_the_fix(): void {
+		$accepted = $this->batch( \str_repeat( 'a', 110 ) );
+		$registry = new BatchRegistry();
+
+		$registry->register( $accepted );
+		self::assertSame( $accepted, $registry->get( \str_repeat( 'a', 110 ) ) );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs(
+			'Batch name must be at most 110 bytes; shorten the batch name.'
+		);
+
+		$registry->register( $this->batch( \str_repeat( 'a', 111 ) ) );
+	}
+
+	/**
 	 * Invalid names identify the accepted spelling needed to register the batch.
 	 *
 	 * @param   string $name Invalid batch name.

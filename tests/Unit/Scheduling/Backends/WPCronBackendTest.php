@@ -605,22 +605,22 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Core duplicate failures explain how a caller can change or accept the identity.
+	 * A scripted Core duplicate accepts the identical pending event for a non-unique request.
 	 *
 	 * @return  void
 	 */
-	public function test_non_unique_async_enqueue_maps_a_duplicate_event_to_an_actionable_failure(): void {
-		self::assertTrue( \wp_schedule_single_event( \time(), self::HOOK, array( 'a' ), true ) );
-
-		$error = $this->assert_failure_reason(
-			( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'a' ) ),
-			SchedulingErrorReason::ScheduleFailed
+	public function test_non_unique_async_enqueue_accepts_a_scripted_duplicate_event(): void {
+		$GLOBALS['a8csp_bgte_test_cron_results'] = array(
+			'wp_schedule_single_event' => array(
+				new \WP_Error( 'duplicate_event', 'A duplicate event already exists.' ),
+			),
 		);
 
-		self::assertSame(
-			'WP-Cron could not schedule hook "a8csp_bgte_test_hook": an identical hook+args event exists within WP-Cron\'s ten-minute duplicate window; make the args unique or use unique: true to accept deduplication.',
-			$error->message
-		);
+		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'a' ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertCount( 1, $this->cron_calls( 'wp_schedule_single_event' ) );
 	}
 
 	/**

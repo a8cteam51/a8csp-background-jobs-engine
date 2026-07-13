@@ -402,10 +402,13 @@ final readonly class Schedules {
 			return;
 		}
 
+		$lease_released = false;
 		try {
-			$this->handle_occurrence( $registration_key, $lease_raw );
+			$this->handle_occurrence( $registration_key, $lease_raw, $lease_released );
 		} finally {
-			$this->lease->release( $registration_key, $lease_raw );
+			if ( ! $lease_released ) {
+				$this->lease->release( $registration_key, $lease_raw );
+			}
 		}
 	}
 
@@ -417,10 +420,11 @@ final readonly class Schedules {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 * @param   string $lease_raw        Exact occurrence-lease row claimed by this delivery.
+	 * @param   bool   $lease_released   Whether the accepted callback released the occurrence lease.
 	 *
 	 * @return  void
 	 */
-	private function handle_occurrence( string $registration_key, string $lease_raw ): void {
+	private function handle_occurrence( string $registration_key, string $lease_raw, bool &$lease_released ): void {
 		$registration = $this->registry->registration( $registration_key );
 		if ( null === $registration ) {
 			$removed = $this->scheduler->unschedule(
@@ -588,11 +592,12 @@ final readonly class Schedules {
 			$schedule->args,
 			$schedule->overlap,
 			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_raw ): void {
+			function () use ( $registration_key, $owner, $accepted_registration, $lease_raw, &$lease_released ): void {
 				try {
 					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
 				} finally {
 					$this->lease->release( $registration_key, $lease_raw );
+					$lease_released = true;
 				}
 			}
 		);

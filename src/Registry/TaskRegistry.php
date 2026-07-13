@@ -37,7 +37,7 @@ final class TaskRegistry {
 	 *
 	 * @param   TaskInterface $task Task to register.
 	 *
-	 * @throws  \InvalidArgumentException When the task name is outside the stable-name grammar.
+	 * @throws  \InvalidArgumentException When the task name is outside the stable-name grammar or exceeds 110 bytes.
 	 * @throws  \LogicException           When the task name is already registered.
 	 *
 	 * @return  void
@@ -47,6 +47,11 @@ final class TaskRegistry {
 		if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $name ) ) {
 			throw new \InvalidArgumentException(
 				'Task name is invalid; return a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
+			);
+		}
+		if ( 110 < \strlen( $name ) ) {
+			throw new \InvalidArgumentException(
+				'Task name must be at most 110 bytes; shorten the task name.'
 			);
 		}
 

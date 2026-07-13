@@ -44,6 +44,26 @@ final class TaskRegistryTest extends TestCase {
 	}
 
 	/**
+	 * Registration accepts the storage-safe boundary and names the shortening fix beyond it.
+	 *
+	 * @return  void
+	 */
+	public function test_register_accepts_110_bytes_and_rejects_111_with_the_fix(): void {
+		$accepted = $this->task( \str_repeat( 'a', 110 ) );
+		$registry = new TaskRegistry();
+
+		$registry->register( $accepted );
+		self::assertSame( $accepted, $registry->get( \str_repeat( 'a', 110 ) ) );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs(
+			'Task name must be at most 110 bytes; shorten the task name.'
+		);
+
+		$registry->register( $this->task( \str_repeat( 'a', 111 ) ) );
+	}
+
+	/**
 	 * Invalid names identify the accepted spelling needed to register the task.
 	 *
 	 * @param   string $name Invalid task name.

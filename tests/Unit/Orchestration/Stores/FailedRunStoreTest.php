@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration\Sto
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -17,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( FailedRunStore::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 final class FailedRunStoreTest extends TestCase {
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
@@ -286,6 +288,22 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertSame( array(), $store->all() );
 		self::assertSame( 0, $store->purge() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_malformed' ) );
+	}
+
+	/**
+	 * A serialized object payload contains no valid failed-run entries and is still purged.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_counts_a_serialized_object_payload_as_zero_valid_entries(): void {
+		$raw = \maybe_serialize( new \stdClass() );
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_failed_object', $raw );
+
+		$store = new FailedRunStore( 'object', $this->rows );
+
+		self::assertSame( 0, $store->purge() );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_object', $this->wpdb->rows );
 	}
 
 	/**
