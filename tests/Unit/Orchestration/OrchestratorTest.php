@@ -662,7 +662,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_reenqueues_a_task_and_removes_the_failed_entry(): void {
-		$store = new FailedRunStore( self::NAME );
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
 		$store->record(
 			'failed-run',
 			self::NOW - 1,
@@ -708,7 +708,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_uses_the_first_entry_matching_the_run_identifier(): void {
-		$store = new FailedRunStore( self::NAME );
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
 		$store->record(
 			'failed-run',
 			self::NOW - 2,
@@ -744,7 +744,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_rejects_a_missing_entry_and_names_what_exists(): void {
-		$store = new FailedRunStore( self::NAME );
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
 		$store->record(
 			'retained-run',
 			self::NOW - 1,
@@ -774,7 +774,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_retains_the_task_entry_when_enqueue_fails(): void {
-		$store = new FailedRunStore( self::NAME );
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
 		$store->record(
 			'failed-run',
 			self::NOW - 1,

@@ -125,6 +125,7 @@ final class EngineComponentTest extends TestCase {
 				'a8csp/background_tasks/run',
 				'a8csp/background_tasks/cleanup',
 				'a8csp/background_tasks/schedule_due',
+				'init',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -133,7 +134,7 @@ final class EngineComponentTest extends TestCase {
 			\array_column( $filters, 'hook_name' )
 		);
 		self::assertSame(
-			array( 3, 3, 4, 3, 2 ),
+			array( 3, 3, 4, 3, 2, 1 ),
 			\array_column( \array_slice( $actions, 1 ), 'accepted_args' )
 		);
 	}
@@ -152,8 +153,83 @@ final class EngineComponentTest extends TestCase {
 
 		self::assertInstanceOf( Engine::class, $engine );
 		self::assertSame( $engine, EngineComponent::get_engine() );
-		self::assertCount( 5, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
+		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
 		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
+	}
+
+	/**
+	 * A boot after init completes syncs the maintenance registration inline, without deferral.
+	 *
+	 * @return  void
+	 */
+	public function test_boot_after_init_syncs_maintenance_inline(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
+
+		( new Plugin() )->boot();
+
+		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
+		self::assertNotContains( 'init', $hook_names, 'A late boot must not leave a deferred sync behind' );
+		$registry = \get_option( 'a8csp_bgte_schedules', null );
+		self::assertIsArray( $registry, 'A late boot must synchronize the maintenance registration inline' );
+		self::assertArrayHasKey( 'a8csp-bgte', $registry );
+	}
+
+	/**
+	 * A boot while init is still executing defers the sync instead of syncing before Action Scheduler.
+	 *
+	 * @return  void
+	 */
+	public function test_mid_init_boot_defers_the_maintenance_sync(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions']   = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
+
+		( new Plugin() )->boot();
+
+		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
+		self::assertContains( 'init', $hook_names, 'A mid-init boot must defer the sync to a reachable init slot' );
+		self::assertNull(
+			\get_option( 'a8csp_bgte_schedules', null ),
+			'A mid-init boot must not synchronize before Action Scheduler initializes'
+		);
+	}
+
+	/**
+	 * The deferred sync runs against the boot-time site when init fires on another site.
+	 *
+	 * @return  void
+	 */
+	public function test_deferred_maintenance_sync_returns_to_the_boot_site(): void {
+		$GLOBALS['a8csp_bgte_test_is_multisite']       = true;
+		$GLOBALS['a8csp_bgte_test_blog_id']            = 1;
+		$GLOBALS['a8csp_bgte_test_blog_stack']         = array();
+		$GLOBALS['a8csp_bgte_test_blog_switch_calls']  = array();
+		$GLOBALS['a8csp_bgte_test_blog_restore_calls'] = array();
+
+		( new Plugin() )->boot();
+
+		$init_registrations = \array_values(
+			\array_filter(
+				$this->registrations( 'a8csp_bgte_test_action_registrations' ),
+				static fn ( array $registration ): bool => 'init' === $registration['hook_name']
+			)
+		);
+		self::assertCount( 1, $init_registrations );
+		$init_callback = $init_registrations[0]['callback'] ?? null;
+		self::assertIsCallable( $init_callback );
+
+		$GLOBALS['a8csp_bgte_test_blog_id'] = 2;
+		$init_callback();
+
+		self::assertSame(
+			array( 1 ),
+			$GLOBALS['a8csp_bgte_test_blog_switch_calls'],
+			'The deferred sync must switch back to the boot-time site before writing'
+		);
+		self::assertCount(
+			1,
+			$GLOBALS['a8csp_bgte_test_blog_restore_calls'],
+			'The deferred sync must restore the interrupted site afterwards'
+		);
 	}
 
 	/**
@@ -166,6 +242,27 @@ final class EngineComponentTest extends TestCase {
 
 		$engine = \a8csp_bgte_engine();
 		self::assertInstanceOf( Engine::class, $engine );
+
+		// Boot defers the engine's own maintenance sync to init; fire it the way WordPress would.
+		$init_registrations = \array_values(
+			\array_filter(
+				$this->registrations( 'a8csp_bgte_test_action_registrations' ),
+				static fn ( array $registration ): bool => 'init' === $registration['hook_name']
+			)
+		);
+		self::assertCount( 1, $init_registrations, 'Boot must defer exactly one maintenance sync to init' );
+		self::assertSame(
+			\PHP_INT_MAX,
+			$init_registrations[0]['priority'] ?? null,
+			'The deferred sync must use the one init priority reachable from every boot point'
+		);
+		self::assertNull(
+			\get_option( 'a8csp_bgte_schedules', null ),
+			'Boot must not write the schedule registry before init fires'
+		);
+		$init_callback = $init_registrations[0]['callback'] ?? null;
+		self::assertIsCallable( $init_callback );
+		$init_callback();
 
 		$task_args        = array( 'site_id' => 7 );
 		$batch_start_args = array( 'site_id' => 8 );

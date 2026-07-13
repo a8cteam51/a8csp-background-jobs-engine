@@ -1,0 +1,4 @@
+Significance: minor
+Type: added
+
+Add the wp background-tasks failed commands for cross-name listing, manual retry, and scoped or all-store purging.

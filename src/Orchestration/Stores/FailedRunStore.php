@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -38,6 +39,16 @@ final readonly class FailedRunStore {
 	 */
 	private const OPTION_PREFIX = 'a8csp_bgte_failed_';
 
+	/**
+	 * Maximum exact-delete attempts after concurrent writes change the selected row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const PURGE_ATTEMPTS = 3;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -48,9 +59,13 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string     $name Stable task or batch name.
+	 * @param   OptionRows $rows Authoritative raw option-row I/O.
 	 */
-	public function __construct( private string $name ) {}
+	public function __construct(
+		private string $name,
+		private OptionRows $rows,
+	) {}
 
 	// endregion
 
@@ -130,6 +145,47 @@ final readonly class FailedRunStore {
 		}
 
 		\update_option( $this->option_name(), \array_slice( $remaining, -self::ENTRY_LIMIT ), false );
+	}
+
+	/**
+	 * Removes the complete failed-run store and returns its retained-entry count.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int|null Deleted valid-entry count, or null when the authoritative operation fails.
+	 */
+	public function purge(): ?int {
+		$key = $this->option_name();
+		$raw = $this->rows->select( $key );
+		if ( null === $raw ) {
+			return $this->rows->last_select_failed() ? null : 0;
+		}
+
+		for ( $attempt = 0; $attempt < self::PURGE_ATTEMPTS; ++$attempt ) {
+			$count = \count( self::entries_from_option( \maybe_unserialize( $raw ) ) );
+			if ( $this->rows->delete( $key, $raw ) ) {
+				return $count;
+			}
+
+			if ( $this->rows->last_delete_failed() ) {
+				return null;
+			}
+
+			$next_raw = $this->rows->select( $key );
+			if ( null === $next_raw ) {
+				return $this->rows->last_select_failed() ? null : 0;
+			}
+
+			// An unchanged row rules out comparison loss, so the exact delete itself failed.
+			if ( $raw === $next_raw ) {
+				return null;
+			}
+
+			$raw = $next_raw;
+		}
+
+		return null;
 	}
 
 	// endregion

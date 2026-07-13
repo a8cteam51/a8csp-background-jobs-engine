@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Component as CLIComponent;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -26,6 +28,7 @@ final class Plugin {
 	private const COMPONENTS = array(
 		Log::class,
 		EngineComponent::class,
+		CLIComponent::class,
 	);
 
 	/**

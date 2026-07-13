@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+Defer the engine's own maintenance-schedule sync to init so it schedules on Action Scheduler instead of the WP-Cron fallback and stops translating before init.

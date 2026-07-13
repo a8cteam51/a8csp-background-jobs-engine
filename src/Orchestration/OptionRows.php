@@ -192,6 +192,18 @@ final readonly class OptionRows {
 		return 1 === $result;
 	}
 
+	/**
+	 * Returns whether the immediately preceding authoritative delete failed at the database boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function last_delete_failed(): bool {
+		return '' !== $this->wpdb->last_error;
+	}
+
 	// endregion
 
 	// region HELPERS

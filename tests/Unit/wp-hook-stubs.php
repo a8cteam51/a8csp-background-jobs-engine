@@ -10,6 +10,38 @@
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
+if ( ! \function_exists( 'did_action' ) ) {
+	/**
+	 * Returns the scripted fire count for a WordPress action.
+	 *
+	 * @param   string $hook_name Action name.
+	 *
+	 * @return  int
+	 */
+	function did_action( $hook_name ) {
+		/** @var array<string, int> $counts */
+		$counts = $GLOBALS['a8csp_bgte_test_did_actions'] ?? array();
+
+		return $counts[ $hook_name ] ?? 0;
+	}
+}
+
+if ( ! \function_exists( 'doing_action' ) ) {
+	/**
+	 * Returns whether an action is scripted as currently executing.
+	 *
+	 * @param   string $hook_name Action name.
+	 *
+	 * @return  bool
+	 */
+	function doing_action( $hook_name ) {
+		/** @var list<string> $doing */
+		$doing = $GLOBALS['a8csp_bgte_test_doing_actions'] ?? array();
+
+		return \in_array( $hook_name, $doing, true );
+	}
+}
+
 if ( ! \function_exists( 'add_action' ) ) {
 	/**
 	 * Records an action registration in the test ledger.

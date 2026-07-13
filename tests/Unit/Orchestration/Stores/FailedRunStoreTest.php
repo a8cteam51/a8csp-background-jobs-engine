@@ -3,7 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -14,7 +16,10 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( FailedRunStore::class )]
 #[UsesClass( EngineError::class )]
+#[UsesClass( OptionRows::class )]
 final class FailedRunStoreTest extends TestCase {
+	private OptionRows $rows;
+	private WpdbLockSpy $wpdb;
 
 	/**
 	 * Loads guarded WordPress option functions before the store is autoloaded.
@@ -28,6 +33,7 @@ final class FailedRunStoreTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
 	}
 
 	/**
@@ -42,6 +48,11 @@ final class FailedRunStoreTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_options']         = array();
 		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
 		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
+		$GLOBALS['a8csp_bgte_test_cache']           = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
+		$this->wpdb                                 = new WpdbLockSpy();
+		$this->rows                                 = new OptionRows( $this->wpdb );
 	}
 
 	/**
@@ -50,7 +61,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_all_returns_an_empty_list_without_failures(): void {
-		self::assertSame( array(), ( new FailedRunStore( 'reports' ) )->all() );
+		self::assertSame( array(), ( new FailedRunStore( 'reports', $this->rows ) )->all() );
 	}
 
 	/**
@@ -59,7 +70,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_record_all_and_remove_round_trip_exact_entries(): void {
-		$store = new FailedRunStore( 'reports' );
+		$store = new FailedRunStore( 'reports', $this->rows );
 
 		$store->record(
 			'run-a',
@@ -115,7 +126,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_ring_buffer_evicts_the_oldest_entry_past_twenty(): void {
-		$store = new FailedRunStore( 'exports' );
+		$store = new FailedRunStore( 'exports', $this->rows );
 
 		for ( $index = 0; $index <= 20; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
@@ -148,7 +159,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_remove_of_absent_run_is_a_no_op(): void {
-		$store = new FailedRunStore( 'imports' );
+		$store = new FailedRunStore( 'imports', $this->rows );
 		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ) );
 		$before_option = $this->option( 'a8csp_bgte_failed_imports' );
 		$before_calls  = $this->option_calls();
@@ -157,6 +168,124 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertSame( $before_option, $this->option( 'a8csp_bgte_failed_imports' ) );
 		self::assertSame( $before_calls, $this->option_calls() );
+	}
+
+	/**
+	 * Purging deletes the complete option and reports the retained-entry count.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_deletes_the_store_and_returns_its_entry_count(): void {
+		$store = new FailedRunStore( 'reports', $this->rows );
+		$store->record( 'run-a', 100, array(), 1, new EngineError( 'First failure.' ) );
+		$store->record( 'run-b', 200, array(), 2, new EngineError( 'Second failure.' ) );
+
+		self::assertSame( 2, $store->purge() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_reports' ) );
+		self::assertSame( 0, $store->purge() );
+	}
+
+	/**
+	 * An authoritative read failure remains distinct from an absent store.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_returns_failure_when_the_authoritative_read_fails(): void {
+		$store = new FailedRunStore( 'read-failure', $this->rows );
+		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ) );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted read failure';
+			}
+		);
+
+		self::assertNull( $store->purge() );
+		self::assertNotNull( $this->option( 'a8csp_bgte_failed_read-failure' ) );
+	}
+
+	/**
+	 * A failed exact delete leaves the selected store intact and reports failure.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_returns_failure_when_the_exact_delete_fails(): void {
+		$store = new FailedRunStore( 'delete-failure', $this->rows );
+		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ) );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted delete failure';
+			}
+		);
+		$this->wpdb->script_result( 'delete', false );
+
+		self::assertNull( $store->purge() );
+		self::assertNotNull( $this->option( 'a8csp_bgte_failed_delete-failure' ) );
+	}
+
+	/**
+	 * A concurrent append loses the first CAS and the retry deletes the newer exact row.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_retries_a_cas_loss_and_reports_the_deleted_snapshot_count(): void {
+		$store = new FailedRunStore( 'cas-retry', $this->rows );
+		$store->record( 'run-a', 100, array(), 1, new EngineError( 'First failure.' ) );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( $store ): void {
+				$store->record( 'run-b', 200, array(), 2, new EngineError( 'Second failure.' ) );
+			}
+		);
+
+		self::assertSame( 2, $store->purge() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_cas-retry' ) );
+	}
+
+	/**
+	 * Three consecutive concurrent appends exhaust the bounded exact-delete attempts.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_reports_failure_after_three_cas_losses(): void {
+		$store = new FailedRunStore( 'cas-exhaustion', $this->rows );
+		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure A.' ) );
+
+		foreach ( array( 'b', 'c', 'd' ) as $index => $suffix ) {
+			$this->wpdb->before_next(
+				'delete',
+				static function ( WpdbLockSpy $wpdb ) use ( $store, $index, $suffix ): void {
+					$store->record(
+						'run-' . $suffix,
+						200 + $index,
+						array(),
+						2 + $index,
+						new EngineError( 'Failure ' . \strtoupper( $suffix ) . '.' )
+					);
+				}
+			);
+		}
+
+		self::assertNull( $store->purge() );
+		self::assertCount( 4, $store->all() );
+	}
+
+	/**
+	 * A wholly malformed row has the same zero valid entries as all() and is still deleted.
+	 *
+	 * @return  void
+	 */
+	public function test_purge_deletes_malformed_raw_storage_with_a_zero_count(): void {
+		$GLOBALS['a8csp_bgte_test_options'] = array(
+			'a8csp_bgte_failed_malformed' => 'not a failed-run list',
+		);
+
+		$store = new FailedRunStore( 'malformed', $this->rows );
+
+		self::assertSame( array(), $store->all() );
+		self::assertSame( 0, $store->purge() );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_malformed' ) );
 	}
 
 	/**
@@ -181,7 +310,7 @@ final class FailedRunStoreTest extends TestCase {
 		}
 		$GLOBALS['a8csp_bgte_test_options'] = array( 'a8csp_bgte_failed_oversized' => $entries );
 
-		$store = new FailedRunStore( 'oversized' );
+		$store = new FailedRunStore( 'oversized', $this->rows );
 
 		$store->remove( 'run-00' );
 

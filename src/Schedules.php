@@ -309,24 +309,68 @@ final readonly class Schedules {
 			2
 		);
 
-		$result = $this->sync_owner(
-			'a8csp-bgte',
-			array(
-				new Schedule(
-					'maintenance',
-					Cadence::every( \HOUR_IN_SECONDS ),
-					MaintenanceTask::NAME,
-					array(),
-					OverlapPolicy::Skip,
-					CatchUpPolicy::RunOnce
-				),
-			)
+		// Action Scheduler reports ready only after action_scheduler_init fires during init, so an
+		// earlier sync would route the engine's own housekeeping onto the WP-Cron fallback (and
+		// translate its synthetic-schedule label before init). did_action alone stays positive
+		// while init is still running, and a mid-init boot may already sit past any fixed
+		// priority — the maximum priority is the one slot reachable from every boot point.
+		if ( 0 < \did_action( 'init' ) && ! \doing_action( 'init' ) ) {
+			$this->sync_maintenance_schedule();
+			return;
+		}
+
+		// The deferred sync fires on whichever site is selected when init reaches it; the
+		// registration belongs to the boot-time site.
+		$boot_blog_id = \get_current_blog_id();
+		\add_action(
+			'init',
+			function () use ( $boot_blog_id ): void {
+				$this->sync_maintenance_schedule( $boot_blog_id );
+			},
+			\PHP_INT_MAX
 		);
-		if ( $result->is_failure() ) {
-			$this->logger->error(
-				'Engine maintenance schedule could not be synchronized: {error}',
-				array( 'error' => $result->error->message )
+	}
+
+	/**
+	 * Synchronizes the engine's own maintenance registration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $blog_id Site the registration belongs to; null keeps the current site.
+	 *
+	 * @return  void
+	 */
+	public function sync_maintenance_schedule( ?int $blog_id = null ): void {
+		$switched = null !== $blog_id && \is_multisite() && \get_current_blog_id() !== $blog_id;
+		if ( $switched ) {
+			\switch_to_blog( $blog_id );
+		}
+
+		try {
+			$result = $this->sync_owner(
+				'a8csp-bgte',
+				array(
+					new Schedule(
+						'maintenance',
+						Cadence::every( \HOUR_IN_SECONDS ),
+						MaintenanceTask::NAME,
+						array(),
+						OverlapPolicy::Skip,
+						CatchUpPolicy::RunOnce
+					),
+				)
 			);
+			if ( $result->is_failure() ) {
+				$this->logger->error(
+					'Engine maintenance schedule could not be synchronized: {error}',
+					array( 'error' => $result->error->message )
+				);
+			}
+		} finally {
+			if ( $switched ) {
+				\restore_current_blog();
+			}
 		}
 	}
 

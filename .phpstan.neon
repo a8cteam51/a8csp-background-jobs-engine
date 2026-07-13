@@ -7,6 +7,8 @@ parameters:
         - %currentWorkingDirectory%/.phpstan-bootstrap.php
     scanDirectories:
         - vendor/wp-plugin/action-scheduler
+    scanFiles:
+        - %currentWorkingDirectory%/vendor/wp-cli/wp-cli/php/utils.php
     # The included config autodetects only the fixed-name root files (functions-bootstrap.php,
     # functions.php); the entry file's name is per-repo, so both gate files are pinned here
     # explicitly and WPCompat.pluginFile below names the entry for the same reason.

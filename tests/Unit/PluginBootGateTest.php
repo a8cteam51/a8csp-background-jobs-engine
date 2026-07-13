@@ -83,6 +83,7 @@ final class PluginBootGateTest extends TestCase {
 				'a8csp/background_tasks/run',
 				'a8csp/background_tasks/cleanup',
 				'a8csp/background_tasks/schedule_due',
+				'init',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);
@@ -107,6 +108,7 @@ final class PluginBootGateTest extends TestCase {
 				'a8csp/background_tasks/run',
 				'a8csp/background_tasks/cleanup',
 				'a8csp/background_tasks/schedule_due',
+				'init',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);

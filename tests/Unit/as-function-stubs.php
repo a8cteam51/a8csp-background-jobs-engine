@@ -72,22 +72,6 @@ if ( ! \function_exists( 'a8csp_bgte_test_scripted_as_result' ) ) {
 	}
 }
 
-if ( ! \function_exists( 'did_action' ) ) {
-	/**
-	 * Returns the scripted fire count for a WordPress action.
-	 *
-	 * @param   string $hook_name Action name.
-	 *
-	 * @return  int
-	 */
-	function did_action( $hook_name ) {
-		/** @var array<string, int> $counts */
-		$counts = $GLOBALS['a8csp_bgte_test_did_actions'] ?? array();
-
-		return $counts[ $hook_name ] ?? 0;
-	}
-}
-
 if ( ! \function_exists( 'as_enqueue_async_action' ) ) {
 	/**
 	 * Records and resolves an async enqueue.

@@ -44,6 +44,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 
+		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/as-function-stubs.php';
 	}
 

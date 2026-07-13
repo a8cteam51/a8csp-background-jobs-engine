@@ -90,7 +90,7 @@ final readonly class StoreFactory {
 	 * @return  FailedRunStore
 	 */
 	public function failed_run_store( string $name ): FailedRunStore {
-		return new FailedRunStore( $name );
+		return new FailedRunStore( $name, $this->rows );
 	}
 
 	// endregion

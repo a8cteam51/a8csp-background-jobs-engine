@@ -241,7 +241,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_batch_and_removes_the_failed_entry(): void {
-		$store = new FailedRunStore( self::NAME );
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
 		$store->record(
 			'failed-run',
 			self::NOW - 1,
