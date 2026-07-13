@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-WP-Cron ignores the group dimension on writes, matching its reads: groups are advisory where a backend cannot store them, so grouped engine writes survive facade fallback.

@@ -1,4 +1,0 @@
-Significance: minor
-Type: fixed
-
-Enforce the serial action chain and unstarve retries: pending-only idempotent skips on Action Scheduler, per-run action sequence tokens gating every lifecycle delivery, gate-first fencing with post-callback ownership checks, forward-dated backoff heartbeats, and terminal cleanup for unregistered names.

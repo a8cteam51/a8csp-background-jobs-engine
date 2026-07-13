@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add batch chunking: queue generation with the post-generation filter, each chunk as its own backend action, transactional context mutations committed only on chunk success, and complete terminal semantics for failure, supersession, and drained queues.

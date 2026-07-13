@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add the scheduling backend port: BackendInterface with NoDiscard write verbs, the WP-Cron backend with synthetic interval rebuild and snapshot-based unscheduling, and the recording test double.

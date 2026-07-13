@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Wire engine-level retries: full-jitter backoff to the policy cap with per-name filter overrides, the retrying hook pair, per-chunk counter resets, and manual retry from the failed store.

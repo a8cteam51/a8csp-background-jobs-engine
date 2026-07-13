@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add schedule execution: the due handler with misfire catch-up policies and single-flight occurrence leasing, overlap-policy dispatch, run_now, and the maintenance schedule sweeping crashed runs and orphaned locks behind fenced terminal transitions.

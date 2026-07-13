@@ -1,4 +1,0 @@
-Significance: minor
-Type: changed
-
-Rebuild lock-row I/O on WordPress Core's own option-lock pattern: INSERT IGNORE claims judged by affected rows, value-conditioned updates and deletes, authoritative reads, and explicit cache purges.

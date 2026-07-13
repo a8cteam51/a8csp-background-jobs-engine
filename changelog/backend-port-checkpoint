@@ -1,4 +1,0 @@
-Significance: minor
-Type: changed
-
-Harden the backend port from the checkpoint review: not-ready write fall-through, scalar-tree and positive-timestamp argument validation, group-ignoring WP-Cron unscheduling, cross-backend idempotent scheduling, exact-group unique confirmation, and positive-id success mapping.

@@ -1,4 +1,0 @@
-Significance: minor
-Type: changed
-
-Adopt PSR-20 for the clock seam and PSR-3 for internal logging; the a8csp/background_tasks/log hook remains the public channel, now fed by a PSR-3 HookLogger bridge.

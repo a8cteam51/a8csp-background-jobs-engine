@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add the execution-overlap guard: atomic option-insert claims, owner-scoped heartbeats and releases, and stale-lock reclaim with the dead run logged.

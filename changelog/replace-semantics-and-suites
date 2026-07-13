@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add integration suites for supersession, retry round-trips, non-retryable escapes, overlap locking, and Action Scheduler uniqueness, and implement batch-start Replace semantics with the lock row as the single fencing authority.

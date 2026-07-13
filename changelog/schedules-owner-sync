@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add schedule value objects and owner-scoped declarative synchronization with stable fingerprints, recurring internal occurrences, cron-capability failures, facade and procedural APIs, and fixed-option registry cleanup.

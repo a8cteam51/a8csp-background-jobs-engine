@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-Add the orchestrator's single-task lifecycle: boundary-validated enqueues with resolved lock windows, the internal run action, heartbeat-fenced execution, and complete terminal transitions for success, failure, and superseded runs.

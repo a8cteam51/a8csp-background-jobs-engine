@@ -1,4 +1,0 @@
-Significance: major
-Type: added
-
-Rebuild the plugin from the a8csp-plugin-template chassis with the a8csp/background_tasks/log channel as the first engine component.

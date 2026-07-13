@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-Whitelist the Action Scheduler runtime functions and MINUTE_IN_SECONDS for composer-require-checker; the gate had been failing silently on symbols provided outside composer's require set.

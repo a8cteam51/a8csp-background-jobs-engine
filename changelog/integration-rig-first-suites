@@ -1,4 +1,0 @@
-Significance: patch
-Type: added
-
-Add the integration rig — isolation traits with a per-test option-hygiene invariant, a one-action Action Scheduler runner drive, and a pre-test store-migration step — plus the task lifecycle, batch chunking, and options hygiene suites.
