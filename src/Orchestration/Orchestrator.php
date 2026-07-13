@@ -50,7 +50,7 @@ final readonly class Orchestrator {
 	 *
 	 * @var     string
 	 */
-	private const CONTINUE_HOOK = self::HOOK_PREFIX . 'continue';
+	private const CONTINUE_HOOK = 'a8csp/background_tasks/continue';
 
 	/**
 	 * Internal hook that reconciles a terminal batch run.
@@ -60,17 +60,22 @@ final readonly class Orchestrator {
 	 *
 	 * @var     string
 	 */
-	private const CLEANUP_HOOK = self::HOOK_PREFIX . 'cleanup';
+	private const CLEANUP_HOOK = 'a8csp/background_tasks/cleanup';
 
 	/**
-	 * Prefix for internal orchestration hooks.
+	 * Literal consumer lifecycle hooks keep their names greppable.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     string
+	 * @var     array<string, string>
 	 */
-	private const HOOK_PREFIX = 'a8csp/background_tasks/';
+	private const LIFECYCLE_HOOKS = array(
+		'started'    => 'a8csp/background_tasks/started',
+		'completed'  => 'a8csp/background_tasks/completed',
+		'failed'     => 'a8csp/background_tasks/failed',
+		'superseded' => 'a8csp/background_tasks/superseded',
+	);
 
 	/**
 	 * Highest scheduler priority accepted by the orchestration API.
@@ -90,7 +95,7 @@ final readonly class Orchestrator {
 	 *
 	 * @var     string
 	 */
-	private const RUN_HOOK = self::HOOK_PREFIX . 'run';
+	private const RUN_HOOK = 'a8csp/background_tasks/run';
 
 	/**
 	 * Decimal width reserved for a run identifier's random suffix.
@@ -120,7 +125,7 @@ final readonly class Orchestrator {
 	 *
 	 * @var     string
 	 */
-	private const START_HOOK = self::HOOK_PREFIX . 'start';
+	private const START_HOOK = 'a8csp/background_tasks/start';
 
 	// endregion
 
@@ -2552,21 +2557,25 @@ final readonly class Orchestrator {
 		array $start_args,
 		?EngineError $error = null
 	): void {
+		$hook = self::LIFECYCLE_HOOKS[ $event ];
+
+		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
 		if ( null === $error ) {
 			try {
-				\do_action( 'a8csp/background_tasks/' . $event . '/' . $name, $run_id, $start_args );
+				\do_action( $hook . '/' . $name, $run_id, $start_args );
 			} finally {
-				\do_action( 'a8csp/background_tasks/' . $event, $name, $run_id, $start_args );
+				\do_action( $hook, $name, $run_id, $start_args );
 			}
 
 			return;
 		}
 
 		try {
-			\do_action( 'a8csp/background_tasks/' . $event . '/' . $name, $run_id, $start_args, $error );
+			\do_action( $hook . '/' . $name, $run_id, $start_args, $error );
 		} finally {
-			\do_action( 'a8csp/background_tasks/' . $event, $name, $run_id, $start_args, $error );
+			\do_action( $hook, $name, $run_id, $start_args, $error );
 		}
+		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
 	}
 
 	/**

@@ -13,15 +13,24 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 /**
  * Returns the consumer engine after its component has initialized.
  *
- * Call after `plugins_loaded`; earlier access honestly returns null because the component has not
- * built its request-local graph yet.
- *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @return  Engine|null
  */
 function a8csp_bgte_engine(): ?Engine {
+	if ( 0 === did_action( 'plugins_loaded' ) ) {
+		// The diagnostic stays untranslated: it fires only before plugins_loaded, where loading
+		// this text domain would itself trigger Core's just-in-time translation warning.
+		_doing_it_wrong(
+			__FUNCTION__,
+			'Call a8csp_bgte_engine() after plugins_loaded, when the engine has booted.',
+			'1.0.0'
+		);
+
+		return null;
+	}
+
 	return EngineComponent::get_engine();
 }
 

@@ -79,7 +79,7 @@ final class EngineComponentTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
 		$GLOBALS['a8csp_bgte_test_as_calls']             = array();
 		$GLOBALS['a8csp_bgte_test_as_results']           = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']          = array();
+		$GLOBALS['a8csp_bgte_test_did_actions']          = array( 'plugins_loaded' => 1 );
 		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
 
 		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = false;
@@ -356,6 +356,25 @@ final class EngineComponentTest extends TestCase {
 		self::assertSame( 4, $this->cron_event_count() );
 		$next_due = $registration['next_due'] ?? null;
 
+		$maintenance_run_now_result = \a8csp_bgte_run_schedule_now( 'a8csp-bgte', 'maintenance' );
+
+		self::assertInstanceOf( Success::class, $maintenance_run_now_result );
+		self::assertIsString( $maintenance_run_now_result->value );
+		$maintenance_run = \get_option(
+			'a8csp_bgte_run_' . MaintenanceTask::NAME . '_' . $maintenance_run_now_result->value,
+			null
+		);
+		self::assertIsArray( $maintenance_run );
+		self::assertSame( array(), $maintenance_run['start_args'] ?? null );
+		self::assertContains(
+			array(
+				'schedule' => false,
+				'args'     => array( MaintenanceTask::NAME, $maintenance_run_now_result->value, 1 ),
+			),
+			$this->cron_events_for_hook( 'a8csp/background_tasks/run' )
+		);
+		self::assertSame( 5, $this->cron_event_count() );
+
 		$run_now_result = \a8csp_bgte_run_schedule_now( 'consumer-plugin', 'connection-monitor' );
 
 		self::assertInstanceOf( Success::class, $run_now_result );
@@ -370,7 +389,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsArray( $registration );
 		self::assertSame( $next_due, $registration['next_due'] ?? null );
 		self::assertIsInt( $registration['last_fired'] ?? null );
-		self::assertSame( 5, $this->cron_event_count() );
+		self::assertSame( 6, $this->cron_event_count() );
 
 		$options_before_retry    = $GLOBALS['a8csp_bgte_test_options'];
 		$cron_before_retry       = \get_option( 'cron', array() );
@@ -398,6 +417,7 @@ final class EngineComponentTest extends TestCase {
 		require_once __DIR__ . '/as-function-stubs.php';
 
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+			'plugins_loaded'        => 1,
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
 		);

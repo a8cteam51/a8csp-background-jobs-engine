@@ -9,12 +9,14 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
@@ -38,6 +40,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Schedules::class )]
 #[CoversClass( Batches::class )]
 #[UsesClass( EngineError::class )]
+#[UsesClass( FailedRunStore::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( Orchestrator::class )]
 #[UsesClass( OverlapGuard::class )]
@@ -55,6 +58,7 @@ final class EngineTest extends TestCase {
 
 	private RecordingBackend $backend;
 	private Engine $engine;
+	private WpdbLockSpy $wpdb;
 
 	/**
 	 * Loads the guarded WordPress stubs required by the orchestration graph.
@@ -102,14 +106,14 @@ final class EngineTest extends TestCase {
 		$tasks         = new TaskRegistry();
 		$batches       = new BatchRegistry();
 		$this->backend = new RecordingBackend();
-		$wpdb          = new WpdbLockSpy();
+		$this->wpdb    = new WpdbLockSpy();
 
 		$orchestrator = new Orchestrator(
 			$tasks,
 			$batches,
 			$this->backend,
-			new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) ),
-			new StoreFactory( $clock, new OptionRows( $wpdb ) ),
+			new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) ),
+			new StoreFactory( $clock, new OptionRows( $this->wpdb ) ),
 			$logger,
 			$clock,
 			new RecordingRandomizer( 42 ),
@@ -118,11 +122,11 @@ final class EngineTest extends TestCase {
 		$this->engine = new Engine(
 			new Tasks( $tasks, $orchestrator ),
 			new Schedules(
-				new ScheduleRegistry( new OptionRows( $wpdb ) ),
+				new ScheduleRegistry( new OptionRows( $this->wpdb ) ),
 				$this->backend,
 				$clock,
 				$orchestrator,
-				new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+				new OccurrenceLease( new LockRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
 				$logger
 			),
 			new Batches( $batches, $orchestrator ),
@@ -189,6 +193,23 @@ final class EngineTest extends TestCase {
 	}
 
 	/**
+	 * Public task enqueue rejects the engine-reserved maintenance identity.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_rejects_the_engine_maintenance_identity(): void {
+		$result = $this->engine->tasks()->enqueue( MaintenanceTask::NAME, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Background-work name "a8csp-bgte-maintenance" is engine-reserved; register and dispatch consumer work under its own name.',
+			$result->error->message
+		);
+		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/**
 	 * Batch registration and starting reach the scheduler and persist the returned run.
 	 *
 	 * @return  void
@@ -221,6 +242,23 @@ final class EngineTest extends TestCase {
 		self::assertSame( 'running', $run['status'] ?? null );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array(), $run['queue'] ?? null );
+	}
+
+	/**
+	 * Public batch start rejects the engine-reserved maintenance identity.
+	 *
+	 * @return  void
+	 */
+	public function test_start_rejects_the_engine_maintenance_identity(): void {
+		$result = $this->engine->batches()->start( MaintenanceTask::NAME, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Background-work name "a8csp-bgte-maintenance" is engine-reserved; register and dispatch consumer work under its own name.',
+			$result->error->message
+		);
+		self::assertSame( array(), $this->backend->calls );
 	}
 
 	/**
@@ -292,6 +330,44 @@ final class EngineTest extends TestCase {
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/**
+	 * Manual retry dispatches a retained failed maintenance run through the internal task seam.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_dispatches_the_engine_maintenance_identity(): void {
+		$this->engine->tasks()->register( new RecordingTask( MaintenanceTask::NAME ) );
+		$store = new FailedRunStore( MaintenanceTask::NAME, new OptionRows( $this->wpdb ) );
+		$store->record(
+			'failed-maintenance-run',
+			self::NOW - 1,
+			array(),
+			1,
+			new EngineError( 'Maintenance failed.' )
+		);
+
+		$result = $this->engine->tasks()->retry_failed( MaintenanceTask::NAME, 'failed-maintenance-run' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame( array(), $store->all() );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp/background_tasks/run',
+						'args'     => array( MaintenanceTask::NAME, self::RUN_ID, 1 ),
+						'group'    => MaintenanceTask::NAME . '|' . self::RUN_ID,
+						'unique'   => false,
+						'priority' => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
 	}
 
 	/**

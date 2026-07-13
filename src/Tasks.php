@@ -7,6 +7,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
@@ -77,6 +79,17 @@ final readonly class Tasks {
 		bool $unique = false,
 		int $priority = 10
 	): AbstractResult {
+		if ( MaintenanceTask::NAME === $name ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Background-work name "%s" is engine-reserved; register and dispatch consumer work under its own name.',
+						MaintenanceTask::NAME
+					)
+				)
+			);
+		}
+
 		return $this->orchestrator->enqueue( $name, $args, $delay, $unique, $priority );
 	}
 
