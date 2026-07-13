@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Support\ScalarTree;
@@ -177,128 +178,64 @@ final readonly class Orchestrator {
 		bool $unique = false,
 		int $priority = 10
 	): AbstractResult {
-		$task = $this->tasks->get( $task_name );
-		if ( null !== $task && null !== $this->batches->get( $task_name ) ) {
-			return $this->ambiguous_name_failure( $task_name );
-		}
-
-		if ( null === $task ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Task "%s" is not registered; register it before enqueueing.',
-						$task_name
-					)
-				)
-			);
-		}
-
-		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Task "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.',
-						$task_name,
-						$priority,
-						self::MAX_PRIORITY
-					)
-				)
-			);
-		}
-
-		$args_hash = $this->args_hash( $task_name, $args );
-		if ( $args_hash instanceof Failure ) {
-			return $args_hash;
-		}
-
-		$now = $this->clock->now()->getTimestamp();
-		if ( 0 < $delay && $delay > \PHP_INT_MAX - $now ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Task "%1$s" delay %2$d exceeds supported Unix seconds; pass a smaller delay.',
-						$task_name,
-						$delay
-					)
-				)
-			);
-		}
-
-		$run_id         = $this->run_id( $now );
-		$latest_pointer = $this->stores->latest_run_pointer( $task_name );
-		$claim          = $this->overlap_guard->claim(
+		$result = $this->dispatch_task(
 			$task_name,
-			$args_hash,
-			$run_id,
-			$this->lock_staleness( $task_name, $run_id )
+			$args,
+			$delay,
+			$unique,
+			$priority,
+			OverlapPolicy::Skip
 		);
-		if ( ClaimResult::Held === $claim ) {
-			$running_run_id = $latest_pointer->get_latest_for_hash( $args_hash );
-
-			return new Failure(
-				new EngineError(
-					null === $running_run_id
-						? \sprintf(
-							'Task "%s" has a running lock without a recoverable run identifier; reconcile the lock before enqueueing the same arguments.',
-							$task_name
-						)
-						: \sprintf(
-							'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before enqueueing the same arguments.',
-							$task_name,
-							$running_run_id
-						)
-				)
-			);
+		if ( $result->is_failure() ) {
+			return $result;
 		}
 
-		$run_store = $this->stores->run_store( $task_name );
-		$state     = $run_store->create( $run_id, $args, $args_hash, array( $args ) );
-		if ( null === $state ) {
-			$this->overlap_guard->release( $task_name, $args_hash, $run_id );
+		$value = $result->value;
 
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Run "%1$s" for task "%2$s" could not be persisted; remove the conflicting run option before retrying.',
-						$run_id,
-						$task_name
-					)
-				)
-			);
-		}
+		return $value instanceof TaskDispatchSkipped
+			? new Failure( $value->error )
+			: new Success( $value );
+	}
 
-		$latest_pointer->record( $run_id, $args_hash );
-		$action_args = array( $task_name, $run_id, $state->action_seq );
-		$group       = $task_name . '|' . $run_id;
-		$scheduled   = 0 === $delay
-			? $this->scheduler->enqueue_async( self::RUN_HOOK, $action_args, $group, $unique, $priority )
-			: $this->scheduler->schedule_single( self::RUN_HOOK, $now + $delay, $action_args, $group, $priority );
-
-		if ( $scheduled->is_failure() ) {
-			$this->overlap_guard->release( $task_name, $args_hash, $run_id );
-			$run_store->delete( $run_id );
-
-			return $scheduled;
-		}
-
-		$this->stores->run_history( $task_name )->record_started( $run_id, $args_hash );
-		try {
-			$this->fire_lifecycle_hooks( 'started', $task_name, $run_id, $args );
-		} catch ( \Throwable $throwable ) {
-			$error = new EngineError(
-				\sprintf(
-					'Task "%1$s" started listener failed: %2$s Fix the started-hook listener before enqueueing the task again.',
-					$task_name,
-					$throwable->getMessage()
-				),
-				$throwable::class
-			);
-			$this->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
-
-			return new Failure( $error );
-		}
-
-		return new Success( $run_id );
+	/**
+	 * Dispatches a task under the schedule overlap policy without expanding the consumer task API.
+	 *
+	 * Allow uses a per-run fencing identity, Skip returns a typed held outcome, and Replace transfers
+	 * the shared-identity lock through the same takeover helper as batch start. Task callbacks always
+	 * receive the original arguments. Manual retry of an Allow run intentionally re-enters the public
+	 * unsalted enqueue path because the failed store retains only those original arguments.
+	 *
+	 * @internal Schedule execution only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $task_name Stable task name.
+	 * @param   array<array-key, mixed> $args      Task arguments.
+	 * @param   OverlapPolicy           $overlap   Schedule overlap policy.
+	 * @param   int                     $priority  Advisory priority from 0 through 255.
+	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
+	 *
+	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
+	 */
+	#[\NoDiscard( 'a scheduled-task dispatch failure must be handled, not dropped' )]
+	public function dispatch_scheduled_task(
+		string $task_name,
+		array $args,
+		OverlapPolicy $overlap,
+		int $priority = 10,
+		?\Closure $on_accepted = null
+	): AbstractResult {
+		return $this->dispatch_task(
+			$task_name,
+			$args,
+			0,
+			// Only Skip has a stable single-flight identity worth backend-deduplicating.
+			unique: OverlapPolicy::Skip === $overlap,
+			priority: $priority,
+			overlap: $overlap,
+			on_accepted: $on_accepted
+		);
 	}
 
 	/**
@@ -390,34 +327,18 @@ final readonly class Orchestrator {
 		}
 
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $run_store->create( $run_id, $start_args, $args_hash, array() );
-		if ( null === $state ) {
-			if ( ClaimResult::Held !== $claim ) {
-				$this->overlap_guard->release( $batch_name, $args_hash, $run_id );
-			}
-
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Run "%1$s" for batch "%2$s" could not be persisted; remove the conflicting run option before retrying.',
-						$run_id,
-						$batch_name
-					)
-				)
-			);
-		}
-
-		if ( ClaimResult::Held === $claim && ! $this->overlap_guard->replace( $batch_name, $args_hash, $run_id ) ) {
-			$run_store->delete( $run_id );
-
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Batch "%s" lock ownership changed while the replacement was claiming it; retry the start against the current owner.',
-						$batch_name
-					)
-				)
-			);
+		$state     = $this->create_run_state_and_replace_if_held(
+			'Batch',
+			$batch_name,
+			$run_id,
+			$start_args,
+			$args_hash,
+			array(),
+			$claim,
+			$run_store
+		);
+		if ( $state instanceof Failure ) {
+			return $state;
 		}
 
 		$latest_pointer->record( $run_id, $args_hash );
@@ -569,10 +490,13 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		$state = $state
+		$replacement = $state
 			->with_queue( $queue )
 			->with_action_seq( $state->action_seq + 1 );
-		$run_store->save( $run_id, $state );
+		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			return;
+		}
+		$state = $replacement;
 		try {
 			$this->fire_lifecycle_hooks( 'started', $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
@@ -640,8 +564,11 @@ final readonly class Orchestrator {
 		}
 
 		if ( array() === $state->queue ) {
-			$state = $state->with_action_seq( $state->action_seq + 1 );
-			$run_store->save( $run_id, $state );
+			$replacement = $state->with_action_seq( $state->action_seq + 1 );
+			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+				return;
+			}
+			$state     = $replacement;
 			$scheduled = $this->scheduler->enqueue_async(
 				self::CLEANUP_HOOK,
 				array( $batch_name, $run_id, $state->action_seq ),
@@ -661,11 +588,14 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		$chunk_args = $state->queue[0];
-		$state      = $state
+		$chunk_args  = $state->queue[0];
+		$replacement = $state
 			->with_queue( \array_slice( $state->queue, 1 ) )
 			->with_action_seq( $state->action_seq + 1 );
-		$run_store->save( $run_id, $state );
+		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			return;
+		}
+		$state     = $replacement;
 		$scheduled = $this->scheduler->enqueue_async(
 			self::RUN_HOOK,
 			array( $batch_name, $run_id, $chunk_args, $state->action_seq ),
@@ -822,6 +752,14 @@ final readonly class Orchestrator {
 			return;
 		}
 
+		$terminal_state = $state
+			->with_status( RunStatus::Completed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
+		if ( null === $terminal_raw ) {
+			return;
+		}
+
 		try {
 			try {
 				$batch->on_success( $run_id, $state->start_args );
@@ -837,12 +775,207 @@ final readonly class Orchestrator {
 				);
 			}
 
-			// Completed listeners observe the active-run option before terminal cleanup deletes it and appends history.
+			// Completed listeners observe the terminal snapshot before exact cleanup deletes it and appends history.
 			$this->fire_lifecycle_hooks( 'completed', $batch_name, $run_id, $state->start_args );
 		} finally {
-			$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
-			$this->finish_terminal_run( $batch_name, $run_id, $state, $run_store );
+			$this->finish_terminal_run( $batch_name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
+	}
+
+	/**
+	 * Reclaims a stale lock only after confirming its owning run option remains absent.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name      Stable task or batch name.
+	 * @param   string $args_hash Stable argument identity.
+	 * @param   string $run_id    Lock owner run identifier.
+	 *
+	 * @return  void
+	 */
+	public function reconcile_orphaned_lock( string $name, string $args_hash, string $run_id ): void {
+		$run_store = $this->stores->run_store( $name );
+		$snapshot  = $run_store->inspect( $run_id );
+		if ( null === $snapshot && $run_store->last_inspect_failed() ) {
+			return;
+		}
+
+		$state = $snapshot['state'] ?? null;
+		if ( null !== $state && $args_hash === $state->args_hash ) {
+			return;
+		}
+
+		if ( null !== $snapshot && null === $state ) {
+			if ( ! $run_store->delete_exact( $run_id, $snapshot['raw'] ) ) {
+				return;
+			}
+
+			$this->logger->warning(
+				'Deleted corrupt run option while reconciling its execution-overlap lock.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				)
+			);
+		}
+
+		if ( ! $this->overlap_guard->delete_stale_owned_lock(
+			$name,
+			$args_hash,
+			$run_id,
+			$this->lock_staleness( $name, $run_id )
+		) ) {
+			return;
+		}
+
+		$this->logger->warning(
+			'Reclaimed stale execution-overlap lock without a valid matching run option.',
+			array(
+				'name'      => $name,
+				'args_hash' => $args_hash,
+				'run_id'    => $run_id,
+			)
+		);
+	}
+
+	/**
+	 * Reconciles one running crash orphan or old terminal run through terminal machinery.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name           Stable task or batch name.
+	 * @param   string $run_id         Run identifier.
+	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
+	 *
+	 * @return  string|null Transferred argument identity whose foreign lock must remain as fence evidence.
+	 */
+	public function reconcile_run( string $name, string $run_id, int $terminal_grace ): ?string {
+		$run_store = $this->stores->run_store( $name );
+		$snapshot  = $run_store->inspect( $run_id );
+		$state     = $snapshot['state'] ?? null;
+		if ( null === $snapshot ) {
+			return null;
+		}
+		if ( null === $state ) {
+			if ( $run_store->delete_exact( $run_id, $snapshot['raw'] ) ) {
+				$this->logger->warning(
+					'Deleted corrupt run option during maintenance sweep.',
+					array(
+						'name'   => $name,
+						'run_id' => $run_id,
+					)
+				);
+			}
+
+			return null;
+		}
+
+		if ( RunStatus::Running === $state->status ) {
+			$staleness = $this->lock_staleness( $name, $run_id );
+			$fence     = $this->overlap_guard->fence_abandoned_run(
+				$name,
+				$state->args_hash,
+				$run_id,
+				$staleness
+			);
+			if (
+				MaintenanceFenceOutcome::Owned === $fence
+				|| MaintenanceFenceOutcome::Indeterminate === $fence
+			) {
+				return null;
+			}
+
+			$batch     = $this->batches->get( $name );
+			$work_type = null !== $batch && null === $this->tasks->get( $name ) ? 'Batch' : 'Task';
+			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
+				// A transferred lock can appear while the incumbent is still inside its callback; a fresh run heartbeat leaves terminalization to that worker's next ownership fence.
+				if ( ! self::heartbeat_is_stale( $state->heartbeat_at, $this->clock->now()->getTimestamp(), $staleness ) ) {
+					return $state->args_hash;
+				}
+
+				$latest_run_id = $this->stores
+					->latest_run_pointer( $name )
+					->get_latest_for_hash( $state->args_hash );
+				$this->supersede_run(
+					$name,
+					$run_id,
+					$latest_run_id,
+					$state,
+					$run_store,
+					$work_type,
+					$snapshot['raw']
+				);
+
+				return null;
+			}
+
+			$error = new EngineError(
+				\sprintf(
+					'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.',
+					$run_id,
+					$name
+				)
+			);
+			$this->logger->warning(
+				'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				)
+			);
+			$attempts = self::increment_attempts_safely( $state->chunk_retries );
+			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
+				$this->fail_batch(
+					$batch,
+					$name,
+					$run_id,
+					$state,
+					$run_store,
+					$error,
+					$attempts,
+					$snapshot['raw']
+				);
+			} else {
+				$this->fail_run(
+					$name,
+					$run_id,
+					$state,
+					$run_store,
+					$error,
+					$attempts,
+					$snapshot['raw']
+				);
+			}
+
+			return null;
+		}
+
+		$now = $this->clock->now()->getTimestamp();
+		if (
+			$state->heartbeat_at > \PHP_INT_MAX - $terminal_grace
+			|| $now <= $state->heartbeat_at + $terminal_grace
+		) {
+			return null;
+		}
+
+		if ( $this->finish_terminal_run( $name, $run_id, $state, $snapshot['raw'], $run_store ) ) {
+			$this->logger->warning(
+				'Reclaimed old terminal run option left behind after transition cleanup.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+					'status' => $state->status->value,
+				)
+			);
+		}
+
+		return null;
 	}
 
 	/**
@@ -863,6 +996,292 @@ final readonly class Orchestrator {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Creates and schedules one task run under a resolved overlap policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $task_name Stable task name.
+	 * @param   array<array-key, mixed> $args      Task arguments.
+	 * @param   int                     $delay     Scheduling delay in seconds.
+	 * @param   bool                    $unique    Whether backend uniqueness is requested.
+	 * @param   int                     $priority  Advisory priority from 0 through 255.
+	 * @param   OverlapPolicy           $overlap   Execution-overlap policy.
+	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
+	 *
+	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
+	 */
+	private function dispatch_task(
+		string $task_name,
+		array $args,
+		int $delay,
+		bool $unique,
+		int $priority,
+		OverlapPolicy $overlap,
+		?\Closure $on_accepted = null
+	): AbstractResult {
+		$task = $this->tasks->get( $task_name );
+		if ( null !== $task && null !== $this->batches->get( $task_name ) ) {
+			return $this->ambiguous_name_failure( $task_name );
+		}
+
+		if ( null === $task ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Task "%s" is not registered; register it before enqueueing.',
+						$task_name
+					)
+				)
+			);
+		}
+
+		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Task "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.',
+						$task_name,
+						$priority,
+						self::MAX_PRIORITY
+					)
+				)
+			);
+		}
+
+		$args_hash = $this->args_hash( $task_name, $args );
+		if ( $args_hash instanceof Failure ) {
+			return $args_hash;
+		}
+
+		$now = $this->clock->now()->getTimestamp();
+		if ( 0 < $delay && $delay > \PHP_INT_MAX - $now ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Task "%1$s" delay %2$d exceeds supported Unix seconds; pass a smaller delay.',
+						$task_name,
+						$delay
+					)
+				)
+			);
+		}
+
+		$run_id = $this->run_id( $now );
+		if ( OverlapPolicy::Allow === $overlap ) {
+			// Allow gets a per-run lock identity so concurrent occurrences never contend; Held can then only mean run-id collision.
+			$args_hash = \hash( 'sha256', $args_hash . '|' . $run_id );
+		}
+
+		$latest_pointer = $this->stores->latest_run_pointer( $task_name );
+		$claim          = $this->overlap_guard->claim(
+			$task_name,
+			$args_hash,
+			$run_id,
+			$this->lock_staleness( $task_name, $run_id )
+		);
+		if ( ClaimResult::Held === $claim && OverlapPolicy::Skip === $overlap ) {
+			$running_run_id = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
+			if ( null === $running_run_id ) {
+				return new Failure(
+					new EngineError(
+						\sprintf(
+							'Task "%s" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
+							$task_name
+						)
+					)
+				);
+			}
+
+			return new Success(
+				new TaskDispatchSkipped(
+					$running_run_id,
+					$this->held_task_error( $task_name, $running_run_id )
+				)
+			);
+		}
+
+		if ( ClaimResult::Held === $claim && OverlapPolicy::Allow === $overlap ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Task "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.',
+						$task_name,
+						$run_id
+					)
+				)
+			);
+		}
+
+		$run_store = $this->stores->run_store( $task_name );
+		$state     = $this->create_run_state_and_replace_if_held(
+			'Task',
+			$task_name,
+			$run_id,
+			$args,
+			$args_hash,
+			array( $args ),
+			$claim,
+			$run_store
+		);
+		if ( $state instanceof Failure ) {
+			return $state;
+		}
+
+		if ( 0 < $delay ) {
+			$fire_at = $now + $delay;
+			if ( ! $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $fire_at ) ) {
+				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
+				$run_store->delete( $run_id );
+
+				return new Failure(
+					new EngineError(
+						\sprintf(
+							'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
+							$task_name
+						)
+					)
+				);
+			}
+
+			$replacement = $state->with_heartbeat_at( $fire_at );
+			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+				return new Failure(
+					new EngineError(
+						\sprintf(
+							'Task "%s" lost its live run state while preparing its delayed action; retry the enqueue against the current run state.',
+							$task_name
+						)
+					)
+				);
+			}
+			$state = $replacement;
+		}
+
+		$latest_pointer->record( $run_id, $args_hash );
+		$action_args = array( $task_name, $run_id, $state->action_seq );
+		$group       = $task_name . '|' . $run_id;
+		$scheduled   = 0 === $delay
+			? $this->scheduler->enqueue_async( self::RUN_HOOK, $action_args, $group, $unique, $priority )
+			: $this->scheduler->schedule_single( self::RUN_HOOK, $now + $delay, $action_args, $group, $priority );
+
+		if ( $scheduled->is_failure() ) {
+			$this->overlap_guard->release( $task_name, $args_hash, $run_id );
+			$run_store->delete( $run_id );
+
+			return $scheduled;
+		}
+
+		$on_accepted?->__invoke();
+		$this->stores->run_history( $task_name )->record_started( $run_id, $args_hash );
+		try {
+			$this->fire_lifecycle_hooks( 'started', $task_name, $run_id, $args );
+		} catch ( \Throwable $throwable ) {
+			$error = new EngineError(
+				\sprintf(
+					'Task "%1$s" started listener failed: %2$s Fix the started-hook listener before enqueueing the task again.',
+					$task_name,
+					$throwable->getMessage()
+				),
+				$throwable::class
+			);
+			$this->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
+
+			return new Failure( $error );
+		}
+
+		return new Success( $run_id );
+	}
+
+	/**
+	 * Persists provisional run state and transfers a held lock before returning ownership.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch'                $work_type Work contract type.
+	 * @param   string                        $name      Stable task or batch name.
+	 * @param   string                        $run_id    Replacement run identifier.
+	 * @param   array<array-key, mixed>       $args      Start arguments.
+	 * @param   string                        $args_hash Stable argument identity.
+	 * @param   list<array<array-key, mixed>> $queue     Initial run queue.
+	 * @param   ClaimResult                   $claim     Initial lock-claim outcome.
+	 * @param   RunStore                      $run_store Active-run store.
+	 *
+	 * @return  RunState|Failure<EngineError>
+	 */
+	private function create_run_state_and_replace_if_held(
+		string $work_type,
+		string $name,
+		string $run_id,
+		array $args,
+		string $args_hash,
+		array $queue,
+		ClaimResult $claim,
+		RunStore $run_store
+	): RunState|Failure {
+		$state = $run_store->create( $run_id, $args, $args_hash, $queue );
+		if ( null === $state ) {
+			if ( ClaimResult::Held !== $claim ) {
+				$this->overlap_guard->release( $name, $args_hash, $run_id );
+			}
+
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.',
+						$run_id,
+						\strtolower( $work_type ),
+						$name
+					)
+				)
+			);
+		}
+
+		if ( ClaimResult::Held !== $claim ) {
+			return $state;
+		}
+
+		if ( $this->overlap_guard->replace( $name, $args_hash, $run_id ) ) {
+			return $state;
+		}
+
+		$run_store->delete( $run_id );
+
+		return new Failure(
+			new EngineError(
+				\sprintf(
+					'%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.',
+					$work_type,
+					$name,
+					'Task' === $work_type ? 'dispatch' : 'start'
+				)
+			)
+		);
+	}
+
+	/**
+	 * Returns the public held-lock task failure without relying on message inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $task_name     Stable task name.
+	 * @param   string $running_run_id Discoverable incumbent run identifier.
+	 *
+	 * @return  EngineError
+	 */
+	private function held_task_error( string $task_name, string $running_run_id ): EngineError {
+		return new EngineError(
+			\sprintf(
+				'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments.',
+				$task_name,
+				$running_run_id
+			)
+		);
+	}
 
 	/**
 	 * Applies the retry decision ladder after one task or batch attempt fails.
@@ -936,22 +1355,23 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		$retry_state = $state->with_chunk_retries( $attempts_used );
-		$retry_error = $this->reschedule_retry(
+		$retry_failure = $this->reschedule_retry(
 			$work_type,
 			$name,
 			$run_id,
-			$retry_state,
+			$state,
 			$run_store,
 			$policy,
+			$attempts_used,
 			$chunk_args
 		);
-		if ( null !== $retry_error ) {
+		if ( null !== $retry_failure ) {
+			$retry_state = $retry_failure['state'];
 			if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $retry_state, $run_store ) ) {
 				return;
 			}
 
-			$terminal_failure( $retry_state, $retry_error, $attempts_used );
+			$terminal_failure( $retry_state, $retry_failure['error'], $attempts_used );
 		}
 	}
 
@@ -1082,11 +1502,14 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		$state = $state
+		$replacement = $state
 			->with_queue( $context->get_queue() )
 			->with_chunk_retries( 0 )
 			->with_action_seq( $state->action_seq + 1 );
-		$run_store->save( $run_id, $state );
+		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			return;
+		}
+		$state = $replacement;
 
 		try {
 			$delay = $this->continue_delay( $batch_name, $run_id );
@@ -1272,19 +1695,17 @@ final readonly class Orchestrator {
 			return null;
 		}
 
+		$state = $run_store->refresh_heartbeat( $run_id, $state );
+		if ( null === $state ) {
+			return null;
+		}
+
 		$latest_pointer = $this->stores->latest_run_pointer( $name );
 		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
 		if ( $run_id !== $latest_run_id ) {
 			$latest_pointer->repair_for_hash( $run_id, $state->args_hash );
-		}
-
-		$state = $run_store->refresh_heartbeat( $run_id );
-		if ( null === $state ) {
-			$this->log_missing_run( $name, $run_id, $work_type );
-
-			return null;
 		}
 
 		return $state;
@@ -1363,19 +1784,25 @@ final readonly class Orchestrator {
 			)
 		);
 
-		$run_store->save( $run_id, $state->with_status( RunStatus::Failed ) );
+		$terminal_state = $state
+			->with_status( RunStatus::Failed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
+		if ( null === $terminal_raw ) {
+			return;
+		}
 		$this->stores->failed_run_store( $name )->record(
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
-			\max( 1, $state->chunk_retries + 1 ),
+			self::increment_attempts_safely( $state->chunk_retries ),
 			$error
 		);
 
 		try {
 			$this->fire_lifecycle_hooks( 'failed', $name, $run_id, $state->start_args, $error );
 		} finally {
-			$this->finish_terminal_run( $name, $run_id, $state, $run_store );
+			$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
 	}
 
@@ -1441,6 +1868,7 @@ final readonly class Orchestrator {
 	 * @param   RunStore       $run_store  Active-run store.
 	 * @param   EngineError    $error      Failure detail.
 	 * @param   int|null       $attempts   Attempts consumed before failure, or null to derive the count.
+	 * @param   string|null    $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
@@ -1451,14 +1879,27 @@ final readonly class Orchestrator {
 		RunState $state,
 		RunStore $run_store,
 		EngineError $error,
-		?int $attempts = null
+		?int $attempts = null,
+		?string $expected_raw = null
 	): void {
-		$run_store->save( $run_id, $state->with_status( RunStatus::Failed ) );
+		$terminal_state = $state
+			->with_status( RunStatus::Failed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$terminal_raw   = $this->claim_terminal_transition(
+			$run_id,
+			$state,
+			$terminal_state,
+			$run_store,
+			$expected_raw
+		);
+		if ( null === $terminal_raw ) {
+			return;
+		}
 		$this->stores->failed_run_store( $batch_name )->record(
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
-			$attempts ?? \max( 1, $state->chunk_retries + 1 ),
+			$attempts ?? self::increment_attempts_safely( $state->chunk_retries ),
 			$error
 		);
 
@@ -1469,7 +1910,7 @@ final readonly class Orchestrator {
 				$this->fire_lifecycle_hooks( 'failed', $batch_name, $run_id, $state->start_args, $error );
 			}
 		} finally {
-			$this->finish_terminal_run( $batch_name, $run_id, $state, $run_store );
+			$this->finish_terminal_run( $batch_name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
 	}
 
@@ -1627,6 +2068,39 @@ final readonly class Orchestrator {
 	}
 
 	/**
+	 * Returns whether one run heartbeat exceeds the resolved strict staleness window.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $heartbeat_at Latest run heartbeat timestamp.
+	 * @param   int $now          Current timestamp.
+	 * @param   int $staleness    Positive staleness window.
+	 *
+	 * @return  bool
+	 */
+	private static function heartbeat_is_stale( int $heartbeat_at, int $now, int $staleness ): bool {
+		return $now > \PHP_INT_MIN + $staleness
+			&& $heartbeat_at < $now - $staleness;
+	}
+
+	/**
+	 * Increments an attempt count without overflowing schema-valid integer state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $chunk_retries Failed attempts already consumed.
+	 *
+	 * @return  int
+	 */
+	private static function increment_attempts_safely( int $chunk_retries ): int {
+		return \PHP_INT_MAX === $chunk_retries
+			? \PHP_INT_MAX
+			: \max( 1, $chunk_retries + 1 );
+	}
+
+	/**
 	 * Resolves a valid name-specific policy from the contract policy.
 	 *
 	 * @since   1.0.0
@@ -1714,12 +2188,13 @@ final readonly class Orchestrator {
 	 * @param   'Task'|'Batch'               $work_type  Work contract type.
 	 * @param   string                       $name       Stable task or batch name.
 	 * @param   string                       $run_id     Run identifier.
-	 * @param   RunState                     $state      State carrying the consumed-attempt count.
+	 * @param   RunState                     $state      Exact persisted state before the retry transition.
 	 * @param   RunStore                     $run_store  Active-run store.
 	 * @param   RetryPolicy                  $policy     Resolved retry policy.
+	 * @param   int                          $attempt    Consumed-attempt count.
 	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
 	 *
-	 * @return  EngineError|null Terminal retry detail, or null after a successful reschedule.
+	 * @return  array{state: RunState, error: EngineError}|null Exact failed state and detail, or null after success or a lost fence.
 	 */
 	private function reschedule_retry(
 		string $work_type,
@@ -1728,23 +2203,29 @@ final readonly class Orchestrator {
 		RunState $state,
 		RunStore $run_store,
 		RetryPolicy $policy,
+		int $attempt,
 		?array $chunk_args = null
-	): ?EngineError {
+	): ?array {
 		try {
-			$attempt = $state->chunk_retries;
-			$delay   = $policy->delay_for_attempt( $attempt, $this->randomizer );
-			$now     = $this->clock->now()->getTimestamp();
+			$delay = $policy->delay_for_attempt( $attempt, $this->randomizer );
+			$now   = $this->clock->now()->getTimestamp();
 			if ( $delay > \PHP_INT_MAX - $now ) {
-				return new EngineError(
-					\sprintf(
-						'%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.',
-						$work_type,
-						$name
-					)
+				return array(
+					'state' => $state,
+					'error' => new EngineError(
+						\sprintf(
+							'%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.',
+							$work_type,
+							$name
+						)
+					),
 				);
 			}
 		} catch ( \Throwable $throwable ) {
-			return $this->retry_preparation_failure( $work_type, $name, $throwable );
+			return array(
+				'state' => $state,
+				'error' => $this->retry_preparation_failure( $work_type, $name, $throwable ),
+			);
 		}
 
 		$fire_at = $now + $delay;
@@ -1753,13 +2234,20 @@ final readonly class Orchestrator {
 		}
 
 		try {
-			$state = $state
+			$replacement = $state
+				->with_chunk_retries( $attempt )
 				->with_heartbeat_at( $fire_at )
 				->with_action_seq( $state->action_seq + 1 );
-			$run_store->save( $run_id, $state );
+			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+				return null;
+			}
+			$state = $replacement;
 			$this->fire_retrying_hooks( $name, $run_id, $state->start_args, $attempt, $delay );
 		} catch ( \Throwable $throwable ) {
-			return $this->retry_preparation_failure( $work_type, $name, $throwable );
+			return array(
+				'state' => $state,
+				'error' => $this->retry_preparation_failure( $work_type, $name, $throwable ),
+			);
 		}
 
 		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
@@ -1781,12 +2269,18 @@ final readonly class Orchestrator {
 				10
 			);
 			if ( $scheduled->is_failure() ) {
-				return $this->scheduling_failure( $work_type, $name, 'retry', $scheduled->error );
+				return array(
+					'state' => $state,
+					'error' => $this->scheduling_failure( $work_type, $name, 'retry', $scheduled->error ),
+				);
 			}
 
 			return null;
 		} catch ( \Throwable $throwable ) {
-			return $this->retry_preparation_failure( $work_type, $name, $throwable );
+			return array(
+				'state' => $state,
+				'error' => $this->retry_preparation_failure( $work_type, $name, $throwable ),
+			);
 		}
 	}
 
@@ -1845,13 +2339,19 @@ final readonly class Orchestrator {
 	 * @return  void
 	 */
 	private function complete_run( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$state = $state->with_chunk_retries( 0 );
-		$run_store->save( $run_id, $state->with_status( RunStatus::Completed ) );
+		$terminal_state = $state
+			->with_chunk_retries( 0 )
+			->with_status( RunStatus::Completed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
+		if ( null === $terminal_raw ) {
+			return;
+		}
 
 		try {
-			$this->fire_lifecycle_hooks( 'completed', $task_name, $run_id, $state->start_args );
+			$this->fire_lifecycle_hooks( 'completed', $task_name, $run_id, $terminal_state->start_args );
 		} finally {
-			$this->finish_terminal_run( $task_name, $run_id, $state, $run_store );
+			$this->finish_terminal_run( $task_name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
 	}
 
@@ -1867,6 +2367,7 @@ final readonly class Orchestrator {
 	 * @param   RunStore    $run_store    Active-run store.
 	 * @param   EngineError $error         Task failure detail.
 	 * @param   int         $attempts_used Attempts consumed by the invocation.
+	 * @param   string|null $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
@@ -1876,9 +2377,22 @@ final readonly class Orchestrator {
 		RunState $state,
 		RunStore $run_store,
 		EngineError $error,
-		int $attempts_used
+		int $attempts_used,
+		?string $expected_raw = null
 	): void {
-		$run_store->save( $run_id, $state->with_status( RunStatus::Failed ) );
+		$terminal_state = $state
+			->with_status( RunStatus::Failed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$terminal_raw   = $this->claim_terminal_transition(
+			$run_id,
+			$state,
+			$terminal_state,
+			$run_store,
+			$expected_raw
+		);
+		if ( null === $terminal_raw ) {
+			return;
+		}
 		$this->stores->failed_run_store( $task_name )->record(
 			$run_id,
 			$this->clock->now()->getTimestamp(),
@@ -1890,7 +2404,7 @@ final readonly class Orchestrator {
 		try {
 			$this->fire_lifecycle_hooks( 'failed', $task_name, $run_id, $state->start_args, $error );
 		} finally {
-			$this->finish_terminal_run( $task_name, $run_id, $state, $run_store );
+			$this->finish_terminal_run( $task_name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
 	}
 
@@ -1906,6 +2420,7 @@ final readonly class Orchestrator {
 	 * @param   RunState       $state         Running state.
 	 * @param   RunStore       $run_store     Active-run store.
 	 * @param   'Task'|'Batch' $work_type     Work contract type.
+	 * @param   string|null    $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
@@ -1915,9 +2430,22 @@ final readonly class Orchestrator {
 		?string $latest_run_id,
 		RunState $state,
 		RunStore $run_store,
-		string $work_type = 'Task'
+		string $work_type = 'Task',
+		?string $expected_raw = null
 	): void {
-		$run_store->save( $run_id, $state->with_status( RunStatus::Superseded ) );
+		$terminal_state = $state
+			->with_status( RunStatus::Superseded )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$terminal_raw   = $this->claim_terminal_transition(
+			$run_id,
+			$state,
+			$terminal_state,
+			$run_store,
+			$expected_raw
+		);
+		if ( null === $terminal_raw ) {
+			return;
+		}
 		$context_name = \strtolower( $work_type ) . '_name';
 		$this->logger->info(
 			'Superseded ' . \strtolower( $work_type ) . ' run after its ownership fence failed.',
@@ -1931,12 +2459,38 @@ final readonly class Orchestrator {
 		try {
 			$this->fire_lifecycle_hooks( 'superseded', $name, $run_id, $state->start_args );
 		} finally {
-			$this->finish_terminal_run( $name, $run_id, $state, $run_store );
+			$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
 		}
 	}
 
 	/**
-	 * Releases lock and run storage before appending the existing terminal-history buffer.
+	 * Claims the terminal state transition only while the complete observed run still matches.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string      $run_id      Run identifier.
+	 * @param   RunState    $expected    Complete state observed by the terminalizing path.
+	 * @param   RunState    $replacement Terminal replacement state.
+	 * @param   RunStore    $run_store   Active-run store.
+	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
+	 *
+	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.
+	 */
+	private function claim_terminal_transition(
+		string $run_id,
+		RunState $expected,
+		RunState $replacement,
+		RunStore $run_store,
+		?string $expected_raw = null
+	): ?string {
+		return null === $expected_raw
+			? $run_store->transition_state( $run_id, $expected, $replacement )
+			: $run_store->transition( $run_id, $expected_raw, $replacement );
+	}
+
+	/**
+	 * Exact-deletes terminal storage before appending the existing terminal-history buffer.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1944,14 +2498,35 @@ final readonly class Orchestrator {
 	 * @param   string   $name      Stable task or batch name.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Terminalizing run state.
-	 * @param   RunStore $run_store Active-run store.
+	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore $run_store    Active-run store.
 	 *
-	 * @return  void
+	 * @return  bool Whether the run option was confirmed absent before history was appended.
 	 */
-	private function finish_terminal_run( string $name, string $run_id, RunState $state, RunStore $run_store ): void {
+	private function finish_terminal_run(
+		string $name,
+		string $run_id,
+		RunState $state,
+		string $terminal_raw,
+		RunStore $run_store
+	): bool {
 		$this->overlap_guard->release( $name, $state->args_hash, $run_id );
-		$run_store->delete( $run_id );
+		if ( ! $run_store->delete_exact( $run_id, $terminal_raw ) ) {
+			$this->logger->error(
+				'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+					'status' => $state->status->value,
+				)
+			);
+
+			return false;
+		}
+
 		$this->stores->run_history( $name )->record_completed( $run_id, $state->args_hash );
+
+		return true;
 	}
 
 	/**

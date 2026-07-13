@@ -12,6 +12,9 @@ class WpdbRuntimeStub {
 	/** Rows affected by the latest write. */
 	public int $rows_affected = 0;
 
+	/** Last database error reported by the modeled query boundary. */
+	public string $last_error = '';
+
 	/**
 	 * Creates a disconnected runtime stub.
 	 *
@@ -43,6 +46,29 @@ class WpdbRuntimeStub {
 	 * @return  int|bool
 	 */
 	public function query( mixed $query ): int|bool {
+		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
+	}
+
+	/**
+	 * Escapes SQL LIKE wildcard bytes.
+	 *
+	 * @param   string $text Literal LIKE fragment.
+	 *
+	 * @return  string
+	 */
+	public function esc_like( string $text ): string {
+		return \addcslashes( $text, '_%\\' );
+	}
+
+	/**
+	 * Returns one selected column.
+	 *
+	 * @param   mixed $query Prepared query.
+	 * @param   mixed $x     Column offset.
+	 *
+	 * @return  list<mixed>
+	 */
+	public function get_col( mixed $query = null, mixed $x = 0 ): array {
 		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
 	}
 

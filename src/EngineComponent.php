@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
@@ -10,6 +11,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
@@ -74,15 +77,16 @@ final class EngineComponent implements Component {
 		 *
 		 * @var \wpdb $wpdb
 		 */
+		$option_rows  = new OptionRows( $wpdb );
 		$tasks        = new TaskRegistry();
 		$batches      = new BatchRegistry();
-		$schedules    = new ScheduleRegistry();
+		$schedules    = new ScheduleRegistry( $option_rows );
 		$logger       = new HookLogger();
 		$clock        = new SystemClock();
 		$randomizer   = new Randomizer();
 		$lock_rows    = new LockRows( $wpdb );
 		$guard        = new OverlapGuard( $clock, $logger, $lock_rows );
-		$stores       = new StoreFactory( $clock );
+		$stores       = new StoreFactory( $clock, $option_rows );
 		$scheduler    = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend(),
@@ -99,14 +103,24 @@ final class EngineComponent implements Component {
 			$clock,
 			$randomizer,
 		);
+		$tasks->register( new MaintenanceTask( $wpdb, $orchestrator, $guard, $logger ) );
+		$schedule_api = new Schedules(
+			$schedules,
+			$scheduler,
+			$clock,
+			$orchestrator,
+			new OccurrenceLease( $lock_rows, $clock, $randomizer ),
+			$logger
+		);
 		$engine       = new Engine(
 			new Tasks( $tasks, $orchestrator ),
-			new Schedules( $schedules, $scheduler, $clock ),
+			$schedule_api,
 			new Batches( $batches, $orchestrator ),
 		);
 
 		$scheduler->register_hooks();
 		$orchestrator->register_hooks();
+		$schedule_api->register_hooks();
 
 		self::$engine = $engine;
 	}

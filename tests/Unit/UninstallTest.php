@@ -91,6 +91,7 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_latest_email-digest',
 		'a8csp_bgte_history_email-digest',
 		'a8csp_bgte_lock_email-digest_args-hash',
+		'a8csp_bgte_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgte_failed_email-digest',
 	);
 	private const FIXED_OPTIONS   = array(

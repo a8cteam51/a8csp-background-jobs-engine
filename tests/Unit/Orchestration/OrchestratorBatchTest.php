@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskExceptio
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
@@ -141,7 +142,7 @@ final class OrchestratorBatchTest extends TestCase {
 			$this->batches,
 			$this->backend,
 			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock ),
+			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
 			$this->logger,
 			$this->clock,
 			$this->randomizer,
@@ -1560,11 +1561,11 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
-	 * Cleanup calls batch success and completed hooks before its terminal-success transition.
+	 * Cleanup fences terminal success before the callback and preserves hook ordering.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_completes_in_callback_hook_transition_order(): void {
+	public function test_handle_cleanup_action_fences_before_callback_and_preserves_hook_order(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
 		$this->orchestrator->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
@@ -1600,10 +1601,10 @@ final class OrchestratorBatchTest extends TestCase {
 			array(
 				'lock:update',
 				'run:running',
+				'run:completed',
 				'batch:success',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
-				'run:completed',
 				'lock:delete',
 				'run:delete',
 				'history',
@@ -1675,10 +1676,10 @@ final class OrchestratorBatchTest extends TestCase {
 			array(
 				'lock:update',
 				'run:running',
+				'run:completed',
 				'batch:success',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
-				'run:completed',
 				'lock:delete',
 				'run:delete',
 				'history',
@@ -2007,6 +2008,22 @@ final class OrchestratorBatchTest extends TestCase {
 	 * }
 	 */
 	private function failed_run_state(): array {
+		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		foreach ( $events as $event ) {
+			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
+				continue;
+			}
+			if ( $this->run_option_name() !== ( $event['key'] ?? null ) ) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $event['raw'] ?? null );
+			if ( \is_array( $state ) && 'failed' === ( $state['status'] ?? null ) ) {
+				return $this->typed_run_state( $state );
+			}
+		}
+
 		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 		foreach ( $calls as $call ) {
@@ -2046,6 +2063,19 @@ final class OrchestratorBatchTest extends TestCase {
 			if ( 'lock' === $type ) {
 				$operation = $event['operation'] ?? null;
 				self::assertIsString( $operation );
+				if ( $this->run_option_name() === ( $event['key'] ?? null ) ) {
+					if ( 'delete' === $operation ) {
+						$labels[] = 'run:delete';
+					} elseif ( 'update' === $operation ) {
+						$value = \maybe_unserialize( $event['raw'] ?? null );
+						self::assertIsArray( $value );
+						$status = $value['status'] ?? null;
+						self::assertIsString( $status );
+						$labels[] = 'run:' . $status;
+					}
+
+					continue;
+				}
 				$labels[] = 'lock:' . $operation;
 				continue;
 			}

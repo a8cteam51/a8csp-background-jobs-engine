@@ -143,9 +143,13 @@ final class WpdbLockSpy extends \wpdb {
 
 		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
 		if ( \is_array( $lifecycle_events ) ) {
+			$operation_args     = self::without_table( $statement['args'] );
+			$key_index          = 'update' === $operation ? 1 : 0;
 			$lifecycle_events[] = array(
 				'type'      => 'lock',
 				'operation' => $operation,
+				'key'       => $operation_args[ $key_index ] ?? null,
+				'raw'       => 'update' === $operation ? ( $operation_args[0] ?? null ) : null,
 			);
 
 			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
@@ -193,22 +197,80 @@ final class WpdbLockSpy extends \wpdb {
 			throw new \UnexpectedValueException( 'WpdbLockSpy get_row() accepts only lock SELECT statements.' );
 		}
 
+		$this->last_error = '';
 		$this->run_before( 'select' );
 		$this->recorded_queries[] = $query;
-
-		$args = self::without_table( $statement['args'] );
-		$key  = $args[0] ?? null;
-		if ( ! \is_string( $key ) || ! \array_key_exists( $key, $this->rows ) ) {
+		if ( '' !== $this->last_error ) {
 			return null;
 		}
 
-		$row = array( 'option_value' => $this->rows[ $key ] );
+		$args = self::without_table( $statement['args'] );
+		$key  = $args[0] ?? null;
+		if ( ! \is_string( $key ) ) {
+			return null;
+		}
+
+		$raw = $this->raw_value( $key );
+		if ( null === $raw ) {
+			return null;
+		}
+
+		$row = array( 'option_value' => $raw );
 
 		return match ( $output ) {
 			'ARRAY_A' => $row,
 			'ARRAY_N' => \array_values( $row ),
 			default   => (object) $row,
 		};
+	}
+
+	/**
+	 * Returns option names matching one prepared escaped-prefix scan.
+	 *
+	 * @param   mixed $query Prepared statement.
+	 * @param   mixed $x     Column offset.
+	 *
+	 * @return  list<string>
+	 */
+	#[\Override]
+	public function get_col( $query = null, $x = 0 ): array {
+		if ( ! \is_string( $query ) ) {
+			throw new \InvalidArgumentException( 'WpdbLockSpy scans require a prepared query string.' );
+		}
+
+		$statement = $this->statement( $query );
+		if ( ! \str_starts_with( $statement['template'], 'SELECT `option_name` ' ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy get_col() accepts only option-name scans.' );
+		}
+
+		$this->recorded_queries[] = $query;
+		$args                     = self::without_table( $statement['args'] );
+		$pattern                  = $args[0] ?? null;
+		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require one trailing-wildcard pattern.' );
+		}
+
+		$escaped_prefix = \substr( $pattern, 0, -1 );
+		$prefix         = \preg_replace( '/\\\\([\\\\_%])/', '$1', $escaped_prefix );
+		if ( ! \is_string( $prefix ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy could not decode the escaped option prefix.' );
+		}
+
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		if ( ! \is_array( $options ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
+		}
+
+		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
+		$names = \array_values(
+			\array_filter(
+				$names,
+				static fn ( mixed $name ): bool => \is_string( $name ) && \str_starts_with( $name, $prefix )
+			)
+		);
+		\sort( $names );
+
+		return $names;
 	}
 
 	/**
@@ -224,7 +286,7 @@ final class WpdbLockSpy extends \wpdb {
 		$args = self::without_table( $args );
 
 		[ $key, $raw ] = self::string_pair( $args );
-		if ( \array_key_exists( $key, $this->rows ) ) {
+		if ( $this->has_row( $key ) ) {
 			return 0;
 		}
 
@@ -251,15 +313,16 @@ final class WpdbLockSpy extends \wpdb {
 			throw new \UnexpectedValueException( 'WpdbLockSpy UPDATE expects new value, key, and expected value.' );
 		}
 
-		if ( ! \array_key_exists( $key, $this->rows ) || $expected_raw !== $this->rows[ $key ] ) {
+		$current_raw = $this->raw_value( $key );
+		if ( null === $current_raw || $expected_raw !== $current_raw ) {
 			return 0;
 		}
 
-		if ( $new_raw === $this->rows[ $key ] ) {
+		if ( $new_raw === $current_raw ) {
 			return 0;
 		}
 
-		$this->rows[ $key ] = $new_raw;
+		$this->replace_raw( $key, $new_raw );
 
 		return 1;
 	}
@@ -277,11 +340,12 @@ final class WpdbLockSpy extends \wpdb {
 		$args = self::without_table( $args );
 
 		[ $key, $expected_raw ] = self::string_pair( $args );
-		if ( ! \array_key_exists( $key, $this->rows ) || $expected_raw !== $this->rows[ $key ] ) {
+		$current_raw            = $this->raw_value( $key );
+		if ( null === $current_raw || $expected_raw !== $current_raw ) {
 			return 0;
 		}
 
-		unset( $this->rows[ $key ], $this->autoload[ $key ] );
+		$this->delete_raw( $key );
 
 		return 1;
 	}
@@ -368,6 +432,98 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		return $args;
+	}
+
+	/**
+	 * Returns whether either modeled view contains an option row.
+	 *
+	 * @param   string $key Option name.
+	 *
+	 * @return  bool
+	 */
+	private function has_row( string $key ): bool {
+		if ( \array_key_exists( $key, $this->rows ) ) {
+			return true;
+		}
+
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+
+		return \is_array( $options ) && \array_key_exists( $key, $options );
+	}
+
+	/**
+	 * Returns one row's exact database representation from either modeled view.
+	 *
+	 * @param   string $key Option name.
+	 *
+	 * @return  string|null
+	 */
+	private function raw_value( string $key ): ?string {
+		if ( \array_key_exists( $key, $this->rows ) ) {
+			return $this->rows[ $key ];
+		}
+
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		if ( ! \is_array( $options ) || ! \array_key_exists( $key, $options ) ) {
+			return null;
+		}
+
+		$raw = \maybe_serialize( $options[ $key ] );
+
+		return \is_string( $raw ) ? $raw : null;
+	}
+
+	/**
+	 * Replaces one row in the modeled view that currently owns it.
+	 *
+	 * @param   string $key Option name.
+	 * @param   string $raw Exact replacement value.
+	 *
+	 * @return  void
+	 */
+	private function replace_raw( string $key, string $raw ): void {
+		if ( \array_key_exists( $key, $this->rows ) ) {
+			$this->rows[ $key ] = $raw;
+
+			return;
+		}
+
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		if ( ! \is_array( $options ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
+		}
+
+		$options[ $key ]                    = \maybe_unserialize( $raw );
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
+	 * Deletes one row from whichever modeled view currently owns it.
+	 *
+	 * @param   string $key Option name.
+	 *
+	 * @return  void
+	 */
+	private function delete_raw( string $key ): void {
+		if ( \array_key_exists( $key, $this->rows ) ) {
+			unset( $this->rows[ $key ], $this->autoload[ $key ] );
+
+			return;
+		}
+
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		if ( ! \is_array( $options ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
+		}
+
+		$autoload = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? array();
+		if ( ! \is_array( $autoload ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test option autoload store as an array.' );
+		}
+
+		unset( $options[ $key ], $autoload[ $key ] );
+		$GLOBALS['a8csp_bgte_test_options']         = $options;
+		$GLOBALS['a8csp_bgte_test_option_autoload'] = $autoload;
 	}
 
 	/**

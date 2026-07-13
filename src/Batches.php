@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
@@ -47,11 +48,17 @@ final readonly class Batches {
 	 * @param   BatchInterface $batch Batch to register.
 	 *
 	 * @throws  \InvalidArgumentException When the batch name is outside the stable-name grammar.
-	 * @throws  \LogicException           When the batch name is already registered.
+	 * @throws  \LogicException           When the batch name is engine-reserved or already registered.
 	 *
 	 * @return  void
 	 */
 	public function register( BatchInterface $batch ): void {
+		if ( MaintenanceTask::NAME === $batch->get_name() ) {
+			throw new \LogicException(
+				'Batch name "a8csp-bgte-maintenance" is reserved for engine maintenance; choose a consumer-specific batch name.'
+			);
+		}
+
 		$this->registry->register( $batch );
 	}
 

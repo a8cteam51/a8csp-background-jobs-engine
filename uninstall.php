@@ -35,11 +35,12 @@ $a8csp_bgte_lifecycle_hooks = array(
 );
 
 /*
- * Run, latest-pointer, history, lock, and failed-run option names end in task, batch, run,
- * or argument-hash identifiers that do not exist until runtime, so no static list can name
- * every row. The shared prefix is the complete ownership boundary for standalone engine
- * options. Escaping it before appending the wildcard keeps each underscore literal instead
- * of letting SQL LIKE broaden the sweep to similarly spelled foreign options.
+ * Run, latest-pointer, history, execution-lock, occurrence-lease, and failed-run option names
+ * end in task, batch, run, registration-hash, or argument-hash identifiers that do not exist
+ * until runtime, so no static list can name every row. The shared prefix is the complete ownership
+ * boundary for standalone engine options. Escaping it before appending the wildcard keeps each
+ * underscore literal instead of letting SQL LIKE broaden the sweep to similarly spelled foreign
+ * options.
  *
  * Selecting the names directly is intentional in this cold bootstrap: delete_option() still
  * performs each deletion so WordPress preserves its normal cache invalidation and hooks. The

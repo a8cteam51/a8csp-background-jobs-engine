@@ -7,7 +7,7 @@ use wpdb;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Performs authoritative SQL and cache I/O for execution-overlap lock rows.
+ * Performs authoritative raw SQL and cache I/O for fenced option rows.
  *
  * Each instance is bound to the current site because WordPress rebinds wpdb's per-site table
  * properties during a blog switch.
@@ -15,7 +15,7 @@ use wpdb;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class LockRows {
+final readonly class OptionRows {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -49,19 +49,19 @@ final readonly class LockRows {
 	// region METHODS
 
 	/**
-	 * Inserts a non-autoloaded lock only while its option name is absent.
+	 * Inserts a non-autoloaded raw row only while its option name is absent.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                    $key Lock option name.
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
+	 * @param   string $key Option name.
+	 * @param   string $raw Exact persisted value.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  bool
 	 */
-	public function insert( string $key, array $row ): bool {
+	public function insert( string $key, string $raw ): bool {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
@@ -70,7 +70,7 @@ final readonly class LockRows {
 				"INSERT IGNORE INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'off') /* LOCK */",
 				$wpdb->options,
 				$key,
-				self::serialize( $row )
+				$raw
 			) ?? ''
 		);
 		$this->purge_cache( $key );
@@ -84,7 +84,7 @@ final readonly class LockRows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $key Lock option name.
+	 * @param   string $key Option name.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
@@ -122,7 +122,7 @@ final readonly class LockRows {
 	}
 
 	/**
-	 * Replaces a lock only while its exact raw value still matches.
+	 * Replaces a row only while its exact raw value still matches.
 	 *
 	 * An identical value is confirmed by a direct read because MySQL reports zero affected rows for
 	 * an unchanged update.
@@ -130,25 +130,23 @@ final readonly class LockRows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                    $key          Lock option name.
-	 * @param   string                                                    $expected_raw Exact selected value.
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $new_row      Replacement lock row.
+	 * @param   string $key             Option name.
+	 * @param   string $expected_raw    Exact selected value.
+	 * @param   string $replacement_raw Exact replacement value.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  bool
 	 */
-	public function replace( string $key, string $expected_raw, array $new_row ): bool {
+	public function replace( string $key, string $expected_raw, string $replacement_raw ): bool {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
-
-		$new_raw = self::serialize( $new_row );
 
 		$result = $wpdb->query(
 			$wpdb->prepare(
 				'UPDATE %i SET `option_value` = %s WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s',
 				$wpdb->options,
-				$new_raw,
+				$replacement_raw,
 				$key,
 				$expected_raw
 			) ?? ''
@@ -159,16 +157,18 @@ final readonly class LockRows {
 		}
 
 		// MySQL reports zero for an unchanged update, so the raw row distinguishes success from a lost CAS.
-		return 0 === $result && $expected_raw === $new_raw && $new_raw === $this->select( $key );
+		return 0 === $result
+			&& $expected_raw === $replacement_raw
+			&& $replacement_raw === $this->select( $key );
 	}
 
 	/**
-	 * Deletes a lock only while its exact raw value still matches.
+	 * Deletes a row only while its exact raw value still matches.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $key          Lock option name.
+	 * @param   string $key          Option name.
 	 * @param   string $expected_raw Exact selected value.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
@@ -197,27 +197,6 @@ final readonly class LockRows {
 	// region HELPERS
 
 	/**
-	 * Returns a lock row's exact persisted representation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
-	 *
-	 * @throws  \LogicException When WordPress does not serialize the row to a string.
-	 *
-	 * @return  string
-	 */
-	private static function serialize( array $row ): string {
-		$value = \maybe_serialize( $row );
-		if ( ! \is_string( $value ) ) {
-			throw new \LogicException( 'WordPress must serialize an execution-overlap lock row to a string.' );
-		}
-
-		return $value;
-	}
-
-	/**
 	 * Throws when a blog switch makes the injected wpdb point at a different site's tables.
 	 *
 	 * @since   1.0.0
@@ -233,7 +212,7 @@ final readonly class LockRows {
 		}
 
 		throw new \LogicException(
-			'Do not reuse LockRows after switch_to_blog(); construct a new site-bound instance after switching.'
+			'Do not reuse OptionRows after switch_to_blog(); construct a new site-bound instance after switching.'
 		);
 	}
 
@@ -243,7 +222,7 @@ final readonly class LockRows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $key Lock option name.
+	 * @param   string $key Option name.
 	 *
 	 * @return  void
 	 */

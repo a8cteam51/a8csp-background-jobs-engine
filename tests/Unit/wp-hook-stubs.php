@@ -121,6 +121,16 @@ if ( ! \function_exists( 'do_action' ) ) {
 			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
 		}
 
+		$callbacks = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? array();
+		if ( ! \is_array( $callbacks ) ) {
+			throw new \UnexpectedValueException( 'Initialize the action-callback test map as an array.' );
+		}
+
+		$callback = $callbacks[ $hook_name ] ?? null;
+		if ( \is_callable( $callback ) ) {
+			$callback( ...$args );
+		}
+
 		$throwables = $GLOBALS['a8csp_bgte_test_action_throwables'] ?? array();
 		if ( ! \is_array( $throwables ) ) {
 			throw new \UnexpectedValueException( 'Initialize the action-throwable test map as an array.' );

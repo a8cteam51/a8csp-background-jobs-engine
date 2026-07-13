@@ -196,14 +196,15 @@ final readonly class SchedulerFacade implements BackendInterface {
 			return $this->fallback_backend()->unschedule( $hook, $args, $group );
 		}
 
+		$first_failure = null;
 		foreach ( $ready_backends as $backend ) {
 			$result = $backend->unschedule( $hook, $args, $group );
 			if ( $result->is_failure() ) {
-				return $result;
+				$first_failure ??= $result;
 			}
 		}
 
-		return new Success( true );
+		return $first_failure ?? new Success( true );
 	}
 
 	/**

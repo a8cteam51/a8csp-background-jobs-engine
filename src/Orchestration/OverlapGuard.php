@@ -265,6 +265,132 @@ final readonly class OverlapGuard {
 		);
 	}
 
+	/**
+	 * Returns one exact raw lock snapshot and its validated schema for maintenance.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name      Stable task or batch name.
+	 * @param   string $args_hash Stable identity of the start arguments.
+	 *
+	 * @return  array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null
+	 */
+	public function inspect_persisted_lock( string $name, string $args_hash ): ?array {
+		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
+		if ( null === $raw ) {
+			return null;
+		}
+
+		return array(
+			'raw'  => $raw,
+			'lock' => self::parse( $raw ),
+		);
+	}
+
+	/**
+	 * Deletes one inspected lock only while its exact raw row is unchanged.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name         Stable task or batch name.
+	 * @param   string $args_hash    Stable identity of the start arguments.
+	 * @param   string $expected_raw Exact inspected row value.
+	 *
+	 * @return  bool Whether the inspected row was deleted.
+	 */
+	public function delete_persisted_lock( string $name, string $args_hash, string $expected_raw ): bool {
+		return $this->rows->delete( $this->option_name( $name, $args_hash ), $expected_raw );
+	}
+
+	/**
+	 * Deletes a stale owned lock after rechecking its exact row and staleness boundary.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name             Stable task or batch name.
+	 * @param   string $args_hash        Stable identity of the start arguments.
+	 * @param   string $run_id           Expected lock owner.
+	 * @param   int    $staleness_window Resolved staleness window in seconds.
+	 *
+	 * @return  bool Whether the exact stale row was deleted.
+	 */
+	public function delete_stale_owned_lock(
+		string $name,
+		string $args_hash,
+		string $run_id,
+		int $staleness_window
+	): bool {
+		$snapshot = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( null === $snapshot || null === $snapshot['lock'] ) {
+			return false;
+		}
+
+		$lock = $snapshot['lock'];
+		if (
+			$run_id !== $lock['run_id']
+			|| ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window )
+		) {
+			return false;
+		}
+
+		return $this->delete_persisted_lock( $name, $args_hash, $snapshot['raw'] );
+	}
+
+	/**
+	 * Fences a running run when its owned lock is missing, transferred, or can be stale-deleted exactly.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name             Stable task or batch name.
+	 * @param   string $args_hash        Stable identity of the start arguments.
+	 * @param   string $run_id           Expected lock owner.
+	 * @param   int    $staleness_window Resolved staleness window in seconds.
+	 *
+	 * @return  MaintenanceFenceOutcome Typed ownership classification.
+	 */
+	public function fence_abandoned_run(
+		string $name,
+		string $args_hash,
+		string $run_id,
+		int $staleness_window
+	): MaintenanceFenceOutcome {
+		$snapshot = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( null === $snapshot ) {
+			return $this->rows->last_select_failed()
+				? MaintenanceFenceOutcome::Indeterminate
+				: MaintenanceFenceOutcome::Abandoned;
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		if ( $run_id !== $lock['run_id'] ) {
+			return MaintenanceFenceOutcome::Transferred;
+		}
+
+		if ( ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window ) ) {
+			return MaintenanceFenceOutcome::Owned;
+		}
+
+		return $this->delete_persisted_lock( $name, $args_hash, $snapshot['raw'] )
+			? MaintenanceFenceOutcome::Abandoned
+			: MaintenanceFenceOutcome::Indeterminate;
+	}
+
 	// endregion
 
 	// region HELPERS

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
@@ -133,7 +134,7 @@ final class OrchestratorTest extends TestCase {
 			new BatchRegistry(),
 			$this->backend,
 			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock ),
+			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
 			$this->logger,
 			$this->clock,
 			$this->randomizer,
@@ -351,7 +352,7 @@ final class OrchestratorTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" is already running as run "run-running"; wait for that run to finish before enqueueing the same arguments.',
+			'Task "email-digest" is already running as run "run-running"; wait for that run to finish before dispatching the same arguments.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
@@ -483,6 +484,26 @@ final class OrchestratorTest extends TestCase {
 			),
 			$this->backend->calls
 		);
+		$state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $state );
+		self::assertSame( self::NOW + 120, $state['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
+	}
+
+	/**
+	 * A failed delayed heartbeat releases any lock still owned by the provisional run.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_fails(): void {
+		$this->wpdb->script_result( 'update', false );
+
+		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, delay: 120 );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertNull( $this->lock() );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->backend->calls );
 	}
 
 	/**
@@ -838,6 +859,33 @@ final class OrchestratorTest extends TestCase {
 		$this->assert_terminal_history();
 	}
 
+	/** A terminal winner deleting the run during a live heartbeat CAS silences the stale delivery. */
+	public function test_handle_run_action_live_state_cas_cannot_resurrect_a_terminally_deleted_run(): void {
+		$this->prepare_run_action();
+		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next(
+			'update',
+			function (): void {
+				$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+			}
+		);
+
+		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame( array(), $this->logger->records );
+		self::assertSame(
+			array(
+				'a8csp/background_tasks/completed/' . self::NAME,
+				'a8csp/background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history();
+	}
+
 	/**
 	 * A stale task delivery exits before heartbeats, callbacks, or state writes.
 	 *
@@ -845,10 +893,10 @@ final class OrchestratorTest extends TestCase {
 	 */
 	public function test_handle_run_action_drops_a_stale_sequence_before_every_side_effect(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock );
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
-		$run_store->save( self::RUN_ID, $state->with_action_seq( 2 ) );
+		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ) );
 		$expected = $this->option( $this->run_option_name() );
 
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
@@ -891,7 +939,7 @@ final class OrchestratorTest extends TestCase {
 			new BatchRegistry(),
 			$this->backend,
 			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock ),
+			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
 			$this->logger,
 			$this->clock,
 			$this->randomizer,
@@ -1746,10 +1794,12 @@ final class OrchestratorTest extends TestCase {
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_handle_run_action_does_not_execute_a_persisted_terminal_state( string $status ): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock );
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
-		$run_store->save( self::RUN_ID, $state->with_status( RunStatus::from( $status ) ) );
+		self::assertIsString(
+			$run_store->transition_state( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) )
+		);
 
 		$this->logger->records = array();
 
@@ -2000,6 +2050,31 @@ final class OrchestratorTest extends TestCase {
 	 * }
 	 */
 	private function recorded_run_state( string $status ): array {
+		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		foreach ( $events as $event ) {
+			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
+				continue;
+			}
+			if ( $this->run_option_name() !== ( $event['key'] ?? null ) ) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $event['raw'] ?? null );
+			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status ) {
+				return array(
+					'status'        => $state['status'] ?? null,
+					'start_args'    => $state['start_args'] ?? null,
+					'args_hash'     => $state['args_hash'] ?? null,
+					'queue'         => $state['queue'] ?? null,
+					'chunk_retries' => $state['chunk_retries'] ?? null,
+					'action_seq'    => $state['action_seq'] ?? null,
+					'created_at'    => $state['created_at'] ?? null,
+					'heartbeat_at'  => $state['heartbeat_at'] ?? null,
+				);
+			}
+		}
+
 		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 		foreach ( $calls as $call ) {
@@ -2048,6 +2123,18 @@ final class OrchestratorTest extends TestCase {
 			if ( 'lock' === $type ) {
 				$operation = $event['operation'] ?? null;
 				self::assertIsString( $operation );
+				if ( $this->run_option_name() === ( $event['key'] ?? null ) ) {
+					if ( 'delete' === $operation ) {
+						$labels[] = 'run:delete';
+					} elseif ( 'update' === $operation ) {
+						$value = \maybe_unserialize( $event['raw'] ?? null );
+						self::assertIsArray( $value );
+						self::assertIsString( $value['status'] ?? null );
+						$labels[] = 'run:' . $value['status'];
+					}
+
+					continue;
+				}
 				$labels[] = 'lock:' . $operation;
 				continue;
 			}

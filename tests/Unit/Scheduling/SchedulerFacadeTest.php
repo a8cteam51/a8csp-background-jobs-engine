@@ -529,35 +529,42 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
-	 * First-failure precedence stops clearing before later ready backends are mutated.
+	 * The earliest failure wins after every ready backend receives the clear.
 	 *
 	 * @return  void
 	 */
-	public function test_unschedule_returns_the_first_failure_without_clearing_remaining_backends(): void {
-		$first    = new RecordingBackend();
-		$second   = new RecordingBackend();
-		$expected = new Failure(
+	public function test_unschedule_returns_the_first_failure_after_clearing_remaining_ready_backends(): void {
+		$first          = new RecordingBackend();
+		$second         = new RecordingBackend();
+		$first_failure  = new Failure(
 			new SchedulingError(
 				SchedulingErrorReason::ScheduleFailed,
 				'Repair the first backend schedule and retry the clear.'
 			)
 		);
+		$second_failure = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Repair the second backend schedule and retry the clear.'
+			)
+		);
 
-		$first->results['unschedule'] = $expected;
+		$first->results['unschedule']  = $first_failure;
+		$second->results['unschedule'] = $second_failure;
 
 		$result = ( new SchedulerFacade( array( $first, $second ) ) )->unschedule( self::HOOK );
 
-		self::assertSame( $expected, $result );
+		self::assertSame( $first_failure, $result );
 		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $second ) );
+		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
 	}
 
 	/**
-	 * Failure precedence retains earlier clears but stops before every later ready backend.
+	 * A later failure is returned after every ready backend receives the clear.
 	 *
 	 * @return  void
 	 */
-	public function test_unschedule_returns_a_later_failure_without_clearing_remaining_backends(): void {
+	public function test_unschedule_returns_a_later_failure_after_clearing_remaining_ready_backends(): void {
 		$first    = new RecordingBackend();
 		$second   = new RecordingBackend();
 		$third    = new RecordingBackend();
@@ -575,7 +582,7 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertSame( $expected, $result );
 		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
 		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $third ) );
+		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $third ) );
 	}
 
 	/**

@@ -89,6 +89,25 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
+	 * Repeated lifecycle writes do not duplicate run IDs in mirrored buffers.
+	 *
+	 * @return  void
+	 */
+	public function test_repeated_writes_are_idempotent_in_global_and_per_hash_buffers(): void {
+		$history = new RunHistory( 'reports' );
+
+		$history->record_started( 'run-a', 'hash-a' );
+		$history->record_started( 'run-a', 'hash-a' );
+		$history->record_completed( 'run-a', 'hash-a' );
+		$history->record_completed( 'run-a', 'hash-a' );
+
+		self::assertSame( array( 'run-a' ), $history->get_started() );
+		self::assertSame( array( 'run-a' ), $history->get_completed() );
+		self::assertSame( array( 'run-a' ), $history->get_started_for_hash( 'hash-a' ) );
+		self::assertSame( array( 'run-a' ), $history->get_completed_for_hash( 'hash-a' ) );
+	}
+
+	/**
 	 * Global and per-hash buffers retain the newest thirty entries.
 	 *
 	 * @return  void

@@ -168,15 +168,19 @@ final readonly class RunHistory {
 	 * @return  void
 	 */
 	private function record( string $buffer, string $run_id, string $args_hash ): void {
-		$history = self::history_from_option( \get_option( $this->option_name(), null ) );
-
-		$history[ $buffer ][] = $run_id;
-
+		$history      = self::history_from_option( \get_option( $this->option_name(), null ) );
 		$hash_history = $history['by_hash'][ $args_hash ] ?? array(
 			'started'   => array(),
 			'completed' => array(),
 		);
+		if (
+			\in_array( $run_id, $history[ $buffer ], true )
+			|| \in_array( $run_id, $hash_history[ $buffer ], true )
+		) {
+			return;
+		}
 
+		$history[ $buffer ][]      = $run_id;
 		$hash_history[ $buffer ][] = $run_id;
 
 		// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.

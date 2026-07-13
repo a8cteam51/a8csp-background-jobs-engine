@@ -114,3 +114,20 @@ function a8csp_bgte_sync_schedules( string $owner, array $schedules ): AbstractR
 	return a8csp_bgte_engine()?->schedules()->sync( $owner, $schedules )
 		?? new Failure( new EngineError( 'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.' ) );
 }
+
+/**
+ * Immediately dispatches one declared schedule target without changing its cadence.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $owner Stable consumer identifier.
+ * @param   string $name  Stable schedule name.
+ *
+ * @return  AbstractResult<string, EngineError|SchedulingError>
+ */
+#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
+function a8csp_bgte_run_schedule_now( string $owner, string $name ): AbstractResult {
+	return a8csp_bgte_engine()?->schedules()->run_now( $owner, $name )
+		?? new Failure( new EngineError( 'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.' ) );
+}

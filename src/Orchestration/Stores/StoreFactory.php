@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -25,8 +26,12 @@ final readonly class StoreFactory {
 	 * @version 1.0.0
 	 *
 	 * @param   ClockInterface $clock Run timestamp source.
+	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
 	 */
-	public function __construct( private ClockInterface $clock ) {}
+	public function __construct(
+		private ClockInterface $clock,
+		private OptionRows $rows,
+	) {}
 
 	// endregion
 
@@ -43,7 +48,7 @@ final readonly class StoreFactory {
 	 * @return  RunStore
 	 */
 	public function run_store( string $name ): RunStore {
-		return new RunStore( $name, $this->clock );
+		return new RunStore( $name, $this->clock, $this->rows );
 	}
 
 	/**

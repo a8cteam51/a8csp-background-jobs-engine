@@ -2,10 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -18,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 final class RunStoreTest extends TestCase {
+	private OptionRows $rows;
+	private WpdbLockSpy $wpdb;
 
 	/**
 	 * Loads guarded WordPress option functions before the store is autoloaded.
@@ -31,6 +35,7 @@ final class RunStoreTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
 	}
 
 	/**
@@ -45,6 +50,11 @@ final class RunStoreTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_options']         = array();
 		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
 		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
+		$GLOBALS['a8csp_bgte_test_cache']           = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
+		$this->wpdb                                 = new WpdbLockSpy();
+		$this->rows                                 = new OptionRows( $this->wpdb );
 	}
 
 	/**
@@ -54,7 +64,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_create_get_round_trip_pins_schema_key_and_clock_stamps(): void {
 		$clock = new FixedClock( 1_700_000_100 );
-		$store = new RunStore( 'email-digest', $clock );
+		$store = new RunStore( 'email-digest', $clock, $this->rows );
 		$state = $store->create(
 			run_id: 'run-123',
 			start_args: array( 'site_id' => 7 ),
@@ -111,7 +121,7 @@ final class RunStoreTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_options'] = array( $key => 'existing value' );
 
-		$store = new RunStore( 'reports', $clock );
+		$store = new RunStore( 'reports', $clock, $this->rows );
 
 		$state = $store->create( 'run-existing', array(), 'hash', array() );
 
@@ -121,13 +131,13 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Queue, retry, status, and heartbeat copies remain observable after every save.
+	 * Queue, retry, status, and heartbeat copies remain observable after every exact state transition.
 	 *
 	 * @return  void
 	 */
-	public function test_save_round_trips_every_read_modify_write_mutation(): void {
+	public function test_state_transitions_round_trip_every_read_modify_write_mutation(): void {
 		$clock = new FixedClock( 100 );
-		$store = new RunStore( 'reports', $clock );
+		$store = new RunStore( 'reports', $clock, $this->rows );
 		$state = $store->create(
 			'run-rmw',
 			array( 'scope' => 'all' ),
@@ -136,50 +146,73 @@ final class RunStoreTest extends TestCase {
 		);
 		self::assertNotNull( $state );
 
-		$state = $state->with_queue( \array_slice( $state->queue, 1 ) );
-		$store->save( 'run-rmw', $state );
+		$replacement = $state->with_queue( \array_slice( $state->queue, 1 ) );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame( array( array( 'page' => 2 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
 
-		$queue   = $state->queue;
-		$queue[] = array( 'page' => 3 );
-		$state   = $state->with_queue( $queue );
-		$store->save( 'run-rmw', $state );
+		$queue       = $state->queue;
+		$queue[]     = array( 'page' => 3 );
+		$replacement = $state->with_queue( $queue );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame( array( array( 'page' => 2 ), array( 'page' => 3 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
 
 		$queue = $state->queue;
 		\array_unshift( $queue, array( 'page' => 0 ) );
-		$state = $state->with_queue( $queue );
-		$store->save( 'run-rmw', $state );
+		$replacement = $state->with_queue( $queue );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame(
 			array( array( 'page' => 0 ), array( 'page' => 2 ), array( 'page' => 3 ) ),
 			$this->stored_state( $store, 'run-rmw' )->queue
 		);
 
-		$state = $state->with_chunk_retries( $state->chunk_retries + 1 );
-		$store->save( 'run-rmw', $state );
+		$replacement = $state->with_chunk_retries( $state->chunk_retries + 1 );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame( 1, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
 
-		$state = $state->with_chunk_retries( 0 );
-		$store->save( 'run-rmw', $state );
+		$replacement = $state->with_chunk_retries( 0 );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame( 0, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
 
-		$state = $state->with_action_seq( 2 );
-		$store->save( 'run-rmw', $state );
+		$replacement = $state->with_action_seq( 2 );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame( 2, $this->stored_state( $store, 'run-rmw' )->action_seq );
 
-		$state = $state->with_status( RunStatus::Failed );
-		$store->save( 'run-rmw', $state );
+		$replacement = $state->with_status( RunStatus::Failed );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
 		self::assertSame( RunStatus::Failed, $this->stored_state( $store, 'run-rmw' )->status );
 
 		$clock->timestamp = 200;
-		$state            = $store->refresh_heartbeat( 'run-rmw' );
+		$state            = $store->refresh_heartbeat( 'run-rmw', $state );
 		self::assertNotNull( $state );
 		self::assertSame( 200, $this->stored_state( $store, 'run-rmw' )->heartbeat_at );
 		self::assertSame( 100, $this->stored_state( $store, 'run-rmw' )->created_at );
 
-		foreach ( $this->option_calls( 'update_option' ) as $call ) {
-			self::assertSame( false, $call['args'][2] );
-		}
+		self::assertSame( array(), $this->option_calls( 'update_option' ) );
+	}
+
+	/** A stale live-state writer loses after an exact transition or terminal deletion. */
+	public function test_state_transition_never_recreates_or_overwrites_a_lost_snapshot(): void {
+		$store = new RunStore( 'fenced-live', new FixedClock( 200 ), $this->rows );
+		$state = $store->create( 'run-live', array(), 'hash', array() );
+		self::assertNotNull( $state );
+
+		$newer = $state->with_action_seq( 2 );
+		self::assertIsString( $store->transition_state( 'run-live', $state, $newer ) );
+		self::assertNull( $store->transition_state( 'run-live', $state, $state->with_action_seq( 3 ) ) );
+		self::assertSame( 2, $store->get( 'run-live' )?->action_seq );
+
+		$snapshot = $store->inspect( 'run-live' );
+		self::assertNotNull( $snapshot );
+		self::assertTrue( $store->delete_exact( 'run-live', $snapshot['raw'] ) );
+		self::assertNull( $store->transition_state( 'run-live', $newer, $newer->with_action_seq( 3 ) ) );
+		self::assertNull( $store->get( 'run-live' ) );
 	}
 
 	/**
@@ -189,7 +222,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_refresh_heartbeat_does_not_recreate_unrecoverable_runs(): void {
 		$clock = new FixedClock( 200 );
-		$store = new RunStore( 'heartbeat', $clock );
+		$store = new RunStore( 'heartbeat', $clock, $this->rows );
 
 		self::assertNull( $store->refresh_heartbeat( 'missing' ) );
 		self::assertSame( 0, $clock->calls );
@@ -212,7 +245,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_delete_removes_the_run_option(): void {
 		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'cleanup', $clock );
+		$store = new RunStore( 'cleanup', $clock, $this->rows );
 		$store->create( 'run-delete', array(), 'hash', array() );
 
 		$store->delete( 'run-delete' );
@@ -225,6 +258,45 @@ final class RunStoreTest extends TestCase {
 		);
 	}
 
+	/** Terminal transitions and cleanup win only against the exact observed raw snapshots. */
+	public function test_transition_and_exact_delete_are_value_conditioned(): void {
+		$clock = new FixedClock( 123 );
+		$store = new RunStore( 'fenced', $clock, $this->rows );
+		$state = $store->create( 'run-fenced', array(), 'hash', array() );
+		self::assertNotNull( $state );
+
+		$running = $store->inspect( 'run-fenced' );
+		self::assertNotNull( $running );
+		self::assertNotNull( $running['state'] );
+
+		$terminal     = $state->with_status( RunStatus::Completed );
+		$terminal_raw = $store->transition( 'run-fenced', $running['raw'], $terminal );
+		self::assertIsString( $terminal_raw );
+		self::assertSame( RunStatus::Completed, $store->get( 'run-fenced' )?->status );
+		self::assertNull( $store->transition( 'run-fenced', $running['raw'], $terminal ) );
+		self::assertTrue( $store->delete_exact( 'run-fenced', $terminal_raw ) );
+		self::assertFalse( $store->delete_exact( 'run-fenced', $terminal_raw ) );
+		self::assertNull( $store->transition( 'run-fenced', $terminal_raw, $terminal ) );
+		self::assertNull( $store->get( 'run-fenced' ) );
+	}
+
+	/** Raw inspection retains corrupt bytes so maintenance can exact-delete only that snapshot. */
+	public function test_inspect_exposes_a_corrupt_raw_snapshot_for_exact_deletion(): void {
+		$key                                = 'a8csp_bgte_run_corruption_run-corrupt';
+		$options                            = $this->options();
+		$options[ $key ]                    = 'corrupt-raw';
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$store                              = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
+
+		$snapshot = $store->inspect( 'run-corrupt' );
+
+		self::assertNotNull( $snapshot );
+		self::assertSame( 'corrupt-raw', $snapshot['raw'] );
+		self::assertNull( $snapshot['state'] );
+		self::assertTrue( $store->delete_exact( 'run-corrupt', $snapshot['raw'] ) );
+		self::assertNull( $store->inspect( 'run-corrupt' ) );
+	}
+
 	/**
 	 * Missing and malformed option values cannot hydrate a typed run.
 	 *
@@ -232,7 +304,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_get_returns_null_for_missing_and_malformed_options(): void {
 		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'corruption', $clock );
+		$store = new RunStore( 'corruption', $clock, $this->rows );
 		$key   = 'a8csp_bgte_run_corruption_run-bad';
 
 		self::assertNull( $store->get( 'run-bad' ) );

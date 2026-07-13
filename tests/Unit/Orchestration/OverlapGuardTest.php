@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ClaimResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -462,6 +463,73 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, self::raw( $row ) );
 
 		self::assertFalse( $this->guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+	}
+
+	/** Maintenance distinguishes owned, transferred, and absent locks with typed outcomes. */
+	public function test_maintenance_fence_returns_typed_ownership_outcomes(): void {
+		$guard = $this->guard_at( 1_000 );
+
+		$this->store_lock( self::row( 'run-owner', 900, 950 ) );
+		self::assertSame(
+			MaintenanceFenceOutcome::Owned,
+			$guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
+		);
+
+		$this->store_lock( self::row( 'run-rival', 900, 950 ) );
+		self::assertSame(
+			MaintenanceFenceOutcome::Transferred,
+			$guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
+		);
+
+		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
+		self::assertSame(
+			MaintenanceFenceOutcome::Abandoned,
+			$guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
+		);
+	}
+
+	/** A stale owned lock is abandoned only after its exact deletion wins. */
+	public function test_maintenance_fence_reports_abandoned_after_stale_delete(): void {
+		$this->store_lock( self::row( 'run-owner', 800, 899 ) );
+
+		self::assertSame(
+			MaintenanceFenceOutcome::Abandoned,
+			$this->guard_at( 1_000 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
+		);
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
+	}
+
+	/** A failed authoritative read leaves maintenance unable to classify ownership. */
+	public function test_maintenance_fence_reports_indeterminate_after_read_failure(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient read failure';
+			}
+		);
+
+		self::assertSame(
+			MaintenanceFenceOutcome::Indeterminate,
+			$this->guard_at( 1_000 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
+		);
+	}
+
+	/** A stale-delete CAS loss leaves maintenance unable to claim the crash decision. */
+	public function test_maintenance_fence_reports_indeterminate_after_stale_delete_loss(): void {
+		$this->store_lock( self::row( 'run-owner', 800, 899 ) );
+		$winner = self::raw( self::row( 'run-owner', 1_000, 1_000 ) );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( $winner ): void {
+				$wpdb->put( self::KEY, $winner );
+			}
+		);
+
+		self::assertSame(
+			MaintenanceFenceOutcome::Indeterminate,
+			$this->guard_at( 1_000 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
+		);
+		self::assertSame( $winner, $this->wpdb->rows[ self::KEY ] );
 	}
 
 	/** A heartbeat exactly one window old remains fresh until one more second elapses. */

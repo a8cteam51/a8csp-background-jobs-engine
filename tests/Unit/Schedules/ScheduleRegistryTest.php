@@ -2,9 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Schedules;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -16,7 +19,11 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( ScheduleRegistry::class )]
 #[UsesClass( Cadence::class )]
 #[UsesClass( Schedule::class )]
+#[UsesClass( RegistrationUpdateOutcome::class )]
 final class ScheduleRegistryTest extends TestCase {
+	private OptionRows $rows;
+	private WpdbLockSpy $wpdb;
+
 	// region LIFECYCLE.
 
 	/**
@@ -31,6 +38,7 @@ final class ScheduleRegistryTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__ ) . '/wp-options-stubs.php';
+		require_once \dirname( __DIR__ ) . '/wp-lock-stubs.php';
 		require_once \dirname( __DIR__ ) . '/Scheduling/wp-json-encode-stub.php';
 	}
 
@@ -49,6 +57,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
 		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
 		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']               = 1;
+		$GLOBALS['a8csp_bgte_test_cache']                 = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
+		$this->wpdb                                       = new WpdbLockSpy();
+		$this->rows                                       = new OptionRows( $this->wpdb );
 	}
 
 	/**
@@ -103,9 +116,11 @@ final class ScheduleRegistryTest extends TestCase {
 					'fingerprint' => 'fingerprint-a',
 					'next_due'    => 1_700_000_300,
 					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
 				),
 			),
-			( new ScheduleRegistry() )->registrations_for( 'owner-a' )
+			( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' )
 		);
 	}
 
@@ -133,9 +148,11 @@ final class ScheduleRegistryTest extends TestCase {
 					'fingerprint' => 'numeric-fingerprint',
 					'next_due'    => 1_700_000_300,
 					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
 				),
 			),
-			( new ScheduleRegistry() )->registrations_for( '123' )
+			( new ScheduleRegistry( $this->rows ) )->registrations_for( '123' )
 		);
 	}
 
@@ -163,10 +180,12 @@ final class ScheduleRegistryTest extends TestCase {
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => 1_700_000_300,
 				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
 			),
 		);
 
-		$registry = new ScheduleRegistry();
+		$registry = new ScheduleRegistry( $this->rows );
 
 		$replaced = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), $state );
 		$options  = $GLOBALS['a8csp_bgte_test_options'];
@@ -211,7 +230,7 @@ final class ScheduleRegistryTest extends TestCase {
 			),
 		);
 
-		$replaced = ( new ScheduleRegistry() )->replace_owner( 'owner-a', array(), array() );
+		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), array() );
 		$options  = $GLOBALS['a8csp_bgte_test_options'];
 
 		self::assertTrue( $replaced );
@@ -240,10 +259,12 @@ final class ScheduleRegistryTest extends TestCase {
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => 1_700_000_300,
 				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
 			),
 		);
 
-		$replaced = ( new ScheduleRegistry() )->replace_owner(
+		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner(
 			'owner-a',
 			array( 'nightly' => $schedule ),
 			$state
@@ -272,10 +293,12 @@ final class ScheduleRegistryTest extends TestCase {
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => 1_700_000_300,
 				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
 			),
 		);
 
-		$replaced = ( new ScheduleRegistry() )->replace_owner(
+		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner(
 			'owner-a',
 			array( 'nightly' => $schedule ),
 			$state
@@ -289,6 +312,199 @@ final class ScheduleRegistryTest extends TestCase {
 			array( 'foreign-owner' => array() ),
 			$options['a8csp_bgte_schedules']
 		);
+	}
+
+	/**
+	 * A lost whole-option CAS retries against the fresh owner slice and preserves its sibling row.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_retries_a_lost_cas_and_preserves_the_concurrent_sibling(): void {
+		self::store_registry( $this->two_registration_registry() );
+		$this->wpdb->before_next(
+			'update',
+			static function (): void {
+				$registry = self::stored_registry();
+				$owner    = $registry['owner-a'] ?? null;
+				self::assertIsArray( $owner );
+				$hourly = $owner['hourly'] ?? null;
+				self::assertIsArray( $hourly );
+
+				$hourly['last_fired'] = 1_700_000_111;
+				$owner['hourly']      = $hourly;
+				$registry['owner-a']  = $owner;
+				self::store_registry( $registry );
+			}
+		);
+		$nightly             = $this->two_registration_registry()['owner-a']['nightly'];
+		$nightly['next_due'] = 1_700_000_600;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+
+		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
+		$stored = self::stored_registry();
+		$owner  = $stored['owner-a'] ?? null;
+		self::assertIsArray( $owner );
+		$stored_nightly = $owner['nightly'] ?? null;
+		$stored_hourly  = $owner['hourly'] ?? null;
+		self::assertIsArray( $stored_nightly );
+		self::assertIsArray( $stored_hourly );
+		self::assertSame( 1_700_000_600, $stored_nightly['next_due'] ?? null );
+		self::assertSame( 1_700_000_111, $stored_hourly['last_fired'] ?? null );
+	}
+
+	/**
+	 * A row pruned after inspection is not resurrected by the losing delivery writer.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_pruned_without_resurrecting_the_row(): void {
+		self::store_registry( $this->two_registration_registry() );
+		$this->wpdb->before_next(
+			'update',
+			static function (): void {
+				$registry = self::stored_registry();
+				$owner    = $registry['owner-a'] ?? null;
+				self::assertIsArray( $owner );
+
+				unset( $owner['nightly'] );
+				$registry['owner-a'] = $owner;
+				self::store_registry( $registry );
+			}
+		);
+		$nightly = $this->two_registration_registry()['owner-a']['nightly'];
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+
+		self::assertSame( RegistrationUpdateOutcome::Pruned, $outcome );
+		$stored = self::stored_registry();
+		$owner  = $stored['owner-a'] ?? null;
+		self::assertIsArray( $owner );
+		self::assertArrayNotHasKey( 'nightly', $owner );
+	}
+
+	/**
+	 * An unchanged row after a failed SQL write reports repairable persistence failure.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_write_verification_failure(): void {
+		self::store_registry( $this->two_registration_registry() );
+		$this->wpdb->script_result( 'update', false );
+		$nightly             = $this->two_registration_registry()['owner-a']['nightly'];
+		$nightly['next_due'] = 1_700_000_600;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+
+		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
+		$stored = self::stored_registry();
+		$owner  = $stored['owner-a'] ?? null;
+		self::assertIsArray( $owner );
+		$stored_nightly = $owner['nightly'] ?? null;
+		self::assertIsArray( $stored_nightly );
+		self::assertSame( 1_700_000_300, $stored_nightly['next_due'] ?? null );
+	}
+
+	/**
+	 * An existing unreadable registry row is a repairable failure, not a concurrent prune.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_malformed_storage_as_failed(): void {
+		$this->wpdb->put( 'a8csp_bgte_schedules', 'not-serialized' );
+		$nightly = $this->two_registration_registry()['owner-a']['nightly'];
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+
+		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
+		self::assertSame( 'not-serialized', $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Returns two persisted registration rows for one owner.
+	 *
+	 * @return  array{
+	 *     'owner-a': array{
+	 *         nightly: array{
+	 *             fingerprint: string,
+	 *             next_due: int,
+	 *             last_fired: null,
+	 *             misfires: int,
+	 *             skips: int
+	 *         },
+	 *         hourly: array{
+	 *             fingerprint: string,
+	 *             next_due: int,
+	 *             last_fired: null,
+	 *             misfires: int,
+	 *             skips: int
+	 *         }
+	 *     }
+	 * }
+	 */
+	private function two_registration_registry(): array {
+		return array(
+			'owner-a' => array(
+				'nightly' => array(
+					'fingerprint' => 'nightly-fingerprint',
+					'next_due'    => 1_700_000_300,
+					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
+				),
+				'hourly'  => array(
+					'fingerprint' => 'hourly-fingerprint',
+					'next_due'    => 1_700_003_600,
+					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
+				),
+			),
+		);
+	}
+
+	/**
+	 * Replaces the registry option while preserving the test store's outer shape.
+	 *
+	 * @param   array<mixed> $registry  Registry value to persist.
+	 *
+	 * @return  void
+	 */
+	private static function store_registry( array $registry ): void {
+		$options                            = self::test_options();
+		$options['a8csp_bgte_schedules']    = $registry;
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
+	 * Returns the persisted registry option.
+	 *
+	 * @return  array<mixed>
+	 */
+	private static function stored_registry(): array {
+		$options  = self::test_options();
+		$registry = $options['a8csp_bgte_schedules'] ?? null;
+
+		self::assertIsArray( $registry );
+
+		return $registry;
+	}
+
+	/**
+	 * Returns the in-memory option store.
+	 *
+	 * @return  array<mixed>
+	 */
+	private static function test_options(): array {
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+
+		self::assertIsArray( $options );
+
+		return $options;
 	}
 
 	// endregion.

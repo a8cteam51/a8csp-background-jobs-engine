@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
@@ -14,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -100,13 +102,14 @@ final class EngineTest extends TestCase {
 		$tasks         = new TaskRegistry();
 		$batches       = new BatchRegistry();
 		$this->backend = new RecordingBackend();
+		$wpdb          = new WpdbLockSpy();
 
 		$orchestrator = new Orchestrator(
 			$tasks,
 			$batches,
 			$this->backend,
-			new OverlapGuard( $clock, $logger, new LockRows( new WpdbLockSpy() ) ),
-			new StoreFactory( $clock ),
+			new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) ),
+			new StoreFactory( $clock, new OptionRows( $wpdb ) ),
 			$logger,
 			$clock,
 			new RecordingRandomizer( 42 ),
@@ -114,7 +117,14 @@ final class EngineTest extends TestCase {
 
 		$this->engine = new Engine(
 			new Tasks( $tasks, $orchestrator ),
-			new Schedules( new ScheduleRegistry(), $this->backend, $clock ),
+			new Schedules(
+				new ScheduleRegistry( new OptionRows( $wpdb ) ),
+				$this->backend,
+				$clock,
+				$orchestrator,
+				new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+				$logger
+			),
 			new Batches( $batches, $orchestrator ),
 		);
 	}
@@ -211,6 +221,23 @@ final class EngineTest extends TestCase {
 		self::assertSame( 'running', $run['status'] ?? null );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array(), $run['queue'] ?? null );
+	}
+
+	/**
+	 * The internal maintenance task identity cannot be shadowed by a consumer batch.
+	 *
+	 * @return  void
+	 */
+	public function test_batch_registration_rejects_the_engine_maintenance_identity(): void {
+		try {
+			$this->engine->batches()->register( new RecordingBatch( 'a8csp-bgte-maintenance' ) );
+			self::fail( 'Reserved maintenance batch registration did not throw.' );
+		} catch ( \LogicException $exception ) {
+			self::assertSame(
+				'Batch name "a8csp-bgte-maintenance" is reserved for engine maintenance; choose a consumer-specific batch name.',
+				$exception->getMessage()
+			);
+		}
 	}
 
 	/**

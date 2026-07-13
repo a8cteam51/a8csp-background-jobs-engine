@@ -18,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversFunction( 'a8csp_bgte_start_batch' )]
 #[CoversFunction( 'a8csp_bgte_retry_failed_run' )]
 #[CoversFunction( 'a8csp_bgte_sync_schedules' )]
+#[CoversFunction( 'a8csp_bgte_run_schedule_now' )]
 final class ApiTest extends TestCase {
 	/**
 	 * Access remains nullable and every mutation names the boot-order correction.
@@ -40,6 +41,7 @@ final class ApiTest extends TestCase {
 			\a8csp_bgte_start_batch( 'catalog-sync', array( 'site_id' => 7 ), unique: true, priority: 23 ),
 			\a8csp_bgte_retry_failed_run( 'email-digest', 'run-1' ),
 			\a8csp_bgte_sync_schedules( 'consumer-plugin', array() ),
+			\a8csp_bgte_run_schedule_now( 'consumer-plugin', 'nightly' ),
 		);
 
 		foreach ( $results as $result ) {

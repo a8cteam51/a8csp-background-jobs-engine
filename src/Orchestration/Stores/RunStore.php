@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunStatus;
 use Psr\Clock\ClockInterface;
@@ -11,9 +12,8 @@ use Psr\Clock\ClockInterface;
 /**
  * Persists each active run in one consolidated WordPress option.
  *
- * Queue changes use read-modify-write and remain safe while each run's processing chain is serial.
- * Concurrent processors for one run can overwrite each other's queue changes, so per-run
- * concurrency remains one.
+ * Live mutations use complete-state compare-and-swap transitions. A concurrent processor that
+ * observes an older state loses its transition instead of overwriting or recreating the run.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -43,10 +43,12 @@ final readonly class RunStore {
 	 *
 	 * @param   string         $name  Stable task or batch name.
 	 * @param   ClockInterface $clock Timestamp source.
+	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
 	 */
 	public function __construct(
 		private string $name,
 		private ClockInterface $clock,
+		private OptionRows $rows,
 	) {}
 
 	// endregion
@@ -108,40 +110,157 @@ final readonly class RunStore {
 	}
 
 	/**
-	 * Saves the complete state for an active run.
+	 * Returns one authoritative raw run snapshot with its optional typed state.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $run_id Run identifier.
-	 * @param   RunState $state  Complete state to persist.
-	 *
-	 * @return  void
-	 */
-	public function save( string $run_id, RunState $state ): void {
-		\update_option( $this->option_name( $run_id ), self::to_option( $state ), false );
-	}
-
-	/**
-	 * Refreshes and saves a recoverable run's heartbeat.
+	 * @internal Engine fencing and maintenance only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Run identifier.
 	 *
-	 * @return  RunState|null Null when no recoverable run exists.
+	 * @return  array{raw: string, state: RunState|null}|null
 	 */
-	public function refresh_heartbeat( string $run_id ): ?RunState {
-		$state = $this->get( $run_id );
-		if ( null === $state ) {
+	public function inspect( string $run_id ): ?array {
+		$raw = $this->rows->select( $this->option_name( $run_id ) );
+		if ( null === $raw ) {
 			return null;
 		}
 
-		$state = $state->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$this->save( $run_id, $state );
+		return array(
+			'raw'   => $raw,
+			'state' => self::from_option( self::decode_raw( $raw ) ),
+		);
+	}
 
-		return $state;
+	/**
+	 * Returns whether the immediately preceding authoritative inspection failed.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function last_inspect_failed(): bool {
+		return $this->rows->last_select_failed();
+	}
+
+	/**
+	 * Transitions a run only while its exact observed raw state still matches.
+	 *
+	 * @internal Engine terminalization only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id      Run identifier.
+	 * @param   string   $expected_raw Exact observed state.
+	 * @param   RunState $replacement Replacement state.
+	 *
+	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
+	 */
+	public function transition( string $run_id, string $expected_raw, RunState $replacement ): ?string {
+		$replacement_raw = self::serialize_state( $replacement );
+		if ( ! $this->rows->replace( $this->option_name( $run_id ), $expected_raw, $replacement_raw ) ) {
+			return null;
+		}
+
+		return $replacement_raw;
+	}
+
+	/**
+	 * Replaces a run only while its complete typed state still matches.
+	 *
+	 * @internal Engine live-state and terminal transitions only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id      Run identifier.
+	 * @param   RunState $expected    Complete state observed before the transition.
+	 * @param   RunState $replacement Complete replacement state.
+	 *
+	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
+	 */
+	public function transition_state( string $run_id, RunState $expected, RunState $replacement ): ?string {
+		$replacement_raw = self::serialize_state( $replacement );
+		if ( ! $this->rows->replace(
+			$this->option_name( $run_id ),
+			self::serialize_state( $expected ),
+			$replacement_raw
+		) ) {
+			return null;
+		}
+
+		return $replacement_raw;
+	}
+
+	/**
+	 * Deletes a run only while its exact terminal snapshot still matches.
+	 *
+	 * @internal Engine terminalization and maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id      Run identifier.
+	 * @param   string $expected_raw Exact terminal or corrupt snapshot.
+	 *
+	 * @return  bool Whether this caller deleted the exact row.
+	 */
+	public function delete_exact( string $run_id, string $expected_raw ): bool {
+		return $this->rows->delete( $this->option_name( $run_id ), $expected_raw );
+	}
+
+	/**
+	 * Returns whether any raw run option still occupies this exact identity.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Run identifier.
+	 *
+	 * @return  bool
+	 */
+	public function exists( string $run_id ): bool {
+		$missing = new \stdClass();
+
+		return \get_option( $this->option_name( $run_id ), $missing ) !== $missing;
+	}
+
+	/**
+	 * Refreshes a recoverable run's heartbeat only while its complete state still matches.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string        $run_id  Run identifier.
+	 * @param   RunState|null $expected Complete state already observed by the caller, or null to inspect it here.
+	 *
+	 * @return  RunState|null Null when the run is absent, invalid, or changed concurrently.
+	 */
+	public function refresh_heartbeat( string $run_id, ?RunState $expected = null ): ?RunState {
+		$raw = null;
+		if ( null === $expected ) {
+			$snapshot = $this->inspect( $run_id );
+			if ( null === $snapshot || null === $snapshot['state'] ) {
+				return null;
+			}
+
+			$raw      = $snapshot['raw'];
+			$expected = $snapshot['state'];
+		}
+
+		$replacement     = $expected->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$replacement_raw = null === $raw
+			? $this->transition_state( $run_id, $expected, $replacement )
+			: $this->transition( $run_id, $raw, $replacement );
+
+		return null !== $replacement_raw ? $replacement : null;
 	}
 
 	/**
@@ -152,10 +271,13 @@ final readonly class RunStore {
 	 *
 	 * @param   string $run_id Run identifier.
 	 *
-	 * @return  void
+	 * @return  bool True when the run option is confirmed absent.
 	 */
-	public function delete( string $run_id ): void {
+	public function delete( string $run_id ): bool {
 		\delete_option( $this->option_name( $run_id ) );
+		$missing = new \stdClass();
+
+		return \get_option( $this->option_name( $run_id ), $missing ) === $missing;
 	}
 
 	// endregion
@@ -206,6 +328,49 @@ final readonly class RunStore {
 			'created_at'    => $state->created_at,
 			'heartbeat_at'  => $state->heartbeat_at,
 		);
+	}
+
+	/**
+	 * Returns a run state's exact WordPress option representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   RunState $state Typed run state.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the run state to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize_state( RunState $state ): string {
+		$raw = \maybe_serialize( self::to_option( $state ) );
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'WordPress must serialize a consolidated run state to a string.' );
+		}
+
+		return $raw;
+	}
+
+	/**
+	 * Decodes a raw run row without constructing serialized objects.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $raw Exact persisted option value.
+	 *
+	 * @return  mixed
+	 */
+	private static function decode_raw( string $raw ): mixed {
+		\call_user_func( 'set_error_handler', static fn (): bool => true );
+
+		try {
+			return \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
+		} catch ( \Throwable ) {
+			return null;
+		} finally {
+			\call_user_func( 'restore_error_handler' );
+		}
 	}
 
 	/**

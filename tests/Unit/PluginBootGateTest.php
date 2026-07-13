@@ -37,6 +37,10 @@ final class PluginBootGateTest extends TestCase {
 
 		require_once __DIR__ . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
+		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-time-constant-stubs.php';
+		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/wp-cron-stubs.php';
 	}
 
 	/**
@@ -52,6 +56,13 @@ final class PluginBootGateTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
+		$GLOBALS['a8csp_bgte_test_options']              = array();
+		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
+		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
+		$GLOBALS['a8csp_bgte_test_cron_array']           = array();
+		$GLOBALS['a8csp_bgte_test_cron_calls']           = array();
+		$GLOBALS['a8csp_bgte_test_cron_results']         = array();
+		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
 		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
 	}
 
@@ -71,6 +82,7 @@ final class PluginBootGateTest extends TestCase {
 				'a8csp/background_tasks/continue',
 				'a8csp/background_tasks/run',
 				'a8csp/background_tasks/cleanup',
+				'a8csp/background_tasks/schedule_due',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);
@@ -94,6 +106,7 @@ final class PluginBootGateTest extends TestCase {
 				'a8csp/background_tasks/continue',
 				'a8csp/background_tasks/run',
 				'a8csp/background_tasks/cleanup',
+				'a8csp/background_tasks/schedule_due',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);

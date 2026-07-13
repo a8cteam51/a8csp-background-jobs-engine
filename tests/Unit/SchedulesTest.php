@@ -4,14 +4,25 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -49,6 +60,7 @@ final class SchedulesTest extends TestCase {
 		}
 
 		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
 	}
 
@@ -97,7 +109,7 @@ final class SchedulesTest extends TestCase {
 	public function test_sync_applies_the_add_change_remove_and_no_op_matrix(): void {
 		$backend = new RecordingBackend();
 		$clock   = new FixedClock( self::NOW );
-		$api     = new Schedules( new ScheduleRegistry(), $backend, $clock );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, $clock );
 		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 
 		$added = $api->sync( 'owner-a', array( $initial ) );
@@ -136,6 +148,8 @@ final class SchedulesTest extends TestCase {
 						'fingerprint' => $initial->fingerprint(),
 						'next_due'    => self::NOW + 300,
 						'last_fired'  => null,
+						'misfires'    => 0,
+						'skips'       => 0,
 					),
 				),
 			),
@@ -169,6 +183,8 @@ final class SchedulesTest extends TestCase {
 				'fingerprint' => $initial->fingerprint(),
 				'next_due'    => self::NOW + 300,
 				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
 			),
 			$this->registration( 'owner-a', 'nightly' )
 		);
@@ -205,6 +221,8 @@ final class SchedulesTest extends TestCase {
 				'fingerprint' => $changed_schedule->fingerprint(),
 				'next_due'    => self::NOW + 600,
 				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
 			),
 			$this->registration( 'owner-a', 'nightly' )
 		);
@@ -244,6 +262,8 @@ final class SchedulesTest extends TestCase {
 						'fingerprint' => $schedule->fingerprint(),
 						'next_due'    => self::NOW - 60,
 						'last_fired'  => self::NOW - 360,
+						'misfires'    => 0,
+						'skips'       => 0,
 					),
 				),
 			),
@@ -251,7 +271,7 @@ final class SchedulesTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_options'] = $persisted;
 
-		$api = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		$result = $api->sync( 'owner-a', array( $schedule ) );
 
@@ -295,8 +315,8 @@ final class SchedulesTest extends TestCase {
 		$backend            = new RecordingBackend();
 		$backend->scheduled = true;
 		$schedule           = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
-		$api                = new Schedules(
-			new ScheduleRegistry(),
+		$api                = $this->new_schedules(
+			$this->new_registry(),
 			$backend,
 			new FixedClock( self::NOW )
 		);
@@ -345,6 +365,8 @@ final class SchedulesTest extends TestCase {
 						'fingerprint' => $schedule->fingerprint(),
 						'next_due'    => self::NOW + 300,
 						'last_fired'  => null,
+						'misfires'    => 0,
+						'skips'       => 0,
 					),
 				),
 			),
@@ -384,7 +406,7 @@ final class SchedulesTest extends TestCase {
 			)
 		);
 
-		$api = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		$result = $api->sync( 'owner-a', array( $changed ) );
 
@@ -419,7 +441,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_sync_orphan_removal_is_strictly_owner_scoped(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$owner_a = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 		$owner_b = new Schedule( 'hourly', Cadence::every( 3_600 ), 'refresh-index' );
 
@@ -452,6 +474,8 @@ final class SchedulesTest extends TestCase {
 						'fingerprint' => $owner_b->fingerprint(),
 						'next_due'    => self::NOW + 3_600,
 						'last_fired'  => null,
+						'misfires'    => 0,
+						'skips'       => 0,
 					),
 				),
 			),
@@ -467,16 +491,16 @@ final class SchedulesTest extends TestCase {
 	public function test_numeric_identifiers_round_trip_without_orphaning_backend_state(): void {
 		$backend  = new RecordingBackend();
 		$schedule = new Schedule( '456', Cadence::every( 300 ), 'refresh-index' );
-		$created  = ( new Schedules(
-			new ScheduleRegistry(),
+		$created  = ( $this->new_schedules(
+			$this->new_registry(),
 			$backend,
 			new FixedClock( self::NOW )
 		) )->sync( '123', array( $schedule ) );
 		self::assertInstanceOf( Success::class, $created );
 
 		$this->clear_backend_calls( $backend );
-		$removed = ( new Schedules(
-			new ScheduleRegistry(),
+		$removed = ( $this->new_schedules(
+			$this->new_registry(),
 			$backend,
 			new FixedClock( self::NOW )
 		) )->sync( '123', array() );
@@ -494,7 +518,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_cron_cadence_fails_as_data_without_mutating_backend_or_registry(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$fixed   = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 
 		$seeded = $api->sync( 'owner-a', array( $fixed ) );
@@ -548,7 +572,7 @@ final class SchedulesTest extends TestCase {
 		);
 
 		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
-		$api           = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api           = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		$result = $api->sync( 'owner-a', array( $schedule ) );
 
@@ -574,7 +598,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_first_due_overflow_fails_before_backend_mutation(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
@@ -601,7 +625,7 @@ final class SchedulesTest extends TestCase {
 	public function test_non_positive_clock_fails_before_backend_mutation(): void {
 		$backend = new RecordingBackend();
 		$clock   = new FixedClock( self::NOW );
-		$api     = new Schedules( new ScheduleRegistry(), $backend, $clock );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, $clock );
 		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
@@ -628,7 +652,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_negative_clock_schedules_a_positive_first_occurrence(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( -100 ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( -100 ) );
 
 		$result = $api->sync(
 			'owner-a',
@@ -655,8 +679,8 @@ final class SchedulesTest extends TestCase {
 		$key      = 'o:' . $name;
 		$schedule = new Schedule( $name, Cadence::every( 300 ), 'refresh-index' );
 
-		$result = ( new Schedules(
-			new ScheduleRegistry(),
+		$result = ( $this->new_schedules(
+			$this->new_registry(),
 			$backend,
 			new FixedClock( self::NOW )
 		) )->sync( 'o', array( $schedule ) );
@@ -676,7 +700,7 @@ final class SchedulesTest extends TestCase {
 	public function test_sync_rejects_a_256_byte_registration_key_before_mutation(): void {
 		$backend = new RecordingBackend();
 		$name    = \str_repeat( 'n', 254 );
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		try {
 			(void) $api->sync(
@@ -707,7 +731,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_sync_rejects_an_invalid_owner_with_the_fix(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		try {
 			(void) $api->sync( 'Owner A', array() );
@@ -725,6 +749,30 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * The engine owner cannot be replaced through the consumer synchronization API.
+	 *
+	 * @return  void
+	 */
+	public function test_sync_rejects_the_engine_reserved_owner_with_the_fix(): void {
+		$backend = new RecordingBackend();
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
+
+		try {
+			(void) $api->sync( 'a8csp-bgte', array() );
+			self::fail( 'Reserved owner sync did not throw.' );
+		} catch ( \InvalidArgumentException $exception ) {
+			self::assertSame(
+				'Schedule owner "a8csp-bgte" is reserved for engine maintenance; choose a consumer-specific owner identifier.',
+				$exception->getMessage()
+			);
+		}
+
+		self::assertSame( array(), $backend->calls );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame( array(), $this->options() );
+	}
+
+	/**
 	 * Duplicate declarations fail before any backend or option mutation.
 	 *
 	 * @return  void
@@ -732,8 +780,8 @@ final class SchedulesTest extends TestCase {
 	public function test_sync_rejects_duplicate_names_with_the_fix(): void {
 		$schedule = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 		$backend  = new RecordingBackend();
-		$api      = new Schedules(
-			new ScheduleRegistry(),
+		$api      = $this->new_schedules(
+			$this->new_registry(),
 			$backend,
 			new FixedClock( self::NOW )
 		);
@@ -760,7 +808,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_failed_replacement_leaves_no_stale_fingerprint_and_the_old_declaration_repairs(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$initial = new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
@@ -806,7 +854,7 @@ final class SchedulesTest extends TestCase {
 			'a8csp_bgte_schedules' => false,
 		);
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		$result = $api->sync(
 			'owner-a',
@@ -834,7 +882,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_removal_crash_window_converges_on_the_next_sync(): void {
 		$backend = new RecordingBackend();
-		$api     = new Schedules( new ScheduleRegistry(), $backend, new FixedClock( self::NOW ) );
+		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$seeded  = $api->sync(
 			'owner-a',
 			array( new Schedule( 'nightly', Cadence::every( 300 ), 'refresh-index' ) )
@@ -880,6 +928,52 @@ final class SchedulesTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns a schedule registry with authoritative raw-row support.
+	 *
+	 * @return  ScheduleRegistry
+	 */
+	private function new_registry(): ScheduleRegistry {
+		return new ScheduleRegistry( new OptionRows( new WpdbLockSpy() ) );
+	}
+
+	/**
+	 * Constructs the complete schedule API graph used by synchronization tests.
+	 *
+	 * @param   ScheduleRegistry $registry Schedule registry.
+	 * @param   RecordingBackend $backend  Scheduling seam.
+	 * @param   FixedClock       $clock    Timestamp source.
+	 *
+	 * @return  Schedules
+	 */
+	private function new_schedules(
+		ScheduleRegistry $registry,
+		RecordingBackend $backend,
+		FixedClock $clock
+	): Schedules {
+		$logger       = new RecordingLogger();
+		$wpdb         = new WpdbLockSpy();
+		$orchestrator = new Orchestrator(
+			new TaskRegistry(),
+			new BatchRegistry(),
+			$backend,
+			new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) ),
+			new StoreFactory( $clock, new OptionRows( $wpdb ) ),
+			$logger,
+			$clock,
+			new RecordingRandomizer( 42 ),
+		);
+
+		return new Schedules(
+			$registry,
+			$backend,
+			$clock,
+			$orchestrator,
+			new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+			$logger
+		);
+	}
 
 	/**
 	 * Clears the recording backend ledger without narrowing its declared element type.
