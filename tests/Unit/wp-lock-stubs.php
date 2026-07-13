@@ -94,6 +94,9 @@ if ( ! \function_exists( 'switch_to_blog' ) ) {
 		if ( \is_object( $wpdb ) && \property_exists( $wpdb, 'options' ) ) {
 			$wpdb->options = 1 === $new_blog_id ? 'wp_options' : 'wp_' . $new_blog_id . '_options';
 		}
+		if ( \is_object( $wpdb ) && \property_exists( $wpdb, 'prefix' ) ) {
+			$wpdb->prefix = 1 === $new_blog_id ? 'wp_' : 'wp_' . $new_blog_id . '_';
+		}
 
 		return true;
 	}
@@ -122,6 +125,9 @@ if ( ! \function_exists( 'restore_current_blog' ) ) {
 		$wpdb = $GLOBALS['wpdb'] ?? null;
 		if ( \is_object( $wpdb ) && \property_exists( $wpdb, 'options' ) ) {
 			$wpdb->options = 1 === $blog_id ? 'wp_options' : 'wp_' . $blog_id . '_options';
+		}
+		if ( \is_object( $wpdb ) && \property_exists( $wpdb, 'prefix' ) ) {
+			$wpdb->prefix = 1 === $blog_id ? 'wp_' : 'wp_' . $blog_id . '_';
 		}
 
 		return true;

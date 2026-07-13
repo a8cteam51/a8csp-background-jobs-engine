@@ -20,20 +20,4 @@ enum RunStatus: string {
 	case Superseded = 'superseded';
 
 	// endregion
-
-	// region METHODS
-
-	/**
-	 * Returns whether the run accepts no further state transitions.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function is_terminal(): bool {
-		return self::Running !== $this;
-	}
-
-	// endregion
 }

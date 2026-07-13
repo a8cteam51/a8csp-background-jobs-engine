@@ -7,7 +7,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the run-status vocabulary and terminal-state boundary.
+ * Pins the run-status vocabulary.
  *
  */
 #[CoversClass( RunStatus::class )]
@@ -53,18 +53,5 @@ final class RunStatusTest extends TestCase {
 			),
 			\array_map( static fn ( RunStatus $status ): string => $status->value, $statuses )
 		);
-	}
-
-	/**
-	 * Running is the sole status from which the orchestrator can transition.
-	 *
-	 * @return  void
-	 */
-	public function test_terminal_truth_table(): void {
-		self::assertFalse( RunStatus::Running->is_terminal() );
-		self::assertTrue( RunStatus::Completed->is_terminal() );
-		self::assertTrue( RunStatus::Failed->is_terminal() );
-		self::assertTrue( RunStatus::Stopped->is_terminal() );
-		self::assertTrue( RunStatus::Superseded->is_terminal() );
 	}
 }

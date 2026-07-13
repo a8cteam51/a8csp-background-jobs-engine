@@ -87,6 +87,12 @@ final class PluginBootGateTest extends TestCase {
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);
+		$action_registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
+		self::assertIsArray( $action_registrations );
+		$init_registration = $action_registrations[6] ?? null;
+		self::assertIsArray( $init_registration );
+		self::assertSame( 'init', $init_registration['hook_name'] ?? null );
+		self::assertSame( 10, $init_registration['priority'] ?? null );
 	}
 
 	/**

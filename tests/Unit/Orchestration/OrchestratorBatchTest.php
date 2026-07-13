@@ -236,6 +236,39 @@ final class OrchestratorBatchTest extends TestCase {
 	}
 
 	/**
+	 * Priority validation names the complete engine range before touching any boundary.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_priorities' )]
+	public function test_start_batch_rejects_priority_outside_the_engine_range( int $priority ): void {
+		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, priority: $priority );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			\sprintf(
+				'Batch "catalog-sync" priority %d is invalid; pass a value from 0 through 255.',
+				$priority
+			),
+			$result->error->message
+		);
+		$this->assert_start_boundaries_untouched();
+	}
+
+	/**
+	 * Supplies values immediately outside both inclusive priority boundaries.
+	 *
+	 * @return  array<string, array{priority: int}>
+	 */
+	public static function invalid_priorities(): array {
+		return array(
+			'below minimum' => array( 'priority' => -1 ),
+			'above maximum' => array( 'priority' => 256 ),
+		);
+	}
+
+	/**
 	 * Manual retry starts a fresh batch run and removes the consumed failed entry.
 	 *
 	 * @return  void

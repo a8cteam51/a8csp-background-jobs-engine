@@ -44,20 +44,6 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
-	 * Empty history readers return newest-last lists with no entries.
-	 *
-	 * @return  void
-	 */
-	public function test_readers_return_empty_lists_without_history(): void {
-		$history = new RunHistory( 'reports' );
-
-		self::assertSame( array(), $history->get_started() );
-		self::assertSame( array(), $history->get_completed() );
-		self::assertSame( array(), $history->get_started_for_hash( 'hash-a' ) );
-		self::assertSame( array(), $history->get_completed_for_hash( 'hash-a' ) );
-	}
-
-	/**
 	 * Started and completed writes persist the mirrored by-hash schema under the literal key.
 	 *
 	 * @return  void
@@ -68,10 +54,6 @@ final class RunHistoryTest extends TestCase {
 		$history->record_started( 'run-a', 'hash-a' );
 		$history->record_completed( 'run-a', 'hash-a' );
 
-		self::assertSame( array( 'run-a' ), $history->get_started() );
-		self::assertSame( array( 'run-a' ), $history->get_completed() );
-		self::assertSame( array( 'run-a' ), $history->get_started_for_hash( 'hash-a' ) );
-		self::assertSame( array( 'run-a' ), $history->get_completed_for_hash( 'hash-a' ) );
 		self::assertSame(
 			array(
 				'started'   => array( 'run-a' ),
@@ -101,10 +83,19 @@ final class RunHistoryTest extends TestCase {
 		$history->record_completed( 'run-a', 'hash-a' );
 		$history->record_completed( 'run-a', 'hash-a' );
 
-		self::assertSame( array( 'run-a' ), $history->get_started() );
-		self::assertSame( array( 'run-a' ), $history->get_completed() );
-		self::assertSame( array( 'run-a' ), $history->get_started_for_hash( 'hash-a' ) );
-		self::assertSame( array( 'run-a' ), $history->get_completed_for_hash( 'hash-a' ) );
+		self::assertSame(
+			array(
+				'started'   => array( 'run-a' ),
+				'completed' => array( 'run-a' ),
+				'by_hash'   => array(
+					'hash-a' => array(
+						'started'   => array( 'run-a' ),
+						'completed' => array( 'run-a' ),
+					),
+				),
+			),
+			$this->option( 'a8csp_bgte_history_reports' )
+		);
 	}
 
 	/**
@@ -130,10 +121,19 @@ final class RunHistoryTest extends TestCase {
 			\range( 1, 30 )
 		);
 
-		self::assertSame( $expected_started, $history->get_started() );
-		self::assertSame( $expected_completed, $history->get_completed() );
-		self::assertSame( $expected_started, $history->get_started_for_hash( 'hash-a' ) );
-		self::assertSame( $expected_completed, $history->get_completed_for_hash( 'hash-a' ) );
+		self::assertSame(
+			array(
+				'started'   => $expected_started,
+				'completed' => $expected_completed,
+				'by_hash'   => array(
+					'hash-a' => array(
+						'started'   => $expected_started,
+						'completed' => $expected_completed,
+					),
+				),
+			),
+			$this->option( 'a8csp_bgte_history_exports' )
+		);
 
 		$this->assert_all_option_writes_disable_autoload();
 	}
@@ -176,12 +176,6 @@ final class RunHistoryTest extends TestCase {
 			),
 			$option
 		);
-		self::assertSame( array( 'started-b2', 'started-a3' ), $history->get_started() );
-		self::assertSame( array( 'completed-a2', 'completed-b2' ), $history->get_completed() );
-		self::assertSame( array( 'started-a2', 'started-a3' ), $history->get_started_for_hash( 'hash-a' ) );
-		self::assertSame( array( 'started-b1', 'started-b2' ), $history->get_started_for_hash( 'hash-b' ) );
-		self::assertSame( array( 'completed-a1', 'completed-a2' ), $history->get_completed_for_hash( 'hash-a' ) );
-		self::assertSame( array( 'completed-b1', 'completed-b2' ), $history->get_completed_for_hash( 'hash-b' ) );
 	}
 
 	/**
@@ -199,12 +193,23 @@ final class RunHistoryTest extends TestCase {
 		$history->record_completed( 'completed-a1', 'hash-a' );
 		$history->record_completed( 'completed-b2', 'hash-b' );
 
-		self::assertSame( array( 'started-a1', 'started-b1', 'started-a2' ), $history->get_started() );
-		self::assertSame( array( 'started-a1', 'started-a2' ), $history->get_started_for_hash( 'hash-a' ) );
-		self::assertSame( array( 'started-b1' ), $history->get_started_for_hash( 'hash-b' ) );
-		self::assertSame( array( 'completed-b1', 'completed-a1', 'completed-b2' ), $history->get_completed() );
-		self::assertSame( array( 'completed-a1' ), $history->get_completed_for_hash( 'hash-a' ) );
-		self::assertSame( array( 'completed-b1', 'completed-b2' ), $history->get_completed_for_hash( 'hash-b' ) );
+		self::assertSame(
+			array(
+				'started'   => array( 'started-a1', 'started-b1', 'started-a2' ),
+				'completed' => array( 'completed-b1', 'completed-a1', 'completed-b2' ),
+				'by_hash'   => array(
+					'hash-a' => array(
+						'started'   => array( 'started-a1', 'started-a2' ),
+						'completed' => array( 'completed-a1' ),
+					),
+					'hash-b' => array(
+						'started'   => array( 'started-b1' ),
+						'completed' => array( 'completed-b1', 'completed-b2' ),
+					),
+				),
+			),
+			$this->option( 'a8csp_bgte_history_isolation' )
+		);
 	}
 
 	/**
@@ -224,10 +229,37 @@ final class RunHistoryTest extends TestCase {
 		$history->record_started( 'run-1b', 'hash-1' );
 		$history->record_started( 'run-21', 'hash-21' );
 
-		self::assertSame( array(), $history->get_started_for_hash( 'hash-2' ) );
-		self::assertSame( array( 'run-1', 'run-1b' ), $history->get_started_for_hash( 'hash-1' ) );
-		self::assertSame( array( 'run-21' ), $history->get_started_for_hash( 'hash-21' ) );
-		self::assertSame( array( 'run-3' ), $history->get_started_for_hash( 'hash-3' ) );
+		$expected_by_hash = array();
+		foreach ( \range( 3, 20 ) as $index ) {
+			$expected_by_hash[ "hash-{$index}" ] = array(
+				'started'   => array( "run-{$index}" ),
+				'completed' => array(),
+			);
+		}
+		$expected_by_hash['hash-1']  = array(
+			'started'   => array( 'run-1', 'run-1b' ),
+			'completed' => array(),
+		);
+		$expected_by_hash['hash-21'] = array(
+			'started'   => array( 'run-21' ),
+			'completed' => array(),
+		);
+
+		self::assertSame(
+			array(
+				'started'   => array(
+					...\array_map(
+						static fn ( int $index ): string => "run-{$index}",
+						\range( 1, 20 )
+					),
+					'run-1b',
+					'run-21',
+				),
+				'completed' => array(),
+				'by_hash'   => $expected_by_hash,
+			),
+			$this->option( 'a8csp_bgte_history_sync' )
+		);
 	}
 
 	/**

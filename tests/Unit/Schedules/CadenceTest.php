@@ -35,7 +35,6 @@ final class CadenceTest extends TestCase {
 
 		self::assertSame( 1, $cadence->interval() );
 		self::assertNull( $cadence->expression() );
-		self::assertFalse( $cadence->is_cron() );
 		self::assertSame(
 			array(
 				'type'  => 'every',
@@ -55,7 +54,6 @@ final class CadenceTest extends TestCase {
 
 		self::assertNull( $cadence->interval() );
 		self::assertSame( '0 3 * * *', $cadence->expression() );
-		self::assertTrue( $cadence->is_cron() );
 		self::assertSame(
 			array(
 				'type'  => 'cron',

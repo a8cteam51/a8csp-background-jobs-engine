@@ -248,9 +248,9 @@ Use a stable owner slug and pass every schedule owned by that consumer on every 
 
 ## Keep action arguments small
 
-Public start and enqueue arguments are validated as JSON-encodable scalar trees and persisted in the run state; the scheduled backend action carries only the engine's envelope (name, run ID, sequence). The 8,000-character JSON ceiling applies to each backend action payload — for a Batch that is one chunk's arguments plus that envelope, so every chunk must fit within it. An oversized or unencodable payload fails with a corrective message naming the hook:
+Public start and enqueue arguments are validated as JSON-encodable scalar trees and persisted in the run state; the scheduled backend action carries only the engine's envelope (name, run ID, sequence). The 8,000-byte JSON ceiling applies to each backend action payload — for a Batch that is one chunk's arguments plus that envelope, so every chunk must fit within it. An oversized or unencodable payload fails with a corrective message naming the hook:
 
-> Scheduling hook "&lt;hook&gt;" has arguments that cannot be JSON-encoded within the 8000-character limit; pass identifying keys and load bulk data from storage inside the handler.
+> Scheduling hook "&lt;hook&gt;" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.
 
 Bulk data goes in storage that the task or batch reads by key. Actions carry identifying keys only. The demo Task carries its transient key. The demo Batch carries a `post_type` key, queries post IDs during queue generation, and puts one ID in each chunk.
 

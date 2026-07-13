@@ -215,24 +215,6 @@ final readonly class RunStore {
 	}
 
 	/**
-	 * Returns whether any raw run option still occupies this exact identity.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  bool
-	 */
-	public function exists( string $run_id ): bool {
-		$missing = new \stdClass();
-
-		return \get_option( $this->option_name( $run_id ), $missing ) !== $missing;
-	}
-
-	/**
 	 * Refreshes a recoverable run's heartbeat only while its complete state still matches.
 	 *
 	 * @since   1.0.0

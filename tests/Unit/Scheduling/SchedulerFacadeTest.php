@@ -659,9 +659,8 @@ final class SchedulerFacadeTest extends TestCase {
 		$result  = $this->invoke_guarded_write( $facade, $verb, $this->args_with_json_length( 8_001 ) );
 		$error   = $this->assert_payload_too_large( $result );
 
-		self::assertStringContainsString( self::HOOK, $error->message );
-		self::assertStringContainsString(
-			'pass identifying keys and load bulk data from storage inside the handler',
+		self::assertSame(
+			'Scheduling hook "a8csp_bgte_test_hook" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.',
 			$error->message
 		);
 		self::assertSame( array(), $backend->calls );
@@ -839,7 +838,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_args_guard_accepts_an_exactly_8000_character_json_payload(): void {
+	public function test_args_guard_accepts_an_exactly_8000_byte_json_payload(): void {
 		$backend = new RecordingBackend();
 		$args    = $this->args_with_json_length( 8_000 );
 

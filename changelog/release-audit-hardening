@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Harden release and CI validation, defer maintenance sync until Action Scheduler is ready, verify demo comment-count persistence, align payload limits to bytes, and trim unused surfaces.

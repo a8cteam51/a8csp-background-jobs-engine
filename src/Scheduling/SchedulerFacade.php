@@ -30,7 +30,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * The guard accepts only scalar trees whose JSON form fits the incumbent-proven 8000-character ceiling.
+	 * The guard accepts only scalar trees whose JSON form fits the incumbent-proven 8000-byte ceiling.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -417,7 +417,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 			new SchedulingError(
 				SchedulingErrorReason::PayloadTooLarge,
 				\sprintf(
-					'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-character limit; pass identifying keys and load bulk data from storage inside the handler.',
+					'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-byte limit; pass identifying keys and load bulk data from storage inside the handler.',
 					$hook,
 					self::MAX_ARGUMENTS_JSON_LENGTH
 				),

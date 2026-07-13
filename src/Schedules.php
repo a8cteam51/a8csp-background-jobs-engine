@@ -309,25 +309,22 @@ final readonly class Schedules {
 			2
 		);
 
-		// Action Scheduler reports ready only after action_scheduler_init fires during init, so an
-		// earlier sync would route the engine's own housekeeping onto the WP-Cron fallback (and
-		// translate its synthetic-schedule label before init). did_action alone stays positive
-		// while init is still running, and a mid-init boot may already sit past any fixed
-		// priority — the maximum priority is the one slot reachable from every boot point.
+		// Action Scheduler becomes ready at init:1, while WP_Hook does not visit callbacks appended
+		// to the priority bucket it is currently traversing.
 		if ( 0 < \did_action( 'init' ) && ! \doing_action( 'init' ) ) {
 			$this->sync_maintenance_schedule();
 			return;
 		}
 
-		// The deferred sync fires on whichever site is selected when init reaches it; the
+		// The deferred sync fires on whichever site is selected when its lifecycle hook runs; the
 		// registration belongs to the boot-time site.
 		$boot_blog_id = \get_current_blog_id();
+		$hook_name    = \doing_action( 'init' ) ? 'wp_loaded' : 'init';
 		\add_action(
-			'init',
+			$hook_name,
 			function () use ( $boot_blog_id ): void {
 				$this->sync_maintenance_schedule( $boot_blog_id );
-			},
-			\PHP_INT_MAX
+			}
 		);
 	}
 
@@ -341,7 +338,7 @@ final readonly class Schedules {
 	 *
 	 * @return  void
 	 */
-	public function sync_maintenance_schedule( ?int $blog_id = null ): void {
+	private function sync_maintenance_schedule( ?int $blog_id = null ): void {
 		$switched = null !== $blog_id && \is_multisite() && \get_current_blog_id() !== $blog_id;
 		if ( $switched ) {
 			\switch_to_blog( $blog_id );

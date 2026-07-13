@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+Delete every engine-owned Action Scheduler action and log during cold uninstall, then remove only groups left unreferenced.

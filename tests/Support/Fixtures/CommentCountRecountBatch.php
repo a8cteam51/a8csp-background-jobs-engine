@@ -129,6 +129,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 * @param   BatchContextInterface   $context    Controlled access to this chunk's run.
 	 *
 	 * @throws  NonRetryableTaskException When the queued post identifier is invalid or its post is gone.
+	 * @throws  \RuntimeException         When the refreshed comment count is not persisted.
 	 *
 	 * @return  void
 	 */
@@ -146,6 +147,28 @@ final class CommentCountRecountBatch implements BatchInterface {
 		if ( ! \wp_update_comment_count_now( $post_id ) ) {
 			throw new NonRetryableTaskException(
 				\sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id )
+			);
+		}
+
+		// The core helper reports success without checking its database update, so comparing the
+		// uncached field with the authoritative approved count keeps a transient failure retryable.
+		\clean_post_cache( $post_id );
+		$stored_comment_count   = (int) \get_post_field( 'comment_count', $post_id, 'raw' );
+		$approved_comment_count = (int) \get_comments(
+			array(
+				'count'   => true,
+				'post_id' => $post_id,
+				'status'  => 'approve',
+			)
+		);
+		if ( $approved_comment_count !== $stored_comment_count ) {
+			throw new \RuntimeException(
+				\sprintf(
+					'Post %1$d stores comment_count %2$d but has %3$d approved comments; fix the database write before retrying the chunk.',
+					$post_id,
+					$stored_comment_count,
+					$approved_comment_count
+				)
 			);
 		}
 

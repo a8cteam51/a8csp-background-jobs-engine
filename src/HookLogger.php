@@ -54,6 +54,7 @@ final class HookLogger extends AbstractLogger {
 		 * Fires when the engine emits a log event.
 		 *
 		 * @since   1.0.0
+		 * @version 1.0.0
 		 *
 		 * @param   string                  $level   The log level.
 		 * @param   string                  $message The interpolated log message.

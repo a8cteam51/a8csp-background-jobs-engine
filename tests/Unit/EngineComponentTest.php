@@ -186,7 +186,8 @@ final class EngineComponentTest extends TestCase {
 		( new Plugin() )->boot();
 
 		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
-		self::assertContains( 'init', $hook_names, 'A mid-init boot must defer the sync to a reachable init slot' );
+		self::assertContains( 'wp_loaded', $hook_names, 'A mid-init boot must defer the sync until init completes' );
+		self::assertNotContains( 'init', $hook_names, 'A mid-init boot must not append to the active init bucket' );
 		self::assertNull(
 			\get_option( 'a8csp_bgte_schedules', null ),
 			'A mid-init boot must not synchronize before Action Scheduler initializes'
@@ -252,9 +253,9 @@ final class EngineComponentTest extends TestCase {
 		);
 		self::assertCount( 1, $init_registrations, 'Boot must defer exactly one maintenance sync to init' );
 		self::assertSame(
-			\PHP_INT_MAX,
+			10,
 			$init_registrations[0]['priority'] ?? null,
-			'The deferred sync must use the one init priority reachable from every boot point'
+			'The normal deferred sync must use the default init priority after Action Scheduler initializes at init:1'
 		);
 		self::assertNull(
 			\get_option( 'a8csp_bgte_schedules', null ),

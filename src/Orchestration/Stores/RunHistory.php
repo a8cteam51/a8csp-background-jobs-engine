@@ -93,62 +93,6 @@ final readonly class RunHistory {
 		$this->record( 'completed', $run_id, $args_hash );
 	}
 
-	/**
-	 * Returns all retained started runs, newest last.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<string>
-	 */
-	public function get_started(): array {
-		return self::history_from_option( \get_option( $this->option_name(), null ) )['started'];
-	}
-
-	/**
-	 * Returns all retained completed runs, newest last.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<string>
-	 */
-	public function get_completed(): array {
-		return self::history_from_option( \get_option( $this->option_name(), null ) )['completed'];
-	}
-
-	/**
-	 * Returns retained started runs for one argument identity, newest last.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $args_hash Stable identity of the start arguments.
-	 *
-	 * @return  list<string>
-	 */
-	public function get_started_for_hash( string $args_hash ): array {
-		$history = self::history_from_option( \get_option( $this->option_name(), null ) );
-
-		return $history['by_hash'][ $args_hash ]['started'] ?? array();
-	}
-
-	/**
-	 * Returns retained completed runs for one argument identity, newest last.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $args_hash Stable identity of the start arguments.
-	 *
-	 * @return  list<string>
-	 */
-	public function get_completed_for_hash( string $args_hash ): array {
-		$history = self::history_from_option( \get_option( $this->option_name(), null ) );
-
-		return $history['by_hash'][ $args_hash ]['completed'] ?? array();
-	}
-
 	// endregion
 
 	// region HELPERS

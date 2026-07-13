@@ -74,18 +74,6 @@ final readonly class Cadence {
 	// region GETTERS
 
 	/**
-	 * Returns whether this cadence uses a calendar cron expression.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function is_cron(): bool {
-		return 'cron' === $this->type;
-	}
-
-	/**
 	 * Returns the fixed interval, or null for a cron expression.
 	 *
 	 * @since   1.0.0
