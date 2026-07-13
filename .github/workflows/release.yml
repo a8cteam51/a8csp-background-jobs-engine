@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2, wp-cli
+      - name: Validate changelog
+        run: |
+          composer install --no-interaction
+          composer changelog:validate
+      - name: Install production dependencies
+        run: |
+          composer install --no-dev --optimize-autoloader --no-interaction
+      # Tagging before composer changelog:write leaves the materialized release version out of sync.
+      - name: Verify release version
+        run: |
+          set -euo pipefail
+
+          tag_version=${GITHUB_REF_NAME#v}
+          plugin_version=$(grep -m 1 '^[[:space:]]*\*[[:space:]]*Version:' a8csp-background-tasks-engine.php | sed -E 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*([^[:space:]]+).*/\1/' || true)
+          changelog_version=$(grep -m 1 '^## ' CHANGELOG.md | sed -E 's/^## \[?([^] ]+)\]? - .*/\1/' || true)
+
+          if [ -z "$plugin_version" ] || [ -z "$changelog_version" ] || [ "$tag_version" != "$plugin_version" ] || [ "$tag_version" != "$changelog_version" ]; then
+            echo "::error::release versions disagree: tag=$tag_version plugin=${plugin_version:-missing} changelog=${changelog_version:-missing}" >&2
+            exit 1
+          fi
+      - name: Install dist-archive command
+        run: |
+          wp package install wp-cli/dist-archive-command:3.2.2
+      - name: Create plugin archive
+        run: |
+          wp dist-archive . "./${GITHUB_REPOSITORY##*/}.zip" --plugin-dirname="${GITHUB_REPOSITORY##*/}"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" ./*.zip --generate-notes

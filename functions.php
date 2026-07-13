@@ -1,75 +1,53 @@
-<?php declare( strict_types = 1 );
+<?php declare( strict_types=1 );
 
-defined( 'ABSPATH' ) || exit;
+use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 
-use A8C\SpecialProjects\BackgroundTasks\Plugin;
+\defined( 'ABSPATH' ) || exit;
 
 // region META
 
 /**
- * Returns the plugin's main class instance.
+ * Returns the plugin instance, booting it on first access.
+ *
+ * Doubles as the `plugins_loaded` hook target: WordPress ignores an action callback's return
+ * value, so the accessor is hooked directly. Named, rather than an anonymous closure, so
+ * `remove_action( 'plugins_loaded', 'a8csp_bgte_plugin' )` can unhook the boot and
+ * `has_action()` can assert the wiring by name.
  *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @return  Plugin
  */
-function a8csp_bgt_get_plugin_instance(): Plugin {
-	return Plugin::get_instance();
-}
+function a8csp_bgte_plugin(): Plugin {
+	/**
+	 * Reusing one instance prevents duplicate hook registrations on repeated access.
+	 *
+	 * @var Plugin|null $plugin
+	 */
+	static $plugin = null;
 
-/**
- * Returns the plugin's slug.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @return  string
- */
-function a8csp_bgt_get_plugin_slug(): string {
-	return sanitize_key( A8CSP_BGT_METADATA['TextDomain'] );
-}
-
-/**
- * Returns the task instance for the provided task name.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   string $task_name The name of the task to return the instance for.
- *
- * @return  A8CSP_Abstract_Background_Task|null
- */
-function a8csp_bgt_get_task( string $task_name ): ?A8CSP_Abstract_Background_Task {
-	$tasks = apply_filters( 'a8csp/background_tasks', array() );
-	return $tasks[ $task_name ] ?? null;
-}
-
-/**
- * Returns the task scheduler adapter for the provided task name.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   string $task_name The name of the task to return the scheduler adapter for.
- *
- * @return  A8CSP_Task_Scheduler_Adapter_Interface|null
- */
-function a8csp_bgt_get_task_scheduler( string $task_name ): ?A8CSP_Task_Scheduler_Adapter_Interface {
-	$task = a8csp_bgt_get_task( $task_name );
-	return $task ? $task::get_scheduler() : null;
-}
-
-// endregion
-
-// region OTHERS
-
-foreach ( glob( A8CSP_BGT_PATH . 'includes/*.php' ) as $a8csp_bgt_filename ) {
-	if ( preg_match( '#/includes/_#i', $a8csp_bgt_filename ) ) {
-		continue; // Ignore files prefixed with an underscore.
+	if ( null === $plugin ) {
+		$plugin = new Plugin();
+		$plugin->boot();
 	}
 
-	include $a8csp_bgt_filename;
+	return $plugin;
+}
+// endregion
+
+// region OTHER
+
+$a8csp_bgte_includes = \glob( A8CSP_BGTE_DIR_PATH . 'includes/*.php' );
+if ( false !== $a8csp_bgte_includes ) {
+	\sort( $a8csp_bgte_includes ); // Glob order is filesystem-dependent, so sort for a deterministic load order.
+	foreach ( $a8csp_bgte_includes as $a8csp_bgte_include ) {
+		if ( \str_starts_with( \basename( $a8csp_bgte_include ), '_' ) ) {
+			continue; // An underscore prefix opts a file out of automatic loading.
+		}
+
+		require_once $a8csp_bgte_include;
+	}
 }
 
 // endregion

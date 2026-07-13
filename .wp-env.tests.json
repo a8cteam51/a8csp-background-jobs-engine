@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/wp-env.schema.json",
+  "phpVersion": "8.5",
+  "port": 8890,
+  "testsEnvironment": false,
+  "mappings": {
+    "wp-content/plugins/a8csp-background-tasks-engine": ".",
+    "wp-content/plugins/action-scheduler": "./vendor/wp-plugin/action-scheduler"
+  },
+  "lifecycleScripts": {
+    "afterStart": "wp-env --config .wp-env.tests.json run cli wp plugin activate action-scheduler a8csp-background-tasks-engine"
+  },
+  "config": {
+    "WP_DEBUG": true,
+    "WP_DEBUG_DISPLAY": false,
+    "WP_DEBUG_LOG": true,
+    "SCRIPT_DEBUG": true
+  }
+}

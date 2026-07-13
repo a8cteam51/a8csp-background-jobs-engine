@@ -1,25 +1,27 @@
 <?xml version="1.0"?>
 <ruleset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vendor/squizlabs/php_codesniffer/phpcs.xsd">
 	<!-- Extend the A8CSP ruleset. -->
-	<rule ref="./vendor/a8cteam51/team51-configs/quality-assurance/phpcs.dist.xml"/>
+	<rule ref="./vendor/a8csp/configs/php/quality-assurance/phpcs.dist.xml"/>
 
 	<!-- Check that the proper text domain(s) is used everywhere. -->
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
-				<element value="a8csp-background-tasks"/>
+				<element value="a8csp-background-tasks-engine"/>
 			</property>
 		</properties>
 	</rule>
 
 	<!-- Check that the proper prefix is used everywhere. -->
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<!-- Slash-delimited hook namespaces are valid WordPress hooks but not PHP identifiers. -->
+		<exclude name="WordPress.NamingConventions.PrefixAllGlobals.InvalidPrefixPassed"/>
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="a8csp"/>
-				<element value="a8csp_bgt"/>
-				<element value="a8csp_background_tasks"/>
-				<element value="A8C\SpecialProjects\BackgroundTasks"/>
+				<element value="a8csp/background_tasks/"/>
+				<element value="a8csp_"/>
+				<element value="a8csp_bgte_"/>
+				<element value="A8C\SpecialProjects\BackgroundTasksEngine"/>
 			</property>
 		</properties>
 	</rule>

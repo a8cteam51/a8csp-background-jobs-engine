@@ -1,0 +1,41 @@
+# wp dist-archive walks the disk rather than the Git index, so this file removes
+# development-only paths that must not ship in the release zip.
+#
+# Patterns follow gitignore semantics: a bare name (no slash) matches at
+# any depth, a leading `/` anchors to the repo root. `/build` is root-
+# anchored so it excludes only Infection's top-level mutation-testing output.
+
+.git*
+.idea
+.vscode
+.gitattributes
+.gitignore
+.distignore
+node_modules
+tests
+changelog
+bin
+/build
+vendor/bin
+*.dist.xml
+.wp-env*.json
+.phpcs.xml
+.phpcs.tests.xml
+.phpstan.neon
+.phpstan-bootstrap.php
+.composer-require-checker.json
+infection.json
+.editorconfig
+package*.json
+composer.json
+composer.lock
+
+# Secret material — never ship, even if a consumer forgets to list it.
+# .pem/.key are root-anchored (leading /) so certs bundled under vendor/
+# (e.g. CA bundles) still ship.
+.env*
+/*.pem
+/*.key
+id_rsa*
+.npmrc
+auth.json
