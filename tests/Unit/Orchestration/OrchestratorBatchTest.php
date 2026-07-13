@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableExceptionInt
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -129,16 +130,24 @@ final class OrchestratorBatchTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 
-		$this->clock      = new FixedClock( self::NOW );
-		$this->backend    = new RecordingBackend();
-		$this->batch      = new RecordingBatch( self::NAME );
-		$this->logger     = new RecordingLogger();
-		$this->randomizer = new RecordingRandomizer( 42 );
-		$this->batches    = new BatchRegistry();
-		$this->tasks      = new TaskRegistry();
-		$this->wpdb       = new WpdbLockSpy();
-		$guard            = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores           = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$this->clock          = new FixedClock( self::NOW );
+		$this->backend        = new RecordingBackend();
+		$this->batch          = new RecordingBatch( self::NAME );
+		$this->logger         = new RecordingLogger();
+		$this->randomizer     = new RecordingRandomizer( 42 );
+		$this->batches        = new BatchRegistry();
+		$this->tasks          = new TaskRegistry();
+		$this->wpdb           = new WpdbLockSpy();
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$this->clock,
+			$this->randomizer,
+			$this->logger,
+			$terminal_transitions
+		);
 
 		$this->batches->register( $this->batch );
 		$this->orchestrator = new Orchestrator(
@@ -150,7 +159,8 @@ final class OrchestratorBatchTest extends TestCase {
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
-			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
+			$terminal_transitions,
+			$failure_lifecycle,
 			$this->randomizer,
 		);
 	}

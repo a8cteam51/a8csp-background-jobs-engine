@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -279,15 +280,17 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
-		$rows         = new OptionRows( $wpdb );
-		$tasks        = new TaskRegistry();
-		$batches      = new BatchRegistry();
-		$scheduler    = $this->scheduler_facade_with_action_scheduler_probe( static fn (): bool => true );
-		$locks        = new LockRows( $wpdb );
-		$guard        = new OverlapGuard( $clock, $logger, $locks );
-		$stores       = new StoreFactory( $clock, $rows );
-		$randomizer   = new RecordingRandomizer( 42 );
-		$orchestrator = new Orchestrator(
+		$rows                 = new OptionRows( $wpdb );
+		$tasks                = new TaskRegistry();
+		$batches              = new BatchRegistry();
+		$scheduler            = $this->scheduler_facade_with_action_scheduler_probe( static fn (): bool => true );
+		$locks                = new LockRows( $wpdb );
+		$guard                = new OverlapGuard( $clock, $logger, $locks );
+		$stores               = new StoreFactory( $clock, $rows );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+		$orchestrator         = new Orchestrator(
 			$tasks,
 			$batches,
 			$scheduler,
@@ -296,10 +299,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
-			new TerminalTransitions( $guard, $stores, $clock, $logger ),
+			$terminal_transitions,
+			$failure_lifecycle,
 			$randomizer
 		);
-		$schedules    = new Schedules(
+		$schedules            = new Schedules(
 			new ScheduleRegistry( $rows ),
 			$scheduler,
 			$clock,

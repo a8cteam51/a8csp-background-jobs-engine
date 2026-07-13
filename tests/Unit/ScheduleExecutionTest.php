@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -121,9 +122,18 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$tasks          = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
-		$guard        = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores       = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$orchestrator = new Orchestrator(
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$this->clock,
+			$randomizer,
+			$this->logger,
+			$terminal_transitions
+		);
+		$orchestrator         = new Orchestrator(
 			$tasks,
 			new BatchRegistry(),
 			$this->backend,
@@ -132,10 +142,11 @@ final class ScheduleExecutionTest extends TestCase {
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
-			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
-			new RecordingRandomizer( 42 ),
+			$terminal_transitions,
+			$failure_lifecycle,
+			$randomizer,
 		);
-		$this->api    = new Schedules(
+		$this->api            = new Schedules(
 			$this->registry,
 			$this->backend,
 			$this->clock,
@@ -803,9 +814,18 @@ final class ScheduleExecutionTest extends TestCase {
 	private function new_api( ScheduleRegistry $registry ): Schedules {
 		$tasks = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
-		$guard        = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores       = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$orchestrator = new Orchestrator(
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$this->clock,
+			$randomizer,
+			$this->logger,
+			$terminal_transitions
+		);
+		$orchestrator         = new Orchestrator(
 			$tasks,
 			new BatchRegistry(),
 			$this->backend,
@@ -814,8 +834,9 @@ final class ScheduleExecutionTest extends TestCase {
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
-			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
-			new RecordingRandomizer( 42 ),
+			$terminal_transitions,
+			$failure_lifecycle,
+			$randomizer,
 		);
 
 		return new Schedules(

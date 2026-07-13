@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -954,11 +955,14 @@ final class SchedulesTest extends TestCase {
 		RecordingBackend $backend,
 		FixedClock $clock
 	): Schedules {
-		$logger       = new RecordingLogger();
-		$wpdb         = new WpdbLockSpy();
-		$guard        = new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) );
-		$stores       = new StoreFactory( $clock, new OptionRows( $wpdb ) );
-		$orchestrator = new Orchestrator(
+		$logger               = new RecordingLogger();
+		$wpdb                 = new WpdbLockSpy();
+		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) );
+		$stores               = new StoreFactory( $clock, new OptionRows( $wpdb ) );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $logger, $terminal_transitions );
+		$orchestrator         = new Orchestrator(
 			new TaskRegistry(),
 			new BatchRegistry(),
 			$backend,
@@ -967,8 +971,9 @@ final class SchedulesTest extends TestCase {
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
-			new TerminalTransitions( $guard, $stores, $clock, $logger ),
-			new RecordingRandomizer( 42 ),
+			$terminal_transitions,
+			$failure_lifecycle,
+			$randomizer,
 		);
 
 		return new Schedules(

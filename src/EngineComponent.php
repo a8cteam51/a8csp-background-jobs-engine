@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -96,6 +97,13 @@ final class EngineComponent implements Component {
 				new WPCronBackend(),
 			)
 		);
+		$failure_lifecycle    = new FailureLifecycle(
+			$scheduler,
+			$clock,
+			$randomizer,
+			$logger,
+			$terminal_transitions
+		);
 		$orchestrator         = new Orchestrator(
 			$tasks,
 			$batches,
@@ -106,6 +114,7 @@ final class EngineComponent implements Component {
 			$clock,
 			new LockWindows( $clock ),
 			$terminal_transitions,
+			$failure_lifecycle,
 			$randomizer,
 		);
 		$tasks->register( new MaintenanceTask( $wpdb, $orchestrator, $guard, $logger ) );

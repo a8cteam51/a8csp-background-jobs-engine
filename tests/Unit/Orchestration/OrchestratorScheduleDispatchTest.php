@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -101,8 +102,17 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		$this->backend = new RecordingBackend();
 		$this->wpdb    = new WpdbLockSpy();
 		$tasks->register( new RecordingTask( self::NAME ) );
-		$guard  = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
-		$stores = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$clock,
+			$randomizer,
+			$logger,
+			$terminal_transitions
+		);
 
 		$this->orchestrator = new Orchestrator(
 			$tasks,
@@ -113,8 +123,9 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
-			new TerminalTransitions( $guard, $stores, $clock, $logger ),
-			new RecordingRandomizer( 42 ),
+			$terminal_transitions,
+			$failure_lifecycle,
+			$randomizer,
 		);
 	}
 

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -103,14 +104,23 @@ final class EngineTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 
-		$clock         = new FixedClock( self::NOW );
-		$logger        = new RecordingLogger();
-		$tasks         = new TaskRegistry();
-		$batches       = new BatchRegistry();
-		$this->backend = new RecordingBackend();
-		$this->wpdb    = new WpdbLockSpy();
-		$guard         = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
-		$stores        = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
+		$clock                = new FixedClock( self::NOW );
+		$logger               = new RecordingLogger();
+		$tasks                = new TaskRegistry();
+		$batches              = new BatchRegistry();
+		$this->backend        = new RecordingBackend();
+		$this->wpdb           = new WpdbLockSpy();
+		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$clock,
+			$randomizer,
+			$logger,
+			$terminal_transitions
+		);
 
 		$orchestrator = new Orchestrator(
 			$tasks,
@@ -121,8 +131,9 @@ final class EngineTest extends TestCase {
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
-			new TerminalTransitions( $guard, $stores, $clock, $logger ),
-			new RecordingRandomizer( 42 ),
+			$terminal_transitions,
+			$failure_lifecycle,
+			$randomizer,
 		);
 
 		$this->engine = new Engine(

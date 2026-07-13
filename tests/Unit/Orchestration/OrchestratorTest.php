@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -129,9 +130,17 @@ final class OrchestratorTest extends TestCase {
 		$this->task       = new RecordingTask( self::NAME );
 		$this->registry   = new TaskRegistry();
 		$this->registry->register( $this->task );
-		$this->wpdb = new WpdbLockSpy();
-		$guard      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$this->wpdb           = new WpdbLockSpy();
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$this->clock,
+			$this->randomizer,
+			$this->logger,
+			$terminal_transitions
+		);
 
 		$this->orchestrator = new Orchestrator(
 			$this->registry,
@@ -142,7 +151,8 @@ final class OrchestratorTest extends TestCase {
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
-			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
+			$terminal_transitions,
+			$failure_lifecycle,
 			$this->randomizer,
 		);
 	}
@@ -939,10 +949,18 @@ final class OrchestratorTest extends TestCase {
 	 */
 	public function test_handle_run_action_terminalizes_a_live_unregistered_task(): void {
 		$this->prepare_run_action();
-		$action_seq   = $this->action_seq();
-		$guard        = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores       = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$orchestrator = new Orchestrator(
+		$action_seq           = $this->action_seq();
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$failure_lifecycle    = new FailureLifecycle(
+			$this->backend,
+			$this->clock,
+			$this->randomizer,
+			$this->logger,
+			$terminal_transitions
+		);
+		$orchestrator         = new Orchestrator(
 			new TaskRegistry(),
 			new BatchRegistry(),
 			$this->backend,
@@ -951,7 +969,8 @@ final class OrchestratorTest extends TestCase {
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
-			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
+			$terminal_transitions,
+			$failure_lifecycle,
 			$this->randomizer,
 		);
 
