@@ -9,11 +9,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 /**
  * Returns the plugin instance, booting it on first access.
  *
- * Doubles as the `plugins_loaded` hook target: WordPress ignores an action callback's return
- * value, so the accessor is hooked directly. Named, rather than an anonymous closure, so
- * `remove_action( 'plugins_loaded', 'a8csp_bgte_plugin' )` can unhook the boot and
- * `has_action()` can assert the wiring by name.
- *
  * @since   1.0.0
  * @version 1.0.0
  *
@@ -21,7 +16,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
  */
 function a8csp_bgte_plugin(): Plugin {
 	/**
-	 * Reusing one instance prevents duplicate hook registrations on repeated access.
+	 * Boot-once shared instance.
 	 *
 	 * @var Plugin|null $plugin
 	 */

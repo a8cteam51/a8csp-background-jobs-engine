@@ -45,6 +45,13 @@ jobs:
             echo "::error::release versions disagree: tag=$tag_version plugin=${plugin_version:-missing} changelog=${changelog_version:-missing}" >&2
             exit 1
           fi
+      # The committed POT drifts as source changes between releases; regenerating here ships
+      # current strings in the archive regardless.
+      - name: Generate translation template
+        run: |
+          wp package install wp-cli/i18n-command:2.7.0
+          wp i18n make-pot ./ --slug=a8csp-background-tasks-engine
+          test -f languages/a8csp-background-tasks-engine.pot
       - name: Install dist-archive command
         run: |
           wp package install wp-cli/dist-archive-command:3.2.2

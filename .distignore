@@ -23,7 +23,6 @@ vendor/bin
 .phpcs.tests.xml
 .phpstan.neon
 .phpstan-bootstrap.php
-.composer-require-checker.json
 infection.json
 .editorconfig
 package*.json

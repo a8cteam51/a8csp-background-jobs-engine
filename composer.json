@@ -33,13 +33,14 @@
     "psr/log": "^3"
   },
   "require-dev": {
+    "a8csp/configs": "dev-trunk",
     "automattic/jetpack-changelogger": "^6",
+
     "phpcompatibility/phpcompatibility-wp": "^3@alpha",
     "phpcompatibility/php-compatibility": "^10@alpha",
     "phpcompatibility/phpcompatibility-paragonie": "^2@alpha",
-    "a8csp/configs": "dev-trunk",
-    "phpunit/phpunit": "^13",
 
+    "phpunit/phpunit": "^13",
     "wp-cli/i18n-command": "^2",
 
     "wp-plugin/action-scheduler": "4.0.*",

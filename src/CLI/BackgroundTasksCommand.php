@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStor
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Formats failed-run data and delegates failed-run operations to engine surfaces.
+ * Inspects and manages the engine's background work from the command line.
  *
  * @since   1.0.0
  * @version 1.0.0

@@ -1,6 +1,6 @@
 # A8CSP Background Tasks Engine
 
-**Contributors:** wpcomspecialprojects
+**Contributors:** wpspecialprojects
 **Tags:**
 **Requires at least:** 7.0
 **Tested up to:** 7.0
