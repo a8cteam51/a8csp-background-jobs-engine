@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -45,6 +46,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
+#[UsesClass( LifecycleDeliveries::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
@@ -71,6 +73,7 @@ final class OrchestratorTest extends TestCase {
 
 	private FixedClock $clock;
 	private RecordingBackend $backend;
+	private LifecycleDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private RecordingTask $task;
@@ -131,8 +134,10 @@ final class OrchestratorTest extends TestCase {
 		$this->registry   = new TaskRegistry();
 		$this->registry->register( $this->task );
 		$this->wpdb           = new WpdbLockSpy();
+		$batches              = new BatchRegistry();
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
@@ -142,17 +147,29 @@ final class OrchestratorTest extends TestCase {
 			$terminal_transitions
 		);
 
+		$this->lifecycle_deliveries = new LifecycleDeliveries(
+			$this->registry,
+			$batches,
+			$this->backend,
+			$stores,
+			$this->logger,
+			$this->clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle,
+		);
+
 		$this->orchestrator = new Orchestrator(
 			$this->registry,
-			new BatchRegistry(),
+			$batches,
 			$this->backend,
 			$guard,
 			$stores,
 			$this->logger,
 			$this->clock,
-			new LockWindows( $this->clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$this->lifecycle_deliveries,
 			$this->randomizer,
 		);
 	}
@@ -163,36 +180,36 @@ final class OrchestratorTest extends TestCase {
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/**
-	 * Hook registration exposes every internal lifecycle action through the orchestrator.
+	 * Hook registration exposes every internal lifecycle action through the delivery registrar.
 	 *
 	 * @return  void
 	 */
 	public function test_register_hooks_wires_the_internal_lifecycle_actions(): void {
-		$this->orchestrator->register_hooks();
+		$this->lifecycle_deliveries->register_hooks();
 
 		self::assertSame(
 			array(
 				array(
 					'hook_name'     => 'a8csp/background_tasks/start',
-					'callback'      => array( $this->orchestrator, 'handle_start_action' ),
+					'callback'      => array( $this->lifecycle_deliveries, 'handle_start_action' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/continue',
-					'callback'      => array( $this->orchestrator, 'handle_continue_action' ),
+					'callback'      => array( $this->lifecycle_deliveries, 'handle_continue_action' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/run',
-					'callback'      => array( $this->orchestrator, 'handle_run_action' ),
+					'callback'      => array( $this->lifecycle_deliveries, 'handle_run_action' ),
 					'priority'      => 10,
 					'accepted_args' => 4,
 				),
 				array(
 					'hook_name'     => 'a8csp/background_tasks/cleanup',
-					'callback'      => array( $this->orchestrator, 'handle_cleanup_action' ),
+					'callback'      => array( $this->lifecycle_deliveries, 'handle_cleanup_action' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
@@ -950,8 +967,11 @@ final class OrchestratorTest extends TestCase {
 	public function test_handle_run_action_terminalizes_a_live_unregistered_task(): void {
 		$this->prepare_run_action();
 		$action_seq           = $this->action_seq();
+		$tasks                = new TaskRegistry();
+		$batches              = new BatchRegistry();
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
@@ -960,17 +980,28 @@ final class OrchestratorTest extends TestCase {
 			$this->logger,
 			$terminal_transitions
 		);
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$this->backend,
+			$stores,
+			$this->logger,
+			$this->clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle,
+		);
 		$orchestrator         = new Orchestrator(
-			new TaskRegistry(),
-			new BatchRegistry(),
+			$tasks,
+			$batches,
 			$this->backend,
 			$guard,
 			$stores,
 			$this->logger,
 			$this->clock,
-			new LockWindows( $this->clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$this->randomizer,
 		);
 

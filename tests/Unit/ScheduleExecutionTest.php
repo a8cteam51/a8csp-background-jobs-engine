@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -121,10 +122,12 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$tasks          = new TaskRegistry();
+		$batches        = new BatchRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
+		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
@@ -133,17 +136,28 @@ final class ScheduleExecutionTest extends TestCase {
 			$this->logger,
 			$terminal_transitions
 		);
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$this->backend,
+			$stores,
+			$this->logger,
+			$this->clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle,
+		);
 		$orchestrator         = new Orchestrator(
 			$tasks,
-			new BatchRegistry(),
+			$batches,
 			$this->backend,
 			$guard,
 			$stores,
 			$this->logger,
 			$this->clock,
-			new LockWindows( $this->clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 		$this->api            = new Schedules(
@@ -812,11 +826,13 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  Schedules
 	 */
 	private function new_api( ScheduleRegistry $registry ): Schedules {
-		$tasks = new TaskRegistry();
+		$tasks   = new TaskRegistry();
+		$batches = new BatchRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
+		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
@@ -825,17 +841,28 @@ final class ScheduleExecutionTest extends TestCase {
 			$this->logger,
 			$terminal_transitions
 		);
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$this->backend,
+			$stores,
+			$this->logger,
+			$this->clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle,
+		);
 		$orchestrator         = new Orchestrator(
 			$tasks,
-			new BatchRegistry(),
+			$batches,
 			$this->backend,
 			$guard,
 			$stores,
 			$this->logger,
 			$this->clock,
-			new LockWindows( $this->clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -960,19 +961,33 @@ final class SchedulesTest extends TestCase {
 		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
+		$tasks                = new TaskRegistry();
+		$batches              = new BatchRegistry();
+		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
 		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $logger, $terminal_transitions );
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$backend,
+			$stores,
+			$logger,
+			$clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle,
+		);
 		$orchestrator         = new Orchestrator(
-			new TaskRegistry(),
-			new BatchRegistry(),
+			$tasks,
+			$batches,
 			$backend,
 			$guard,
 			$stores,
 			$logger,
 			$clock,
-			new LockWindows( $clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -115,6 +116,18 @@ final class MaintenanceTaskTest extends TestCase {
 			$this->logger,
 			$terminal_transitions
 		);
+		$lock_windows         = new LockWindows( $this->clock );
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$this->batches,
+			$backend,
+			$stores,
+			$this->logger,
+			$this->clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle
+		);
 		$this->orchestrator   = new Orchestrator(
 			$tasks,
 			$this->batches,
@@ -123,9 +136,9 @@ final class MaintenanceTaskTest extends TestCase {
 			$stores,
 			$this->logger,
 			$this->clock,
-			new LockWindows( $this->clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 		$this->maintenance    = new MaintenanceTask(

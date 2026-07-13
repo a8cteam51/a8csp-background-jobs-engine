@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -90,6 +91,7 @@ final class EngineComponent implements Component {
 		$lock_rows            = new LockRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $lock_rows );
 		$stores               = new StoreFactory( $clock, $option_rows );
+		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
 		$scheduler            = new SchedulerFacade(
 			array(
@@ -104,6 +106,17 @@ final class EngineComponent implements Component {
 			$logger,
 			$terminal_transitions
 		);
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$scheduler,
+			$stores,
+			$logger,
+			$clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle
+		);
 		$orchestrator         = new Orchestrator(
 			$tasks,
 			$batches,
@@ -112,9 +125,9 @@ final class EngineComponent implements Component {
 			$stores,
 			$logger,
 			$clock,
-			new LockWindows( $clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 		$tasks->register( new MaintenanceTask( $wpdb, $orchestrator, $guard, $logger ) );
@@ -134,7 +147,7 @@ final class EngineComponent implements Component {
 		);
 
 		$scheduler->register_hooks();
-		$orchestrator->register_hooks();
+		$lifecycle_deliveries->register_hooks();
 		$schedule_api->register_hooks();
 
 		self::$engine = $engine;

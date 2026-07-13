@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -113,6 +114,7 @@ final class EngineTest extends TestCase {
 		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
+		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
@@ -120,6 +122,17 @@ final class EngineTest extends TestCase {
 			$randomizer,
 			$logger,
 			$terminal_transitions
+		);
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$this->backend,
+			$stores,
+			$logger,
+			$clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle,
 		);
 
 		$orchestrator = new Orchestrator(
@@ -130,9 +143,9 @@ final class EngineTest extends TestCase {
 			$stores,
 			$logger,
 			$clock,
-			new LockWindows( $clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 

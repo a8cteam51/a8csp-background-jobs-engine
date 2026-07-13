@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -99,6 +100,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		$clock         = new FixedClock( self::NOW );
 		$logger        = new RecordingLogger();
 		$tasks         = new TaskRegistry();
+		$batches       = new BatchRegistry();
 		$this->backend = new RecordingBackend();
 		$this->wpdb    = new WpdbLockSpy();
 		$tasks->register( new RecordingTask( self::NAME ) );
@@ -113,18 +115,30 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 			$logger,
 			$terminal_transitions
 		);
+		$lock_windows         = new LockWindows( $clock );
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$this->backend,
+			$stores,
+			$logger,
+			$clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle
+		);
 
 		$this->orchestrator = new Orchestrator(
 			$tasks,
-			new BatchRegistry(),
+			$batches,
 			$this->backend,
 			$guard,
 			$stores,
 			$logger,
 			$clock,
-			new LockWindows( $clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer,
 		);
 	}

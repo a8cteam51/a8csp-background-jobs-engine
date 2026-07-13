@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -290,6 +291,18 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+		$lock_windows         = new LockWindows( $clock );
+		$lifecycle_deliveries = new LifecycleDeliveries(
+			$tasks,
+			$batches,
+			$scheduler,
+			$stores,
+			$logger,
+			$clock,
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle
+		);
 		$orchestrator         = new Orchestrator(
 			$tasks,
 			$batches,
@@ -298,9 +311,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$stores,
 			$logger,
 			$clock,
-			new LockWindows( $clock ),
+			$lock_windows,
 			$terminal_transitions,
-			$failure_lifecycle,
+			$lifecycle_deliveries,
 			$randomizer
 		);
 		$schedules            = new Schedules(
