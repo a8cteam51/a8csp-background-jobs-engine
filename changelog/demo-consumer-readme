@@ -1,0 +1,4 @@
+Significance: patch
+Type: added
+
+Add the public-API demo consumer and consumer documentation for tasks, schedules, batches, policies, hooks, failure handling, and WP-CLI.
