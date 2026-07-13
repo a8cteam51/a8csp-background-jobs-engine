@@ -2,6 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulerFacade;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -63,6 +66,44 @@ abstract class IntegrationTestCase extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Builds the live facade in engine declaration order with a controllable Action Scheduler probe.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param callable(): bool $readiness_probe
+	 *
+	 * @param   callable $readiness_probe Action Scheduler readiness predicate.
+	 *
+	 * @return  SchedulerFacade
+	 */
+	protected function scheduler_facade_with_action_scheduler_probe( callable $readiness_probe ): SchedulerFacade {
+		$scheduler = new SchedulerFacade(
+			array(
+				new ActionSchedulerBackend( $readiness_probe ),
+				new WPCronBackend(),
+			)
+		);
+		$scheduler->register_hooks();
+
+		return $scheduler;
+	}
+
+	/**
+	 * Runs one due engine action through the scheduler available in the current integration environment.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int Number of actions processed.
+	 */
+	protected function run_next_engine_action(): int {
+		return \class_exists( \ActionScheduler::class )
+			? $this->run_next_due_action()
+			: $this->run_next_due_cron_event();
+	}
 
 	/**
 	 * Runs at most one due action through Action Scheduler's initialized queue runner singleton.

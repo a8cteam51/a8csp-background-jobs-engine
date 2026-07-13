@@ -6,10 +6,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Pins the complete steady-state option footprint after successful task and batch runs.
  */
+#[Group( 'degraded' )]
 final class OptionsHygieneTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -53,17 +55,17 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		self::assertInstanceOf( Success::class, $task_result, 'The census task must enqueue through the public API' );
 		self::assertIsString( $task_result->value );
 		$task_run_id = $task_result->value;
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete the census task' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete the census task' );
 
 		$batch_result = \a8csp_bgte_start_batch( self::BATCH_NAME, $batch_args );
 		self::assertInstanceOf( Success::class, $batch_result, 'The census batch must start through the public API' );
 		self::assertIsString( $batch_result->value );
 		$batch_run_id = $batch_result->value;
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the census batch queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must dequeue the census batch chunk' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the census batch chunk' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained census batch queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete census batch cleanup' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must generate the census batch queue' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must dequeue the census batch chunk' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must process the census batch chunk' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must observe the drained census batch queue' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete census batch cleanup' );
 
 		self::assertSame( array( $task_args ), $task->calls, 'The census task must complete its full lifecycle' );
 		self::assertCount( 1, $batch->process_calls, 'The census batch must process its only chunk exactly once' );

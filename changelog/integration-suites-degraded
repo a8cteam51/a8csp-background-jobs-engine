@@ -1,0 +1,4 @@
+Significance: patch
+Type: added
+
+Add the remaining integration suites and an Action Scheduler-absent WP-Cron test environment with its dedicated CI job.

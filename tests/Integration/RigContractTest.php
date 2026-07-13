@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\ExpectationFailedException;
 
 /**
@@ -67,6 +68,7 @@ final class RigContractTest extends IntegrationTestCase {
 	 *
 	 * @return  void
 	 */
+	#[Group( 'degraded' )]
 	public function test_option_hygiene_rejects_undeclared_state(): void {
 		self::assertTrue( \update_option( self::FAILED_PROBE_OPTION, 'sentinel', false ) );
 		$this->expectException( ExpectationFailedException::class );
@@ -84,6 +86,7 @@ final class RigContractTest extends IntegrationTestCase {
 	 *
 	 * @return  void
 	 */
+	#[Group( 'degraded' )]
 	public function test_option_hygiene_accepts_declared_state(): void {
 		self::assertTrue( \update_option( self::FAILED_PROBE_OPTION, 'sentinel', false ) );
 

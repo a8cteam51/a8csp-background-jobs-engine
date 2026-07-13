@@ -4,12 +4,14 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies the plugin boots on a supported runtime inside wp-env: the requirements gate passes,
  * the named accessor is wired, and repeated access returns the booted plugin instance.
  *
  */
+#[Group( 'degraded' )]
 final class PluginBootTest extends IntegrationTestCase {
 	// region TESTS.
 

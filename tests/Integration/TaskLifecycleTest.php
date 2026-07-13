@@ -7,9 +7,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Verifies task persistence, Action Scheduler dispatch, callbacks, hooks, and terminal cleanup.
+ * Verifies task persistence, scheduler dispatch, callbacks, hooks, and terminal cleanup.
  */
 final class TaskLifecycleTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -25,11 +26,12 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * A registered task runs through Action Scheduler and leaves only bounded terminal state.
+	 * A registered task runs through the available scheduler and leaves only bounded terminal state.
 	 *
 	 * @return  void
 	 */
-	public function test_registered_task_completes_through_action_scheduler(): void {
+	#[Group( 'degraded' )]
+	public function test_registered_task_completes_through_the_available_scheduler(): void {
 		$args = array(
 			'account_id' => 42,
 			'mode'       => 'refresh',
@@ -64,15 +66,25 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$result = \a8csp_bgte_enqueue_task( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered task must enqueue through the public API' );
 		self::assertIsString( $result->value );
-		$run_id    = $result->value;
-		$group     = self::SUCCESS_NAME . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::SUCCESS_NAME, $run_id, $group );
+		$run_id = $result->value;
+		$group  = self::SUCCESS_NAME . '|' . $run_id;
+		if ( \class_exists( \ActionScheduler::class ) ) {
+			$action_id = $this->assert_pending_task_action( self::SUCCESS_NAME, $run_id, $group );
+		} else {
+			$action_id   = null;
+			$cron_events = $this->wordpress_cron_events(
+				'a8csp/background_tasks/run',
+				array( self::SUCCESS_NAME, $run_id, 1 )
+			);
+			self::assertCount( 1, $cron_events, 'The facade fallback must persist exactly one WP-Cron task occurrence' );
+			self::assertFalse( $cron_events[0]['schedule'], 'The facade fallback must enqueue the task as a single WP-Cron event' );
+		}
 
 		self::assertCount( 0, $task->calls, 'Enqueueing a task must not invoke its handler inline' );
 		self::assertCount( 0, $named_completed, 'Enqueueing a task must not fire its name-specific completed hook inline' );
 		self::assertCount( 0, $generic_completed, 'Enqueueing a task must not fire its generic completed hook inline' );
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the pending task action' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must execute the pending task action' );
 
 		self::assertCount( 1, $task->calls, 'The runner drive must invoke the task handler exactly once' );
 		self::assertCount( 1, $named_completed, 'The runner drive must fire the name-specific completed hook exactly once' );
@@ -88,11 +100,19 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			$generic_completed,
 			'The generic completed hook must prepend the task name to the same payload'
 		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$this->action_scheduler_store()->get_status( $action_id ),
-			'Action Scheduler must mark the engine run action complete'
-		);
+		if ( null !== $action_id ) {
+			self::assertSame(
+				\ActionScheduler_Store::STATUS_COMPLETE,
+				$this->action_scheduler_store()->get_status( $action_id ),
+				'Action Scheduler must mark the engine run action complete'
+			);
+		} else {
+			self::assertSame(
+				array(),
+				$this->wordpress_cron_events( 'a8csp/background_tasks/run', array( self::SUCCESS_NAME, $run_id, 1 ) ),
+				'WP-Cron completion must clear the delivered task occurrence'
+			);
+		}
 
 		$args_hash = self::args_hash( $args );
 		self::assertFalse(

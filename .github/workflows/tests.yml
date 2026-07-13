@@ -42,6 +42,13 @@ jobs:
       wp-env-config-file: '.wp-env.tests.json'
       composer-script: 'test:integration'
 
+  degraded:
+    name: Degraded (AS absent)
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    with:
+      wp-env-config-file: '.wp-env.degraded.json'
+      composer-script: 'test:degraded'
+
   requirements:
     name: Requirements (below-floor WP)
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk

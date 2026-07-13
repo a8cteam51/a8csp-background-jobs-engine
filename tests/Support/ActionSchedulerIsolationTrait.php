@@ -45,6 +45,10 @@ trait ActionSchedulerIsolationTrait {
 	protected function truncate_action_scheduler_tables(): void {
 		global $wpdb;
 
+		if ( ! \class_exists( \ActionScheduler::class ) ) {
+			return;
+		}
+
 		if ( ! \ActionScheduler::store() instanceof \ActionScheduler_DBStore ) {
 			throw new \LogicException(
 				'complete the Action Scheduler data migration; ' .
