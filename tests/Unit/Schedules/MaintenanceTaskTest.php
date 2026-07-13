@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
@@ -102,15 +103,17 @@ final class MaintenanceTaskTest extends TestCase {
 		$tasks         = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::NAME ) );
 		$guard              = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores             = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$this->orchestrator = new Orchestrator(
 			$tasks,
 			$this->batches,
 			new RecordingBackend(),
 			$guard,
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
+			$stores,
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
+			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
 			new RecordingRandomizer( 42 ),
 		);
 		$this->maintenance  = new MaintenanceTask(

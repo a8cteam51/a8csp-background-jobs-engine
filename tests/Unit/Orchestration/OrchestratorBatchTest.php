@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\LatestRunPoin
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
@@ -136,17 +137,20 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->batches    = new BatchRegistry();
 		$this->tasks      = new TaskRegistry();
 		$this->wpdb       = new WpdbLockSpy();
+		$guard            = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores           = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 
 		$this->batches->register( $this->batch );
 		$this->orchestrator = new Orchestrator(
 			$this->tasks,
 			$this->batches,
 			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
+			$guard,
+			$stores,
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
+			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
 			$this->randomizer,
 		);
 	}

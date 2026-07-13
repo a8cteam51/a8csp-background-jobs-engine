@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TaskDispatchSkipped;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
@@ -100,16 +101,19 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		$this->backend = new RecordingBackend();
 		$this->wpdb    = new WpdbLockSpy();
 		$tasks->register( new RecordingTask( self::NAME ) );
+		$guard  = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
+		$stores = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 
 		$this->orchestrator = new Orchestrator(
 			$tasks,
 			new BatchRegistry(),
 			$this->backend,
-			new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $clock, new OptionRows( $this->wpdb ) ),
+			$guard,
+			$stores,
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
+			new TerminalTransitions( $guard, $stores, $clock, $logger ),
 			new RecordingRandomizer( 42 ),
 		);
 	}

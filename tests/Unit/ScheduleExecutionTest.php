@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
@@ -120,15 +121,18 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$tasks          = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
+		$guard        = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores       = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$orchestrator = new Orchestrator(
 			$tasks,
 			new BatchRegistry(),
 			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
+			$guard,
+			$stores,
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
+			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
 			new RecordingRandomizer( 42 ),
 		);
 		$this->api    = new Schedules(
@@ -799,15 +803,18 @@ final class ScheduleExecutionTest extends TestCase {
 	private function new_api( ScheduleRegistry $registry ): Schedules {
 		$tasks = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
+		$guard        = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores       = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$orchestrator = new Orchestrator(
 			$tasks,
 			new BatchRegistry(),
 			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
+			$guard,
+			$stores,
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
+			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
 			new RecordingRandomizer( 42 ),
 		);
 

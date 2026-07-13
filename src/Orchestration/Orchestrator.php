@@ -53,21 +53,6 @@ final readonly class Orchestrator {
 	private const CLEANUP_HOOK = 'a8csp/background_tasks/cleanup';
 
 	/**
-	 * Literal consumer lifecycle hooks keep their names greppable.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     array<string, string>
-	 */
-	private const LIFECYCLE_HOOKS = array(
-		'started'    => 'a8csp/background_tasks/started',
-		'completed'  => 'a8csp/background_tasks/completed',
-		'failed'     => 'a8csp/background_tasks/failed',
-		'superseded' => 'a8csp/background_tasks/superseded',
-	);
-
-	/**
 	 * Highest scheduler priority accepted by the orchestration API.
 	 *
 	 * @since   1.0.0
@@ -135,6 +120,7 @@ final readonly class Orchestrator {
 	 * @param   LoggerInterface     $logger        Log event sink.
 	 * @param   ClockInterface      $clock         Timestamp source.
 	 * @param   LockWindows         $lock_windows  Filterable run-lock timing policy.
+	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   RandomizerInterface $randomizer   Run identifier randomness.
 	 */
 	public function __construct(
@@ -146,6 +132,7 @@ final readonly class Orchestrator {
 		private LoggerInterface $logger,
 		private ClockInterface $clock,
 		private LockWindows $lock_windows,
+		private TerminalTransitions $terminal_transitions,
 		private RandomizerInterface $randomizer,
 	) {}
 
@@ -450,7 +437,7 @@ final readonly class Orchestrator {
 	 */
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -473,11 +460,11 @@ final readonly class Orchestrator {
 				)
 			);
 		} catch ( \Throwable $throwable ) {
-			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -489,7 +476,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -501,13 +488,13 @@ final readonly class Orchestrator {
 		}
 		$state = $replacement;
 		try {
-			$this->fire_lifecycle_hooks( 'started', $batch_name, $run_id, $state->start_args );
+			$this->terminal_transitions->fire_started( $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -519,7 +506,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -529,7 +516,7 @@ final readonly class Orchestrator {
 			$batch_name . '|' . $run_id
 		);
 		if ( $scheduled->is_failure() ) {
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -554,7 +541,7 @@ final readonly class Orchestrator {
 	 */
 	public function handle_continue_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -578,7 +565,7 @@ final readonly class Orchestrator {
 				$batch_name . '|' . $run_id
 			);
 			if ( $scheduled->is_failure() ) {
-				$this->fail_batch(
+				$this->terminal_transitions->fail_batch(
 					$batch,
 					$batch_name,
 					$run_id,
@@ -605,7 +592,7 @@ final readonly class Orchestrator {
 			$batch_name . '|' . $run_id
 		);
 		if ( $scheduled->is_failure() ) {
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -639,7 +626,7 @@ final readonly class Orchestrator {
 		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
 		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
 		$run_store    = $this->stores->run_store( $name );
-		$state        = $this->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store );
+		$state        = $this->terminal_transitions->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -725,7 +712,7 @@ final readonly class Orchestrator {
 	 */
 	public function handle_cleanup_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -738,7 +725,7 @@ final readonly class Orchestrator {
 		}
 
 		if ( array() !== $state->queue ) {
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -758,31 +745,31 @@ final readonly class Orchestrator {
 		$terminal_state = $state
 			->with_status( RunStatus::Completed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
-		if ( null === $terminal_raw ) {
-			return;
-		}
 
-		try {
-			try {
-				$batch->on_success( $run_id, $state->start_args );
-			} catch ( \Throwable $throwable ) {
-				$this->logger->error(
-					'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
-					array(
-						'batch_name'        => $batch_name,
-						'run_id'            => $run_id,
-						'exception_class'   => $throwable::class,
-						'exception_message' => $throwable->getMessage(),
-					)
-				);
-			}
-
-			// Completed listeners observe the terminal snapshot before exact cleanup deletes it and appends history.
-			$this->fire_lifecycle_hooks( 'completed', $batch_name, $run_id, $state->start_args );
-		} finally {
-			$this->finish_terminal_run( $batch_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
+		// Completed listeners observe the terminal snapshot before exact cleanup deletes it and appends history.
+		$this->terminal_transitions->execute_terminal_transition(
+			$batch_name,
+			$run_id,
+			$state,
+			$terminal_state,
+			$run_store,
+			function () use ( $batch, $batch_name, $run_id, $state ): void {
+				try {
+					$batch->on_success( $run_id, $state->start_args );
+				} catch ( \Throwable $throwable ) {
+					$this->logger->error(
+						'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
+						array(
+							'batch_name'        => $batch_name,
+							'run_id'            => $run_id,
+							'exception_class'   => $throwable::class,
+							'exception_message' => $throwable->getMessage(),
+						)
+					);
+				}
+			},
+			'completed'
+		);
 	}
 
 	/**
@@ -905,7 +892,7 @@ final readonly class Orchestrator {
 				$latest_run_id = $this->stores
 					->latest_run_pointer( $name )
 					->get_latest_for_hash( $state->args_hash );
-				$this->supersede_run(
+				$this->terminal_transitions->supersede_run(
 					$name,
 					$run_id,
 					$latest_run_id,
@@ -934,7 +921,7 @@ final readonly class Orchestrator {
 			);
 			$attempts = RunState::increment_attempts_safely( $state->chunk_retries );
 			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
-				$this->fail_batch(
+				$this->terminal_transitions->fail_batch(
 					$batch,
 					$name,
 					$run_id,
@@ -945,7 +932,7 @@ final readonly class Orchestrator {
 					$snapshot['raw']
 				);
 			} else {
-				$this->fail_run(
+				$this->terminal_transitions->fail_run(
 					$name,
 					$run_id,
 					$state,
@@ -967,7 +954,7 @@ final readonly class Orchestrator {
 			return null;
 		}
 
-		if ( $this->finish_terminal_run( $name, $run_id, $state, $snapshot['raw'], $run_store ) ) {
+		if ( $this->terminal_transitions->finish_claimed_transition( $name, $run_id, $state, $snapshot['raw'], $run_store ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(
@@ -1183,7 +1170,7 @@ final readonly class Orchestrator {
 		$on_accepted?->__invoke();
 		$this->stores->run_history( $task_name )->record_started( $run_id, $args_hash );
 		try {
-			$this->fire_lifecycle_hooks( 'started', $task_name, $run_id, $args );
+			$this->terminal_transitions->fire_started( $task_name, $run_id, $args );
 		} catch ( \Throwable $throwable ) {
 			$error = new EngineError(
 				\sprintf(
@@ -1193,7 +1180,7 @@ final readonly class Orchestrator {
 				),
 				$throwable::class
 			);
-			$this->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
+			$this->terminal_transitions->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
 
 			return new Failure( $error );
 		}
@@ -1302,7 +1289,7 @@ final readonly class Orchestrator {
 		\Closure $terminal_failure,
 		?array $chunk_args = null
 	): void {
-		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -1317,7 +1304,7 @@ final readonly class Orchestrator {
 		try {
 			$policy = $this->retry_policy( $name, $policy_provider() );
 		} catch ( \Throwable $retry_policy_failure ) {
-			if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
@@ -1330,7 +1317,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -1352,7 +1339,7 @@ final readonly class Orchestrator {
 		);
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
-			if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $retry_state, $run_store ) ) {
+			if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $retry_state, $run_store ) ) {
 				return;
 			}
 
@@ -1401,7 +1388,7 @@ final readonly class Orchestrator {
 					$run_id,
 					$run_store
 				): void {
-					$this->fail_run(
+					$this->terminal_transitions->fail_run(
 						$task_name,
 						$run_id,
 						$failure_state,
@@ -1415,11 +1402,11 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( $this->supersede_if_fence_lost( 'Task', $task_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Task', $task_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
-		$this->complete_run( $task_name, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_run( $task_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -1467,7 +1454,7 @@ final readonly class Orchestrator {
 					$run_id,
 					$run_store
 				): void {
-					$this->fail_batch(
+					$this->terminal_transitions->fail_batch(
 						$batch,
 						$batch_name,
 						$run_id,
@@ -1483,7 +1470,7 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -1499,11 +1486,11 @@ final readonly class Orchestrator {
 		try {
 			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -1515,13 +1502,13 @@ final readonly class Orchestrator {
 			return;
 		}
 
-		if ( $this->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -1546,7 +1533,7 @@ final readonly class Orchestrator {
 			10
 		);
 		if ( $scheduled->is_failure() ) {
-			$this->fail_batch(
+			$this->terminal_transitions->fail_batch(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -1599,124 +1586,6 @@ final readonly class Orchestrator {
 	}
 
 	/**
-	 * Fences and heartbeats one recoverable running state for a lifecycle action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   int|null       $action_seq Received lifecycle action sequence.
-	 * @param   RunStore       $run_store Active-run store.
-	 *
-	 * @return  RunState|null
-	 */
-	private function active_run_state(
-		string $work_type,
-		string $name,
-		string $run_id,
-		?int $action_seq,
-		RunStore $run_store
-	): ?RunState {
-		$state = $run_store->get( $run_id );
-		if ( null === $state ) {
-			$this->log_missing_run( $name, $run_id, $work_type );
-
-			return null;
-		}
-
-		if ( $action_seq !== $state->action_seq ) {
-			$this->logger->info(
-				'Stale lifecycle action delivery dropped.',
-				array(
-					'expected' => $state->action_seq,
-					'received' => $action_seq,
-					'run_id'   => $run_id,
-				)
-			);
-
-			return null;
-		}
-
-		$context_name = \strtolower( $work_type ) . '_name';
-		if ( RunStatus::Running !== $state->status ) {
-			$this->logger->warning(
-				$work_type . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
-				array(
-					$context_name => $name,
-					'run_id'      => $run_id,
-					'status'      => $state->status->value,
-				)
-			);
-
-			return null;
-		}
-
-		// A lost heartbeat CAS means a replacement or reclaim took the lock, so the run fences itself.
-		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
-			return null;
-		}
-
-		$state = $run_store->refresh_heartbeat( $run_id, $state );
-		if ( null === $state ) {
-			return null;
-		}
-
-		$latest_pointer = $this->stores->latest_run_pointer( $name );
-		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
-
-		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
-		if ( $run_id !== $latest_run_id ) {
-			$latest_pointer->repair_for_hash( $run_id, $state->args_hash );
-		}
-
-		return $state;
-	}
-
-	/**
-	 * Transitions a run to Superseded when its owner-scoped heartbeat fence fails.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     Running state observed before the fence.
-	 * @param   RunStore       $run_store Active-run store.
-	 * @param   int|null       $at        Liveness timestamp, or null to use the current clock time.
-	 *
-	 * @return  bool Whether the failed fence transitioned the run to Superseded.
-	 */
-	private function supersede_if_fence_lost(
-		string $work_type,
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		?int $at = null
-	): bool {
-		if ( $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at ) ) {
-			return false;
-		}
-
-		$latest_run_id = $this->stores
-			->latest_run_pointer( $name )
-			->get_latest_for_hash( $state->args_hash );
-		$this->supersede_run(
-			$name,
-			$run_id,
-			$latest_run_id,
-			$state,
-			$run_store,
-			$work_type
-		);
-
-		return true;
-	}
-
-	/**
 	 * Fails a live run whose task or batch registration no longer resolves unambiguously.
 	 *
 	 * @since   1.0.0
@@ -1750,23 +1619,25 @@ final readonly class Orchestrator {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$this->stores->failed_run_store( $name )->record(
+
+		$this->terminal_transitions->execute_terminal_transition(
+			$name,
 			$run_id,
-			$this->clock->now()->getTimestamp(),
-			$state->start_args,
-			RunState::increment_attempts_safely( $state->chunk_retries ),
+			$state,
+			$terminal_state,
+			$run_store,
+			function () use ( $error, $name, $run_id, $state ): void {
+				$this->stores->failed_run_store( $name )->record(
+					$run_id,
+					$this->clock->now()->getTimestamp(),
+					$state->start_args,
+					RunState::increment_attempts_safely( $state->chunk_retries ),
+					$error
+				);
+			},
+			'failed',
 			$error
 		);
-
-		try {
-			$this->fire_lifecycle_hooks( 'failed', $name, $run_id, $state->start_args, $error );
-		} finally {
-			$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
 	}
 
 	/**
@@ -1816,65 +1687,6 @@ final readonly class Orchestrator {
 		}
 
 		return $queue;
-	}
-
-	/**
-	 * Persists one terminal batch failure before callbacks, hooks, and active-state cleanup.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   BatchInterface $batch      Failed batch.
-	 * @param   string         $batch_name Stable batch name.
-	 * @param   string         $run_id     Run identifier.
-	 * @param   RunState       $state      Running state.
-	 * @param   RunStore       $run_store  Active-run store.
-	 * @param   EngineError    $error      Failure detail.
-	 * @param   int|null       $attempts   Attempts consumed before failure, or null to derive the count.
-	 * @param   string|null    $expected_raw Exact maintenance snapshot, or null for a live transition.
-	 *
-	 * @return  void
-	 */
-	private function fail_batch(
-		BatchInterface $batch,
-		string $batch_name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		EngineError $error,
-		?int $attempts = null,
-		?string $expected_raw = null
-	): void {
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw
-		);
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$this->stores->failed_run_store( $batch_name )->record(
-			$run_id,
-			$this->clock->now()->getTimestamp(),
-			$state->start_args,
-			$attempts ?? RunState::increment_attempts_safely( $state->chunk_retries ),
-			$error
-		);
-
-		try {
-			try {
-				$batch->on_failure( $run_id, $state->start_args, $error );
-			} finally {
-				$this->fire_lifecycle_hooks( 'failed', $batch_name, $run_id, $state->start_args, $error );
-			}
-		} finally {
-			$this->finish_terminal_run( $batch_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
 	}
 
 	/**
@@ -2014,7 +1826,7 @@ final readonly class Orchestrator {
 		}
 
 		$fire_at = $now + $delay;
-		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
 			return null;
 		}
 
@@ -2035,7 +1847,7 @@ final readonly class Orchestrator {
 			);
 		}
 
-		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
+		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
 			return null;
 		}
 
@@ -2108,277 +1920,6 @@ final readonly class Orchestrator {
 				$delay
 			);
 		}
-	}
-
-	/**
-	 * Marks a successful run before firing hooks and releasing its active state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $task_name Stable task name.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Running state.
-	 * @param   RunStore $run_store Active-run store.
-	 *
-	 * @return  void
-	 */
-	private function complete_run( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$terminal_state = $state
-			->with_chunk_retries( 0 )
-			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
-		if ( null === $terminal_raw ) {
-			return;
-		}
-
-		try {
-			$this->fire_lifecycle_hooks( 'completed', $task_name, $run_id, $terminal_state->start_args );
-		} finally {
-			$this->finish_terminal_run( $task_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
-	}
-
-	/**
-	 * Persists failure detail before firing hooks and releasing active state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string      $task_name    Stable task name.
-	 * @param   string      $run_id       Run identifier.
-	 * @param   RunState    $state        Running state.
-	 * @param   RunStore    $run_store    Active-run store.
-	 * @param   EngineError $error         Task failure detail.
-	 * @param   int         $attempts_used Attempts consumed by the invocation.
-	 * @param   string|null $expected_raw  Exact maintenance snapshot, or null for a live transition.
-	 *
-	 * @return  void
-	 */
-	private function fail_run(
-		string $task_name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		EngineError $error,
-		int $attempts_used,
-		?string $expected_raw = null
-	): void {
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw
-		);
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$this->stores->failed_run_store( $task_name )->record(
-			$run_id,
-			$this->clock->now()->getTimestamp(),
-			$state->start_args,
-			$attempts_used,
-			$error
-		);
-
-		try {
-			$this->fire_lifecycle_hooks( 'failed', $task_name, $run_id, $state->start_args, $error );
-		} finally {
-			$this->finish_terminal_run( $task_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
-	}
-
-	/**
-	 * Fences a run that no longer owns its overlap lock before hooks and active-state release.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string         $name          Stable task or batch name.
-	 * @param   string         $run_id        Run identifier.
-	 * @param   string|null    $latest_run_id Latest discoverable pointer value for the argument identity.
-	 * @param   RunState       $state         Running state.
-	 * @param   RunStore       $run_store     Active-run store.
-	 * @param   'Task'|'Batch' $work_type     Work contract type.
-	 * @param   string|null    $expected_raw  Exact maintenance snapshot, or null for a live transition.
-	 *
-	 * @return  void
-	 */
-	private function supersede_run(
-		string $name,
-		string $run_id,
-		?string $latest_run_id,
-		RunState $state,
-		RunStore $run_store,
-		string $work_type = 'Task',
-		?string $expected_raw = null
-	): void {
-		$terminal_state = $state
-			->with_status( RunStatus::Superseded )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw
-		);
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$context_name = \strtolower( $work_type ) . '_name';
-		$this->logger->info(
-			'Superseded ' . \strtolower( $work_type ) . ' run after its ownership fence failed.',
-			array(
-				$context_name   => $name,
-				'run_id'        => $run_id,
-				'latest_run_id' => $latest_run_id,
-			)
-		);
-
-		try {
-			$this->fire_lifecycle_hooks( 'superseded', $name, $run_id, $state->start_args );
-		} finally {
-			$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
-	}
-
-	/**
-	 * Claims the terminal state transition only while the complete observed run still matches.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string      $run_id      Run identifier.
-	 * @param   RunState    $expected    Complete state observed by the terminalizing path.
-	 * @param   RunState    $replacement Terminal replacement state.
-	 * @param   RunStore    $run_store   Active-run store.
-	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
-	 *
-	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.
-	 */
-	private function claim_terminal_transition(
-		string $run_id,
-		RunState $expected,
-		RunState $replacement,
-		RunStore $run_store,
-		?string $expected_raw = null
-	): ?string {
-		return null === $expected_raw
-			? $run_store->transition_state( $run_id, $expected, $replacement )
-			: $run_store->transition( $run_id, $expected_raw, $replacement );
-	}
-
-	/**
-	 * Exact-deletes terminal storage before appending the existing terminal-history buffer.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $name      Stable task or batch name.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Terminalizing run state.
-	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore $run_store    Active-run store.
-	 *
-	 * @return  bool Whether the run option was confirmed absent before history was appended.
-	 */
-	private function finish_terminal_run(
-		string $name,
-		string $run_id,
-		RunState $state,
-		string $terminal_raw,
-		RunStore $run_store
-	): bool {
-		$this->overlap_guard->release( $name, $state->args_hash, $run_id );
-		if ( ! $run_store->delete_exact( $run_id, $terminal_raw ) ) {
-			$this->logger->error(
-				'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-					'status' => $state->status->value,
-				)
-			);
-
-			return false;
-		}
-
-		$this->stores->run_history( $name )->record_completed( $run_id, $state->args_hash );
-
-		return true;
-	}
-
-	/**
-	 * Fires the name-specific lifecycle hook before its generic companion.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param 'started'|'completed'|'failed'|'superseded' $event
-	 *
-	 * @param   string                  $event      Lifecycle event name.
-	 * @param   string                  $name       Stable task or batch name.
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   EngineError|null        $error      Failure detail for a failed event.
-	 *
-	 * @return  void
-	 */
-	private function fire_lifecycle_hooks(
-		string $event,
-		string $name,
-		string $run_id,
-		array $start_args,
-		?EngineError $error = null
-	): void {
-		$hook = self::LIFECYCLE_HOOKS[ $event ];
-
-		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
-		if ( null === $error ) {
-			try {
-				\do_action( $hook . '/' . $name, $run_id, $start_args );
-			} finally {
-				\do_action( $hook, $name, $run_id, $start_args );
-			}
-
-			return;
-		}
-
-		try {
-			\do_action( $hook . '/' . $name, $run_id, $start_args, $error );
-		} finally {
-			\do_action( $hook, $name, $run_id, $start_args, $error );
-		}
-		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
-	}
-
-	/**
-	 * Records the reconciliation path for missing or malformed active state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 *
-	 * @return  void
-	 */
-	private function log_missing_run( string $name, string $run_id, string $work_type = 'Task' ): void {
-		$context_name = \strtolower( $work_type ) . '_name';
-		$this->logger->warning(
-			$work_type . ' run state is missing or corrupt; allow the reconciliation sweep to release any remaining lock.',
-			array(
-				$context_name => $name,
-				'run_id'      => $run_id,
-			)
-		);
 	}
 
 	// endregion

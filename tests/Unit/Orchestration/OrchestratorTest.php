@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\LatestRunPoin
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
@@ -129,16 +130,19 @@ final class OrchestratorTest extends TestCase {
 		$this->registry   = new TaskRegistry();
 		$this->registry->register( $this->task );
 		$this->wpdb = new WpdbLockSpy();
+		$guard      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 
 		$this->orchestrator = new Orchestrator(
 			$this->registry,
 			new BatchRegistry(),
 			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
+			$guard,
+			$stores,
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
+			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
 			$this->randomizer,
 		);
 	}
@@ -936,15 +940,18 @@ final class OrchestratorTest extends TestCase {
 	public function test_handle_run_action_terminalizes_a_live_unregistered_task(): void {
 		$this->prepare_run_action();
 		$action_seq   = $this->action_seq();
+		$guard        = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores       = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$orchestrator = new Orchestrator(
 			new TaskRegistry(),
 			new BatchRegistry(),
 			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
+			$guard,
+			$stores,
 			$this->logger,
 			$this->clock,
 			new LockWindows( $this->clock ),
+			new TerminalTransitions( $guard, $stores, $this->clock, $this->logger ),
 			$this->randomizer,
 		);
 

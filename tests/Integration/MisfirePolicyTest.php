@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
@@ -283,16 +284,19 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$batches      = new BatchRegistry();
 		$scheduler    = $this->scheduler_facade_with_action_scheduler_probe( static fn (): bool => true );
 		$locks        = new LockRows( $wpdb );
+		$guard        = new OverlapGuard( $clock, $logger, $locks );
+		$stores       = new StoreFactory( $clock, $rows );
 		$randomizer   = new RecordingRandomizer( 42 );
 		$orchestrator = new Orchestrator(
 			$tasks,
 			$batches,
 			$scheduler,
-			new OverlapGuard( $clock, $logger, $locks ),
-			new StoreFactory( $clock, $rows ),
+			$guard,
+			$stores,
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
+			new TerminalTransitions( $guard, $stores, $clock, $logger ),
 			$randomizer
 		);
 		$schedules    = new Schedules(

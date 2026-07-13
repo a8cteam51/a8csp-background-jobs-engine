@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
@@ -78,23 +79,24 @@ final class EngineComponent implements Component {
 		 *
 		 * @var \wpdb $wpdb
 		 */
-		$option_rows  = new OptionRows( $wpdb );
-		$tasks        = new TaskRegistry();
-		$batches      = new BatchRegistry();
-		$schedules    = new ScheduleRegistry( $option_rows );
-		$logger       = new HookLogger();
-		$clock        = new SystemClock();
-		$randomizer   = new Randomizer();
-		$lock_rows    = new LockRows( $wpdb );
-		$guard        = new OverlapGuard( $clock, $logger, $lock_rows );
-		$stores       = new StoreFactory( $clock, $option_rows );
-		$scheduler    = new SchedulerFacade(
+		$option_rows          = new OptionRows( $wpdb );
+		$tasks                = new TaskRegistry();
+		$batches              = new BatchRegistry();
+		$schedules            = new ScheduleRegistry( $option_rows );
+		$logger               = new HookLogger();
+		$clock                = new SystemClock();
+		$randomizer           = new Randomizer();
+		$lock_rows            = new LockRows( $wpdb );
+		$guard                = new OverlapGuard( $clock, $logger, $lock_rows );
+		$stores               = new StoreFactory( $clock, $option_rows );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$scheduler            = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend(),
 				new WPCronBackend(),
 			)
 		);
-		$orchestrator = new Orchestrator(
+		$orchestrator         = new Orchestrator(
 			$tasks,
 			$batches,
 			$scheduler,
@@ -103,6 +105,7 @@ final class EngineComponent implements Component {
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
+			$terminal_transitions,
 			$randomizer,
 		);
 		$tasks->register( new MaintenanceTask( $wpdb, $orchestrator, $guard, $logger ) );

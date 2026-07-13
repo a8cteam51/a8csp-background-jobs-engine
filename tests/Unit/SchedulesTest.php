@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
@@ -955,15 +956,18 @@ final class SchedulesTest extends TestCase {
 	): Schedules {
 		$logger       = new RecordingLogger();
 		$wpdb         = new WpdbLockSpy();
+		$guard        = new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) );
+		$stores       = new StoreFactory( $clock, new OptionRows( $wpdb ) );
 		$orchestrator = new Orchestrator(
 			new TaskRegistry(),
 			new BatchRegistry(),
 			$backend,
-			new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) ),
-			new StoreFactory( $clock, new OptionRows( $wpdb ) ),
+			$guard,
+			$stores,
 			$logger,
 			$clock,
 			new LockWindows( $clock ),
+			new TerminalTransitions( $guard, $stores, $clock, $logger ),
 			new RecordingRandomizer( 42 ),
 		);
 
