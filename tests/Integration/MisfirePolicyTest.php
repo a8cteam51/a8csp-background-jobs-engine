@@ -2,24 +2,33 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -27,12 +36,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 /**
- * Verifies fixed-cadence misfire policy, hook payloads, counters, and the strict grace boundary.
+ * Verifies fixed-recurrence misfire policy, hook payloads, counters, and the strict grace boundary.
  */
 final class MisfirePolicyTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Fixed interval shared by deterministic cadence probes. */
+	/** Fixed interval shared by deterministic recurrence probes. */
 	private const INTERVAL = 300;
 
 	/** Owner isolated to the RunOnce occurrence. */
@@ -73,11 +82,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * RunOnce dispatches one late occurrence and realigns its next due instant to cadence.
+	 * RunOnce dispatches one late occurrence and realigns its next due instant to the recurrence.
 	 *
 	 * @return  void
 	 */
-	public function test_run_once_executes_one_late_occurrence_and_realigns_cadence(): void {
+	public function test_run_once_executes_one_late_occurrence_and_realigns_recurrence(): void {
 		$now    = \time();
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
@@ -88,7 +97,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine->tasks()->register( $task );
 		$schedule = new Schedule(
 			self::RUN_ONCE_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::RUN_ONCE_TASK,
 			array( 'policy' => 'run-once' ),
 			OverlapPolicy::Skip
@@ -102,7 +111,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->record_misfire_hooks( self::RUN_ONCE_SCHEDULE, $dynamic_misfires, $generic_misfires );
 
 		\do_action(
-			'a8csp/background_tasks/schedule_due',
+			'a8csp_background_tasks/schedule_due',
 			self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE
 		);
 		self::assertSame( array(), $task->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the task inline' );
@@ -137,7 +146,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine->tasks()->register( $task );
 		$schedule = new Schedule(
 			self::SKIP_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::SKIP_TASK,
 			array( 'policy' => 'skip' ),
 			OverlapPolicy::Skip,
@@ -151,7 +160,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$generic_misfires = array();
 		$this->record_misfire_hooks( self::SKIP_SCHEDULE, $dynamic_misfires, $generic_misfires );
 
-		\do_action( 'a8csp/background_tasks/schedule_due', self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-task action for the dropped occurrence' );
 		self::assertSame( array(), $task->calls, 'Skip must not execute a task for the dropped occurrence' );
@@ -175,7 +184,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			array(
 				array(
 					'level'   => 'info',
-					'message' => 'Misfired schedule occurrence skipped and realigned to its cadence.',
+					'message' => 'Misfired schedule occurrence skipped and realigned to its recurrence.',
 					'context' => array(
 						'owner'    => self::SKIP_OWNER,
 						'name'     => self::SKIP_SCHEDULE,
@@ -207,13 +216,13 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine->tasks()->register( $beyond_task );
 		$exact  = new Schedule(
 			self::EXACT_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::EXACT_TASK,
 			catch_up: CatchUpPolicy::Skip
 		);
 		$beyond = new Schedule(
 			self::BEYOND_SCHEDULE,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::BEYOND_TASK,
 			catch_up: CatchUpPolicy::Skip
 		);
@@ -230,9 +239,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->record_misfire_hooks( self::EXACT_SCHEDULE, $exact_dynamic, $exact_generic );
 		$this->record_misfire_hooks( self::BEYOND_SCHEDULE, $beyond_dynamic, $beyond_generic );
 
-		\do_action( 'a8csp/background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE );
 		self::assertSame( 1, $this->run_next_due_action(), 'An occurrence exactly at grace must execute normally' );
-		\do_action( 'a8csp/background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE );
 		self::assertSame( 0, $this->run_next_due_action(), 'An occurrence one second beyond grace must be dropped' );
 
 		self::assertSame( array( array() ), $exact_task->calls, 'Exactly-at-grace must remain a due task occurrence' );
@@ -277,41 +286,89 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
-		$rows         = new OptionRows( $wpdb );
-		$tasks        = new TaskRegistry();
-		$batches      = new BatchRegistry();
-		$scheduler    = $this->scheduler_facade_with_action_scheduler_probe( static fn (): bool => true );
-		$locks        = new LockRows( $wpdb );
-		$randomizer   = new RecordingRandomizer( 42 );
-		$orchestrator = new Orchestrator(
+		$rows                 = new OptionRows( $wpdb );
+		$tasks                = new TaskRegistry();
+		$batches              = new BatchRegistry();
+		$schedule_registry    = new ScheduleRegistry( $rows );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$locks                = new LockRows( $wpdb );
+		$guard                = new OverlapGuard( $clock, $logger, $locks );
+		$stores               = new StoreFactory( $clock, $rows );
+		$lock_windows         = new LockWindows( $clock );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
+		$scheduler            = new SchedulerFacade(
+			array(
+				new ActionSchedulerBackend( static fn (): bool => true ),
+				new WPCronBackend(),
+			)
+		);
+		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+		$action_deliveries    = new ActionDeliveries(
 			$tasks,
 			$batches,
 			$scheduler,
-			new OverlapGuard( $clock, $logger, $locks ),
-			new StoreFactory( $clock, $rows ),
+			$stores,
 			$logger,
 			$clock,
-			$randomizer
+			$lock_windows,
+			$terminal_transitions,
+			$failure_lifecycle
 		);
-		$schedules    = new Schedules(
-			new ScheduleRegistry( $rows ),
+		$dispatcher           = new Dispatcher(
+			$tasks,
+			$batches,
 			$scheduler,
+			$guard,
+			$stores,
 			$clock,
-			$orchestrator,
-			new OccurrenceLease( $locks, $clock, $randomizer ),
+			$randomizer,
+			$logger,
+			$lock_windows,
+			$terminal_transitions
+		);
+		$reconciliation       = new RunReconciliation(
+			$guard,
+			$stores,
+			$clock,
+			$logger,
+			$lock_windows,
+			$terminal_transitions,
+			$tasks,
+			$batches
+		);
+		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
+		$occurrence_delivery  = new OccurrenceDelivery(
+			$schedule_registry,
+			$dispatcher,
+			$occurrence_lease,
+			$scheduler,
+			$rows,
+			$clock,
 			$logger
 		);
-
-		\remove_all_actions( 'a8csp/background_tasks/schedule_due' );
-		\remove_all_actions( 'a8csp/background_tasks/run' );
-		\add_action( 'a8csp/background_tasks/schedule_due', array( $schedules, 'handle_schedule_due' ), 10, 2 );
-		\add_action( 'a8csp/background_tasks/run', array( $orchestrator, 'handle_run_action' ), 10, 4 );
-
-		return new Engine(
-			new Tasks( $tasks, $orchestrator ),
-			$schedules,
-			new Batches( $batches, $orchestrator )
+		$schedules            = new Schedules(
+			$schedule_registry,
+			$scheduler,
+			$clock,
+			$occurrence_delivery
 		);
+		$engine               = new Engine(
+			new Tasks( $tasks, $dispatcher ),
+			$schedules,
+			new Batches( $batches, $dispatcher ),
+			$dispatcher
+		);
+
+		\remove_all_actions( 'a8csp_background_tasks/start' );
+		\remove_all_actions( 'a8csp_background_tasks/continue' );
+		\remove_all_actions( 'a8csp_background_tasks/run' );
+		\remove_all_actions( 'a8csp_background_tasks/cleanup' );
+		\remove_all_actions( 'a8csp_background_tasks/schedule_due' );
+		$scheduler->register_hooks();
+		$action_deliveries->register_hooks();
+		$occurrence_delivery->register_hooks();
+
+		return $engine;
 	}
 
 	/**
@@ -390,7 +447,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 */
 	private function record_misfire_hooks( string $name, array &$dynamic, array &$generic ): void {
 		\add_action(
-			'a8csp/background_tasks/misfired/' . $name,
+			'a8csp_background_tasks/misfired/' . $name,
 			static function ( string $owner, int $due, int $fired_at ) use ( &$dynamic ): void {
 				$dynamic[] = array( $owner, $due, $fired_at );
 			},
@@ -398,7 +455,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/misfired',
+			'a8csp_background_tasks/misfired',
 			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $name, &$generic ): void {
 				if ( $schedule === $name ) {
 					$generic[] = array( $schedule, $owner, $due, $fired_at );
@@ -410,9 +467,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Returns the first cadence instant strictly after the deterministic current time.
+	 * Returns the first due instant strictly after the deterministic current time.
 	 *
-	 * @param   int $next_due Aged cadence instant.
+	 * @param   int $next_due Aged due instant.
 	 * @param   int $now      Deterministic current time.
 	 *
 	 * @return  int

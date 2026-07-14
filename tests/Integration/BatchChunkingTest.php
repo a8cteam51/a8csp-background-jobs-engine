@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
@@ -52,7 +52,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::NAME );
 		$continue_delay_calls = array();
 		\add_filter(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			static function ( int $delay, string $name, string $run_id ) use ( &$continue_delay_calls ): int {
 				$continue_delay_calls[] = array( $delay, $name, $run_id );
 
@@ -64,7 +64,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 
 		$completion_observations = array();
 		\add_action(
-			'a8csp/background_tasks/completed/' . self::NAME,
+			'a8csp_background_tasks/completed/' . self::NAME,
 			static function ( string $run_id, array $args ) use ( $batch, &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'          => 'named',
@@ -76,7 +76,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/completed',
+			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( $batch, &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'          => 'generic',
@@ -219,11 +219,21 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'started'   => array( $run_id ),
-				'completed' => array( $run_id ),
+				'completed' => array(
+					array(
+						'run_id' => $run_id,
+						'status' => 'completed',
+					),
+				),
 				'by_hash'   => array(
 					$args_hash => array(
 						'started'   => array( $run_id ),
-						'completed' => array( $run_id ),
+						'completed' => array(
+							array(
+								'run_id' => $run_id,
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),

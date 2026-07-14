@@ -2,25 +2,29 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -36,11 +40,12 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Schedules::class )]
-#[UsesClass( Cadence::class )]
+#[CoversClass( OccurrenceDelivery::class )]
+#[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( OccurrenceLease::class )]
-#[UsesClass( Orchestrator::class )]
+#[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( StoreFactory::class )]
@@ -60,6 +65,7 @@ final class ScheduleExecutionTest extends TestCase {
 	private Schedules $api;
 	private RecordingBackend $backend;
 	private FixedClock $clock;
+	private OccurrenceDelivery $delivery;
 	private RecordingLogger $logger;
 	private ScheduleRegistry $registry;
 	private WpdbLockSpy $wpdb;
@@ -83,7 +89,7 @@ final class ScheduleExecutionTest extends TestCase {
 		require_once __DIR__ . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
 	}
 
 	/**
@@ -117,25 +123,12 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
-		$tasks          = new TaskRegistry();
-		$tasks->register( new RecordingTask( self::TASK ) );
-		$orchestrator = new Orchestrator(
-			$tasks,
-			new BatchRegistry(),
-			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
-			$this->logger,
-			$this->clock,
-			new RecordingRandomizer( 42 ),
-		);
-		$this->api    = new Schedules(
+		$this->delivery = $this->new_delivery( $this->registry );
+		$this->api      = new Schedules(
 			$this->registry,
 			$this->backend,
 			$this->clock,
-			$orchestrator,
-			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
-			$this->logger
+			$this->delivery
 		);
 	}
 
@@ -144,7 +137,7 @@ final class ScheduleExecutionTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * An on-time occurrence dispatches, advances its cadence token, and releases its lease once.
+	 * An on-time occurrence dispatches, advances its next-due token, and releases its lease once.
 	 *
 	 * @return  void
 	 */
@@ -152,7 +145,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule() );
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		$scheduled_args = $this->backend->calls[0]['args']['args'] ?? null;
@@ -189,13 +182,13 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp/background_tasks/started/' . self::TASK => function (): void {
+			'a8csp_background_tasks/started/' . self::TASK => function (): void {
 				$this->clock->timestamp += 61;
-				$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 			},
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -216,15 +209,15 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp/background_tasks/history_size' => function ( int $size ): int {
+			'a8csp_background_tasks/history_size' => function ( int $size ): int {
 				$this->clock->timestamp += 61;
-				$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 				return $size;
 			},
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -241,10 +234,10 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/started/' . self::TASK => new \RuntimeException( 'listener failed' ),
+			'a8csp_background_tasks/started/' . self::TASK => new \RuntimeException( 'listener failed' ),
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -264,7 +257,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$this->clock->timestamp = self::NOW + 2 * self::INTERVAL - 1;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -280,7 +273,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$this->clock->timestamp = self::NOW + 2 * self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( 0, $this->registration()['misfires'] ?? null );
@@ -296,7 +289,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule() );
 		$filter_args                              = null;
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp/background_tasks/misfire_grace/' . self::NAME =>
+			'a8csp_background_tasks/misfire_grace/' . self::NAME =>
 			static function ( int $grace, string $owner, string $name ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -308,7 +301,7 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp                   = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame(
 			array(
@@ -328,7 +321,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::RunOnce ) );
 		$this->clock->timestamp = self::NOW + self::INTERVAL + 901;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -346,17 +339,17 @@ final class ScheduleExecutionTest extends TestCase {
 		$fired_at               = self::NOW + self::INTERVAL + 901;
 		$this->clock->timestamp = $fired_at;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/misfired/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/misfired/' . self::NAME,
 					'args'      => array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/misfired',
+					'hook_name' => 'a8csp_background_tasks/misfired',
 					'args'      => array( self::NAME, self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
 				),
 			),
@@ -369,25 +362,25 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A throwing misfire listener cannot prevent cadence realignment and counter persistence.
+	 * A throwing misfire listener cannot prevent recurrence realignment and counter persistence.
 	 *
 	 * @return  void
 	 */
 	public function test_misfire_listener_failure_is_logged_after_state_persists(): void {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/misfired/' . self::NAME => new \RuntimeException( 'listener failed' ),
+			'a8csp_background_tasks/misfired/' . self::NAME => new \RuntimeException( 'listener failed' ),
 		);
 		$this->clock->timestamp                       = self::NOW + self::INTERVAL + 901;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 1, $this->registration()['misfires'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/misfired/' . self::NAME,
-				'a8csp/background_tasks/misfired',
+				'a8csp_background_tasks/misfired/' . self::NAME,
+				'a8csp_background_tasks/misfired',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -395,20 +388,27 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A missing registry row requests fast clearing and schedules a distinct cleanup delivery.
+	 * A missing registry row records durable intent before attempting inline convergence.
 	 *
 	 * @return  void
 	 */
-	public function test_unknown_registration_schedules_a_distinct_cleanup_delivery(): void {
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+	public function test_unknown_registration_records_intent_and_attempts_inline_convergence(): void {
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
-		self::assertSame( array( 'unschedule', 'schedule_single' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame(
-			array( self::REGISTRATION_KEY, 'cleanup' ),
-			$this->backend->calls[1]['args']['args'] ?? null
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( array( self::REGISTRATION_KEY ), $this->backend->calls[1]['args']['args'] ?? null );
+		self::assertCount(
+			1,
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				fn ( string $query ): bool => \str_starts_with( $query, 'INSERT IGNORE ' )
+					&& \str_contains( $query, $this->intent_option_name() )
+			)
 		);
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
 		self::assertSame(
 			'Unknown schedule registration "owner-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
 			$this->logger->records[0]['message'] ?? null
@@ -416,36 +416,208 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A cleanup single clears only the recurring chain identity and never schedules a successor.
+	 * A later readiness transition cannot grant authority to an earlier partial clear.
 	 *
 	 * @return  void
 	 */
-	public function test_cleanup_delivery_clears_the_recurring_identity_without_rescheduling(): void {
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY, 'cleanup' );
+	public function test_inline_convergence_uses_authority_from_the_clearing_snapshot(): void {
+		$dormant                    = new RecordingBackend();
+		$dormant->readiness_results = array( false, true );
+		$this->delivery             = $this->new_delivery(
+			$this->registry,
+			new SchedulerFacade( array( $dormant, $this->backend ) )
+		);
 
-		self::assertSame( array( 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( array( self::REGISTRATION_KEY ), $this->backend->calls[0]['args']['args'] ?? null );
-		self::assertSame( array(), $this->logger->records );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array( 'is_ready', 'is_absent' ), \array_column( $dormant->calls, 'verb' ) );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertFalse( $this->logger->records[1]['context']['converged'] ?? null );
+		self::assertTrue( $dormant->is_ready() );
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertTrue( $this->logger->records[2]['context']['converged'] ?? null );
 	}
 
 	/**
-	 * A cleanup single warns once when the recurring chain still cannot be cleared.
+	 * A failed intent CAS and verification read cannot report inline convergence.
 	 *
 	 * @return  void
 	 */
-	public function test_cleanup_delivery_rewarns_only_when_verified_clear_fails(): void {
+	public function test_inline_convergence_rejects_a_failed_post_cas_read(): void {
+		$verification_reads = 0;
+		$this->wpdb->script_result( 'delete', 0 );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( &$verification_reads ): void {
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( &$verification_reads ): void {
+						++$verification_reads;
+						$wpdb->last_error = 'scripted intent verification failure';
+					}
+				);
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( 1, $verification_reads );
+		self::assertFalse( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * A failed maintenance convergence retains its intent and emits a debug diagnostic.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_logs_and_retains_a_failed_clear(): void {
 		$this->backend->results['unschedule'] = new Failure(
 			new SchedulingError(
 				SchedulingErrorReason::ScheduleFailed,
-				'Repair the backend before retrying cleanup.'
+				'Repair the backend before retrying convergence.'
 			)
 		);
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->backend->calls  = array();
+		$this->logger->records = array();
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY, 'cleanup' );
+		$this->delivery->converge_pending_intents();
 
-		self::assertSame( array( 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame(
+			'Unknown schedule cleanup intent remains pending because verified clearance failed.',
+			$this->logger->records[0]['message'] ?? null
+		);
+	}
+
+	/**
+	 * The inline scheduler clear cannot begin before durable intent is visible.
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_delivery_records_intent_before_inline_convergence(): void {
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			function (): void {
+				self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+				self::assertSame( array(), $this->backend->calls );
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+	}
+
+	/**
+	 * Repeated unknown deliveries preserve the first unresolved intent generation.
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_delivery_keeps_an_existing_intent_unchanged(): void {
+		$this->backend->results['unschedule'] = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Keep the intent pending across deliveries.'
+			)
+		);
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$original_raw = $this->wpdb->rows[ $this->intent_option_name() ] ?? null;
+		self::assertIsString( $original_raw );
+		$this->clock->timestamp = self::NOW + 1;
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertSame( $original_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+	}
+
+	/**
+	 * A current registration resolves its intent without consulting scheduler readiness.
+	 *
+	 * @return  void
+	 */
+	public function test_registered_chain_clears_intent_without_scheduler_access(): void {
+		$this->backend->results['unschedule'] = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Keep the intent pending until registration.'
+			)
+		);
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		unset( $this->backend->results['unschedule'] );
+		$this->sync_schedule( $this->schedule() );
+		$this->backend->ready = false;
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/**
+	 * Exact-value deletion loses to an intent generation reinserted after the read.
+	 *
+	 * @return  void
+	 */
+	public function test_intent_cas_delete_loses_to_a_delete_reinsert(): void {
+		$this->backend->results['unschedule'] = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Keep the first intent pending.'
+			)
+		);
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		unset( $this->backend->results['unschedule'] );
+		$this->clock->timestamp = self::NOW + 1;
+		$replacement_raw        = \maybe_serialize(
+			array(
+				'key'        => self::REGISTRATION_KEY,
+				'created_at' => $this->clock->timestamp,
+			)
+		);
+		self::assertIsString( $replacement_raw );
+		$this->wpdb->before_next(
+			'delete',
+			function ( WpdbLockSpy $wpdb ) use ( $replacement_raw ): void {
+				unset( $wpdb->rows[ $this->intent_option_name() ] );
+				$wpdb->put( $this->intent_option_name(), $replacement_raw );
+			}
+		);
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertSame( $replacement_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+	}
+
+	/**
+	 * A malformed intent row is skipped without aborting valid pending convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_convergence_never_throws_on_a_poisoned_row(): void {
+		$this->backend->results['unschedule'] = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Keep the valid intent pending.'
+			)
+		);
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		unset( $this->backend->results['unschedule'] );
+		$poisoned_name = 'a8csp_bgte_cleanup_' . \str_repeat( '0', 64 );
+		$this->wpdb->put( $poisoned_name, 'O:8:"stdClass":0:{}' );
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertArrayHasKey( $poisoned_name, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 	}
 
 	/**
@@ -459,11 +631,11 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			function (): void {
-				$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 			}
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -481,11 +653,11 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	public function test_inactive_owner_skips_without_unscheduling(): void {
 		$this->sync_schedule( $this->schedule() );
-		$this->api             = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
+		$this->delivery        = $this->new_delivery( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
 		$this->backend->calls  = array();
 		$this->logger->records = array();
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
@@ -499,7 +671,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_advanced_next_due_drops_a_stale_redelivery(): void {
 		$this->sync_schedule( $this->schedule() );
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
@@ -516,7 +688,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
 		$current     = new Schedule(
 			self::NAME,
-			Cadence::every( 600 ),
+			Recurrence::every( 600 ),
 			self::TASK,
 			self::ARGS,
 			OverlapPolicy::Allow,
@@ -529,7 +701,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->logger->records  = array();
 		$this->clock->timestamp = self::NOW + 600;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
@@ -537,7 +709,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A held Skip occurrence advances cadence and records a benign overlap skip.
+	 * A held Skip occurrence advances recurrence and records a benign overlap skip.
 	 *
 	 * @return  void
 	 */
@@ -546,7 +718,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->seed_held_lock();
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $this->registration()['skips'] ?? null );
@@ -565,7 +737,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb->script_result( 'update', false );
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
@@ -604,7 +776,7 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
@@ -616,7 +788,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A dispatch failure leaves cadence timing unchanged for a later occurrence retry.
+	 * A dispatch failure leaves recurrence timing unchanged for a later occurrence retry.
 	 *
 	 * @return  void
 	 */
@@ -631,14 +803,51 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp                  = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( $before, $this->registration() );
 		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
 	}
 
 	/**
-	 * Run-now dispatches immediately, records last-fired, and preserves cadence.
+	 * Run-now accepts a persisted registration and its request-local declaration after recurring scheduling fails.
+	 *
+	 * @return  void
+	 */
+	public function test_run_now_accepts_a_persisted_chainless_registration_in_the_same_request(): void {
+		$schedule = $this->schedule();
+		$failure  = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Repair the scheduler store before retrying schedule sync.'
+			)
+		);
+
+		$this->backend->results['schedule_recurring'] = $failure;
+
+		$synced = $this->api->sync( self::OWNER, array( $schedule ) );
+
+		self::assertSame( $failure, $synced );
+		self::assertSame( $schedule->fingerprint(), $this->registration()['fingerprint'] ?? null );
+		self::assertSame(
+			array( 'is_scheduled', 'schedule_recurring' ),
+			\array_column( $this->backend->calls, 'verb' )
+		);
+
+		unset( $this->backend->results['schedule_recurring'] );
+		$this->backend->calls = array();
+
+		$result = $this->api->run_now( self::OWNER, self::NAME );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['next_due'] ?? null );
+		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
+	}
+
+	/**
+	 * Run-now dispatches immediately, records last-fired, and preserves recurrence.
 	 *
 	 * @return  void
 	 */
@@ -669,7 +878,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$observed = null;
 
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp/background_tasks/started/' . self::TASK => function () use ( &$observed ): void {
+			'a8csp_background_tasks/started/' . self::TASK => function () use ( &$observed ): void {
 				$observed = array(
 					'last_fired' => $this->registration()['last_fired'] ?? null,
 					'lease_held' => \array_key_exists(
@@ -761,7 +970,7 @@ final class ScheduleExecutionTest extends TestCase {
 	): Schedule {
 		return new Schedule(
 			self::NAME,
-			Cadence::every( self::INTERVAL ),
+			Recurrence::every( self::INTERVAL ),
 			self::TASK,
 			self::ARGS,
 			$overlap,
@@ -795,27 +1004,64 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  Schedules
 	 */
 	private function new_api( ScheduleRegistry $registry ): Schedules {
-		$tasks = new TaskRegistry();
-		$tasks->register( new RecordingTask( self::TASK ) );
-		$orchestrator = new Orchestrator(
-			$tasks,
-			new BatchRegistry(),
-			$this->backend,
-			new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) ),
-			new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) ),
-			$this->logger,
-			$this->clock,
-			new RecordingRandomizer( 42 ),
-		);
+		$delivery = $this->new_delivery( $registry );
 
 		return new Schedules(
 			$registry,
 			$this->backend,
 			$this->clock,
-			$orchestrator,
+			$delivery
+		);
+	}
+
+	/**
+	 * Returns another occurrence delivery service over the same runtime seams.
+	 *
+	 * @param   ScheduleRegistry $registry  Request-local schedule registry.
+	 * @param   SchedulerFacade  $scheduler Scheduling facade, or null for the default recording backend.
+	 *
+	 * @return  OccurrenceDelivery
+	 */
+	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
+		$tasks   = new TaskRegistry();
+		$batches = new BatchRegistry();
+		$tasks->register( new RecordingTask( self::TASK ) );
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$randomizer           = new RecordingRandomizer( 42 );
+		$lock_windows         = new LockWindows( $this->clock );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$dispatcher           = new Dispatcher(
+			$tasks,
+			$batches,
+			$this->backend,
+			$guard,
+			$stores,
+			$this->clock,
+			$randomizer,
+			$this->logger,
+			$lock_windows,
+			$terminal_transitions,
+		);
+
+		return new OccurrenceDelivery(
+			$registry,
+			$dispatcher,
 			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
+			$scheduler ?? new SchedulerFacade( array( $this->backend ) ),
+			new OptionRows( $this->wpdb ),
+			$this->clock,
 			$this->logger
 		);
+	}
+
+	/**
+	 * Returns the durable cleanup-intent option for the fixture registration.
+	 *
+	 * @return  string
+	 */
+	private function intent_option_name(): string {
+		return 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::REGISTRATION_KEY );
 	}
 
 	/**
@@ -915,7 +1161,7 @@ final class ScheduleExecutionTest extends TestCase {
 				$this->fired_actions(),
 				static fn ( array $action ): bool => \str_starts_with(
 					$action['hook_name'],
-					'a8csp/background_tasks/misfired'
+					'a8csp_background_tasks/misfired'
 				)
 			)
 		);

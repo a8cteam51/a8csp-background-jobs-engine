@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
@@ -46,7 +46,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$named_failed     = array();
 		$generic_failed   = array();
 		\add_action(
-			'a8csp/background_tasks/retrying/' . self::NAME,
+			'a8csp_background_tasks/retrying/' . self::NAME,
 			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retrying ): void {
 				$named_retrying[] = array( $run_id, $start_args, $attempt, $delay );
 			},
@@ -54,7 +54,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp/background_tasks/retrying',
+			'a8csp_background_tasks/retrying',
 			static function (
 				string $name,
 				string $run_id,
@@ -68,7 +68,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp/background_tasks/failed/' . self::NAME,
+			'a8csp_background_tasks/failed/' . self::NAME,
 			static function ( string $run_id, array $start_args, EngineError $error ) use ( &$named_failed ): void {
 				$named_failed[] = array( $run_id, $start_args, $error );
 			},
@@ -76,7 +76,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/failed',
+			'a8csp_background_tasks/failed',
 			static function (
 				string $name,
 				string $run_id,
@@ -157,11 +157,21 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'started'   => array( $run_id ),
-				'completed' => array( $run_id ),
+				'completed' => array(
+					array(
+						'run_id' => $run_id,
+						'status' => 'failed',
+					),
+				),
 				'by_hash'   => array(
 					$args_hash => array(
 						'started'   => array( $run_id ),
-						'completed' => array( $run_id ),
+						'completed' => array(
+							array(
+								'run_id' => $run_id,
+								'status' => 'failed',
+							),
+						),
 					),
 				),
 			),

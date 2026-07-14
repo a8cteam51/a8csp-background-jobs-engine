@@ -1,6 +1,6 @@
 # A8CSP Background Tasks Engine
 
-**Contributors:** wpcomspecialprojects
+**Contributors:** wpspecialprojects
 **Tags:**
 **Requires at least:** 7.0
 **Tested up to:** 7.0
@@ -15,55 +15,50 @@ A background-work engine for WordPress sites: Tasks, Schedules, and Batches on p
 
 A Task is one named unit of background work. A consumer registers a `TaskInterface` instance and dispatches it with arguments through the engine facade or the procedural API.
 
-A Schedule is an owner-scoped declaration that dispatches a registered Task on a fixed cadence. The declaration includes the task arguments, overlap policy, catch-up policy, and advisory priority.
+A Schedule is an owner-scoped declaration that dispatches a registered Task on a fixed recurrence. The declaration includes the task arguments, overlap policy, catch-up policy, and advisory priority.
 
-A Batch is named work split into independently processed chunks. A consumer registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after success or failure.
+A Batch is named work split into independently processed chunks. A consumer registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after success or failure. Cancelled and superseded Batches invoke neither terminal callback.
 
-The facade prefers Action Scheduler and uses WP-Cron as its baseline backend. Consumers use the same API with either backend. An occurrence on a temporarily unavailable backend is dormant, not lost; new writes can use another ready backend, and the dormant occurrence becomes visible again when its backend recovers.
+Consumers use the same API with either scheduling backend. An occurrence on a temporarily unavailable backend is dormant, not lost; writes can use another ready backend, and the dormant occurrence becomes visible when its backend recovers.
+
+## Installation
+
+The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-tasks-engine/releases). Download the ZIP, upload it as a WordPress plugin, and activate it. The release ZIP includes production Composer dependencies and the translation template (`.pot`), so it needs no Composer step.
+
+Installed copies receive release updates through the WordPress dashboard like any plugin.
+
+For a source checkout, clone or extract the repository into `wp-content/plugins/a8csp-background-tasks-engine`, then install production dependencies inside that plugin directory:
+
+```sh
+cd wp-content/plugins
+git clone https://github.com/a8cteam51/a8csp-background-tasks-engine.git
+cd a8csp-background-tasks-engine
+composer install --no-dev
+```
+
+Action Scheduler is optional and preferred when it is ready; when it is absent, the engine runs on WP-Cron alone.
 
 ## Quick start
 
-The executable fixture contains the complete [`SiteHealthPingTask`](tests/Support/Fixtures/SiteHealthPingTask.php) and [`CommentCountRecountBatch`](tests/Support/Fixtures/CommentCountRecountBatch.php) implementations. Its consumer entry point registers both contracts and synchronizes one hourly schedule from `init`:
+In a consumer plugin under its own namespace, register the Task and Batch implementations and synchronize the owner's complete schedule declaration from `init`:
 
 ```php
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
+namespace Acme\BackgroundTasks;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
 
-final readonly class DemoConsumer {
-	public const OWNER = 'a8csp-bgte-demo';
+final class BackgroundTasksRegistration {
+	private const OWNER = 'acme-background-work';
 
-	public const SCHEDULE_NAME = 'site-health-ping';
+	private const SCHEDULE_NAME = 'site-health-ping';
 
-	public const LOG_HOOK = 'a8csp_bgte_demo/log';
-
-	public function __construct(
-		private int $site_health_interval = \HOUR_IN_SECONDS
-	) {
-		if ( 1 > $this->site_health_interval ) {
-			throw new \InvalidArgumentException(
-				'The demo site-health interval must be positive; pass at least one second.'
-			);
-		}
-	}
-
-	public function boot(): void {
-		\add_action( 'init', array( $this, 'register_background_work' ) );
-	}
-
-	public function register_background_work(): void {
+	public static function register(): void {
 		$engine = \a8csp_bgte_engine();
 		if ( null === $engine ) {
-			\do_action(
-				self::LOG_HOOK,
-				'error',
-				'The demo consumer could not register because the background tasks engine is unavailable.',
-				array()
-			);
-
+			\error_log( 'The background tasks engine is unavailable.' );
 			return;
 		}
 
@@ -74,45 +69,42 @@ final readonly class DemoConsumer {
 			self::OWNER,
 			array(
 				new Schedule(
-					self::SCHEDULE_NAME,
-					Cadence::every( $this->site_health_interval ),
-					SiteHealthPingTask::NAME,
-					array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ),
-					OverlapPolicy::Skip,
-					CatchUpPolicy::RunOnce,
-					10
+					name: self::SCHEDULE_NAME,
+					recurrence: Recurrence::every( \HOUR_IN_SECONDS ),
+					task: SiteHealthPingTask::NAME,
+					args: array( 'transient' => 'acme_site_health_snapshot' ),
+					overlap: OverlapPolicy::Skip,
+					catch_up: CatchUpPolicy::RunOnce,
+					priority: 10
 				),
 			)
 		);
 		if ( $synced->is_failure() ) {
-			\do_action(
-				self::LOG_HOOK,
-				'error',
-				'The demo consumer could not synchronize its site-health schedule.',
-				array( 'error' => $synced->error->message )
-			);
+			\error_log( 'Background schedule sync failed: ' . $synced->error->message );
 		}
 	}
 }
 
-( new DemoConsumer() )->boot();
+\add_action( 'init', array( BackgroundTasksRegistration::class, 'register' ) );
 ```
+
+`SiteHealthPingTask` and `CommentCountRecountBatch` are consumer-owned implementations of the contracts below. See the tested version of this example in [`DemoConsumer`](tests/Support/Fixtures/DemoConsumer.php), [`SiteHealthPingTask`](tests/Support/Fixtures/SiteHealthPingTask.php), and [`CommentCountRecountBatch`](tests/Support/Fixtures/CommentCountRecountBatch.php).
 
 Schedule synchronization treats the passed array as the owner's complete declaration, so call it on every `init`. After `init` registers the contracts, enqueue the Task or start the Batch through the procedural API:
 
 ```php
-$task_result = a8csp_bgte_enqueue_task(
+$task_result = \a8csp_bgte_enqueue_task(
 	SiteHealthPingTask::NAME,
-	array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT )
+	array( 'transient' => 'acme_site_health_snapshot' )
 );
 
-$batch_result = a8csp_bgte_start_batch(
+$batch_result = \a8csp_bgte_start_batch(
 	CommentCountRecountBatch::NAME,
 	array( 'post_type' => 'post' )
 );
 ```
 
-Every mutation that schedules work returns `Success` or `Failure`. A successful result means the work was scheduled, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property.
+Scheduling, retry, and cancellation methods return `Success` or `Failure`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property.
 
 ## The three contracts
 
@@ -132,7 +124,7 @@ interface TaskInterface {
 
 ### Batch and batch context
 
-`BatchInterface` generates initial chunks, processes one chunk at a time, receives one terminal callback, and supplies the retry policy used independently for each failed chunk.
+`BatchInterface` generates initial chunks, processes one chunk at a time, receives one terminal callback after success or failure, and supplies the retry policy used independently for each failed chunk. Cancellation and supersession invoke neither callback.
 
 ```php
 interface BatchInterface {
@@ -178,7 +170,7 @@ interface BatchContextInterface {
 ```php
 public function __construct(
 	public string $name,
-	public Cadence $cadence,
+	public Recurrence $recurrence,
 	public string $task,
 	public array $args = array(),
 	public OverlapPolicy $overlap = OverlapPolicy::Skip,
@@ -187,7 +179,7 @@ public function __construct(
 )
 ```
 
-Use `Cadence::every( $seconds )` for v1 schedule synchronization. `Cadence::cron( $expression )` can represent a calendar expression, but v1 synchronization returns a failure because the recurring backend port currently supports fixed intervals only.
+Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization. `Recurrence::cron( $expression )` represents a calendar expression, but synchronization returns a failure because the recurring backend port supports fixed intervals only.
 
 ## Idempotency invariant
 
@@ -201,73 +193,127 @@ Overlap applies to a matching task name and argument identity. Catch-up determin
 | --- | --- | --- |
 | `Allow` | Dispatches one due or catch-up run even while matching work is active. | Drops a beyond-grace occurrence; otherwise dispatches even while matching work is active. |
 | `Skip` (default) | Attempts one due or catch-up run and drops it while a fresh matching lock is held. | Drops a beyond-grace occurrence; otherwise dispatches only when no fresh matching lock is held. |
-| `Replace` | Dispatches one due or catch-up run and transfers the matching lock to it. | Drops a beyond-grace occurrence; otherwise dispatches and transfers the matching lock to it. |
+| `Replace` | Dispatches one due or catch-up run; if matching work holds the lock, transfers it to the new run. | Drops a beyond-grace occurrence; otherwise dispatches and transfers a held matching lock to the new run. |
 
-`Allow` gives each run an independent overlap identity. `Skip` leaves the active run in place. `Replace` transfers ownership; an incumbent already inside a callback reaches its next fencing boundary rather than being interrupted mid-callback.
+`Allow` gives each run an independent overlap identity. `Skip` leaves the active run in place. `Replace` transfers a held matching lock, or acquires or reclaims it when no matching lock is held. An incumbent already inside a callback reaches its next fencing boundary rather than being interrupted mid-callback.
 
-An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp/background_tasks/misfire_grace/{schedule}`. `RunOnce` attempts one make-up occurrence and realigns the cadence without replaying every missed interval. `Skip` drops the occurrence, realigns the cadence, and emits the misfired hooks.
+An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{schedule}`. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
 
 ## Hooks and filters
 
-For each lifecycle pair, the dynamic hook fires first and the generic companion follows with the name prepended.
+For each lifecycle pair, the name-specific hook fires first and the generic companion follows with the name prepended.
 
-| Event | Dynamic hook and payload | Generic hook and payload |
+| Event | Name-specific hook and payload | Generic hook and payload |
 | --- | --- | --- |
-| Started | `started/{name}`: `($run_id, $start_args)` | `started`: `($name, $run_id, $start_args)` |
-| Completed | `completed/{name}`: `($run_id, $start_args)` | `completed`: `($name, $run_id, $start_args)` |
-| Failed | `failed/{name}`: `($run_id, $start_args, EngineError $error)` | `failed`: `($name, $run_id, $start_args, EngineError $error)` |
-| Retrying | `retrying/{name}`: `($run_id, $start_args, $attempt, $delay)` | `retrying`: `($name, $run_id, $start_args, $attempt, $delay)` |
-| Superseded | `superseded/{name}`: `($run_id, $start_args)` | `superseded`: `($name, $run_id, $start_args)` |
-| Misfired | `misfired/{schedule}`: `($owner, $due_at, $observed_at)` | `misfired`: `($schedule, $owner, $due_at, $observed_at)` |
-| Log | `log`: `($level, $message, $context)` | No generic companion. |
+| Started | `a8csp_background_tasks/started/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/started`: `($name, $run_id, $start_args)` |
+| Completed | `a8csp_background_tasks/completed/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/completed`: `($name, $run_id, $start_args)` |
+| Failed | `a8csp_background_tasks/failed/{name}`: `($run_id, $start_args, EngineError $error)` | `a8csp_background_tasks/failed`: `($name, $run_id, $start_args, EngineError $error)` |
+| Cancelled | `a8csp_background_tasks/cancelled/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/cancelled`: `($name, $run_id, $start_args)` |
+| Retrying | `a8csp_background_tasks/retrying/{name}`: `($run_id, $start_args, $attempt, $delay)` | `a8csp_background_tasks/retrying`: `($name, $run_id, $start_args, $attempt, $delay)` |
+| Superseded | `a8csp_background_tasks/superseded/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/superseded`: `($name, $run_id, $start_args)` |
+| Misfired | `a8csp_background_tasks/misfired/{schedule}`: `($owner, $due_at, $observed_at)` | `a8csp_background_tasks/misfired`: `($schedule, $owner, $due_at, $observed_at)` |
+| Log | `a8csp_background_tasks/log`: `($level, $message, $context)` | No generic companion. |
 
-All hook names above use the `a8csp/background_tasks/` prefix. Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `EngineError` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
+Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `EngineError` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
-Consumers never hook the engine's internal delivery actions: `start`, `continue`, `run`, `cleanup`, or `schedule_due`.
+Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start`, `a8csp_background_tasks/continue`, `a8csp_background_tasks/run`, `a8csp_background_tasks/cleanup`, or `a8csp_background_tasks/schedule_due`.
 
 | Filter | Input and required return |
 | --- | --- |
-| `queue/{batch}` | `($queue, $start_args, $run_id)` returns the complete list of chunk argument arrays. |
-| `continue_delay` | `($delay, $name, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives Task names as well as Batch names: the value spaces Batch chunk continuations and also feeds every run's lock-staleness floor, so scope callbacks by `$name`. |
-| `lock_staleness/{name}` | `($seconds)` returns a positive lock window; the default is 900 and the effective value is at least twice the continue delay. |
-| `history_size` | `($size)` returns a positive per-buffer history cap; the default is 30. |
-| `retry_policy/{name}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |
-| `misfire_grace/{schedule}` | `($grace, $owner, $schedule)` returns a non-negative grace in seconds; the default is one interval. |
+| `a8csp_background_tasks/queue/{batch}` | `($queue, $start_args, $run_id)` returns the complete list of chunk argument arrays. |
+| `a8csp_background_tasks/continue_delay` | `($delay, $name, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives Task names as well as Batch names because the value also feeds every run's lock-staleness floor. |
+| `a8csp_background_tasks/lock_staleness/{name}` | `($seconds)` returns a positive lock window; the default is 900 and the effective value is at least twice the continue delay. |
+| `a8csp_background_tasks/history_size` | `($size)` returns a positive per-buffer history cap; the default is 30. |
+| `a8csp_background_tasks/retry_policy/{name}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |
+| `a8csp_background_tasks/misfire_grace/{schedule}` | `($grace, $owner, $schedule)` returns a non-negative grace in seconds; the default is one interval. |
 
-Filter names also use the `a8csp/background_tasks/` prefix.
+## Bring your own PSR-3 logger
+
+The default `Utilities\Logging\ErrorLogSink` listener writes `a8csp_background_tasks/log` events to PHP's configured error log. Given your own `Psr\Log\LoggerInterface` instance in `$logger`, remove that listener after the engine boots and attach a three-argument listener:
+
+```php
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use Psr\Log\LoggerInterface;
+
+/** @var LoggerInterface $logger */
+\add_action(
+	'plugins_loaded',
+	static function () use ( $logger ): void {
+		\remove_action(
+			'a8csp_background_tasks/log',
+			array( ErrorLogSink::class, 'log' ),
+			10
+		);
+		\add_action(
+			'a8csp_background_tasks/log',
+			static function ( string $level, string $message, array $context ) use ( $logger ): void {
+				$logger->log( $level, $message, $context );
+			},
+			10,
+			3
+		);
+	},
+	20
+);
+```
 
 ## Priority is advisory
 
-Priority is an integer from 0 through 255, defaults to 10, and sorts lower values first where the backend supports ordering. Action Scheduler honors it. WP-Cron ignores it. The facade still accepts the field for WP-Cron because rejecting an advisory dimension would break transparent backend failover.
+Priority is an integer from 0 through 255 and defaults to 10. Action Scheduler receives it; WP-Cron accepts and ignores it because its event store has no priority dimension. Keeping the field in the common API permits transparent backend failover.
 
 ## Owner-scoped schedule synchronization
 
-`$engine->schedules()->sync( $owner, $schedules )` converges one owner's complete declaration. Synchronization only ever mutates engine-owned hooks; foreign WP-Cron events and Action Scheduler actions are structurally unreachable. Orphan detection is scoped to the supplied owner, so it can never see or remove another consumer's schedules as orphan candidates.
+`$engine->schedules()->sync( $owner, $schedules )` converges one owner's complete declaration. Synchronization targets only engine-owned `a8csp_background_tasks/schedule_due` occurrences identified by owner and schedule name, so it does not mutate foreign WP-Cron events or Action Scheduler actions. Orphan detection is scoped to the supplied owner and cannot remove another consumer's schedules.
 
-Use a stable owner slug and pass every schedule owned by that consumer on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration and self-removes when that backend later delivers it.
+Use a stable owner slug and pass every schedule owned by that consumer on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration and self-removes when that backend delivers it.
 
 ## Keep action arguments small
 
-Public start and enqueue arguments are validated as JSON-encodable scalar trees and persisted in the run state; the scheduled backend action carries only the engine's envelope (name, run ID, sequence). The 8,000-byte JSON ceiling applies to each backend action payload — for a Batch that is one chunk's arguments plus that envelope, so every chunk must fit within it. An oversized or unencodable payload fails with a corrective message naming the hook:
+Public start and enqueue arguments are validated as JSON-encodable scalar trees and persisted in run state. The initial Task or Batch delivery carries only the engine envelope of name, run ID, and sequence. The 8,000-byte JSON ceiling applies to each backend action payload. A Batch chunk action also includes one chunk's arguments, so every chunk must fit with the envelope. An oversized or unencodable payload fails with a corrective message naming the hook:
 
 > Scheduling hook "&lt;hook&gt;" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.
 
-Bulk data goes in storage that the task or batch reads by key. Actions carry identifying keys only. The demo Task carries its transient key. The demo Batch carries a `post_type` key, queries post IDs during queue generation, and puts one ID in each chunk.
+Bulk data belongs in storage that the Task or Batch reads by key. Pass identifying keys in action arguments. The tested Task carries its transient key. The tested Batch carries a `post_type` key, queries post IDs during queue generation, and puts one ID in each chunk.
+
+## Failure, retry, and cancellation
+
+A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total, including the first, a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw an exception implementing `NonRetryableExceptionInterface` to bypass the remaining attempts for a permanent failure.
+
+After the final attempt, the engine writes the terminal failure to the per-name failed store. It invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$engine->retry_failed( $name, $run_id )`, `a8csp_bgte_retry_failed_run( $name, $run_id )`, or `wp background-tasks failed retry <name> <run_id>`. Retry belongs directly on `Engine`, not on the Task or Batch API. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
+
+Cancel a retained run with `$engine->cancel( $name, $run_id )`, `a8csp_bgte_cancel_run( $name, $run_id )`, or `wp background-tasks cancel <name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. Cancellation is refused while an admitted lifecycle action is executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
+
+Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking consumer work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_success()` nor `on_failure()`.
 
 ## WP-CLI
 
-The canonical command is `wp background-tasks`; there is no alias. Failed runs can be listed, retried, or purged:
+The canonical command root is `wp background-tasks`; there is no alias.
+
+| Operation | Effective synopsis |
+| --- | --- |
+| List failed runs | `wp background-tasks failed list [--format=<format>]` |
+| Retry a failed run | `wp background-tasks failed retry <name> <run_id>` |
+| Purge failed runs for one name | `wp background-tasks failed purge <name>` |
+| Purge every discovered failed-run store | `wp background-tasks failed purge --all` |
+| Cancel a retained run | `wp background-tasks cancel <name> <run_id>` |
+| List schedules | `wp background-tasks schedules list [--owner=<owner>] [--format=<format>]` |
+| List runs and recent history | `wp background-tasks runs list <name> [--format=<format>]` |
+
+The list commands accept `table`, `csv`, `json`, `count`, or `yaml`; the default is `table`. Examples matching the command help are:
 
 ```sh
-wp background-tasks failed list --format=table
-wp background-tasks failed retry a8csp-bgte-demo-site-health-ping 00000000000000000001-0000000000000000001
-wp background-tasks failed purge a8csp-bgte-demo-site-health-ping
+wp background-tasks failed list
+wp background-tasks failed list --format=json
+wp background-tasks failed retry email-digest 00000000000000000001-0000000000000000001
+wp background-tasks failed purge email-digest
+wp background-tasks failed purge --all
+wp background-tasks cancel email-digest 00000000000000000001-0000000000000000001
+wp background-tasks schedules list
+wp background-tasks schedules list --owner=consumer-plugin --format=json
+wp background-tasks runs list email-digest
+wp background-tasks runs list email-digest --format=json
 ```
 
-Use `wp background-tasks failed purge --all` to purge every retained failed-run store.
+`schedules list` reports persisted registrations and state visible through ready backends. When registrations are listed in table format, the command adds a note if a present backend is not ready and may hold dormant occurrences.
 
-## Failure lifecycle in brief
-
-A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total (including the first), a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw an exception implementing `NonRetryableExceptionInterface` to bypass the remaining attempts for a permanent failure.
-
-After the final attempt, the engine writes the terminal failure to the per-name failed store. It then invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$engine->tasks()->retry_failed( $name, $run_id )`, `a8csp_bgte_retry_failed_run( $name, $run_id )`, or `wp background-tasks failed retry <name> <run-id>`. A successful retry result means the new run was scheduled; lifecycle hooks report its eventual outcome.
+`runs list` table output separates live runs from bounded recent history. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim, and `failed store` marks a failure available to `failed retry`.

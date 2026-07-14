@@ -36,4 +36,13 @@ final readonly class WPErrorStub {
 	public function get_error_code(): string|int {
 		return $this->code;
 	}
+
+	/**
+	 * Reports whether the stub contains an error code.
+	 *
+	 * @return  bool
+	 */
+	public function has_errors(): bool {
+		return '' !== $this->code && 0 !== $this->code;
+	}
 }

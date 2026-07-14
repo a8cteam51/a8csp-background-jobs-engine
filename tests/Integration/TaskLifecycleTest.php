@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\Group;
@@ -47,7 +47,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$named_completed   = array();
 		$generic_completed = array();
 		\add_action(
-			'a8csp/background_tasks/completed/' . self::SUCCESS_NAME,
+			'a8csp_background_tasks/completed/' . self::SUCCESS_NAME,
 			static function ( string $run_id, array $start_args ) use ( &$named_completed ): void {
 				$named_completed[] = array( $run_id, $start_args );
 			},
@@ -55,7 +55,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/completed',
+			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $start_args ) use ( &$generic_completed ): void {
 				$generic_completed[] = array( $name, $run_id, $start_args );
 			},
@@ -73,7 +73,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		} else {
 			$action_id   = null;
 			$cron_events = $this->wordpress_cron_events(
-				'a8csp/background_tasks/run',
+				'a8csp_background_tasks/run',
 				array( self::SUCCESS_NAME, $run_id, 1 )
 			);
 			self::assertCount( 1, $cron_events, 'The facade fallback must persist exactly one WP-Cron task occurrence' );
@@ -109,7 +109,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		} else {
 			self::assertSame(
 				array(),
-				$this->wordpress_cron_events( 'a8csp/background_tasks/run', array( self::SUCCESS_NAME, $run_id, 1 ) ),
+				$this->wordpress_cron_events( 'a8csp_background_tasks/run', array( self::SUCCESS_NAME, $run_id, 1 ) ),
 				'WP-Cron completion must clear the delivered task occurrence'
 			);
 		}
@@ -138,11 +138,21 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'started'   => array( $run_id ),
-				'completed' => array( $run_id ),
+				'completed' => array(
+					array(
+						'run_id' => $run_id,
+						'status' => 'completed',
+					),
+				),
 				'by_hash'   => array(
 					$args_hash => array(
 						'started'   => array( $run_id ),
-						'completed' => array( $run_id ),
+						'completed' => array(
+							array(
+								'run_id' => $run_id,
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),
@@ -174,7 +184,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$named_failed   = array();
 		$generic_failed = array();
 		\add_action(
-			'a8csp/background_tasks/failed/' . self::FAILURE_NAME,
+			'a8csp_background_tasks/failed/' . self::FAILURE_NAME,
 			static function ( string $run_id, array $start_args, EngineError $error ) use ( &$named_failed ): void {
 				$named_failed[] = array( $run_id, $start_args, $error );
 			},
@@ -182,7 +192,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/failed',
+			'a8csp_background_tasks/failed',
 			static function (
 				string $name,
 				string $run_id,
@@ -252,11 +262,21 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'started'   => array( $run_id ),
-				'completed' => array( $run_id ),
+				'completed' => array(
+					array(
+						'run_id' => $run_id,
+						'status' => 'failed',
+					),
+				),
 				'by_hash'   => array(
 					$args_hash => array(
 						'started'   => array( $run_id ),
-						'completed' => array( $run_id ),
+						'completed' => array(
+							array(
+								'run_id' => $run_id,
+								'status' => 'failed',
+							),
+						),
 					),
 				),
 			),
@@ -292,7 +312,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 
 		$pending = $this->action_scheduler_store()->query_actions(
 			array(
-				'hook'     => 'a8csp/background_tasks/run',
+				'hook'     => 'a8csp_background_tasks/run',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,

@@ -3,16 +3,17 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Cadence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -25,7 +26,7 @@ use PHPUnit\Framework\TestCase;
  * Exercises the retained engine composition root through the real plugin boot path.
  *
  */
-#[CoversClass( EngineComponent::class )]
+#[CoversClass( Component::class )]
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
 final class EngineComponentTest extends TestCase {
@@ -46,9 +47,9 @@ final class EngineComponentTest extends TestCase {
 		require_once __DIR__ . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/includes/api.php';
+		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
 
 	/**
@@ -79,7 +80,7 @@ final class EngineComponentTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
 		$GLOBALS['a8csp_bgte_test_as_calls']             = array();
 		$GLOBALS['a8csp_bgte_test_as_results']           = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']          = array();
+		$GLOBALS['a8csp_bgte_test_did_actions']          = array( 'plugins_loaded' => 1 );
 		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
 
 		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = false;
@@ -99,7 +100,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_is_always_needed(): void {
-		self::assertTrue( ( new EngineComponent() )->is_needed() );
+		self::assertTrue( ( new Component() )->is_needed() );
 	}
 
 	/**
@@ -110,21 +111,23 @@ final class EngineComponentTest extends TestCase {
 	public function test_plugin_boot_publishes_one_engine_and_registers_runtime_hooks(): void {
 		( new Plugin() )->boot();
 
-		$first   = \a8csp_bgte_engine();
-		$second  = \a8csp_bgte_engine();
-		$actions = $this->registrations( 'a8csp_bgte_test_action_registrations' );
-		$filters = $this->registrations( 'a8csp_bgte_test_filter_registrations' );
+		$first      = \a8csp_bgte_engine();
+		$second     = \a8csp_bgte_engine();
+		$inspection = Component::get_inspection();
+		$actions    = $this->registrations( 'a8csp_bgte_test_action_registrations' );
+		$filters    = $this->registrations( 'a8csp_bgte_test_filter_registrations' );
 
 		self::assertInstanceOf( Engine::class, $first );
 		self::assertSame( $first, $second );
+		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/log',
-				'a8csp/background_tasks/start',
-				'a8csp/background_tasks/continue',
-				'a8csp/background_tasks/run',
-				'a8csp/background_tasks/cleanup',
-				'a8csp/background_tasks/schedule_due',
+				'a8csp_background_tasks/log',
+				'a8csp_background_tasks/start',
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/cleanup',
+				'a8csp_background_tasks/schedule_due',
 				'init',
 			),
 			\array_column( $actions, 'hook_name' )
@@ -134,7 +137,7 @@ final class EngineComponentTest extends TestCase {
 			\array_column( $filters, 'hook_name' )
 		);
 		self::assertSame(
-			array( 3, 3, 4, 3, 2, 1 ),
+			array( 3, 3, 4, 3, 1, 1 ),
 			\array_column( \array_slice( $actions, 1 ), 'accepted_args' )
 		);
 	}
@@ -145,14 +148,17 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_initialization_is_idempotent(): void {
-		$component = new EngineComponent();
+		$component = new Component();
 		$component->initialize();
 
-		$engine = EngineComponent::get_engine();
+		$engine     = Component::get_engine();
+		$inspection = Component::get_inspection();
 		$component->initialize();
 
 		self::assertInstanceOf( Engine::class, $engine );
-		self::assertSame( $engine, EngineComponent::get_engine() );
+		self::assertInstanceOf( Inspection::class, $inspection );
+		self::assertSame( $engine, Component::get_engine() );
+		self::assertSame( $inspection, Component::get_inspection() );
 		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
 		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
 	}
@@ -284,7 +290,7 @@ final class EngineComponentTest extends TestCase {
 					'args'     => array( 'email-digest', $task_result->value, 1 ),
 				),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/run' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/run' )
 		);
 
 		$batch_result = \a8csp_bgte_start_batch(
@@ -304,11 +310,11 @@ final class EngineComponentTest extends TestCase {
 					'args'     => array( 'catalog-sync', $batch_result->value, 1 ),
 				),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/start' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/start' )
 		);
 		self::assertSame( 3, $this->cron_event_count() );
 
-		$schedule        = new Schedule( 'connection-monitor', Cadence::every( 300 ), 'email-digest' );
+		$schedule        = new Schedule( 'connection-monitor', Recurrence::every( 300 ), 'email-digest' );
 		$schedule_result = \a8csp_bgte_sync_schedules( 'consumer-plugin', array( $schedule ) );
 
 		self::assertInstanceOf( Success::class, $schedule_result );
@@ -324,7 +330,7 @@ final class EngineComponentTest extends TestCase {
 					'args'     => array( 'consumer-plugin:connection-monitor' ),
 				),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/schedule_due' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/schedule_due' )
 		);
 		$registrations = \get_option( 'a8csp_bgte_schedules', null );
 		self::assertIsArray( $registrations );
@@ -334,7 +340,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsArray( $maintenance );
 		$expected_maintenance = new Schedule(
 			'maintenance',
-			Cadence::every( \HOUR_IN_SECONDS ),
+			Recurrence::every( \HOUR_IN_SECONDS ),
 			MaintenanceTask::NAME,
 			array(),
 			OverlapPolicy::Skip,
@@ -356,6 +362,25 @@ final class EngineComponentTest extends TestCase {
 		self::assertSame( 4, $this->cron_event_count() );
 		$next_due = $registration['next_due'] ?? null;
 
+		$maintenance_run_now_result = \a8csp_bgte_run_schedule_now( 'a8csp-bgte', 'maintenance' );
+
+		self::assertInstanceOf( Success::class, $maintenance_run_now_result );
+		self::assertIsString( $maintenance_run_now_result->value );
+		$maintenance_run = \get_option(
+			'a8csp_bgte_run_' . MaintenanceTask::NAME . '_' . $maintenance_run_now_result->value,
+			null
+		);
+		self::assertIsArray( $maintenance_run );
+		self::assertSame( array(), $maintenance_run['start_args'] ?? null );
+		self::assertContains(
+			array(
+				'schedule' => false,
+				'args'     => array( MaintenanceTask::NAME, $maintenance_run_now_result->value, 1 ),
+			),
+			$this->cron_events_for_hook( 'a8csp_background_tasks/run' )
+		);
+		self::assertSame( 5, $this->cron_event_count() );
+
 		$run_now_result = \a8csp_bgte_run_schedule_now( 'consumer-plugin', 'connection-monitor' );
 
 		self::assertInstanceOf( Success::class, $run_now_result );
@@ -370,7 +395,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsArray( $registration );
 		self::assertSame( $next_due, $registration['next_due'] ?? null );
 		self::assertIsInt( $registration['last_fired'] ?? null );
-		self::assertSame( 5, $this->cron_event_count() );
+		self::assertSame( 6, $this->cron_event_count() );
 
 		$options_before_retry    = $GLOBALS['a8csp_bgte_test_options'];
 		$cron_before_retry       = \get_option( 'cron', array() );
@@ -398,6 +423,7 @@ final class EngineComponentTest extends TestCase {
 		require_once __DIR__ . '/as-function-stubs.php';
 
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+			'plugins_loaded'        => 1,
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
 		);
@@ -425,7 +451,7 @@ final class EngineComponentTest extends TestCase {
 				array(
 					'function' => 'as_enqueue_async_action',
 					'args'     => array(
-						'a8csp/background_tasks/run',
+						'a8csp_background_tasks/run',
 						array( 'preferred-backend', $result->value, 1 ),
 						'preferred-backend|' . $result->value,
 						false,

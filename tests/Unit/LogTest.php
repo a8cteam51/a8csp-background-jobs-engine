@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Log;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
  * Exercises the always-on log channel and its bare-install error-log fallback.
  *
  */
-#[CoversClass( Log::class )]
+#[CoversClass( ErrorLogSink::class )]
 final class LogTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording action stub.
@@ -24,7 +24,7 @@ final class LogTest extends TestCase {
 		}
 
 		require_once __DIR__ . '/wp-hook-stubs.php';
-		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
 	}
 
 	/**
@@ -46,7 +46,7 @@ final class LogTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_is_always_needed(): void {
-		self::assertTrue( ( new Log() )->is_needed() );
+		self::assertTrue( ( new ErrorLogSink() )->is_needed() );
 	}
 
 	/**
@@ -55,13 +55,13 @@ final class LogTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_initialize_registers_the_default_handler(): void {
-		( new Log() )->initialize();
+		( new ErrorLogSink() )->initialize();
 
 		self::assertSame(
 			array(
 				array(
-					'hook_name'     => 'a8csp/background_tasks/log',
-					'callback'      => array( Log::class, 'log' ),
+					'hook_name'     => 'a8csp_background_tasks/log',
+					'callback'      => array( ErrorLogSink::class, 'log' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
@@ -186,7 +186,7 @@ final class LogTest extends TestCase {
 		}
 
 		try {
-			Log::log( $level, $message, $context );
+			ErrorLogSink::log( $level, $message, $context );
 
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The capture is a local Unit-test file, while wp_remote_get() is for remote URLs.
 			$output = \file_get_contents( $temp_file );

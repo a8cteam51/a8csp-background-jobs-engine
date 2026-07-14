@@ -1,10 +1,11 @@
 <?php declare( strict_types=1 );
 
 /**
- * Recording action and filter stubs for Unit tests that exercise hooks outside WordPress.
+ * Recording action, filter, and diagnostic stubs for Unit tests outside WordPress.
  * Registration stubs append each hook name to the
  * `$GLOBALS['a8csp_bgte_test_hooks']` ledger so tests can assert which hooks a boot registered.
  * Action registrations retain their callback configuration, while fired actions retain their arguments.
+ * Incorrect-use reports retain the function name, corrective message, and introduced version.
  * The `function_exists()` guards keep this file inert wherever WordPress is loaded.
  *
  * @package A8C\SpecialProjects\BackgroundTasksEngine
@@ -39,6 +40,32 @@ if ( ! \function_exists( 'doing_action' ) ) {
 		$doing = $GLOBALS['a8csp_bgte_test_doing_actions'] ?? array();
 
 		return \in_array( $hook_name, $doing, true );
+	}
+}
+
+if ( ! \function_exists( '_doing_it_wrong' ) ) {
+	/**
+	 * Records a WordPress incorrect-use report.
+	 *
+	 * @param   string $function_name Function that was called incorrectly.
+	 * @param   string $message       Corrective message.
+	 * @param   string $version       Version that introduced the correction.
+	 *
+	 * @return  void
+	 */
+	function _doing_it_wrong( $function_name, $message, $version ) {
+		$calls = $GLOBALS['a8csp_bgte_test_doing_it_wrong_calls'] ?? array();
+		if ( ! \is_array( $calls ) ) {
+			throw new \UnexpectedValueException( 'Initialize the incorrect-use test ledger as an array.' );
+		}
+
+		$calls[] = array(
+			'function_name' => $function_name,
+			'message'       => $message,
+			'version'       => $version,
+		);
+
+		$GLOBALS['a8csp_bgte_test_doing_it_wrong_calls'] = $calls;
 	}
 }
 
@@ -85,10 +112,18 @@ if ( ! \function_exists( 'add_filter' ) ) {
 	/**
 	 * Records a filter registration and its callback configuration in the test ledgers.
 	 *
-	 * @param   string   $hook_name     The filter hook name.
+	 * @template HookName of string
+	 *
+	 * @param   HookName $hook_name     The filter hook name.
 	 * @param   callable $callback      The callback (recorded but never invoked).
 	 * @param   int      $priority      The priority.
 	 * @param   int      $accepted_args The accepted argument count.
+	 *
+	 * @phpstan-param (
+	 *     HookName is 'update_plugins_github.com'
+	 *         ? callable(false|array<string, mixed>, array{Version: string, TextDomain: string}, string): (false|array<string, mixed>)
+	 *         : callable
+	 * ) $callback
 	 *
 	 * @return  true
 	 */

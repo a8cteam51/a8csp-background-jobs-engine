@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\HookLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -66,7 +66,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/log',
+					'hook_name' => 'a8csp_background_tasks/log',
 					'args'      => array(
 						'300',
 						'Task 42: printable; {missing}; {metadata}.',
@@ -98,7 +98,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/log',
+					'hook_name' => 'a8csp_background_tasks/log',
 					'args'      => array(
 						'info',
 						'Task {label} failed.',
@@ -121,7 +121,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/log',
+					'hook_name' => 'a8csp_background_tasks/log',
 					'args'      => array( 'warning', 'Task failed.', array() ),
 				),
 			),
@@ -142,7 +142,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/log',
+					'hook_name' => 'a8csp_background_tasks/log',
 					'args'      => array( 'info', 'Running email-digest.', $context ),
 				),
 			),
@@ -163,7 +163,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/log',
+					'hook_name' => 'a8csp_background_tasks/log',
 					'args'      => array( 'info', 'Running {task}.', $context ),
 				),
 			),

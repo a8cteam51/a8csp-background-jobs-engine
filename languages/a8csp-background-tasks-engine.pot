@@ -1,0 +1,68 @@
+# Copyright (C) 2026 A8C Special Projects
+# This file is distributed under the GPL v2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: A8CSP Background Tasks Engine 1.0.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/a8csp-background-tasks-engine\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-07-14T14:09:28+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: a8csp-background-tasks-engine\n"
+
+#. Plugin Name of the plugin
+#: a8csp-background-tasks-engine.php
+msgid "A8CSP Background Tasks Engine"
+msgstr ""
+
+#. Plugin URI of the plugin
+#. Author URI of the plugin
+#: a8csp-background-tasks-engine.php
+msgid "https://specialprojects.automattic.com"
+msgstr ""
+
+#. Description of the plugin
+#: a8csp-background-tasks-engine.php
+msgid "A background-work engine for WordPress sites: Tasks, Schedules, and Batches on pluggable scheduling backends."
+msgstr ""
+
+#. Author of the plugin
+#: a8csp-background-tasks-engine.php
+msgid "A8C Special Projects"
+msgstr ""
+
+#. translators: 1: Plugin name, 2: Plugin version
+#: functions-bootstrap.php:177
+#, php-format
+msgid "<strong>%1$s (version %2$s)</strong> could not be initialized."
+msgstr ""
+
+#: functions-bootstrap.php:183
+msgid "Your environment does not meet all the system requirements listed below:"
+msgstr ""
+
+#. translators: 1: Current WP version, 2: Minimum WP version
+#: functions-bootstrap.php:201
+#, php-format
+msgid "Current <em>WordPress version (%1$s)</em> does not meet minimum required version of %2$s."
+msgstr ""
+
+#. translators: 1: Current PHP version, 2: Minimum PHP version
+#: functions-bootstrap.php:209
+#, php-format
+msgid "Current <em>PHP version (%1$s)</em> does not meet minimum required version of %2$s."
+msgstr ""
+
+#: functions-bootstrap.php:215
+msgid "The autoloader file is missing. Please run <code>composer install</code> to generate it."
+msgstr ""
+
+#. translators: %d: interval in seconds.
+#: src/Engine/Scheduling/Backends/WPCronBackend.php:311
+#, php-format
+msgid "Every %d seconds"
+msgstr ""

@@ -16,8 +16,6 @@
  * The plugin's persisted footprint. Every fixed option and user-meta key any component writes
  * is listed here, in the same change that introduces the write — grouped by owning component
  * so ownership stays reviewable. Runtime-suffixed option families use the prefix sweep below.
- * This file runs in WordPress's cold uninstall bootstrap (no autoloader, no Plugin or Component
- * classes), so the arrays stay inline: nothing here may reference plugin code.
  */
 $a8csp_bgte_footprint = array(
 	'options'   => array(
@@ -27,11 +25,11 @@ $a8csp_bgte_footprint = array(
 );
 
 $a8csp_bgte_lifecycle_hooks = array(
-	'a8csp/background_tasks/start',
-	'a8csp/background_tasks/continue',
-	'a8csp/background_tasks/run',
-	'a8csp/background_tasks/cleanup',
-	'a8csp/background_tasks/schedule_due',
+	'a8csp_background_tasks/start',
+	'a8csp_background_tasks/continue',
+	'a8csp_background_tasks/run',
+	'a8csp_background_tasks/cleanup',
+	'a8csp_background_tasks/schedule_due',
 );
 
 /*
@@ -59,14 +57,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 	 *
 	 * @var wpdb $wpdb
 	 */
-	$a8csp_bgte_option_pattern = $wpdb->esc_like( 'a8csp_bgte_' ) . '%';
-	$a8csp_bgte_option_names   = $wpdb->get_col(
-		$wpdb->prepare(
-			'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-			$wpdb->options,
-			$a8csp_bgte_option_pattern
-		)
-	);
+	$a8csp_bgte_option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
 
 	foreach ( $a8csp_bgte_option_names as $a8csp_bgte_option_name ) {
 		if ( \is_string( $a8csp_bgte_option_name ) ) {
@@ -94,22 +85,12 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 		) as $a8csp_bgte_action_scheduler_table_suffix
 	) {
 		$a8csp_bgte_action_scheduler_table = $wpdb->prefix . $a8csp_bgte_action_scheduler_table_suffix;
-		$a8csp_bgte_table_lookup_query     = $wpdb->prepare(
-			'SHOW TABLES LIKE %s',
-			$wpdb->esc_like( $a8csp_bgte_action_scheduler_table )
-		);
-		if ( ! \is_string( $a8csp_bgte_table_lookup_query ) ) {
-			return;
-		}
-
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared and validated above.
-		$a8csp_bgte_installed_table = $wpdb->get_var( $a8csp_bgte_table_lookup_query );
+		$a8csp_bgte_installed_table        = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $a8csp_bgte_action_scheduler_table ) ) );
 		if ( $a8csp_bgte_action_scheduler_table !== $a8csp_bgte_installed_table ) {
 			return;
 		}
 
-		$a8csp_bgte_action_scheduler_tables[ $a8csp_bgte_action_scheduler_table_suffix ] =
-			$a8csp_bgte_action_scheduler_table;
+		$a8csp_bgte_action_scheduler_tables[ $a8csp_bgte_action_scheduler_table_suffix ] = $a8csp_bgte_action_scheduler_table;
 	}
 
 	$a8csp_bgte_hook_placeholders = \implode(
@@ -123,18 +104,15 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 	 * Candidate group IDs must be captured before their matching actions disappear. The final
 	 * unreferenced check keeps groups shared with surviving foreign actions structurally out of scope.
 	 */
-	$a8csp_bgte_group_ids_query = $wpdb->prepare(
-		'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')',
-		\array_merge(
-			array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ),
-			$a8csp_bgte_lifecycle_hooks
+	$a8csp_bgte_group_id_rows = $wpdb->get_col(
+		$wpdb->prepare(
+			'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')',
+			\array_merge(
+				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ),
+				$a8csp_bgte_lifecycle_hooks
+			)
 		)
 	);
-	if ( ! \is_string( $a8csp_bgte_group_ids_query ) ) {
-		return;
-	}
-
-	$a8csp_bgte_group_id_rows = $wpdb->get_col( $a8csp_bgte_group_ids_query );
 	$a8csp_bgte_group_ids     = array();
 	foreach ( $a8csp_bgte_group_id_rows as $a8csp_bgte_group_id ) {
 		$a8csp_bgte_group_id = (int) $a8csp_bgte_group_id;
@@ -143,6 +121,8 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 		}
 	}
 
+	// Every query below binds matching literal placeholders and arguments, so prepare() cannot
+	// return null here; the scoped ignores skip unreachable narrowing instead of faking a handler.
 	$a8csp_bgte_log_delete_query = $wpdb->prepare(
 		'DELETE FROM %i WHERE `action_id` IN (' .
 			'SELECT `action_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')' .
@@ -155,11 +135,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 			$a8csp_bgte_lifecycle_hooks
 		)
 	);
-	if ( ! \is_string( $a8csp_bgte_log_delete_query ) ) {
-		return;
-	}
-
-	if ( false === $wpdb->query( $a8csp_bgte_log_delete_query ) ) {
+	if ( false === $wpdb->query( $a8csp_bgte_log_delete_query ) ) { // @phpstan-ignore argument.type
 		return;
 	}
 
@@ -170,11 +146,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 			$a8csp_bgte_lifecycle_hooks
 		)
 	);
-	if ( ! \is_string( $a8csp_bgte_action_delete_query ) ) {
-		return;
-	}
-
-	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) || array() === $a8csp_bgte_group_ids ) {
+	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) || array() === $a8csp_bgte_group_ids ) { // @phpstan-ignore argument.type
 		return;
 	}
 
@@ -190,11 +162,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 			array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] )
 		)
 	);
-	if ( ! \is_string( $a8csp_bgte_group_delete_query ) ) {
-		return;
-	}
-
-	$wpdb->query( $a8csp_bgte_group_delete_query );
+	$wpdb->query( $a8csp_bgte_group_delete_query ); // @phpstan-ignore argument.type
 	// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 };
 

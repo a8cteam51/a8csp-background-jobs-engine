@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Log;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
@@ -171,9 +171,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$named_superseded   = array();
 		$generic_superseded = array();
 		$log_records        = array();
-		\remove_action( 'a8csp/background_tasks/log', array( Log::class, 'log' ), 10 );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp/background_tasks/superseded/' . self::RECLAIM_NAME,
+			'a8csp_background_tasks/superseded/' . self::RECLAIM_NAME,
 			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {
 				$named_superseded[] = array( $run_id, $args );
 			},
@@ -181,7 +181,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/superseded',
+			'a8csp_background_tasks/superseded',
 			static function ( string $name, string $run_id, array $args ) use ( &$generic_superseded ): void {
 				$generic_superseded[] = array( $name, $run_id, $args );
 			},
@@ -189,7 +189,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/log',
+			'a8csp_background_tasks/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -335,11 +335,29 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'started'   => array( $run_a, $run_b ),
-				'completed' => array( $run_a, $run_b ),
+				'completed' => array(
+					array(
+						'run_id' => $run_a,
+						'status' => 'superseded',
+					),
+					array(
+						'run_id' => $run_b,
+						'status' => 'completed',
+					),
+				),
 				'by_hash'   => array(
 					$args_hash => array(
 						'started'   => array( $run_a, $run_b ),
-						'completed' => array( $run_a, $run_b ),
+						'completed' => array(
+							array(
+								'run_id' => $run_a,
+								'status' => 'superseded',
+							),
+							array(
+								'run_id' => $run_b,
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),
@@ -380,7 +398,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 */
 	private function filter_continue_delay_to_zero(): void {
 		\add_filter(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			static fn ( int $delay, string $name, string $run_id ): int => 0,
 			10,
 			3

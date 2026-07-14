@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
 
 /**
  * Demonstrates a small task that stores one idempotent site-health snapshot.

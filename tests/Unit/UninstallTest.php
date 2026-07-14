@@ -160,11 +160,11 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_schedules',
 	);
 	private const LIFECYCLE_HOOKS = array(
-		'a8csp/background_tasks/start',
-		'a8csp/background_tasks/continue',
-		'a8csp/background_tasks/run',
-		'a8csp/background_tasks/cleanup',
-		'a8csp/background_tasks/schedule_due',
+		'a8csp_background_tasks/start',
+		'a8csp_background_tasks/continue',
+		'a8csp_background_tasks/run',
+		'a8csp_background_tasks/cleanup',
+		'a8csp_background_tasks/schedule_due',
 	);
 	private const NEAR_MISS       = 'a8cspXbgteYforeign';
 

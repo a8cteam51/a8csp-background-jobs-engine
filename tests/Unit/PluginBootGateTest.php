@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Log;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -18,8 +18,8 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Plugin::class )]
-#[UsesClass( EngineComponent::class )]
-#[UsesClass( Log::class )]
+#[UsesClass( Component::class )]
+#[UsesClass( ErrorLogSink::class )]
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
 final class PluginBootGateTest extends TestCase {
@@ -39,7 +39,7 @@ final class PluginBootGateTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-options-stubs.php';
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 	}
 
@@ -76,13 +76,13 @@ final class PluginBootGateTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/log',
+				'a8csp_background_tasks/log',
 				'cron_schedules',
-				'a8csp/background_tasks/start',
-				'a8csp/background_tasks/continue',
-				'a8csp/background_tasks/run',
-				'a8csp/background_tasks/cleanup',
-				'a8csp/background_tasks/schedule_due',
+				'a8csp_background_tasks/start',
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/cleanup',
+				'a8csp_background_tasks/schedule_due',
 				'init',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
@@ -107,13 +107,13 @@ final class PluginBootGateTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/log',
+				'a8csp_background_tasks/log',
 				'cron_schedules',
-				'a8csp/background_tasks/start',
-				'a8csp/background_tasks/continue',
-				'a8csp/background_tasks/run',
-				'a8csp/background_tasks/cleanup',
-				'a8csp/background_tasks/schedule_due',
+				'a8csp_background_tasks/start',
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/cleanup',
+				'a8csp_background_tasks/schedule_due',
 				'init',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']

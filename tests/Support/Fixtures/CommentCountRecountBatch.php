@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
 
 /**
  * Demonstrates a batch that recounts comments one post per independently retried chunk.

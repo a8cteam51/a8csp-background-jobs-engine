@@ -79,6 +79,24 @@ trait CronIsolationTrait {
 	 * @return  int Number of events processed.
 	 */
 	protected function run_next_due_cron_event(): int {
+		return $this->run_matching_due_cron_event(
+			static fn ( string $hook, array $args ): bool => true
+		);
+	}
+
+	/**
+	 * Runs at most one due event accepted by a hook-and-arguments predicate.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param callable(string, array<array-key, mixed>): bool $matches
+	 *
+	 * @param   callable $matches Due-event identity predicate.
+	 *
+	 * @return  int Number of events processed.
+	 */
+	protected function run_matching_due_cron_event( callable $matches ): int {
 		$ready = \wp_get_ready_cron_jobs();
 		\ksort( $ready, SORT_NUMERIC );
 		foreach ( $ready as $timestamp => $hooks ) {
@@ -100,7 +118,11 @@ trait CronIsolationTrait {
 						continue;
 					}
 
-					$args        = $event['args'];
+					$args = $event['args'];
+					if ( ! $matches( $hook, $args ) ) {
+						continue;
+					}
+
 					$schedule    = $event['schedule'] ?? false;
 					$rescheduled = true;
 					if ( \is_string( $schedule ) && '' !== $schedule ) {
