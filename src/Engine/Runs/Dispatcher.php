@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
@@ -382,9 +383,165 @@ final readonly class Dispatcher {
 		return $result;
 	}
 
+	/**
+	 * Cancels one retained run that is not executing or pending batch cleanup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Stable task or batch name.
+	 * @param   string $run_id Retained run identifier.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
+	public function cancel( string $name, string $run_id ): AbstractResult {
+		$task  = $this->tasks->get( $name );
+		$batch = $this->batches->get( $name );
+		if ( null !== $task && null !== $batch ) {
+			$error = EngineError::ambiguous_name( $name );
+			$this->logger->warning( $error->message, array( 'name' => $name ) );
+
+			return new Failure( $error );
+		}
+
+		if ( null === $task && null === $batch ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.',
+						$name
+					)
+				)
+			);
+		}
+
+		$run_store = $this->stores->run_store( $name );
+		$snapshot  = $run_store->inspect( $run_id );
+		if ( null === $snapshot || null === $snapshot['state'] ) {
+			return $this->cancel_not_retained( $name, $run_id );
+		}
+
+		$state = $snapshot['state'];
+		if ( RunStatus::Running !== $state->status ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Run "%1$s" is already terminal (%2$s); a finished run cannot be cancelled.',
+						$run_id,
+						$state->status->value
+					)
+				)
+			);
+		}
+
+		if ( $state->executing ) {
+			return $this->cancel_executing( $run_id );
+		}
+
+		if ( null !== $batch && array() === $state->queue && 1 < $state->action_seq ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Run "%s" has processed its queue; the pending cleanup completes it.',
+						$run_id
+					)
+				)
+			);
+		}
+
+		$cancelled = $this->terminal_transitions->cancel_run(
+			$name,
+			$run_id,
+			$state,
+			$run_store,
+			$snapshot['raw'],
+			fn () => $this->unschedule_group( $name . '|' . $run_id )
+		);
+		if ( $cancelled ) {
+			return new Success( $run_id );
+		}
+
+		$latest = $run_store->inspect( $run_id );
+		if ( null !== $latest && null !== $latest['state'] && $latest['state']->executing ) {
+			return $this->cancel_executing( $run_id );
+		}
+
+		return new Failure(
+			new EngineError(
+				\sprintf(
+					'Run "%s" changed state while the cancel was in flight; re-inspect the run before retrying.',
+					$run_id
+				)
+			)
+		);
+	}
+
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns the corrective failure for an absent or corrupt retained run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Stable task or batch name.
+	 * @param   string $run_id Run identifier.
+	 *
+	 * @return  Failure<EngineError>
+	 */
+	private function cancel_not_retained( string $name, string $run_id ): Failure {
+		return new Failure(
+			new EngineError(
+				\sprintf(
+					'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.',
+					$run_id,
+					$name
+				)
+			)
+		);
+	}
+
+	/**
+	 * Returns the corrective failure for a run whose admitted delivery is still executing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Run identifier.
+	 *
+	 * @return  Failure<EngineError>
+	 */
+	private function cancel_executing( string $run_id ): Failure {
+		return new Failure(
+			new EngineError(
+				\sprintf(
+					'Run "%s" is executing; a run in flight completes or fails on its own.',
+					$run_id
+				)
+			)
+		);
+	}
+
+	/**
+	 * Clears every pending action in one scheduler group through the facade's group-only form.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $group Per-run scheduler group.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	private function unschedule_group( string $group ): AbstractResult {
+		$scheduler = $this->scheduler instanceof SchedulerFacade
+			? $this->scheduler
+			: new SchedulerFacade( array( $this->scheduler ) );
+
+		return $scheduler->unschedule_group( $group );
+	}
 
 	/**
 	 * Creates and schedules one task run under a resolved overlap policy.

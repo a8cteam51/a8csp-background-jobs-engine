@@ -53,6 +53,33 @@ final class RunStateTest extends TestCase {
 		self::assertSame(
 			array(
 				'status'        => RunStatus::Failed,
+				'executing'     => true,
+				'start_args'    => array( 'scope' => 'all' ),
+				'args_hash'     => 'hash-a',
+				'queue'         => array( array( 'page' => 1 ) ),
+				'chunk_retries' => 2,
+				'action_seq'    => 7,
+				'created_at'    => 100,
+				'heartbeat_at'  => 125,
+			),
+			self::fields( $copy )
+		);
+	}
+
+	/**
+	 * Execution-marker copies change only delivery admission state.
+	 *
+	 * @return  void
+	 */
+	public function test_with_executing_preserves_every_other_field(): void {
+		$original = self::state();
+		$copy     = $original->with_executing( false );
+
+		self::assertNotSame( $original, $copy );
+		self::assertSame(
+			array(
+				'status'        => RunStatus::Running,
+				'executing'     => false,
 				'start_args'    => array( 'scope' => 'all' ),
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
@@ -78,6 +105,7 @@ final class RunStateTest extends TestCase {
 		self::assertSame(
 			array(
 				'status'        => RunStatus::Running,
+				'executing'     => true,
 				'start_args'    => array( 'scope' => 'all' ),
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 2 ), array( 'page' => 3 ) ),
@@ -103,6 +131,7 @@ final class RunStateTest extends TestCase {
 		self::assertSame(
 			array(
 				'status'        => RunStatus::Running,
+				'executing'     => true,
 				'start_args'    => array( 'scope' => 'all' ),
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
@@ -128,6 +157,7 @@ final class RunStateTest extends TestCase {
 		self::assertSame(
 			array(
 				'status'        => RunStatus::Running,
+				'executing'     => true,
 				'start_args'    => array( 'scope' => 'all' ),
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
@@ -153,6 +183,7 @@ final class RunStateTest extends TestCase {
 		self::assertSame(
 			array(
 				'status'        => RunStatus::Running,
+				'executing'     => true,
 				'start_args'    => array( 'scope' => 'all' ),
 				'args_hash'     => 'hash-a',
 				'queue'         => array( array( 'page' => 1 ) ),
@@ -173,6 +204,7 @@ final class RunStateTest extends TestCase {
 	private static function state(): RunState {
 		return new RunState(
 			status: RunStatus::Running,
+			executing: true,
 			start_args: array( 'scope' => 'all' ),
 			args_hash: 'hash-a',
 			queue: array( array( 'page' => 1 ) ),
@@ -184,12 +216,13 @@ final class RunStateTest extends TestCase {
 	}
 
 	/**
-	 * Returns all eight fields in persisted schema order.
+	 * Returns all nine fields in persisted schema order.
 	 *
 	 * @param   RunState $state Run state.
 	 *
 	 * @return  array{
 	 *     status: RunStatus,
+	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
@@ -202,6 +235,7 @@ final class RunStateTest extends TestCase {
 	private static function fields( RunState $state ): array {
 		return array(
 			'status'        => $state->status,
+			'executing'     => $state->executing,
 			'start_args'    => $state->start_args,
 			'args_hash'     => $state->args_hash,
 			'queue'         => $state->queue,

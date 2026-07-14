@@ -157,6 +157,30 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
+	 * A group-only clear is a no-op because WP-Cron cannot distinguish grouped run identities.
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_with_an_empty_hook_preserves_every_cron_event(): void {
+		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'run-22' ), true ) );
+		self::assertTrue(
+			\wp_schedule_single_event( 1_700_000_100, 'a8csp_bgte_sibling_hook', array( 'run-23' ), true )
+		);
+		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
+
+		$result = ( new WPCronBackend() )->unschedule( '', array(), 'reports|run-22' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame( array(), $this->cron_calls( 'wp_unschedule_event' ) );
+		self::assertSame( 1_700_000_000, \wp_next_scheduled( self::HOOK, array( 'run-22' ) ) );
+		self::assertSame(
+			1_700_000_100,
+			\wp_next_scheduled( 'a8csp_bgte_sibling_hook', array( 'run-23' ) )
+		);
+	}
+
+	/**
 	 * Read methods query the ungrouped WP-Cron identity regardless of the supplied group.
 	 *
 	 * @return  void

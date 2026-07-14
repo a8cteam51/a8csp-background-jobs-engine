@@ -335,11 +335,29 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'started'   => array( $run_a, $run_b ),
-				'completed' => array( $run_a, $run_b ),
+				'completed' => array(
+					array(
+						'run_id' => $run_a,
+						'status' => 'superseded',
+					),
+					array(
+						'run_id' => $run_b,
+						'status' => 'completed',
+					),
+				),
 				'by_hash'   => array(
 					$args_hash => array(
 						'started'   => array( $run_a, $run_b ),
-						'completed' => array( $run_a, $run_b ),
+						'completed' => array(
+							array(
+								'run_id' => $run_a,
+								'status' => 'superseded',
+							),
+							array(
+								'run_id' => $run_b,
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),

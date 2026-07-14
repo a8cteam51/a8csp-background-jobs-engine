@@ -33,6 +33,7 @@ final readonly class TerminalTransitions {
 		'started'    => 'a8csp/background_tasks/started',
 		'completed'  => 'a8csp/background_tasks/completed',
 		'failed'     => 'a8csp/background_tasks/failed',
+		'cancelled'  => 'a8csp/background_tasks/cancelled',
 		'superseded' => 'a8csp/background_tasks/superseded',
 	);
 
@@ -177,6 +178,50 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
+	 * Claims a retained run as Cancelled before clearing its pending scheduler group and firing hooks.
+	 *
+	 * @internal Engine product service.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param \Closure(): mixed $clear_pending_actions
+	 *
+	 * @param   string   $name                  Stable task or batch name.
+	 * @param   string   $run_id                Run identifier.
+	 * @param   RunState $state                 Running state from the exact inspected snapshot.
+	 * @param   RunStore $run_store             Active-run store.
+	 * @param   string   $expected_raw          Exact pre-cancel snapshot.
+	 * @param   \Closure $clear_pending_actions Winner-only scheduler-group clear.
+	 *
+	 * @return  bool Whether the cancellation transition was claimed.
+	 */
+	public function cancel_run(
+		string $name,
+		string $run_id,
+		RunState $state,
+		RunStore $run_store,
+		string $expected_raw,
+		\Closure $clear_pending_actions
+	): bool {
+		$terminal_state = $state
+			->with_status( RunStatus::Cancelled )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+
+		return $this->execute_terminal_transition(
+			$name,
+			$run_id,
+			$state,
+			$terminal_state,
+			$run_store,
+			$clear_pending_actions,
+			false,
+			'cancelled',
+			$expected_raw
+		);
+	}
+
+	/**
 	 * Claims and completes one winner-gated terminal transition.
 	 *
 	 * Required cleanup encloses winner effects and hooks in the finish contour so an effect failure cannot strand terminal state.
@@ -185,7 +230,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'completed'|'failed'|'superseded' $event
+	 * @phpstan-param 'completed'|'failed'|'cancelled'|'superseded' $event
 	 * @phpstan-param EngineError|null ...$hook_extras
 	 *
 	 * @param   string      $name                          Stable task or batch name.
@@ -558,7 +603,7 @@ final readonly class TerminalTransitions {
 			return false;
 		}
 
-		$this->stores->run_history( $name )->record_completed( $run_id, $state->args_hash );
+		$this->stores->run_history( $name )->record_terminal( $run_id, $state->args_hash, $state->status );
 
 		return true;
 	}
@@ -569,7 +614,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'started'|'completed'|'failed'|'superseded' $event
+	 * @phpstan-param 'started'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event      Lifecycle event name.
 	 * @param   string                  $name       Stable task or batch name.

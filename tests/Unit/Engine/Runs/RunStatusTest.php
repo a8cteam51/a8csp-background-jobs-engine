@@ -38,7 +38,7 @@ final class RunStatusTest extends TestCase {
 				RunStatus::Running,
 				RunStatus::Completed,
 				RunStatus::Failed,
-				RunStatus::Stopped,
+				RunStatus::Cancelled,
 				RunStatus::Superseded,
 			),
 			$statuses
@@ -48,7 +48,7 @@ final class RunStatusTest extends TestCase {
 				'running',
 				'completed',
 				'failed',
-				'stopped',
+				'cancelled',
 				'superseded',
 			),
 			\array_map( static fn ( RunStatus $status ): string => $status->value, $statuses )

@@ -176,6 +176,11 @@ final class WPCronBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
+		// WP-Cron has no group dimension, so a group-only clear cannot identify an event safely.
+		if ( '' === $hook && array() === $args && '' !== $group ) {
+			return new Success( true );
+		}
+
 		$wp_error = null;
 		foreach ( $this->matching_timestamps( $hook, $args ) as $timestamp ) {
 			$result = \wp_unschedule_event( $timestamp, $hook, $args, true );

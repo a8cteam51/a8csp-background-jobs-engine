@@ -531,6 +531,36 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * A group-only clear reaches every ready backend with no hook or argument identity.
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_group_clears_the_exact_group_across_every_ready_backend(): void {
+		$first          = new RecordingBackend();
+		$unready        = new RecordingBackend();
+		$second         = new RecordingBackend();
+		$unready->ready = false;
+
+		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )
+			->unschedule_group( 'reports|run-22' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready ) );
+		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
+		self::assertSame(
+			array(
+				'hook'  => '',
+				'args'  => array(),
+				'group' => 'reports|run-22',
+			),
+			$first->calls[1]['args']
+		);
+		self::assertSame( $first->calls[1]['args'], $second->calls[1]['args'] );
+	}
+
+	/**
 	 * The earliest failure wins after every ready backend receives the clear.
 	 *
 	 * @return  void

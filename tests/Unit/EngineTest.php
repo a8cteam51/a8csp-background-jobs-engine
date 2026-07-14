@@ -344,6 +344,34 @@ final class EngineTest extends TestCase {
 	}
 
 	/**
+	 * Cancellation declares its result non-discardable at the engine boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_declares_no_discard_directly(): void {
+		$method = new \ReflectionMethod( Engine::class, 'cancel' );
+
+		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
+	}
+
+	/**
+	 * Cancellation preserves the orchestration failure at the public engine API.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_surfaces_an_unregistered_name_failure(): void {
+		$result = $this->engine->cancel( 'unknown', 'run-1' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Background-work "unknown" is not registered; register the matching task or batch before retrying its failed run.',
+			$result->error->message
+		);
+		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/**
 	 * Manual retry preserves the orchestration failure at the public engine API.
 	 *
 	 * @return  void

@@ -188,7 +188,7 @@ final class TerminalTransitionsTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( 'completed' );
 	}
 
 	/**
@@ -364,7 +364,7 @@ final class TerminalTransitionsTest extends TestCase {
 			),
 			$this->lifecycle_labels()
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( 'superseded' );
 	}
 
 	/**
@@ -396,7 +396,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->logger->records );
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( 'completed' );
 	}
 
 	/**
@@ -471,7 +471,7 @@ final class TerminalTransitionsTest extends TestCase {
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( 'superseded' );
 	}
 
 	/**
@@ -524,7 +524,7 @@ final class TerminalTransitionsTest extends TestCase {
 		return array(
 			'completed'  => array( 'status' => 'completed' ),
 			'failed'     => array( 'status' => 'failed' ),
-			'stopped'    => array( 'status' => 'stopped' ),
+			'cancelled'  => array( 'status' => 'cancelled' ),
 			'superseded' => array( 'status' => 'superseded' ),
 		);
 	}
@@ -662,19 +662,33 @@ final class TerminalTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * Asserts that the existing completed buffer records the terminal exit.
+	 * Asserts that the terminal buffer records the run outcome.
+	 *
+	 * @phpstan-param 'completed'|'superseded' $status
+	 *
+	 * @param   string $status Expected terminal status.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_history(): void {
+	private function assert_terminal_history( string $status ): void {
 		self::assertSame(
 			array(
 				'started'   => array( self::RUN_ID ),
-				'completed' => array( self::RUN_ID ),
+				'completed' => array(
+					array(
+						'run_id' => self::RUN_ID,
+						'status' => $status,
+					),
+				),
 				'by_hash'   => array(
 					self::ARGS_HASH => array(
 						'started'   => array( self::RUN_ID ),
-						'completed' => array( self::RUN_ID ),
+						'completed' => array(
+							array(
+								'run_id' => self::RUN_ID,
+								'status' => $status,
+							),
+						),
 					),
 				),
 			),
@@ -689,6 +703,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 *
 	 * @return  array{
 	 *     status: mixed,
+	 *     executing: mixed,
 	 *     start_args: mixed,
 	 *     args_hash: mixed,
 	 *     queue: mixed,
@@ -713,6 +728,7 @@ final class TerminalTransitionsTest extends TestCase {
 			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status ) {
 				return array(
 					'status'        => $state['status'] ?? null,
+					'executing'     => $state['executing'] ?? null,
 					'start_args'    => $state['start_args'] ?? null,
 					'args_hash'     => $state['args_hash'] ?? null,
 					'queue'         => $state['queue'] ?? null,
@@ -742,6 +758,7 @@ final class TerminalTransitionsTest extends TestCase {
 			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status ) {
 				return array(
 					'status'        => $state['status'] ?? null,
+					'executing'     => $state['executing'] ?? null,
 					'start_args'    => $state['start_args'] ?? null,
 					'args_hash'     => $state['args_hash'] ?? null,
 					'queue'         => $state['queue'] ?? null,

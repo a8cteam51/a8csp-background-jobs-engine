@@ -59,6 +59,22 @@ final readonly class Engine {
 		return $this->dispatcher->retry_failed( $name, $run_id );
 	}
 
+	/**
+	 * Cancels one retained run that is not executing or pending batch cleanup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Stable task or batch name.
+	 * @param   string $run_id Retained run identifier.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
+	public function cancel( string $name, string $run_id ): AbstractResult {
+		return $this->dispatcher->cancel( $name, $run_id );
+	}
+
 	// endregion
 
 	// region GETTERS

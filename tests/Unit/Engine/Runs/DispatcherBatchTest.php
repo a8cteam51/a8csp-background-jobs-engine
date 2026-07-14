@@ -188,6 +188,7 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => self::ARGS,
 				'args_hash'     => self::ARGS_HASH,
 				'queue'         => array(),

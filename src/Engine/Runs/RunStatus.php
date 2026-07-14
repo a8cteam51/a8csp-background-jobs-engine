@@ -16,7 +16,7 @@ enum RunStatus: string {
 	case Running    = 'running';
 	case Completed  = 'completed';
 	case Failed     = 'failed';
-	case Stopped    = 'stopped';
+	case Cancelled  = 'cancelled';
 	case Superseded = 'superseded';
 
 	// endregion

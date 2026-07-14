@@ -228,11 +228,15 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_start_action_persists_the_filtered_queue_and_schedules_continue(): void {
-		$this->batch->queue = array(
+		$this->batch->queue       = array(
 			'first-key'  => array( 'chunk' => 'first' ),
 			'second-key' => array( 'chunk' => 'second' ),
 		);
-		$filter_call        = null;
+		$filter_call              = null;
+		$generate_executing       = null;
+		$this->batch->on_generate = function ( array $start_args ) use ( &$generate_executing ): void {
+			$generate_executing = $this->run_state()['executing'];
+		};
 		$this->set_filter_value(
 			'a8csp/background_tasks/queue/' . self::NAME,
 			static function ( array $queue, array $start_args, string $run_id ) use ( &$filter_call ): array {
@@ -255,6 +259,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
+		self::assertTrue( $generate_executing );
 		self::assertSame(
 			array(
 				'arity' => 3,
@@ -279,8 +284,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$state['queue']
 		);
+		self::assertFalse( $state['executing'] );
 		self::assertSame( self::NOW + 30, $state['heartbeat_at'] );
 		self::assertSame( 2, $state['action_seq'] );
+		self::assertSame(
+			array( true, true, false ),
+			\array_column( $this->recorded_run_states(), 'executing' )
+		);
 		self::assertSame( self::NOW + 30, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(
@@ -345,7 +355,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -476,7 +486,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Superseded );
 	}
 
 	/**
@@ -525,15 +535,15 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Superseded );
 	}
 
 	/**
-	 * Continue removes exactly one queue head and carries it into a distinct run action.
+	 * Continue retains the current queue head while carrying it into a distinct run action.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_dequeues_one_chunk_and_schedules_run(): void {
+	public function test_handle_continue_action_retains_one_chunk_and_schedules_run(): void {
 		$first  = array( 'chunk' => 'first' );
 		$second = array( 'chunk' => 'second' );
 		$this->prepare_started_batch( array( $first, $second ) );
@@ -542,9 +552,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
 		$state = $this->run_state();
-		self::assertSame( array( $second ), $state['queue'] );
+		self::assertSame( array( $first, $second ), $state['queue'] );
+		self::assertFalse( $state['executing'] );
 		self::assertSame( 3, $state['action_seq'] );
 		self::assertSame( self::NOW + 90, $state['heartbeat_at'] );
+		self::assertSame(
+			array( true, false ),
+			\array_column( $this->recorded_run_states(), 'executing' )
+		);
 		self::assertSame( self::NOW + 90, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(
@@ -575,8 +590,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
-		self::assertSame( array(), $this->run_state()['queue'] );
-		self::assertSame( 3, $this->run_state()['action_seq'] );
+		$state = $this->run_state();
+		self::assertSame( array(), $state['queue'] );
+		self::assertFalse( $state['executing'] );
+		self::assertSame( 3, $state['action_seq'] );
+		self::assertSame(
+			array( true, false ),
+			\array_column( $this->recorded_run_states(), 'executing' )
+		);
 		self::assertSame(
 			array(
 				array(
@@ -615,13 +636,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				return 75;
 			}
 		);
-		$this->batch->on_process = static function (
+		$this->batch->on_process = function (
 			array $processed_args,
 			BatchContextInterface $context
 		) use ( $chunk_args ): void {
 			self::assertSame( $chunk_args, $processed_args );
 			self::assertSame( self::RUN_ID, $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
+			self::assertTrue( $this->run_state()['executing'] );
 			$context->enqueue( array( 'chunk' => 'appended' ) );
 			$context->prepend( array( 'chunk' => 'prepended-1' ) );
 			$context->prepend( array( 'chunk' => 'prepended-2' ) );
@@ -643,9 +665,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$state['queue']
 		);
+		self::assertFalse( $state['executing'] );
 		self::assertSame( 0, $state['chunk_retries'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
+		self::assertSame(
+			array( true, false ),
+			\array_column( $this->recorded_run_states(), 'executing' )
+		);
 		self::assertSame(
 			array(
 				'arity' => 3,
@@ -758,7 +785,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertIsArray( $observed_state );
-		self::assertSame( array( $remaining ), $observed_state['queue'] ?? null );
+		self::assertSame( array( $chunk_args, $remaining ), $observed_state['queue'] ?? null );
+		self::assertTrue( $observed_state['executing'] ?? null );
 		self::assertSame( 3, $observed_state['action_seq'] ?? null );
 		self::assertSame( self::NOW + 120, $observed_state['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
@@ -869,7 +897,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$error = $this->batch->failure_calls[0]['error'];
 		self::assertSame( 'Continue-delay filter exploded.', $error->message );
 		self::assertSame( \DomainException::class, $error->exception_class );
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -953,10 +981,15 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$state = $this->run_state();
 		self::assertSame( 'running', $state['status'] );
-		self::assertSame( array( $remaining ), $state['queue'] );
+		self::assertFalse( $state['executing'] );
+		self::assertSame( array( $chunk_args, $remaining ), $state['queue'] );
 		self::assertSame( 1, $state['chunk_retries'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 131, $state['heartbeat_at'] );
+		self::assertSame(
+			array( true, false ),
+			\array_column( $this->recorded_run_states(), 'executing' )
+		);
 		self::assertSame( self::NOW + 131, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
@@ -1091,6 +1124,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertSame( 0, $this->run_state()['chunk_retries'] );
 		self::assertSame( array( $chunk_b ), $this->run_state()['queue'] );
+		self::assertFalse( $this->run_state()['executing'] );
 
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 185;
@@ -1232,7 +1266,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -1245,10 +1279,17 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->clock->timestamp = self::NOW + 90;
 		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
-		$this->clock->timestamp = self::NOW + 120;
+		$this->clock->timestamp  = self::NOW + 120;
+		$observed_state          = null;
+		$this->batch->on_success = function ( string $run_id, array $start_args ) use ( &$observed_state ): void {
+			$observed_state = $this->option( $this->run_option_name() );
+		};
 
 		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
+		self::assertIsArray( $observed_state );
+		self::assertSame( 'completed', $observed_state['status'] ?? null );
+		self::assertTrue( $observed_state['executing'] ?? null );
 		self::assertSame(
 			array(
 				array(
@@ -1286,10 +1327,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$this->lifecycle_labels()
 		);
+		self::assertSame(
+			array( true, true ),
+			\array_column( $this->recorded_run_states(), 'executing' )
+		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
 	/**
@@ -1364,7 +1409,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
 	/**
@@ -1413,6 +1458,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $replacement_run_id )
 		);
 		self::assertSame( 'running', $replacement_state['status'] ?? null );
+		self::assertFalse( $replacement_state['executing'] ?? null );
 		self::assertSame( 1, $replacement_state['action_seq'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
@@ -1425,11 +1471,21 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				'started'   => array( self::RUN_ID, $replacement_run_id ),
-				'completed' => array( self::RUN_ID ),
+				'completed' => array(
+					array(
+						'run_id' => self::RUN_ID,
+						'status' => RunStatus::Completed->value,
+					),
+				),
 				'by_hash'   => array(
 					self::ARGS_HASH => array(
 						'started'   => array( self::RUN_ID, $replacement_run_id ),
-						'completed' => array( self::RUN_ID ),
+						'completed' => array(
+							array(
+								'run_id' => self::RUN_ID,
+								'status' => RunStatus::Completed->value,
+							),
+						),
 					),
 				),
 			),
@@ -1465,7 +1521,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
 	/**
@@ -1499,7 +1555,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * A failed run schedule terminates after dequeue so no active chain remains stalled.
+	 * A failed run schedule retains the current head in terminal diagnostics.
 	 *
 	 * @return  void
 	 */
@@ -1510,7 +1566,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
-		self::assertSame( array(), $this->failed_run_state()['queue'] );
+		self::assertSame( array( array( 'chunk' => 'first' ) ), $this->failed_run_state()['queue'] );
 		$this->assert_terminal_scheduling_failure(
 			'run',
 			array(
@@ -1598,7 +1654,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Advances the queue head into a run action and clears its scheduling observations.
+	 * Schedules the retained queue head as a run action and clears its observations.
 	 *
 	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
 	 *
@@ -1631,6 +1687,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @return  array{
 	 *     status: string,
+	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
@@ -1802,7 +1859,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -1842,7 +1899,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			\array_slice( \array_column( $this->fired_actions(), 'hook_name' ), -2 )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -1869,23 +1926,30 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$this->fired_actions()
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Superseded );
 	}
 
 	/**
-	 * Asserts both terminal history buffers contain the deterministic run.
+	 * Asserts both terminal-history buffers contain the deterministic outcome.
+	 *
+	 * @param   RunStatus $status Terminal run status.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_history(): void {
+	private function assert_terminal_history( RunStatus $status ): void {
+		$entry = array(
+			'run_id' => self::RUN_ID,
+			'status' => $status->value,
+		);
+
 		self::assertSame(
 			array(
 				'started'   => array( self::RUN_ID ),
-				'completed' => array( self::RUN_ID ),
+				'completed' => array( $entry ),
 				'by_hash'   => array(
 					self::ARGS_HASH => array(
 						'started'   => array( self::RUN_ID ),
-						'completed' => array( self::RUN_ID ),
+						'completed' => array( $entry ),
 					),
 				),
 			),
@@ -1928,6 +1992,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @return  array{
 	 *     status: string,
+	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
@@ -1948,6 +2013,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @return  array{
 	 *     status: string,
+	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
@@ -1960,6 +2026,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private function typed_run_state( mixed $state ): array {
 		self::assertIsArray( $state );
 		$status        = $state['status'] ?? null;
+		$executing     = $state['executing'] ?? null;
 		$start_args    = $state['start_args'] ?? null;
 		$args_hash     = $state['args_hash'] ?? null;
 		$raw_queue     = $state['queue'] ?? null;
@@ -1968,6 +2035,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$created_at    = $state['created_at'] ?? null;
 		$heartbeat_at  = $state['heartbeat_at'] ?? null;
 		self::assertIsString( $status );
+		self::assertIsBool( $executing );
 		self::assertIsArray( $start_args );
 		self::assertIsString( $args_hash );
 		self::assertIsArray( $raw_queue );
@@ -1984,6 +2052,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		return array(
 			'status'        => $status,
+			'executing'     => $executing,
 			'start_args'    => $start_args,
 			'args_hash'     => $args_hash,
 			'queue'         => $queue,
@@ -1992,6 +2061,42 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			'created_at'    => $created_at,
 			'heartbeat_at'  => $heartbeat_at,
 		);
+	}
+
+	/**
+	 * Returns complete run states written through the exact-CAS boundary.
+	 *
+	 * @return  list<array{
+	 *     status: string,
+	 *     executing: bool,
+	 *     start_args: array<array-key, mixed>,
+	 *     args_hash: string,
+	 *     queue: list<array<array-key, mixed>>,
+	 *     chunk_retries: int,
+	 *     action_seq: int,
+	 *     created_at: int,
+	 *     heartbeat_at: int
+	 * }>
+	 */
+	private function recorded_run_states(): array {
+		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		$states = array();
+
+		foreach ( $events as $event ) {
+			if (
+				! \is_array( $event )
+				|| 'lock' !== ( $event['type'] ?? null )
+				|| 'update' !== ( $event['operation'] ?? null )
+				|| $this->run_option_name() !== ( $event['key'] ?? null )
+			) {
+				continue;
+			}
+
+			$states[] = $this->typed_run_state( \maybe_unserialize( $event['raw'] ?? null ) );
+		}
+
+		return $states;
 	}
 
 	/**

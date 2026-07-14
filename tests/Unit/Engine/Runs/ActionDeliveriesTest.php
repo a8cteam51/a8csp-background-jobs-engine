@@ -236,6 +236,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( self::NOW + 90, $observed_lock['heartbeat_at'] );
 		self::assertIsArray( $observed_run );
 		self::assertSame( 'running', $observed_run['status'] );
+		self::assertTrue( $observed_run['executing'] );
 		self::assertSame( self::NOW + 90, $observed_run['heartbeat_at'] );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -268,7 +269,7 @@ final class ActionDeliveriesTest extends TestCase {
 			),
 			$this->lifecycle_labels()
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
 	/**
@@ -359,6 +360,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertIsArray( $observed_state );
 		self::assertSame( 'running', $observed_state['status'] ?? null );
+		self::assertTrue( $observed_state['executing'] ?? null );
 		self::assertSame( self::NOW + 90, $observed_state['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_post_callback_superseded_task();
@@ -435,23 +437,30 @@ final class ActionDeliveriesTest extends TestCase {
 			),
 			\array_slice( $this->fired_actions(), -2 )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Superseded );
 	}
 
 	/**
-	 * Asserts that the existing completed buffer records the terminal exit.
+	 * Asserts that both terminal-history buffers record the terminal outcome.
+	 *
+	 * @param   RunStatus $status Terminal run status.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_history(): void {
+	private function assert_terminal_history( RunStatus $status ): void {
+		$entry = array(
+			'run_id' => self::RUN_ID,
+			'status' => $status->value,
+		);
+
 		self::assertSame(
 			array(
 				'started'   => array( self::RUN_ID ),
-				'completed' => array( self::RUN_ID ),
+				'completed' => array( $entry ),
 				'by_hash'   => array(
 					self::ARGS_HASH => array(
 						'started'   => array( self::RUN_ID ),
-						'completed' => array( self::RUN_ID ),
+						'completed' => array( $entry ),
 					),
 				),
 			),

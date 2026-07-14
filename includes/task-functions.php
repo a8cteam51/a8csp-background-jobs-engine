@@ -48,3 +48,20 @@ function a8csp_bgte_retry_failed_run( string $name, string $run_id ): AbstractRe
 	return a8csp_bgte_engine()?->retry_failed( $name, $run_id )
 		?? a8csp_bgte_engine_unavailable_failure();
 }
+
+/**
+ * Cancels one retained run that is not executing or pending batch cleanup.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $name   Stable task or batch name.
+ * @param   string $run_id Retained run identifier.
+ *
+ * @return  AbstractResult<string, EngineError|SchedulingError>
+ */
+#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
+function a8csp_bgte_cancel_run( string $name, string $run_id ): AbstractResult {
+	return a8csp_bgte_engine()?->cancel( $name, $run_id )
+		?? a8csp_bgte_engine_unavailable_failure();
+}

@@ -18,10 +18,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
  * preference changes. Before action_scheduler_init, writes fall through to WP-Cron even when
  * Action Scheduler is installed because routing follows per-request readiness.
  *
- * Action Scheduler treats an empty group as unconstrained in queries but exact in unique inserts,
- * and unscheduling with both empty arguments and an empty group clears every action for the hook.
- * Engine callers provide per-run groups and identifying arguments; this facade preserves those
- * native semantics instead of compensating for empty values.
+ * Action Scheduler treats an empty group as unconstrained in queries but exact in unique inserts.
+ * For unscheduling, empty arguments plus only a hook clear that hook, while empty arguments plus
+ * only a group clear that group. This facade preserves those native empty-value semantics.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -109,6 +108,23 @@ final readonly class SchedulerFacade implements BackendInterface {
 			$this->unschedule_snapshot( $ready_backends, $hook, $args, $group ),
 			$this->snapshot_is_authoritative( $ready_backends )
 		);
+	}
+
+	/**
+	 * Clears every pending action in one backend group.
+	 *
+	 * @internal Engine run cancellation only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $group Backend grouping label.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		return $this->unschedule_snapshot( $this->ready_backends(), '', array(), $group );
 	}
 
 	// endregion

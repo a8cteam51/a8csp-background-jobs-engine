@@ -74,6 +74,7 @@ final readonly class RunStore {
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState(
 			status: RunStatus::Running,
+			executing: false,
 			start_args: $start_args,
 			args_hash: $args_hash,
 			queue: $queue,
@@ -216,7 +217,7 @@ final readonly class RunStore {
 	}
 
 	/**
-	 * Refreshes a recoverable run's heartbeat only while its complete state still matches.
+	 * Refreshes a recoverable run's heartbeat and marks its lifecycle action executing.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -238,7 +239,9 @@ final readonly class RunStore {
 			$expected = $snapshot['state'];
 		}
 
-		$replacement     = $expected->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+		$replacement     = $expected
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_executing( true );
 		$replacement_raw = null === $raw
 			? $this->transition_state( $run_id, $expected, $replacement )
 			: $this->transition( $run_id, $raw, $replacement );
@@ -291,6 +294,7 @@ final readonly class RunStore {
 	 *
 	 * @return  array{
 	 *     status: string,
+	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
@@ -303,6 +307,7 @@ final readonly class RunStore {
 	private static function to_option( RunState $state ): array {
 		return array(
 			'status'        => $state->status->value,
+			'executing'     => $state->executing,
 			'start_args'    => $state->start_args,
 			'args_hash'     => $state->args_hash,
 			'queue'         => $state->queue,
@@ -356,6 +361,7 @@ final readonly class RunStore {
 
 		return new RunState(
 			status: $status,
+			executing: $value['executing'],
 			start_args: $value['start_args'],
 			args_hash: $value['args_hash'],
 			queue: $value['queue'],
@@ -374,6 +380,7 @@ final readonly class RunStore {
 	 *
 	 * @phpstan-assert-if-true array{
 	 *     status: string,
+	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
@@ -391,6 +398,7 @@ final readonly class RunStore {
 		if (
 			! \is_array( $value )
 			|| ! \is_string( $value['status'] ?? null )
+			|| ! \is_bool( $value['executing'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! \is_string( $value['args_hash'] ?? null )
 			|| ! \is_array( $value['queue'] ?? null )

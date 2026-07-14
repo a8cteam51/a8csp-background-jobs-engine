@@ -34,9 +34,10 @@ final readonly class RunState {
 	 * @version 1.0.0
 	 *
 	 * @param   RunStatus                     $status          Lifecycle state.
+	 * @param   bool                          $executing       Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
 	 * @param   string                        $args_hash       Stable identity of the start arguments.
-	 * @param   list<array<array-key, mixed>> $queue           Chunks awaiting processing, oldest first.
+	 * @param   list<array<array-key, mixed>> $queue           Persisted processing queue, oldest uncommitted chunk first.
 	 * @param   int                           $chunk_retries   Failed attempts consumed by the current batch chunk; for
 	 *                                                         a task, failed handle() attempts in this run.
 	 * @param   int                           $action_seq      Newest scheduled lifecycle action sequence.
@@ -45,6 +46,7 @@ final readonly class RunState {
 	 */
 	public function __construct(
 		public RunStatus $status,
+		public bool $executing,
 		public array $start_args,
 		public string $args_hash,
 		public array $queue,
@@ -89,6 +91,7 @@ final readonly class RunState {
 	public function with_status( RunStatus $status ): self {
 		return new self(
 			status: $status,
+			executing: $this->executing,
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
@@ -100,18 +103,43 @@ final readonly class RunState {
 	}
 
 	/**
-	 * Returns a copy with the supplied pending chunks.
+	 * Returns a copy with the supplied lifecycle-action execution marker.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   list<array<array-key, mixed>> $queue Chunks awaiting processing, oldest first.
+	 * @param   bool $executing Whether one lifecycle action is executing.
+	 *
+	 * @return  self
+	 */
+	public function with_executing( bool $executing ): self {
+		return new self(
+			status: $this->status,
+			executing: $executing,
+			start_args: $this->start_args,
+			args_hash: $this->args_hash,
+			queue: $this->queue,
+			chunk_retries: $this->chunk_retries,
+			action_seq: $this->action_seq,
+			created_at: $this->created_at,
+			heartbeat_at: $this->heartbeat_at,
+		);
+	}
+
+	/**
+	 * Returns a copy with the supplied persisted processing queue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array<array-key, mixed>> $queue Persisted processing queue, oldest uncommitted chunk first.
 	 *
 	 * @return  self
 	 */
 	public function with_queue( array $queue ): self {
 		return new self(
 			status: $this->status,
+			executing: $this->executing,
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $queue,
@@ -136,6 +164,7 @@ final readonly class RunState {
 	public function with_chunk_retries( int $chunk_retries ): self {
 		return new self(
 			status: $this->status,
+			executing: $this->executing,
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
@@ -159,6 +188,7 @@ final readonly class RunState {
 	public function with_action_seq( int $action_seq ): self {
 		return new self(
 			status: $this->status,
+			executing: $this->executing,
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
@@ -182,6 +212,7 @@ final readonly class RunState {
 	public function with_heartbeat_at( int $heartbeat_at ): self {
 		return new self(
 			status: $this->status,
+			executing: $this->executing,
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,

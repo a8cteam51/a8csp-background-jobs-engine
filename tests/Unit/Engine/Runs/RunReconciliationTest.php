@@ -244,13 +244,19 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A running run with a stale owned lock follows the crash-failure terminal path.
+	 * A marker-stuck running run with a stale owned lock follows the crash-failure terminal path.
 	 *
 	 * @return  void
 	 */
 	public function test_sweep_terminalizes_a_running_run_with_a_stale_lock(): void {
 		$this->create_running_run();
-		$this->clock->timestamp = self::NOW + 901;
+		$options = $this->options();
+		$state   = $options[ $this->run_option_name() ] ?? null;
+		self::assertIsArray( $state );
+		$state['executing']                  = true;
+		$options[ $this->run_option_name() ] = $state;
+		$GLOBALS['a8csp_bgte_test_options']  = $options;
+		$this->clock->timestamp              = self::NOW + 901;
 
 		$this->maintenance->handle( array() );
 
@@ -318,7 +324,15 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame( array( self::RUN_ID ), $history['completed'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'superseded',
+				),
+			),
+			$history['completed'] ?? null
+		);
 		$lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock );
 		$lock_row = \maybe_unserialize( $lock );
@@ -352,7 +366,15 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame( array( self::RUN_ID ), $history['completed'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'superseded',
+				),
+			),
+			$history['completed'] ?? null
+		);
 	}
 
 	/**
@@ -637,7 +659,15 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
 		$history = $this->options()[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame( array( self::RUN_ID ), $history['completed'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'superseded',
+				),
+			),
+			$history['completed'] ?? null
+		);
 		$lock = \maybe_unserialize( $this->wpdb->rows[ $this->lock_option_name() ] ?? '' );
 		self::assertIsArray( $lock );
 		self::assertSame( $replacement_run_id, $lock['run_id'] ?? null );
@@ -653,6 +683,7 @@ final class RunReconciliationTest extends TestCase {
 		$options                            = $this->options();
 		$options[ $run_name ]               = array(
 			'status'        => 'completed',
+			'executing'     => true,
 			'start_args'    => self::ARGS,
 			'args_hash'     => self::ARGS_HASH,
 			'queue'         => array(),
@@ -670,7 +701,12 @@ final class RunReconciliationTest extends TestCase {
 		$history = $options['a8csp_bgte_history_terminal-task'] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
-			array( self::RUN_ID ),
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'completed',
+				),
+			),
 			$history['completed'] ?? null
 		);
 		self::assertSame( array(), $this->fired_actions() );
@@ -687,6 +723,7 @@ final class RunReconciliationTest extends TestCase {
 		$options                                     = $this->options();
 		$options[ $run_name ]                        = array(
 			'status'        => 'completed',
+			'executing'     => true,
 			'start_args'    => self::ARGS,
 			'args_hash'     => self::ARGS_HASH,
 			'queue'         => array(),
@@ -697,7 +734,12 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$options['a8csp_bgte_history_terminal-task'] = array(
 			'started'   => array( 'existing-run' ),
-			'completed' => array( 'existing-run' ),
+			'completed' => array(
+				array(
+					'run_id' => 'existing-run',
+					'status' => 'completed',
+				),
+			),
 			'by_hash'   => array(),
 		);
 		$GLOBALS['a8csp_bgte_test_options']          = $options;
@@ -710,7 +752,12 @@ final class RunReconciliationTest extends TestCase {
 		$history = $options['a8csp_bgte_history_terminal-task'] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
-			array( 'existing-run' ),
+			array(
+				array(
+					'run_id' => 'existing-run',
+					'status' => 'completed',
+				),
+			),
 			$history['completed'] ?? null
 		);
 		self::assertCount( 1, $this->logger->records );
@@ -779,7 +826,12 @@ final class RunReconciliationTest extends TestCase {
 		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
-			array( self::RUN_ID ),
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'failed',
+				),
+			),
 			$history['completed'] ?? null
 		);
 	}

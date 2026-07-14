@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryab
  * at most one terminal callback for each run: `on_success()` after every chunk succeeds or
  * `on_failure()` after the run fails.
  *
- * A stopped or superseded run ends without either callback; those outcomes surface through engine
+ * A cancelled or superseded run ends without either callback; those outcomes surface through engine
  * hooks.
  *
  * @since   1.0.0

@@ -83,12 +83,14 @@ final class RunStoreTest extends TestCase {
 		self::assertNotNull( $stored );
 		self::assert_state_same( $state, $stored );
 		self::assertSame( RunStatus::Running, $stored->status );
+		self::assertFalse( $stored->executing );
 		self::assertSame( 1, $stored->action_seq );
 		self::assertSame( 1_700_000_100, $stored->created_at );
 		self::assertSame( 1_700_000_100, $stored->heartbeat_at );
 		self::assertSame(
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array( 'site_id' => 7 ),
 				'args_hash'     => 'hash-a',
 				'queue'         => array(
@@ -133,7 +135,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Queue, retry, status, and heartbeat copies remain observable after every exact state transition.
+	 * Queue, retry, status, execution, and heartbeat copies remain observable after every exact state transition.
 	 *
 	 * @return  void
 	 */
@@ -185,6 +187,16 @@ final class RunStoreTest extends TestCase {
 		$state = $replacement;
 		self::assertSame( 2, $this->stored_state( $store, 'run-rmw' )->action_seq );
 
+		$replacement = $state->with_executing( true );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
+		self::assertTrue( $this->stored_state( $store, 'run-rmw' )->executing );
+
+		$replacement = $state->with_executing( false );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
+		self::assertFalse( $this->stored_state( $store, 'run-rmw' )->executing );
+
 		$replacement = $state->with_status( RunStatus::Failed );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
@@ -193,6 +205,7 @@ final class RunStoreTest extends TestCase {
 		$clock->timestamp = 200;
 		$state            = $store->refresh_heartbeat( 'run-rmw', $state );
 		self::assertNotNull( $state );
+		self::assertTrue( $this->stored_state( $store, 'run-rmw' )->executing );
 		self::assertSame( 200, $this->stored_state( $store, 'run-rmw' )->heartbeat_at );
 		self::assertSame( 100, $this->stored_state( $store, 'run-rmw' )->created_at );
 
@@ -316,6 +329,7 @@ final class RunStoreTest extends TestCase {
 			array( 'status' => 'running' ),
 			array(
 				'status'        => 'unknown',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array(),
@@ -326,6 +340,28 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+			),
+			array(
+				'status'        => 'running',
+				'executing'     => 'false',
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+			),
+			array(
+				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array( 'not-a-list' => array() ),
@@ -336,6 +372,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array( 'not-an-array' ),
@@ -346,6 +383,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => 'not-an-array',
 				'args_hash'     => 'hash',
 				'queue'         => array(),
@@ -356,6 +394,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => false,
 				'queue'         => array(),
@@ -366,6 +405,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array(),
@@ -376,6 +416,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array(),
@@ -386,6 +427,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array(),
@@ -396,6 +438,7 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'status'        => 'running',
+				'executing'     => false,
 				'start_args'    => array(),
 				'args_hash'     => 'hash',
 				'queue'         => array(),
@@ -423,6 +466,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	private static function assert_state_same( RunState $expected, RunState $actual ): void {
 		self::assertSame( $expected->status, $actual->status );
+		self::assertSame( $expected->executing, $actual->executing );
 		self::assertSame( $expected->start_args, $actual->start_args );
 		self::assertSame( $expected->args_hash, $actual->args_hash );
 		self::assertSame( $expected->queue, $actual->queue );

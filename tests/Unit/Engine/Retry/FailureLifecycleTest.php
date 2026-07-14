@@ -287,6 +287,7 @@ final class FailureLifecycleTest extends TestCase {
 		$state = $this->option( $this->run_option_name() );
 		self::assertIsArray( $state );
 		self::assertSame( 'running', $state['status'] ?? null );
+		self::assertFalse( $state['executing'] ?? null );
 		self::assertSame( 1, $state['chunk_retries'] ?? null );
 		self::assertSame( 2, $state['action_seq'] ?? null );
 		self::assertSame( self::NOW + 107, $state['heartbeat_at'] ?? null );
@@ -860,7 +861,7 @@ final class FailureLifecycleTest extends TestCase {
 			),
 			$this->lifecycle_labels()
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -885,23 +886,30 @@ final class FailureLifecycleTest extends TestCase {
 			),
 			\array_slice( $this->fired_actions(), -2 )
 		);
-		$this->assert_terminal_history();
+		$this->assert_terminal_history( RunStatus::Superseded );
 	}
 
 	/**
-	 * Asserts that the existing completed buffer records the terminal exit.
+	 * Asserts that both terminal-history buffers record the terminal outcome.
+	 *
+	 * @param   RunStatus $status Terminal run status.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_history(): void {
+	private function assert_terminal_history( RunStatus $status ): void {
+		$entry = array(
+			'run_id' => self::RUN_ID,
+			'status' => $status->value,
+		);
+
 		self::assertSame(
 			array(
 				'started'   => array( self::RUN_ID ),
-				'completed' => array( self::RUN_ID ),
+				'completed' => array( $entry ),
 				'by_hash'   => array(
 					self::ARGS_HASH => array(
 						'started'   => array( self::RUN_ID ),
-						'completed' => array( self::RUN_ID ),
+						'completed' => array( $entry ),
 					),
 				),
 			),

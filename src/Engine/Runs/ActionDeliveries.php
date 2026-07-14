@@ -207,11 +207,18 @@ final readonly class ActionDeliveries {
 				$run_store,
 				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
+
+			return;
+		}
+
+		$replacement = $state->with_executing( false );
+		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			return;
 		}
 	}
 
 	/**
-	 * Handles one queue advancement for a scheduled batch run.
+	 * Schedules the current retained queue head for a batch run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -237,7 +244,9 @@ final readonly class ActionDeliveries {
 		}
 
 		if ( array() === $state->queue ) {
-			$replacement = $state->with_action_seq( $state->action_seq + 1 );
+			$replacement = $state
+				->with_action_seq( $state->action_seq + 1 )
+				->with_executing( false );
 			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 				return;
 			}
@@ -263,8 +272,8 @@ final readonly class ActionDeliveries {
 
 		$chunk_args  = $state->queue[0];
 		$replacement = $state
-			->with_queue( \array_slice( $state->queue, 1 ) )
-			->with_action_seq( $state->action_seq + 1 );
+			->with_action_seq( $state->action_seq + 1 )
+			->with_executing( false );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -350,7 +359,7 @@ final readonly class ActionDeliveries {
 		if ( null !== $batch ) {
 			if ( null === $chunk_args ) {
 				$this->logger->warning(
-					'Batch run action is missing chunk arguments; schedule it with the dequeued chunk as the third argument.',
+					'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
 					array(
 						'batch_name' => $name,
 						'run_id'     => $run_id,
@@ -560,7 +569,7 @@ final readonly class ActionDeliveries {
 		RunState $state,
 		RunStore $run_store
 	): void {
-		$context = new BatchContext( $run_id, $state->start_args, $state->queue );
+		$context = new BatchContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
 		try {
 			$batch->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
@@ -605,7 +614,8 @@ final readonly class ActionDeliveries {
 		$replacement = $state
 			->with_queue( $context->get_queue() )
 			->with_chunk_retries( 0 )
-			->with_action_seq( $state->action_seq + 1 );
+			->with_action_seq( $state->action_seq + 1 )
+			->with_executing( false );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}

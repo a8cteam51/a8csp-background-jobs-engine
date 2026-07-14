@@ -20,6 +20,7 @@ final class HookNameLiteralsTest extends TestCase {
 		'started'        => 'a8csp/background_tasks/started',
 		'completed'      => 'a8csp/background_tasks/completed',
 		'failed'         => 'a8csp/background_tasks/failed',
+		'cancelled'      => 'a8csp/background_tasks/cancelled',
 		'retrying'       => 'a8csp/background_tasks/retrying',
 		'superseded'     => 'a8csp/background_tasks/superseded',
 		'misfired'       => 'a8csp/background_tasks/misfired',

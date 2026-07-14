@@ -2,10 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Persists bounded started and completed run histories.
+ * Persists bounded started and terminal run histories.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -75,22 +77,25 @@ final readonly class RunHistory {
 	 * @return  void
 	 */
 	public function record_started( string $run_id, string $args_hash ): void {
-		$this->record( 'started', $run_id, $args_hash );
+		$this->record( $run_id, $args_hash );
 	}
 
 	/**
-	 * Appends a run to the completed histories.
+	 * Appends a run and its outcome to the terminal histories.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $run_id    Run identifier.
-	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @param   string    $run_id    Run identifier.
+	 * @param   string    $args_hash Stable identity of the start arguments.
+	 * @param   RunStatus $status    Terminal run status.
+	 *
+	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
 	 *
 	 * @return  void
 	 */
-	public function record_completed( string $run_id, string $args_hash ): void {
-		$this->record( 'completed', $run_id, $args_hash );
+	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): void {
+		$this->record( $run_id, $args_hash, $status );
 	}
 
 	// endregion
@@ -98,34 +103,55 @@ final readonly class RunHistory {
 	// region HELPERS
 
 	/**
-	 * Appends a run to one global and per-hash buffer before capping every buffer.
+	 * Appends a run to the global and per-hash buffers before capping every buffer.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'started'|'completed' $buffer
+	 * @param   string         $run_id    Run identifier.
+	 * @param   string         $args_hash Stable identity of the start arguments.
+	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
 	 *
-	 * @param   string $buffer    History buffer name.
-	 * @param   string $run_id    Run identifier.
-	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
 	 *
 	 * @return  void
 	 */
-	private function record( string $buffer, string $run_id, string $args_hash ): void {
+	private function record( string $run_id, string $args_hash, ?RunStatus $status = null ): void {
 		$history      = self::history_from_option( \get_option( $this->option_name(), null ) );
 		$hash_history = $history['by_hash'][ $args_hash ] ?? array(
 			'started'   => array(),
 			'completed' => array(),
 		);
-		if (
-			\in_array( $run_id, $history[ $buffer ], true )
-			|| \in_array( $run_id, $hash_history[ $buffer ], true )
-		) {
-			return;
-		}
+		if ( null === $status ) {
+			if (
+				\in_array( $run_id, $history['started'], true )
+				|| \in_array( $run_id, $hash_history['started'], true )
+			) {
+				return;
+			}
 
-		$history[ $buffer ][]      = $run_id;
-		$hash_history[ $buffer ][] = $run_id;
+			$history['started'][]      = $run_id;
+			$hash_history['started'][] = $run_id;
+		} else {
+			if ( RunStatus::Running === $status ) {
+				throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
+			}
+
+			if (
+				\in_array( $run_id, self::terminal_run_ids( $history['completed'] ), true )
+				|| \in_array( $run_id, self::terminal_run_ids( $hash_history['completed'] ), true )
+			) {
+				return;
+			}
+
+			$entry = array(
+				'run_id' => $run_id,
+				'status' => $status->value,
+			);
+
+			$history['completed'][]      = $entry;
+			$hash_history['completed'][] = $entry;
+		}
 
 		// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
 		unset( $history['by_hash'][ $args_hash ] );
@@ -181,8 +207,11 @@ final readonly class RunHistory {
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     completed: list<string>,
-	 *     by_hash: array<array-key, array{started: list<string>, completed: list<string>}>
+	 *     completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     by_hash: array<array-key, array{
+	 *         started: list<string>,
+	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 *     }>
 	 * }
 	 */
 	private static function history_from_option( mixed $value ): array {
@@ -203,14 +232,14 @@ final readonly class RunHistory {
 
 				$by_hash[ $args_hash ] = array(
 					'started'   => self::string_list( $buffers['started'] ?? null ),
-					'completed' => self::string_list( $buffers['completed'] ?? null ),
+					'completed' => self::terminal_list( $buffers['completed'] ?? null ),
 				);
 			}
 		}
 
 		return array(
 			'started'   => self::string_list( $value['started'] ?? null ),
-			'completed' => self::string_list( $value['completed'] ?? null ),
+			'completed' => self::terminal_list( $value['completed'] ?? null ),
 			'by_hash'   => $by_hash,
 		);
 	}
@@ -241,15 +270,70 @@ final readonly class RunHistory {
 	}
 
 	/**
+	 * Returns only well-formed terminal entries from a persisted list value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $value Persisted list value.
+	 *
+	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 */
+	private static function terminal_list( mixed $value ): array {
+		if ( ! \is_array( $value ) ) {
+			return array();
+		}
+
+		$terminals = array();
+		foreach ( $value as $entry ) {
+			if (
+				! \is_array( $entry )
+				|| ! \is_string( $entry['run_id'] ?? null )
+				|| ! \is_string( $entry['status'] ?? null )
+			) {
+				continue;
+			}
+
+			$status = RunStatus::tryFrom( $entry['status'] );
+			if ( null === $status || RunStatus::Running === $status ) {
+				continue;
+			}
+
+			$terminals[] = array(
+				'run_id' => $entry['run_id'],
+				'status' => $status->value,
+			);
+		}
+
+		return $terminals;
+	}
+
+	/**
+	 * Returns the identifiers carried by terminal history entries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}> $entries Terminal history entries.
+	 *
+	 * @return  list<string>
+	 */
+	private static function terminal_run_ids( array $entries ): array {
+		return \array_column( $entries, 'run_id' );
+	}
+
+	/**
 	 * Returns the newest entries within a positive cap.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   list<string> $values Entries in oldest-first order.
-	 * @param   int          $size   Positive maximum entry count.
+	 * @template T
 	 *
-	 * @return  list<string>
+	 * @param   list<T> $values Entries in oldest-first order.
+	 * @param   int     $size   Positive maximum entry count.
+	 *
+	 * @return  list<T>
 	 */
 	private static function tail( array $values, int $size ): array {
 		return \array_slice( $values, -$size );

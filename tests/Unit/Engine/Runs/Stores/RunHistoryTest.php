@@ -2,8 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,24 +46,34 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
-	 * Started and completed writes persist the mirrored by-hash schema under the literal key.
+	 * Started and terminal writes persist the mirrored by-hash schema under the literal key.
 	 *
 	 * @return  void
 	 */
-	public function test_records_started_and_completed_with_the_literal_option_key(): void {
+	public function test_records_started_and_terminal_with_the_literal_option_key(): void {
 		$history = new RunHistory( 'reports' );
 
 		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_completed( 'run-a', 'hash-a' );
+		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
 
 		self::assertSame(
 			array(
 				'started'   => array( 'run-a' ),
-				'completed' => array( 'run-a' ),
+				'completed' => array(
+					array(
+						'run_id' => 'run-a',
+						'status' => 'completed',
+					),
+				),
 				'by_hash'   => array(
 					'hash-a' => array(
 						'started'   => array( 'run-a' ),
-						'completed' => array( 'run-a' ),
+						'completed' => array(
+							array(
+								'run_id' => 'run-a',
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),
@@ -80,17 +92,27 @@ final class RunHistoryTest extends TestCase {
 
 		$history->record_started( 'run-a', 'hash-a' );
 		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_completed( 'run-a', 'hash-a' );
-		$history->record_completed( 'run-a', 'hash-a' );
+		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
+		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
 
 		self::assertSame(
 			array(
 				'started'   => array( 'run-a' ),
-				'completed' => array( 'run-a' ),
+				'completed' => array(
+					array(
+						'run_id' => 'run-a',
+						'status' => 'completed',
+					),
+				),
 				'by_hash'   => array(
 					'hash-a' => array(
 						'started'   => array( 'run-a' ),
-						'completed' => array( 'run-a' ),
+						'completed' => array(
+							array(
+								'run_id' => 'run-a',
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),
@@ -109,7 +131,7 @@ final class RunHistoryTest extends TestCase {
 		for ( $index = 0; $index <= 30; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
 			$history->record_started( 'started-' . $suffix, 'hash-a' );
-			$history->record_completed( 'completed-' . $suffix, 'hash-a' );
+			$history->record_terminal( 'completed-' . $suffix, 'hash-a', RunStatus::Completed );
 		}
 
 		$expected_started   = \array_map(
@@ -117,7 +139,10 @@ final class RunHistoryTest extends TestCase {
 			\range( 1, 30 )
 		);
 		$expected_completed = \array_map(
-			static fn ( int $index ): string => 'completed-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
+			static fn ( int $index ): array => array(
+				'run_id' => 'completed-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
+				'status' => 'completed',
+			),
 			\range( 1, 30 )
 		);
 
@@ -149,8 +174,8 @@ final class RunHistoryTest extends TestCase {
 		for ( $index = 0; $index < 3; ++$index ) {
 			$history->record_started( 'started-a' . $index, 'hash-a' );
 			$history->record_started( 'started-b' . $index, 'hash-b' );
-			$history->record_completed( 'completed-a' . $index, 'hash-a' );
-			$history->record_completed( 'completed-b' . $index, 'hash-b' );
+			$history->record_terminal( 'completed-a' . $index, 'hash-a', RunStatus::Completed );
+			$history->record_terminal( 'completed-b' . $index, 'hash-b', RunStatus::Completed );
 		}
 
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp/background_tasks/history_size' => 2 );
@@ -160,17 +185,44 @@ final class RunHistoryTest extends TestCase {
 		self::assertSame(
 			array(
 				'started'   => array( 'started-b2', 'started-a3' ),
-				'completed' => array( 'completed-a2', 'completed-b2' ),
+				'completed' => array(
+					array(
+						'run_id' => 'completed-a2',
+						'status' => 'completed',
+					),
+					array(
+						'run_id' => 'completed-b2',
+						'status' => 'completed',
+					),
+				),
 				// by_hash keys are ordered by recording recency (the LRU eviction order);
 				// the final write re-inserted hash-a at the tail.
 				'by_hash'   => array(
 					'hash-b' => array(
 						'started'   => array( 'started-b1', 'started-b2' ),
-						'completed' => array( 'completed-b1', 'completed-b2' ),
+						'completed' => array(
+							array(
+								'run_id' => 'completed-b1',
+								'status' => 'completed',
+							),
+							array(
+								'run_id' => 'completed-b2',
+								'status' => 'completed',
+							),
+						),
 					),
 					'hash-a' => array(
 						'started'   => array( 'started-a2', 'started-a3' ),
-						'completed' => array( 'completed-a1', 'completed-a2' ),
+						'completed' => array(
+							array(
+								'run_id' => 'completed-a1',
+								'status' => 'completed',
+							),
+							array(
+								'run_id' => 'completed-a2',
+								'status' => 'completed',
+							),
+						),
 					),
 				),
 			),
@@ -189,26 +241,190 @@ final class RunHistoryTest extends TestCase {
 		$history->record_started( 'started-a1', 'hash-a' );
 		$history->record_started( 'started-b1', 'hash-b' );
 		$history->record_started( 'started-a2', 'hash-a' );
-		$history->record_completed( 'completed-b1', 'hash-b' );
-		$history->record_completed( 'completed-a1', 'hash-a' );
-		$history->record_completed( 'completed-b2', 'hash-b' );
+		$history->record_terminal( 'completed-b1', 'hash-b', RunStatus::Failed );
+		$history->record_terminal( 'completed-a1', 'hash-a', RunStatus::Superseded );
+		$history->record_terminal( 'completed-b2', 'hash-b', RunStatus::Cancelled );
 
 		self::assertSame(
 			array(
 				'started'   => array( 'started-a1', 'started-b1', 'started-a2' ),
-				'completed' => array( 'completed-b1', 'completed-a1', 'completed-b2' ),
+				'completed' => array(
+					array(
+						'run_id' => 'completed-b1',
+						'status' => 'failed',
+					),
+					array(
+						'run_id' => 'completed-a1',
+						'status' => 'superseded',
+					),
+					array(
+						'run_id' => 'completed-b2',
+						'status' => 'cancelled',
+					),
+				),
 				'by_hash'   => array(
 					'hash-a' => array(
 						'started'   => array( 'started-a1', 'started-a2' ),
-						'completed' => array( 'completed-a1' ),
+						'completed' => array(
+							array(
+								'run_id' => 'completed-a1',
+								'status' => 'superseded',
+							),
+						),
 					),
 					'hash-b' => array(
 						'started'   => array( 'started-b1' ),
-						'completed' => array( 'completed-b1', 'completed-b2' ),
+						'completed' => array(
+							array(
+								'run_id' => 'completed-b1',
+								'status' => 'failed',
+							),
+							array(
+								'run_id' => 'completed-b2',
+								'status' => 'cancelled',
+							),
+						),
 					),
 				),
 			),
 			$this->option( 'a8csp_bgte_history_isolation' )
+		);
+	}
+
+	/**
+	 * Every terminal status persists its backed value in both terminal buffers.
+	 *
+	 * @param   string $status Terminal status under test.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'terminal_statuses' )]
+	public function test_record_terminal_persists_every_terminal_status( string $status ): void {
+		$name    = 'status-' . $status;
+		$history = new RunHistory( $name );
+
+		$history->record_terminal( 'run-a', 'hash-a', RunStatus::from( $status ) );
+
+		$entry = array(
+			'run_id' => 'run-a',
+			'status' => $status,
+		);
+		self::assertSame(
+			array(
+				'started'   => array(),
+				'completed' => array( $entry ),
+				'by_hash'   => array(
+					'hash-a' => array(
+						'started'   => array(),
+						'completed' => array( $entry ),
+					),
+				),
+			),
+			$this->option( 'a8csp_bgte_history_' . $name )
+		);
+	}
+
+	/**
+	 * Supplies every terminal status.
+	 *
+	 * @return  array<string, array{status: string}>
+	 */
+	public static function terminal_statuses(): array {
+		return array(
+			'completed'  => array( 'status' => 'completed' ),
+			'failed'     => array( 'status' => 'failed' ),
+			'cancelled'  => array( 'status' => 'cancelled' ),
+			'superseded' => array( 'status' => 'superseded' ),
+		);
+	}
+
+	/**
+	 * A running status cannot enter the terminal history.
+	 *
+	 * @return  void
+	 */
+	public function test_record_terminal_rejects_a_running_status(): void {
+		$history = new RunHistory( 'running' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Run history records only terminal outcomes.' );
+
+		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Running );
+	}
+
+	/**
+	 * Persisted terminal rows accept only complete terminal shapes and terminal backed values.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_and_non_terminal_persisted_rows_are_skipped(): void {
+		$terminal_entries = array(
+			array(
+				'run_id' => 'completed-run',
+				'status' => 'completed',
+			),
+			array(
+				'run_id' => 'failed-run',
+				'status' => 'failed',
+			),
+			array(
+				'run_id' => 'cancelled-run',
+				'status' => 'cancelled',
+			),
+			array(
+				'run_id' => 'superseded-run',
+				'status' => 'superseded',
+			),
+		);
+
+		$persisted_entries = array(
+			...$terminal_entries,
+			array(
+				'run_id' => 'running-run',
+				'status' => 'running',
+			),
+			array(
+				'run_id' => 'foreign-run',
+				'status' => 'foreign',
+			),
+			array( 'run_id' => 'missing-status' ),
+			array(
+				'run_id' => 42,
+				'status' => 'completed',
+			),
+			'legacy-run',
+		);
+
+		$GLOBALS['a8csp_bgte_test_options'] = array(
+			'a8csp_bgte_history_decode' => array(
+				'started'   => array( 'existing-run', 42 ),
+				'completed' => $persisted_entries,
+				'by_hash'   => array(
+					'hash-a' => array(
+						'started'   => array( 'existing-run', false ),
+						'completed' => $persisted_entries,
+					),
+					'broken' => 'not-a-buffer',
+				),
+			),
+		);
+
+		$history = new RunHistory( 'decode' );
+
+		$history->record_started( 'new-run', 'hash-a' );
+
+		self::assertSame(
+			array(
+				'started'   => array( 'existing-run', 'new-run' ),
+				'completed' => $terminal_entries,
+				'by_hash'   => array(
+					'hash-a' => array(
+						'started'   => array( 'existing-run', 'new-run' ),
+						'completed' => $terminal_entries,
+					),
+				),
+			),
+			$this->option( 'a8csp_bgte_history_decode' )
 		);
 	}
 
