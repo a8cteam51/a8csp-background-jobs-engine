@@ -271,22 +271,23 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Replacing one owner preserves every other owner and disables autoload.
+	 * Replacing one owner preserves every other owner and the registry's non-autoloaded setting.
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_preserves_other_owners_and_disables_autoload(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_schedules' => array(
-				'owner-b' => array(
-					'hourly' => array(
-						'fingerprint' => 'fingerprint-b',
-						'next_due'    => 1_700_003_600,
-						'last_fired'  => null,
-					),
+	public function test_replace_owner_preserves_other_owners_and_the_non_autoloaded_setting(): void {
+		$stored     = array(
+			'owner-b' => array(
+				'hourly' => array(
+					'fingerprint' => 'fingerprint-b',
+					'next_due'    => 1_700_003_600,
+					'last_fired'  => null,
 				),
 			),
 		);
+		$stored_raw = \maybe_serialize( $stored );
+		self::assertIsString( $stored_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
 
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$state    = array(
@@ -301,11 +302,11 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), $state );
-		$options  = $GLOBALS['a8csp_bgte_test_options'];
-		$autoload = $GLOBALS['a8csp_bgte_test_option_autoload'];
-
-		self::assertIsArray( $autoload );
+		$replaced      = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), $state );
+		$persisted_raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		self::assertIsString( $persisted_raw );
+		$persisted = RawOptionDecoder::decode( $persisted_raw );
+		self::assertIsArray( $persisted );
 
 		self::assertTrue( $replaced );
 		self::assertSame(
@@ -319,11 +320,46 @@ final class ScheduleRegistryTest extends TestCase {
 				),
 				'owner-a' => $state,
 			),
-			$options['a8csp_bgte_schedules']
+			$persisted
 		);
-		self::assertFalse( $autoload['a8csp_bgte_schedules'] );
+		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_schedules'] ?? null );
 		self::assertSame( $schedule, $registry->get( 'owner-a:nightly' ) );
 		self::assertNull( $registry->get( 'owner-b:hourly' ) );
+		self::assertCount( 2, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->wpdb->recorded_queries[1] );
+	}
+
+	/**
+	 * Creating the registry inserts an exact non-autoloaded raw option row.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_inserts_a_non_autoloaded_registry_when_the_row_is_absent(): void {
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$state    = array(
+			'nightly' => array(
+				'fingerprint' => $schedule->fingerprint(),
+				'next_due'    => 1_700_000_300,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+		);
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), $state );
+
+		$raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		self::assertIsString( $raw );
+		self::assertSame( array( 'owner-a' => $state ), RawOptionDecoder::decode( $raw ) );
+		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_schedules'] ?? null );
+		self::assertTrue( $replaced );
+		self::assertSame( $schedule, $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 2, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'INSERT IGNORE ', $this->wpdb->recorded_queries[1] );
 	}
 
 	/** A failed authoritative registry read aborts owner replacement without writing or retaining declarations. */
@@ -354,6 +390,8 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertFalse( $replaced );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertNull( $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
 	}
 
 	/**
@@ -362,99 +400,446 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_replace_owner_deletes_the_option_when_no_registrations_remain(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_schedules' => array(
-				'owner-a' => array(
-					'nightly' => array(
-						'fingerprint' => 'fingerprint-a',
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-					),
+		$stored = array(
+			'owner-a' => array(
+				'nightly' => array(
+					'fingerprint' => 'fingerprint-a',
+					'next_due'    => 1_700_000_300,
+					'last_fired'  => null,
 				),
 			),
+		);
+		$raw    = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
+
+		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), array() );
+
+		self::assertTrue( $replaced );
+		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $this->wpdb->autoload );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertCount( 2, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->wpdb->recorded_queries[1] );
+	}
+
+	/**
+	 * An unchanged raw row after a failed exact update remains observable to the synchronization layer.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_reports_a_failed_exact_option_update(): void {
+		$stored = $this->two_registration_registry();
+		self::store_registry( $stored );
+		$this->wpdb->script_result( 'update', false );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$state    = array(
+			'nightly' => array(
+				'fingerprint' => $schedule->fingerprint(),
+				'next_due'    => 1_700_000_300,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+		);
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner(
+			'owner-a',
+			array( 'nightly' => $schedule ),
+			$state
+		);
+
+		self::assertFalse( $replaced );
+		self::assertSame( $stored, self::stored_registry() );
+		self::assertNull( $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+	}
+
+	/**
+	 * A failed post-CAS reread preserves the exact concurrent registry bytes.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_preserves_concurrent_bytes_when_the_post_cas_reread_fails(): void {
+		$stored                = $this->two_registration_registry();
+		$concurrent            = $stored;
+		$concurrent['owner-b'] = array(
+			'hourly' => array(
+				'fingerprint' => 'concurrent-fingerprint',
+				'next_due'    => 1_700_003_900,
+				'last_fired'  => 1_700_000_111,
+				'misfires'    => 2,
+				'skips'       => 3,
+			),
+		);
+		$stored_raw            = \maybe_serialize( $stored );
+		$concurrent_raw        = \maybe_serialize( $concurrent );
+		self::assertIsString( $stored_raw );
+		self::assertIsString( $concurrent_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $concurrent_raw ): void {
+				$wpdb->put( 'a8csp_bgte_schedules', $concurrent_raw );
+			}
+		);
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted post-CAS registry reread failure';
+			}
+		);
+
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$state    = array(
+			'nightly' => array(
+				'fingerprint' => $schedule->fingerprint(),
+				'next_due'    => 1_700_000_300,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+		);
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner(
+			'owner-a',
+			array( 'nightly' => $schedule ),
+			$state
+		);
+
+		self::assertFalse( $replaced );
+		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertNull( $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+	}
+
+	/**
+	 * A lost owner replacement retries from fresh bytes and preserves a concurrent owner slice exactly.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_retries_a_lost_cas_and_preserves_a_concurrent_owner_slice_byte_for_byte(): void {
+		$stored                = $this->two_registration_registry();
+		$owner_b               = array(
+			'hourly' => array(
+				'fingerprint' => "owner-b-\0fingerprint",
+				'next_due'    => 1_700_003_600,
+				'last_fired'  => 1_700_000_111,
+				'misfires'    => 2,
+				'skips'       => 3,
+			),
+		);
+		$concurrent            = $stored;
+		$concurrent['owner-b'] = $owner_b;
+		$stored_raw            = \maybe_serialize( $stored );
+		$concurrent_raw        = \maybe_serialize( $concurrent );
+		self::assertIsString( $stored_raw );
+		self::assertIsString( $concurrent_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $concurrent_raw ): void {
+				$wpdb->put( 'a8csp_bgte_schedules', $concurrent_raw );
+			}
+		);
+		$requested                        = $stored['owner-a'];
+		$requested['nightly']['next_due'] = 1_700_000_900;
+		$schedule                         = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$registry                         = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), $requested );
+
+		$expected            = $concurrent;
+		$expected['owner-a'] = $requested;
+		$expected_raw        = \maybe_serialize( $expected );
+		$persisted_raw       = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		self::assertIsString( $expected_raw );
+		self::assertIsString( $persisted_raw );
+		self::assertSame( $expected_raw, $persisted_raw );
+		$persisted = RawOptionDecoder::decode( $persisted_raw );
+		self::assertIsArray( $persisted );
+		self::assertTrue( $replaced );
+		self::assertSame( $expected, $persisted );
+		$expected_owner_b_raw  = \maybe_serialize( $owner_b );
+		$persisted_owner_b_raw = \maybe_serialize( $persisted['owner-b'] );
+		self::assertIsString( $expected_owner_b_raw );
+		self::assertIsString( $persisted_owner_b_raw );
+		self::assertSame( $expected_owner_b_raw, $persisted_owner_b_raw );
+		self::assertStringContainsString( $expected_owner_b_raw, $persisted_raw );
+		self::assertSame( $schedule, $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 5, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[4] );
+	}
+
+	/**
+	 * A lost replacement whose row vanished re-establishes only the caller's slice on the retry.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_reinserts_only_its_own_slice_after_a_concurrent_row_deletion(): void {
+		$stored     = $this->two_registration_registry();
+		$stored_raw = \maybe_serialize( $stored );
+		self::assertIsString( $stored_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				unset( $wpdb->rows['a8csp_bgte_schedules'], $wpdb->autoload['a8csp_bgte_schedules'] );
+			}
+		);
+		$owner_b  = array(
+			'hourly' => array(
+				'fingerprint' => 'owner-b-fingerprint',
+				'next_due'    => 1_700_003_600,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+		);
+		$schedule = new Schedule( 'hourly', Recurrence::every( 3600 ), 'sync-hourly' );
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner( 'owner-b', array( 'hourly' => $schedule ), $owner_b );
+
+		$expected_raw  = \maybe_serialize( array( 'owner-b' => $owner_b ) );
+		$persisted_raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		self::assertIsString( $expected_raw );
+		self::assertIsString( $persisted_raw );
+		self::assertTrue( $replaced );
+		self::assertSame( $expected_raw, $persisted_raw );
+		$persisted = RawOptionDecoder::decode( $persisted_raw );
+		self::assertIsArray( $persisted );
+		self::assertArrayNotHasKey( 'owner-a', $persisted );
+		self::assertSame( $schedule, $registry->get( 'owner-b:hourly' ) );
+		self::assertCount( 5, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
+		self::assertStringStartsWith( 'INSERT IGNORE ', $this->wpdb->recorded_queries[4] );
+	}
+
+	/**
+	 * Retrying an owner replacement preserves another owner's concurrently advanced timing state.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_preserves_a_concurrent_next_due_advance(): void {
+		$stored                                      = $this->two_registration_registry();
+		$stored['owner-b']                           = array(
+			'hourly' => array(
+				'fingerprint' => 'owner-b-fingerprint',
+				'next_due'    => 1_700_003_600,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+		);
+		$advanced                                    = $stored;
+		$advanced['owner-b']['hourly']['next_due']   = 1_700_003_900;
+		$advanced['owner-b']['hourly']['last_fired'] = 1_700_003_600;
+		$requested                                   = $stored['owner-a'];
+		$requested['nightly']['next_due']            = 1_700_000_900;
+		$expected                                    = $advanced;
+		$expected['owner-a']                         = $requested;
+		self::store_registry( $stored );
+		$this->wpdb->before_next(
+			'update',
+			static function () use ( $advanced ): void {
+				self::store_registry( $advanced );
+			}
+		);
+
+		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), $requested );
+
+		$persisted = self::stored_registry();
+		self::assertTrue( $replaced );
+		self::assertSame( $expected, $persisted );
+		self::assertSame( 1_700_003_900, $persisted['owner-b']['hourly']['next_due'] );
+		self::assertSame( 1_700_003_600, $persisted['owner-b']['hourly']['last_fired'] );
+		self::assertCount( 5, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[4] );
+	}
+
+	/**
+	 * A corrupt shared registry remains byte-identical and cannot be replaced by an owner write.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_rejects_a_corrupt_registry_without_writing(): void {
+		$raw = 'not-a-serialized-registry';
+		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner(
+			'owner-a',
+			array( 'nightly' => $schedule ),
+			array(
+				'nightly' => array(
+					'fingerprint' => $schedule->fingerprint(),
+					'next_due'    => 1_700_000_300,
+					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
+				),
+			)
+		);
+
+		self::assertFalse( $replaced );
+		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertNull( $registry->get( 'owner-a:nightly' ) );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+	}
+
+	/**
+	 * Removing the final owner retries a delete whose exact raw precondition changed concurrently.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_retries_final_owner_removal_after_a_concurrent_change(): void {
+		$stored                                       = $this->two_registration_registry();
+		$concurrent                                   = $stored;
+		$concurrent['owner-a']['nightly']['next_due'] = 1_700_000_600;
+		self::store_registry( $stored );
+		$this->wpdb->before_next(
+			'delete',
+			static function () use ( $concurrent ): void {
+				self::store_registry( $concurrent );
+			}
 		);
 
 		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), array() );
-		$options  = $GLOBALS['a8csp_bgte_test_options'];
 
 		self::assertTrue( $replaced );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $options );
-		self::assertSame(
-			array(
-				array(
-					'function' => 'delete_option',
-					'args'     => array( 'a8csp_bgte_schedules' ),
-				),
-			),
-			$GLOBALS['a8csp_bgte_test_option_calls']
-		);
+		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', self::test_options() );
+		self::assertCount( 5, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
+		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[4] );
 	}
 
 	/**
-	 * A failed option update remains observable to the synchronization layer.
+	 * A lost final-owner delete converges when another writer already removed the row.
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_reports_a_failed_option_update(): void {
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array( 'a8csp_bgte_schedules' => false );
+	public function test_replace_owner_confirms_final_owner_removal_when_the_row_is_already_gone(): void {
+		self::store_registry( $this->two_registration_registry() );
+		$this->wpdb->before_next(
+			'delete',
+			static function (): void {
+				$options = self::test_options();
+				unset( $options['a8csp_bgte_schedules'] );
+				$GLOBALS['a8csp_bgte_test_options'] = $options;
+			}
+		);
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$state    = array(
-			'nightly' => array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => 1_700_000_300,
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), array() );
+
+		self::assertTrue( $replaced );
+		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', self::test_options() );
+		self::assertSame( $schedule, $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+	}
+
+	/**
+	 * Persistent raw-value interference exhausts the bounded owner replacement loop safely.
+	 *
+	 * @return  void
+	 */
+	public function test_replace_owner_reports_failure_after_persistent_interference_exhausts_the_retry_bound(): void {
+		$stored            = $this->two_registration_registry();
+		$stored['owner-b'] = array(
+			'hourly' => array(
+				'fingerprint' => 'owner-b-fingerprint',
+				'next_due'    => 1_700_003_600,
 				'last_fired'  => null,
 				'misfires'    => 0,
 				'skips'       => 0,
 			),
 		);
+		self::store_registry( $stored );
+		for ( $attempt = 0; $attempt < 5; ++$attempt ) {
+			$next_due = 1_700_004_000 + $attempt;
+			$this->wpdb->before_next(
+				'update',
+				static function () use ( $next_due ): void {
+					$concurrent = self::stored_registry();
+					$owner_b    = $concurrent['owner-b'] ?? null;
+					self::assertIsArray( $owner_b );
+					$hourly = $owner_b['hourly'] ?? null;
+					self::assertIsArray( $hourly );
+					$hourly['next_due']    = $next_due;
+					$hourly['last_fired']  = $next_due - 300;
+					$owner_b['hourly']     = $hourly;
+					$concurrent['owner-b'] = $owner_b;
+					self::store_registry( $concurrent );
+				}
+			);
+		}
+		$requested                        = $stored['owner-a'];
+		$requested['nightly']['next_due'] = 1_700_000_900;
+		$schedule                         = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$registry                         = new ScheduleRegistry( $this->rows );
 
-		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner(
-			'owner-a',
-			array( 'nightly' => $schedule ),
-			$state
-		);
-		$options  = $GLOBALS['a8csp_bgte_test_options'];
+		$replaced = $registry->replace_owner( 'owner-a', array( 'nightly' => $schedule ), $requested );
 
-		self::assertIsArray( $options );
-
+		$persisted = self::stored_registry();
+		$owner_b   = $persisted['owner-b'] ?? null;
+		self::assertIsArray( $owner_b );
+		$hourly = $owner_b['hourly'] ?? null;
+		self::assertIsArray( $hourly );
 		self::assertFalse( $replaced );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $options );
-	}
-
-	/**
-	 * A successful update whose stored value is filtered remains a failed postcondition.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_verifies_the_exact_stored_value_after_update(): void {
-		$GLOBALS['a8csp_bgte_test_update_option_values'] = array(
-			'a8csp_bgte_schedules' => array( 'foreign-owner' => array() ),
+		self::assertSame( $stored['owner-a'], $persisted['owner-a'] ?? null );
+		self::assertSame( 1_700_004_004, $hourly['next_due'] ?? null );
+		self::assertNull( $registry->get( 'owner-a:nightly' ) );
+		self::assertCount( 15, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[14] );
+		$updates = \array_values(
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
+			)
 		);
-
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$state    = array(
-			'nightly' => array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => 1_700_000_300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-
-		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner(
-			'owner-a',
-			array( 'nightly' => $schedule ),
-			$state
-		);
-		$options  = $GLOBALS['a8csp_bgte_test_options'];
-
-		self::assertIsArray( $options );
-
-		self::assertFalse( $replaced );
+		self::assertCount( 5, $updates );
 		self::assertSame(
-			array( 'foreign-owner' => array() ),
-			$options['a8csp_bgte_schedules']
+			array(),
+			\array_values(
+				\array_filter(
+					$this->wpdb->recorded_queries,
+					static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' )
+						|| \str_starts_with( $query, 'DELETE ' )
+				)
+			)
 		);
 	}
 

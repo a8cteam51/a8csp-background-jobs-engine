@@ -175,7 +175,7 @@ final class EngineComponentTest extends TestCase {
 
 		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
 		self::assertNotContains( 'init', $hook_names, 'A late boot must not leave a deferred sync behind' );
-		$registry = \get_option( 'a8csp_bgte_schedules', null );
+		$registry = $this->schedule_registry();
 		self::assertIsArray( $registry, 'A late boot must synchronize the maintenance registration inline' );
 		self::assertArrayHasKey( 'a8csp-bgte', $registry );
 	}
@@ -195,7 +195,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertContains( 'wp_loaded', $hook_names, 'A mid-init boot must defer the sync until init completes' );
 		self::assertNotContains( 'init', $hook_names, 'A mid-init boot must not append to the active init bucket' );
 		self::assertNull(
-			\get_option( 'a8csp_bgte_schedules', null ),
+			$this->schedule_registry(),
 			'A mid-init boot must not synchronize before Action Scheduler initializes'
 		);
 	}
@@ -264,7 +264,7 @@ final class EngineComponentTest extends TestCase {
 			'The normal deferred sync must use the default init priority after Action Scheduler initializes at init:1'
 		);
 		self::assertNull(
-			\get_option( 'a8csp_bgte_schedules', null ),
+			$this->schedule_registry(),
 			'Boot must not write the schedule registry before init fires'
 		);
 		$init_callback = $init_registrations[0]['callback'] ?? null;
@@ -332,7 +332,7 @@ final class EngineComponentTest extends TestCase {
 			),
 			$this->cron_events_for_hook( 'a8csp_background_tasks/schedule_due' )
 		);
-		$registrations = \get_option( 'a8csp_bgte_schedules', null );
+		$registrations = $this->schedule_registry();
 		self::assertIsArray( $registrations );
 		$maintenance_registrations = $registrations['a8csp-bgte'] ?? null;
 		self::assertIsArray( $maintenance_registrations );
@@ -387,7 +387,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsString( $run_now_result->value );
 		$run_now_state = \get_option( 'a8csp_bgte_run_email-digest_' . $run_now_result->value, null );
 		self::assertIsArray( $run_now_state );
-		$registrations = \get_option( 'a8csp_bgte_schedules', null );
+		$registrations = $this->schedule_registry();
 		self::assertIsArray( $registrations );
 		$owner_registrations = $registrations['consumer-plugin'] ?? null;
 		self::assertIsArray( $owner_registrations );
@@ -398,6 +398,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertSame( 6, $this->cron_event_count() );
 
 		$options_before_retry    = $GLOBALS['a8csp_bgte_test_options'];
+		$registry_before_retry   = $this->schedule_registry();
 		$cron_before_retry       = \get_option( 'cron', array() );
 		$cron_calls_before_retry = $GLOBALS['a8csp_bgte_test_cron_calls'];
 
@@ -410,6 +411,7 @@ final class EngineComponentTest extends TestCase {
 			$retry_result->error->message
 		);
 		self::assertSame( $options_before_retry, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $registry_before_retry, $this->schedule_registry() );
 		self::assertSame( $cron_before_retry, \get_option( 'cron', array() ) );
 		self::assertSame( $cron_calls_before_retry, $GLOBALS['a8csp_bgte_test_cron_calls'] );
 	}
@@ -468,6 +470,28 @@ final class EngineComponentTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns the schedule registry from the authoritative raw row when present.
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private function schedule_registry(): ?array {
+		$wpdb = $GLOBALS['wpdb'] ?? null;
+		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
+		$raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		if ( \is_string( $raw ) ) {
+			$registry = \maybe_unserialize( $raw );
+			self::assertIsArray( $registry );
+
+			return $registry;
+		}
+
+		$registry = \get_option( 'a8csp_bgte_schedules', null );
+		self::assertTrue( null === $registry || \is_array( $registry ) );
+
+		return $registry;
+	}
 
 	/**
 	 * Returns typed hook registrations from one test ledger.

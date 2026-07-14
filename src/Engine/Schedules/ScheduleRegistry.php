@@ -145,41 +145,96 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
 	public function replace_owner( string $owner, array $schedules, array $registrations ): bool {
-		$read = $this->stored_registry();
-		if ( $read->is_failure() ) {
-			return false;
-		}
-
-		$stored = $read->value;
-		$next   = $stored;
-		if ( array() === $registrations ) {
-			unset( $next[ $owner ] );
-		} else {
-			$next[ $owner ] = $registrations;
-		}
-
-		if ( $next === $stored ) {
-			$this->retain_owner( $owner, $schedules );
-
-			return true;
-		}
-
-		if ( array() === $next ) {
-			\delete_option( self::OPTION_NAME );
-			$missing = new \stdClass();
-			if ( \get_option( self::OPTION_NAME, $missing ) !== $missing ) {
+		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
+			$read = $this->rows->read( self::OPTION_NAME );
+			if ( $read->is_failure() ) {
 				return false;
 			}
-		} else {
-			\update_option( self::OPTION_NAME, $next, false );
-			if ( \get_option( self::OPTION_NAME, null ) !== $next ) {
+
+			$expected_raw = $read->value;
+			if ( null === $expected_raw ) {
+				if ( array() === $registrations ) {
+					$this->retain_owner( $owner, $schedules );
+
+					return true;
+				}
+
+				$replacement_raw = self::serialize_registry( array( $owner => $registrations ) );
+				if ( $this->rows->insert( self::OPTION_NAME, $replacement_raw ) ) {
+					$this->retain_owner( $owner, $schedules );
+
+					return true;
+				}
+
+				continue;
+			}
+
+			$stored = self::decode_registry( $expected_raw );
+			if ( ! \is_array( $stored ) ) {
+				return false;
+			}
+
+			$next = $stored;
+			if ( array() === $registrations ) {
+				unset( $next[ $owner ] );
+			} else {
+				$next[ $owner ] = $registrations;
+			}
+
+			if ( $next === $stored ) {
+				$this->retain_owner( $owner, $schedules );
+
+				return true;
+			}
+
+			if ( array() === $next ) {
+				if ( $this->rows->delete( self::OPTION_NAME, $expected_raw ) ) {
+					$this->retain_owner( $owner, $schedules );
+
+					return true;
+				}
+
+				$current = $this->rows->read( self::OPTION_NAME );
+				if ( $current->is_failure() ) {
+					return false;
+				}
+
+				// A lost delete whose row is already gone means another writer reached the goal state first.
+				$current_raw = $current->value;
+				if ( null === $current_raw ) {
+					$this->retain_owner( $owner, $schedules );
+
+					return true;
+				}
+				if ( $current_raw === $expected_raw ) {
+					return false;
+				}
+
+				continue;
+			}
+
+			$replacement_raw = self::serialize_registry( $next );
+			if ( $this->rows->replace( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
+				$this->retain_owner( $owner, $schedules );
+
+				return true;
+			}
+
+			$current = $this->rows->read( self::OPTION_NAME );
+			if ( $current->is_failure() ) {
+				return false;
+			}
+
+			$current_raw = $current->value;
+			if ( null === $current_raw ) {
+				continue;
+			}
+			if ( $current_raw === $expected_raw ) {
 				return false;
 			}
 		}
 
-		$this->retain_owner( $owner, $schedules );
-
-		return true;
+		return false;
 	}
 
 	// endregion

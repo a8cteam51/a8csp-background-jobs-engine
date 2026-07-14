@@ -48,6 +48,8 @@ final class SchedulesTest extends TestCase {
 
 	private const NOW = 1_700_000_000;
 
+	private WpdbLockSpy $wpdb;
+
 	// endregion.
 
 	// region LIFECYCLE.
@@ -83,6 +85,7 @@ final class SchedulesTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
 		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
 		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
+		$this->wpdb                                       = new WpdbLockSpy();
 	}
 
 	/**
@@ -398,10 +401,8 @@ final class SchedulesTest extends TestCase {
 			),
 		);
 
-		$GLOBALS['a8csp_bgte_test_options']               = $persisted;
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array(
-			'a8csp_bgte_schedules' => false,
-		);
+		$GLOBALS['a8csp_bgte_test_options'] = $persisted;
+		$this->wpdb->script_result( 'update', false );
 
 		$backend = new RecordingBackend();
 		$result  = ( $this->new_schedules(
@@ -425,10 +426,15 @@ final class SchedulesTest extends TestCase {
 		self::assertSame( $persisted, $this->options() );
 		$option_calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
 		self::assertIsArray( $option_calls );
-		self::assertSame(
-			array( 'update_option' ),
-			\array_column( $option_calls, 'function' )
+		self::assertSame( array(), $option_calls );
+		$updates = \array_values(
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
+			)
 		);
+		self::assertCount( 1, $updates );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $updates[0] );
 	}
 
 	/** A failed registry read stops synchronization before backend cleanup or persistence. */
@@ -619,7 +625,7 @@ final class SchedulesTest extends TestCase {
 
 		$seeded = $api->sync( 'owner-a', array( $fixed ) );
 		self::assertInstanceOf( Success::class, $seeded );
-		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
+		$stored_before = $this->options();
 		$this->clear_backend_calls( $backend );
 
 		$result = $api->sync(
@@ -643,7 +649,7 @@ final class SchedulesTest extends TestCase {
 			),
 			$backend->calls
 		);
-		self::assertSame( $stored_before, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $stored_before, $this->options() );
 	}
 
 	/**
@@ -667,7 +673,7 @@ final class SchedulesTest extends TestCase {
 			),
 		);
 
-		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
+		$stored_before = $this->options();
 		$api           = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 
 		$result = $api->sync( 'owner-a', array( $schedule ) );
@@ -684,7 +690,7 @@ final class SchedulesTest extends TestCase {
 			),
 			$backend->calls
 		);
-		self::assertSame( $stored_before, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $stored_before, $this->options() );
 	}
 
 	/**
@@ -698,7 +704,7 @@ final class SchedulesTest extends TestCase {
 		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
-		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
+		$stored_before = $this->options();
 		$this->clear_backend_calls( $backend );
 
 		$result = $api->sync(
@@ -710,7 +716,7 @@ final class SchedulesTest extends TestCase {
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::InvalidInterval, $result->error->reason );
 		self::assertSame( array(), $backend->calls );
-		self::assertSame( $stored_before, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $stored_before, $this->options() );
 	}
 
 	/**
@@ -725,7 +731,7 @@ final class SchedulesTest extends TestCase {
 		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
-		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
+		$stored_before = $this->options();
 		$this->clear_backend_calls( $backend );
 		$clock->timestamp = -1_000;
 
@@ -738,7 +744,7 @@ final class SchedulesTest extends TestCase {
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::InvalidInterval, $result->error->reason );
 		self::assertSame( array(), $backend->calls );
-		self::assertSame( $stored_before, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $stored_before, $this->options() );
 	}
 
 	/**
@@ -1018,11 +1024,9 @@ final class SchedulesTest extends TestCase {
 		);
 		self::assertInstanceOf( Success::class, $seeded );
 
-		$stored_before = $GLOBALS['a8csp_bgte_test_options'];
+		$stored_before = $this->options();
 
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array(
-			'a8csp_bgte_schedules' => false,
-		);
+		$this->wpdb->script_result( 'delete', false );
 		$this->clear_backend_calls( $backend );
 
 		$result = $api->sync( 'owner-a', array() );
@@ -1041,9 +1045,8 @@ final class SchedulesTest extends TestCase {
 			),
 		);
 		self::assertSame( $expected_clear, $backend->calls );
-		self::assertSame( $stored_before, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( $stored_before, $this->options() );
 
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
 		$this->clear_backend_calls( $backend );
 
 		$retried = $api->sync( 'owner-a', array() );
@@ -1064,7 +1067,7 @@ final class SchedulesTest extends TestCase {
 	 * @return  ScheduleRegistry
 	 */
 	private function new_registry(): ScheduleRegistry {
-		return new ScheduleRegistry( new OptionRows( new WpdbLockSpy() ) );
+		return new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 	}
 
 	/**
@@ -1146,6 +1149,12 @@ final class SchedulesTest extends TestCase {
 	private function options(): array {
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
+		$raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		if ( \is_string( $raw ) ) {
+			$registry = \maybe_unserialize( $raw );
+			self::assertIsArray( $registry );
+			$options['a8csp_bgte_schedules'] = $registry;
+		}
 
 		return $options;
 	}

@@ -844,21 +844,20 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
 		$this->wpdb->before_next(
 			'update',
-			static function (): void {
-				$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-				self::assertIsArray( $options );
-
-				$registry = $options['a8csp_bgte_schedules'] ?? null;
+			static function ( WpdbLockSpy $wpdb ): void {
+				$raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
+				self::assertIsString( $raw );
+				$registry = \maybe_unserialize( $raw );
 				self::assertIsArray( $registry );
 
 				$owner = $registry[ self::OWNER ] ?? null;
 				self::assertIsArray( $owner );
 				unset( $owner[ self::NAME ] );
 
-				$registry[ self::OWNER ]         = $owner;
-				$options['a8csp_bgte_schedules'] = $registry;
-
-				$GLOBALS['a8csp_bgte_test_options'] = $options;
+				$registry[ self::OWNER ] = $owner;
+				$replacement_raw         = \maybe_serialize( $registry );
+				self::assertIsString( $replacement_raw );
+				$wpdb->put( 'a8csp_bgte_schedules', $replacement_raw );
 			}
 		);
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
@@ -1201,9 +1200,14 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private function registration(): array {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-		$owners = $options['a8csp_bgte_schedules'] ?? null;
+		$raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		if ( \is_string( $raw ) ) {
+			$owners = \maybe_unserialize( $raw );
+		} else {
+			$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+			self::assertIsArray( $options );
+			$owners = $options['a8csp_bgte_schedules'] ?? null;
+		}
 		self::assertIsArray( $owners );
 		$schedules = $owners[ self::OWNER ] ?? null;
 		self::assertIsArray( $schedules );
