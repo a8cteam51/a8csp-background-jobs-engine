@@ -112,10 +112,18 @@ if ( ! \function_exists( 'add_filter' ) ) {
 	/**
 	 * Records a filter registration and its callback configuration in the test ledgers.
 	 *
-	 * @param   string   $hook_name     The filter hook name.
+	 * @template HookName of string
+	 *
+	 * @param   HookName $hook_name     The filter hook name.
 	 * @param   callable $callback      The callback (recorded but never invoked).
 	 * @param   int      $priority      The priority.
 	 * @param   int      $accepted_args The accepted argument count.
+	 *
+	 * @phpstan-param (
+	 *     HookName is 'update_plugins_github.com'
+	 *         ? callable(false|array<string, mixed>, array{Version: string, TextDomain: string}, string): (false|array<string, mixed>)
+	 *         : callable
+	 * ) $callback
 	 *
 	 * @return  true
 	 */

@@ -25,6 +25,8 @@ Consumers use the same API with either scheduling backend. An occurrence on a te
 
 The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-tasks-engine/releases). Download the ZIP, upload it as a WordPress plugin, and activate it. The release ZIP includes production Composer dependencies and the translation template (`.pot`), so it needs no Composer step.
 
+Installed copies receive release updates through the WordPress dashboard like any plugin.
+
 For a source checkout, clone or extract the repository into `wp-content/plugins/a8csp-background-tasks-engine`, then install production dependencies inside that plugin directory:
 
 ```sh
