@@ -525,7 +525,7 @@ final readonly class OccurrenceDelivery {
 	}
 
 	/**
-	 * Deletes only the observed cleanup-intent generation.
+	 * Deletes the observed cleanup-intent generation or confirms the row is absent.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -536,7 +536,12 @@ final readonly class OccurrenceDelivery {
 	 * @return  bool
 	 */
 	private function clear_intent( string $registration_key, string $expected_raw ): bool {
-		return $this->option_rows->delete( self::intent_option_name( $registration_key ), $expected_raw );
+		if ( $this->option_rows->delete( self::intent_option_name( $registration_key ), $expected_raw ) ) {
+			return true;
+		}
+
+		return null === $this->read_intent( $registration_key )
+			&& ! $this->option_rows->last_select_failed();
 	}
 
 	/**
@@ -589,16 +594,15 @@ final readonly class OccurrenceDelivery {
 		}
 
 		if ( null !== $this->registry->registration( $registration_key ) ) {
-			$this->clear_intent( $registration_key, $expected_raw );
-
-			return true;
+			return $this->clear_intent( $registration_key, $expected_raw );
 		}
 
-		$removed = $this->scheduler->unschedule(
+		$clearance = $this->scheduler->unschedule_for_convergence(
 			'a8csp/background_tasks/schedule_due',
 			array( $registration_key ),
 			$registration_key
 		);
+		$removed   = $clearance->result;
 		if ( $removed->is_failure() ) {
 			$this->log_pending_intent(
 				'Unknown schedule cleanup intent remains pending because verified clearance failed.',
@@ -611,7 +615,7 @@ final readonly class OccurrenceDelivery {
 			return false;
 		}
 
-		if ( ! $this->scheduler->clear_is_authoritative() ) {
+		if ( ! $clearance->authoritative ) {
 			$this->log_pending_intent(
 				'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.',
 				array( 'registration_key' => $registration_key )
@@ -620,9 +624,7 @@ final readonly class OccurrenceDelivery {
 			return false;
 		}
 
-		$this->clear_intent( $registration_key, $expected_raw );
-
-		return true;
+		return $this->clear_intent( $registration_key, $expected_raw );
 	}
 
 	/**

@@ -88,23 +88,27 @@ final readonly class SchedulerFacade implements BackendInterface {
 	// region METHODS
 
 	/**
-	 * Returns whether every configured backend is ready to clear or absent from the runtime.
+	 * Clears matching hooks and reports the authority of the same readiness snapshot.
 	 *
 	 * @internal Unknown-schedule convergence only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  bool
+	 * @param   string      $hook  Hook to unschedule.
+	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
+	 * @param   string      $group Backend grouping label.
+	 *
+	 * @return  ClearanceResult
 	 */
-	public function clear_is_authoritative(): bool {
-		foreach ( $this->backends as $backend ) {
-			if ( ! $backend->is_ready() && ! $backend->is_absent() ) {
-				return false;
-			}
-		}
+	#[\NoDiscard( 'a convergence clear result must be handled, not dropped' )]
+	public function unschedule_for_convergence( string $hook, array $args = array(), string $group = '' ): ClearanceResult {
+		$ready_backends = $this->ready_backends();
 
-		return true;
+		return new ClearanceResult(
+			$this->unschedule_snapshot( $ready_backends, $hook, $args, $group ),
+			$this->snapshot_is_authoritative( $ready_backends )
+		);
 	}
 
 	// endregion
@@ -215,20 +219,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
-		$ready_backends = $this->ready_backends();
-		if ( array() === $ready_backends ) {
-			return $this->fallback_backend()->unschedule( $hook, $args, $group );
-		}
-
-		$first_failure = null;
-		foreach ( $ready_backends as $backend ) {
-			$result = $backend->unschedule( $hook, $args, $group );
-			if ( $result->is_failure() ) {
-				$first_failure ??= $result;
-			}
-		}
-
-		return $first_failure ?? new Success( true );
+		return $this->unschedule_snapshot( $this->ready_backends(), $hook, $args, $group );
 	}
 
 	/**
@@ -394,6 +385,55 @@ final readonly class SchedulerFacade implements BackendInterface {
 		}
 
 		return $ready;
+	}
+
+	/**
+	 * Clears across one captured readiness snapshot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<BackendInterface> $ready_backends Backends selected for the clear.
+	 * @param   string                 $hook           Hook to unschedule.
+	 * @param   list<mixed>            $args           Arguments identifying the scheduled hook.
+	 * @param   string                 $group          Backend grouping label.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	private function unschedule_snapshot( array $ready_backends, string $hook, array $args, string $group ): AbstractResult {
+		if ( array() === $ready_backends ) {
+			return $this->fallback_backend()->unschedule( $hook, $args, $group );
+		}
+
+		$first_failure = null;
+		foreach ( $ready_backends as $backend ) {
+			$result = $backend->unschedule( $hook, $args, $group );
+			if ( $result->is_failure() ) {
+				$first_failure ??= $result;
+			}
+		}
+
+		return $first_failure ?? new Success( true );
+	}
+
+	/**
+	 * Returns whether one readiness snapshot covers every configured backend still present at runtime.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<BackendInterface> $ready_backends Captured clear targets.
+	 *
+	 * @return  bool
+	 */
+	private function snapshot_is_authoritative( array $ready_backends ): bool {
+		foreach ( $this->backends as $backend ) {
+			if ( ! \in_array( $backend, $ready_backends, true ) && ! $backend->is_absent() ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

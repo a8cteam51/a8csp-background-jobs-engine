@@ -380,6 +380,59 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * A registry write failure stops synchronization before scheduling the declared recurrence.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_write_failure_stops_before_backend_mutation(): void {
+		$persisted = array(
+			'a8csp_bgte_schedules' => array(
+				'owner-b' => array(
+					'hourly' => array(
+						'fingerprint' => 'retained-fingerprint',
+						'next_due'    => self::NOW + 3_600,
+						'last_fired'  => null,
+						'misfires'    => 0,
+						'skips'       => 0,
+					),
+				),
+			),
+		);
+
+		$GLOBALS['a8csp_bgte_test_options']               = $persisted;
+		$GLOBALS['a8csp_bgte_test_update_option_results'] = array(
+			'a8csp_bgte_schedules' => false,
+		);
+
+		$backend = new RecordingBackend();
+		$result  = ( $this->new_schedules(
+			$this->new_registry(),
+			$backend,
+			new FixedClock( self::NOW )
+		) )->sync(
+			'owner-a',
+			array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) )
+		);
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertSame(
+			'Schedule registry for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
+			$result->error->message
+		);
+		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
+		self::assertSame( array( 'is_scheduled' ), \array_column( $backend->calls, 'verb' ) );
+		self::assertSame( $persisted, $this->options() );
+		$option_calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $option_calls );
+		self::assertSame(
+			array( 'update_option' ),
+			\array_column( $option_calls, 'function' )
+		);
+	}
+
+	/**
 	 * A replacement stops before persistence when the previous identity remains observable.
 	 *
 	 * @return  void

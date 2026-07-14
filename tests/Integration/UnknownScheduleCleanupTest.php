@@ -8,9 +8,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDeliver
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies durable cleanup intents and live maintenance sweeps converge unknown recurring chains.
@@ -23,6 +26,18 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 	/** Unknown registration identity isolated to this integration test. */
 	private const KEY = 'integration-owner:unknown-cleanup';
+
+	/** Owner component of the unknown registration identity. */
+	private const OWNER = 'integration-owner';
+
+	/** Schedule component of the unknown registration identity. */
+	private const SCHEDULE = 'unknown-cleanup';
+
+	/** Task invoked by the legitimately re-declared schedule. */
+	private const REDECLARED_TASK = 'integration-unknown-cleanup-redeclared-task';
+
+	/** Unknown registration identity isolated to the degraded WP-Cron probe. */
+	private const WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
 
 	/** Engine-reserved maintenance registration identity. */
 	private const MAINTENANCE_KEY = 'a8csp-bgte:maintenance';
@@ -156,6 +171,178 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 				)
 			),
 			'No pending action may remain in the unknown registration group after convergence'
+		);
+	}
+
+	/**
+	 * A live redeclaration consumes its stale intent without clearing the replacement chain.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_convergence_preserves_a_redeclared_action_scheduler_chain(): void {
+		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
+		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_TASK );
+		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+
+		$unknown_action_id = \as_schedule_recurring_action(
+			\time() - 1,
+			300,
+			self::HOOK,
+			array( self::KEY ),
+			self::KEY,
+			true,
+			10
+		);
+		self::assertGreaterThan( 0, $unknown_action_id );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the unknown occurrence' );
+
+		$intent = \get_option( $intent_option, null );
+		self::assertIsArray( $intent, 'The unknown delivery must leave its cleanup intent for the sweep' );
+		self::assertSame( self::KEY, $intent['key'] ?? null );
+
+		$store                 = $this->action_scheduler_store();
+		$unknown_successor_ids = $this->pending_schedule_action_ids( self::KEY );
+		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
+		$unknown_successor_id = $unknown_successor_ids[0];
+
+		$engine = \a8csp_bgte_engine();
+		self::assertNotNull( $engine, 'The live plugin must publish its engine before schedule redeclaration' );
+		$task = new RecordingTask( self::REDECLARED_TASK );
+		$engine->tasks()->register( $task );
+		$schedule = new Schedule(
+			self::SCHEDULE,
+			Recurrence::every( 300 ),
+			self::REDECLARED_TASK,
+			array( 'generation' => 'redeclared' ),
+			OverlapPolicy::Skip,
+			CatchUpPolicy::RunOnce
+		);
+		$synced   = $engine->schedules()->sync( self::OWNER, array( $schedule ) );
+		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
+		self::assertTrue( $synced->value );
+		self::assertSame(
+			\ActionScheduler_Store::STATUS_CANCELED,
+			$store->get_status( $unknown_successor_id ),
+			'Redeclaration must cancel the stale unknown-chain successor before creating its live chain'
+		);
+
+		$live_action_ids = $this->pending_schedule_action_ids( self::KEY );
+		self::assertCount( 1, $live_action_ids, 'Redeclaration must persist exactly one live Action Scheduler occurrence' );
+		$live_action_id = $live_action_ids[0];
+		self::assertNotSame( $unknown_successor_id, $live_action_id );
+		$live_scheduled_at = $store->get_date( $live_action_id );
+		self::assertInstanceOf( \DateTime::class, $live_scheduled_at );
+		$registry_next_due = $this->registration_next_due( self::OWNER, self::SCHEDULE );
+		self::assertSame(
+			$registry_next_due,
+			$live_scheduled_at->getTimestamp(),
+			'The live Action Scheduler occurrence must use the redeclared registration next-due token'
+		);
+
+		$this->occurrence_delivery()->converge_pending_intents();
+
+		$missing_intent = new \stdClass();
+		self::assertSame(
+			$missing_intent,
+			\get_option( $intent_option, $missing_intent ),
+			'The sweep must consume the intent after finding the live registration'
+		);
+		self::assertSame(
+			array( $live_action_id ),
+			$this->pending_schedule_action_ids( self::KEY ),
+			'The sweep must retain the exact redeclared Action Scheduler occurrence'
+		);
+		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $live_action_id ) );
+		$scheduled_at_after_sweep = $store->get_date( $live_action_id );
+		self::assertInstanceOf( \DateTime::class, $scheduled_at_after_sweep );
+		self::assertSame( $live_scheduled_at->getTimestamp(), $scheduled_at_after_sweep->getTimestamp() );
+		self::assertSame( $registry_next_due, $this->registration_next_due( self::OWNER, self::SCHEDULE ) );
+
+		$this->set_registration_next_due( self::OWNER, self::SCHEDULE, \time() - 1 );
+		$runner = \ActionScheduler::runner();
+		self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
+		$runner->process_action( (int) $live_action_id, 'Integration Test' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $live_action_id ) );
+		self::assertGreaterThan(
+			\time(),
+			$this->registration_next_due( self::OWNER, self::SCHEDULE ),
+			'The retained occurrence must advance the live registration when delivered'
+		);
+		self::assertCount(
+			1,
+			$this->pending_schedule_action_ids( self::KEY ),
+			'The retained recurring action must create its live successor after delivery'
+		);
+		self::assertSame(
+			1,
+			$this->run_matching_due_action(
+				static fn ( string $hook, array $args ): bool => 'a8csp/background_tasks/run' === $hook
+					&& self::REDECLARED_TASK === ( $args[0] ?? null )
+			),
+			'The retained schedule occurrence must dispatch its declared task'
+		);
+		self::assertSame( array( array( 'generation' => 'redeclared' ) ), $task->calls );
+	}
+
+	/**
+	 * A WP-Cron-only clearing pass consumes an unknown-chain intent inline.
+	 *
+	 * @return  void
+	 */
+	#[Group( 'degraded' )]
+	public function test_unknown_wp_cron_chain_converges_inline(): void {
+		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::WP_CRON_KEY );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_action(
+			'a8csp/background_tasks/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
+
+		$scheduled = ( new WPCronBackend() )->schedule_recurring(
+			self::HOOK,
+			300,
+			array( self::WP_CRON_KEY ),
+			\time() - 1,
+			self::WP_CRON_KEY
+		);
+		self::assertInstanceOf( Success::class, $scheduled, 'WP-Cron must persist the unknown recurring occurrence' );
+		self::assertCount(
+			1,
+			$this->wordpress_cron_events( self::HOOK, array( self::WP_CRON_KEY ) ),
+			'The degraded fixture must begin with one unknown WP-Cron chain'
+		);
+
+		self::assertSame( 1, $this->run_next_due_cron_event(), 'WP-Cron must deliver the unknown occurrence' );
+
+		$missing_intent = new \stdClass();
+		self::assertSame(
+			$missing_intent,
+			\get_option( $intent_option, $missing_intent ),
+			'The authoritative WP-Cron-only clear must consume the intent inline'
+		);
+		self::assertSame(
+			array(),
+			$this->wordpress_cron_events( self::HOOK, array( self::WP_CRON_KEY ) ),
+			'The inline clear must remove the recurring WP-Cron successor'
+		);
+		self::assertContains(
+			array(
+				'warning',
+				'Unknown schedule registration "integration-owner:unknown-wp-cron-cleanup" was delivered; re-declare the schedule or remove the leftover occurrence.',
+				array(
+					'registration_key' => self::WP_CRON_KEY,
+					'converged'        => true,
+				),
+			),
+			$log_records,
+			'The unknown delivery must report authoritative inline convergence'
 		);
 	}
 
@@ -322,6 +509,81 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		}
 
 		throw new \LogicException( 'The live occurrence-delivery callback is unavailable.' );
+	}
+
+	/**
+	 * Returns pending Action Scheduler occurrences for one registration key.
+	 *
+	 * @param   string $registration_key Complete `{owner}:{name}` identity.
+	 *
+	 * @return  list<string>
+	 */
+	private function pending_schedule_action_ids( string $registration_key ): array {
+		$action_ids = $this->action_scheduler_store()->query_actions(
+			array(
+				'hook'     => self::HOOK,
+				'args'     => array( $registration_key ),
+				'group'    => $registration_key,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+				'orderby'  => 'action_id',
+				'order'    => 'ASC',
+			)
+		);
+		self::assertIsArray( $action_ids );
+		$typed_action_ids = array();
+		foreach ( $action_ids as $action_id ) {
+			self::assertIsString( $action_id );
+			$typed_action_ids[] = $action_id;
+		}
+
+		return $typed_action_ids;
+	}
+
+	/**
+	 * Returns one persisted registration's next-due token.
+	 *
+	 * @param   string $owner Owner identity.
+	 * @param   string $name  Schedule identity.
+	 *
+	 * @return  int
+	 */
+	private function registration_next_due( string $owner, string $name ): int {
+		$registry = \get_option( 'a8csp_bgte_schedules', null );
+		self::assertIsArray( $registry );
+		$owner_rows = $registry[ $owner ] ?? null;
+		self::assertIsArray( $owner_rows );
+		$registration = $owner_rows[ $name ] ?? null;
+		self::assertIsArray( $registration );
+		$next_due = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+
+		return $next_due;
+	}
+
+	/**
+	 * Makes one persisted registration due without changing its backend occurrence.
+	 *
+	 * @param   string $owner    Owner identity.
+	 * @param   string $name     Schedule identity.
+	 * @param   int    $next_due Replacement next-due token.
+	 *
+	 * @return  void
+	 */
+	private function set_registration_next_due( string $owner, string $name, int $next_due ): void {
+		$registry = \get_option( 'a8csp_bgte_schedules', null );
+		self::assertIsArray( $registry );
+		$owner_rows = $registry[ $owner ] ?? null;
+		self::assertIsArray( $owner_rows );
+		$registration = $owner_rows[ $name ] ?? null;
+		self::assertIsArray( $registration );
+		$registration['next_due'] = $next_due;
+		$owner_rows[ $name ]      = $registration;
+		$registry[ $owner ]       = $owner_rows;
+		self::assertTrue(
+			\update_option( 'a8csp_bgte_schedules', $registry, false ),
+			'The live redeclaration must be due before its retained occurrence fires'
+		);
 	}
 
 	// endregion.

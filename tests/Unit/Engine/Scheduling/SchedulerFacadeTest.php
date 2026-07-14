@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\ClearanceResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( SchedulerFacade::class )]
 #[UsesClass( BackendInterface::class )]
 #[UsesClass( WPCronBackend::class )]
+#[UsesClass( ClearanceResult::class )]
 #[UsesClass( Success::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
@@ -629,24 +631,30 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Clearance is authoritative only when every configured candidate is ready or absent.
+	 * Convergence authority stays bound to the readiness snapshot used by the clear.
 	 *
 	 * @return  void
 	 */
-	public function test_clear_authority_requires_every_present_backend_to_be_ready(): void {
+	public function test_convergence_clear_authority_uses_the_cleared_readiness_snapshot(): void {
 		$absent         = new RecordingBackend();
 		$absent->ready  = false;
 		$absent->absent = true;
 		$ready          = new RecordingBackend();
 
-		self::assertTrue( ( new SchedulerFacade( array( $absent, $ready ) ) )->clear_is_authoritative() );
-
-		$present_unready        = new RecordingBackend();
-		$present_unready->ready = false;
-
-		self::assertFalse(
-			( new SchedulerFacade( array( $absent, $ready, $present_unready ) ) )->clear_is_authoritative()
+		$authoritative = ( new SchedulerFacade( array( $absent, $ready ) ) )->unschedule_for_convergence(
+			self::HOOK
 		);
+
+		self::assertTrue( $authoritative->authoritative );
+		self::assertInstanceOf( Success::class, $authoritative->result );
+
+		$transitioning                    = new RecordingBackend();
+		$transitioning->readiness_results = array( false, true );
+		$not_authoritative                = ( new SchedulerFacade( array( $transitioning, $ready ) ) )
+			->unschedule_for_convergence( self::HOOK );
+
+		self::assertFalse( $not_authoritative->authoritative );
+		self::assertTrue( $transitioning->is_ready() );
 	}
 
 	/**

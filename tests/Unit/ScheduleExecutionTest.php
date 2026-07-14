@@ -395,7 +395,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_unknown_registration_records_intent_and_attempts_inline_convergence(): void {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
-		self::assertSame( array( 'is_ready', 'unschedule', 'is_ready' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( array( self::REGISTRATION_KEY ), $this->backend->calls[1]['args']['args'] ?? null );
 		self::assertCount(
 			1,
@@ -416,14 +416,14 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A successful inline clear retains intent until every present backend is ready.
+	 * A later readiness transition cannot grant authority to an earlier partial clear.
 	 *
 	 * @return  void
 	 */
-	public function test_inline_convergence_deletes_intent_only_when_clear_is_authoritative(): void {
-		$dormant        = new RecordingBackend();
-		$dormant->ready = false;
-		$this->delivery = $this->new_delivery(
+	public function test_inline_convergence_uses_authority_from_the_clearing_snapshot(): void {
+		$dormant                    = new RecordingBackend();
+		$dormant->readiness_results = array( false, true );
+		$this->delivery             = $this->new_delivery(
 			$this->registry,
 			new SchedulerFacade( array( $dormant, $this->backend ) )
 		);
@@ -431,14 +431,43 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array( 'is_ready', 'is_absent' ), \array_column( $dormant->calls, 'verb' ) );
 		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertFalse( $this->logger->records[1]['context']['converged'] ?? null );
+		self::assertTrue( $dormant->is_ready() );
 
-		$dormant->ready = true;
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertTrue( $this->logger->records[2]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * A failed intent CAS and verification read cannot report inline convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_inline_convergence_rejects_a_failed_post_cas_read(): void {
+		$verification_reads = 0;
+		$this->wpdb->script_result( 'delete', 0 );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( &$verification_reads ): void {
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( &$verification_reads ): void {
+						++$verification_reads;
+						$wpdb->last_error = 'scripted intent verification failure';
+					}
+				);
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( 1, $verification_reads );
+		self::assertFalse( $this->logger->records[0]['context']['converged'] ?? null );
 	}
 
 	/**
