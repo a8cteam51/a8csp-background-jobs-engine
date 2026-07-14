@@ -295,7 +295,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
 		$stores               = new StoreFactory( $clock, $rows );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 		$scheduler            = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend( static fn (): bool => true ),

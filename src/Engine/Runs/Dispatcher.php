@@ -409,7 +409,7 @@ final readonly class Dispatcher {
 			return new Failure(
 				new EngineError(
 					\sprintf(
-						'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.',
+						'Background-work "%s" is not registered; register the matching task or batch before cancelling its run.',
 						$name
 					)
 				)
@@ -443,7 +443,7 @@ final readonly class Dispatcher {
 			return new Failure(
 				new EngineError(
 					\sprintf(
-						'Run "%s" has processed its queue; the pending cleanup completes it.',
+						'Run "%s" has no chunks left to process; the pending cleanup completes it.',
 						$run_id
 					)
 				)

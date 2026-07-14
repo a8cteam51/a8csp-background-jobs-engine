@@ -274,7 +274,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			return $function_failure;
 		}
 
-		if ( \as_has_scheduled_action( $hook, $args, $group ) ) {
+		$postcheck_args = '' === $hook && array() === $args && '' !== $group ? null : $args;
+		if ( \as_has_scheduled_action( $hook, $postcheck_args, $group ) ) {
 			return new Failure(
 				new SchedulingError(
 					SchedulingErrorReason::ScheduleFailed,

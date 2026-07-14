@@ -1051,7 +1051,7 @@ final class SchedulesTest extends TestCase {
 		$tasks                = new TaskRegistry();
 		$batches              = new BatchRegistry();
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,

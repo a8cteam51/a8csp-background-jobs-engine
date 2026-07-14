@@ -116,7 +116,7 @@ final class EngineTest extends TestCase {
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 
 		$dispatcher = new Dispatcher(
 			$tasks,
@@ -365,7 +365,7 @@ final class EngineTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Background-work "unknown" is not registered; register the matching task or batch before retrying its failed run.',
+			'Background-work "unknown" is not registered; register the matching task or batch before cancelling its run.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );

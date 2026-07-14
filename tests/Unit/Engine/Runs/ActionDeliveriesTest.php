@@ -134,7 +134,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
 			$this->clock,
@@ -273,6 +273,93 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
+	 * A reentrant same-sequence task delivery cannot enter user code under a fresh marker.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_drops_a_reentrant_same_sequence_delivery(): void {
+		$this->prepare_run_action();
+		$action_seq = $this->action_seq();
+		$reentered  = false;
+
+		$this->task->on_handle = function ( array $args ) use ( $action_seq, &$reentered ): void {
+			self::assertSame( self::ARGS, $args );
+			if ( $reentered ) {
+				return;
+			}
+
+			$reentered = true;
+			$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+		};
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		self::assertTrue( $reentered );
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
+					'context' => array(
+						'task_name'  => self::NAME,
+						'run_id'     => self::RUN_ID,
+						'action_seq' => $action_seq,
+					),
+				),
+			),
+			$this->logger->records
+		);
+		$this->assert_terminal_history( RunStatus::Completed );
+	}
+
+	/**
+	 * Batch arguments on a task delivery clear its marker so the correctly shaped delivery can run.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_clears_the_task_marker_after_batch_argument_misdelivery(): void {
+		$this->prepare_run_action();
+		$action_seq = $this->action_seq();
+
+		$this->lifecycle_deliveries->handle_run_action(
+			self::NAME,
+			self::RUN_ID,
+			array( 'chunk' => 'misdelivered' ),
+			$action_seq
+		);
+
+		$state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $state );
+		self::assertSame( 'running', $state['status'] ?? null );
+		self::assertFalse( $state['executing'] ?? true );
+		self::assertSame( $action_seq, $state['action_seq'] ?? null );
+		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Task run action carries batch chunk arguments; schedule task runs with only the task name and run identifier.',
+					'context' => array(
+						'task_name' => self::NAME,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+
+		$this->logger->records = array();
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
 	 * An unregistered task action fails its live run instead of orphaning active state.
 	 *
 	 * @return  void
@@ -285,7 +372,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
 			$this->clock,

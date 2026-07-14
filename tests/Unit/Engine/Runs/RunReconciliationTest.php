@@ -116,7 +116,8 @@ final class RunReconciliationTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores                     = new StoreFactory( $this->clock, $option_rows );
 		$randomizer                 = new RecordingRandomizer( 42 );
-		$terminal_transitions       = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$lock_windows               = new LockWindows( $this->clock );
+		$terminal_transitions       = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle          = new FailureLifecycle(
 			$backend,
 			$this->clock,
@@ -124,7 +125,6 @@ final class RunReconciliationTest extends TestCase {
 			$this->logger,
 			$terminal_transitions
 		);
-		$lock_windows               = new LockWindows( $this->clock );
 		$this->lifecycle_deliveries = new ActionDeliveries(
 			$tasks,
 			$this->batches,

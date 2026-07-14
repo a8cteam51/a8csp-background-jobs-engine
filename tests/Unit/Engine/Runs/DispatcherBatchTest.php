@@ -138,7 +138,7 @@ final class DispatcherBatchTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->batches->register( $this->batch );
 		$this->dispatcher = new Dispatcher(
 			$this->tasks,

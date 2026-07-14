@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
@@ -50,12 +51,14 @@ final readonly class TerminalTransitions {
 	 * @param   OverlapGuard    $overlap_guard Execution-overlap guard.
 	 * @param   StoreFactory    $stores        Name-bound store factory.
 	 * @param   ClockInterface  $clock         Timestamp source.
+	 * @param   LockWindows     $lock_windows  Filterable run-lock timing policy.
 	 * @param   LoggerInterface $logger       Log event sink.
 	 */
 	public function __construct(
 		private OverlapGuard $overlap_guard,
 		private StoreFactory $stores,
 		private ClockInterface $clock,
+		private LockWindows $lock_windows,
 		private LoggerInterface $logger,
 	) {}
 
@@ -120,6 +123,25 @@ final readonly class TerminalTransitions {
 					$context_name => $name,
 					'run_id'      => $run_id,
 					'status'      => $state->status->value,
+				)
+			);
+
+			return null;
+		}
+
+		if (
+			$state->executing
+			&& ! $this->lock_windows->heartbeat_is_stale(
+				$state->heartbeat_at,
+				$this->lock_windows->lock_staleness( $name, $run_id )
+			)
+		) {
+			$this->logger->debug(
+				'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
+				array(
+					$context_name => $name,
+					'run_id'      => $run_id,
+					'action_seq'  => $state->action_seq,
 				)
 			);
 
@@ -215,7 +237,7 @@ final readonly class TerminalTransitions {
 			$terminal_state,
 			$run_store,
 			$clear_pending_actions,
-			false,
+			true,
 			'cancelled',
 			$expected_raw
 		);
@@ -271,8 +293,11 @@ final readonly class TerminalTransitions {
 
 		if ( $finish_despite_effect_failure ) {
 			try {
-				$pre_hook_effects();
-				$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
+				try {
+					$pre_hook_effects();
+				} finally {
+					$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
+				}
 			} finally {
 				$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
 			}

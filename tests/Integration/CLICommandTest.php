@@ -34,6 +34,13 @@ final class CLICommandTest extends IntegrationTestCase {
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
 	private const CANCEL_NAME = MaintenanceTask::NAME;
 
+	/** Batch identity registered by the cancel-completeness WP-CLI bootstrap. */
+	private const CANCEL_BATCH_NAME = 'integration-cli-command-cancel-batch';
+
+	/** Test-only WP-CLI bootstrap that registers the cancel-completeness batch. */
+	private const CANCEL_BATCH_BOOTSTRAP = self::WP_PATH
+		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
+
 	/** Run identity shared by deterministic retained-failure fixtures. */
 	private const RUN_ID = 'integration-cli-command-run-1';
 
@@ -116,6 +123,31 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * The real command preserves the zero-chunk batch completeness refusal.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_surfaces_the_zero_chunk_completeness_refusal(): void {
+		$this->expect_option( self::cancel_batch_run_option_name() );
+		$run_store = $this->seed_cancel_batch_pending_cleanup();
+
+		$result = self::run_command_with_globals(
+			'cancel',
+			array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ),
+			self::CANCEL_BATCH_NAME,
+			self::RUN_ID
+		);
+		self::assertTrue( $run_store->delete( self::RUN_ID ), 'The completeness fixture must remain retained after refusal' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			"Error: Run \"integration-cli-command-run-1\" has no chunks left to process; the pending cleanup completes it.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
 	 * The real command preserves the engine's unregistered-name correction.
 	 *
 	 * @return  void
@@ -127,7 +159,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame(
 			'Error: Background-work "integration-cli-command-unregistered" is not registered; ' .
-			"register the matching task or batch before retrying its failed run.\n",
+			"register the matching task or batch before cancelling its run.\n",
 			$result['stderr']
 		);
 	}
@@ -366,12 +398,34 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
 	 */
 	private static function run_command( string $subcommand, string ...$arguments ): array {
+		return self::run_command_with_globals( $subcommand, array(), ...$arguments );
+	}
+
+	/**
+	 * Runs one registered subcommand with WP-CLI global arguments through the actual executable.
+	 *
+	 * @phpstan-param list<string> $global_arguments
+	 *
+	 * @param   string $subcommand       Background-tasks subcommand.
+	 * @param   array  $global_arguments Arguments preceding the registered command.
+	 * @param   string ...$arguments     Arguments following the subcommand.
+	 *
+	 * @return  array{stdout: string, stderr: string, exit_code: int}
+	 */
+	private static function run_command_with_globals(
+		string $subcommand,
+		array $global_arguments,
+		string ...$arguments
+	): array {
 		$command = \array_values(
 			\array_merge(
 				array(
 					'wp',
 					'--path=' . self::WP_PATH,
 					'--no-color',
+				),
+				$global_arguments,
+				array(
 					'background-tasks',
 					$subcommand,
 				),
@@ -444,6 +498,24 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * Persists one materialized zero-chunk batch waiting for cleanup.
+	 *
+	 * @return  RunStore
+	 */
+	private function seed_cancel_batch_pending_cleanup(): RunStore {
+		$args      = array( 'source' => 'cli-completeness-boundary' );
+		$run_store = new RunStore( self::CANCEL_BATCH_NAME, new SystemClock(), self::option_rows() );
+		$state     = $run_store->create( self::RUN_ID, $args, self::args_hash( $args ), array() );
+		self::assertNotNull( $state, 'The CLI completeness boundary requires one retained batch run' );
+		self::assertIsString(
+			$run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ),
+			'The zero-chunk fixture must advance beyond its unmaterialized state'
+		);
+
+		return $run_store;
+	}
+
+	/**
 	 * Creates the site-bound row seam used by a failed-run store.
 	 *
 	 * @return  OptionRows
@@ -462,6 +534,15 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private static function cancel_run_option_name(): string {
 		return 'a8csp_bgte_run_' . self::CANCEL_NAME . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns the deterministic cancel-completeness batch option name.
+	 *
+	 * @return  string
+	 */
+	private static function cancel_batch_run_option_name(): string {
+		return 'a8csp_bgte_run_' . self::CANCEL_BATCH_NAME . '_' . self::RUN_ID;
 	}
 
 	/**

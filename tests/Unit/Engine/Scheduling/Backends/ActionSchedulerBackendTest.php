@@ -645,7 +645,33 @@ final class ActionSchedulerBackendTest extends TestCase {
 			$this->as_calls( 'as_unschedule_all_actions' )[0]['args']
 		);
 		self::assertSame(
+			array( '', null, 'reports|run-22' ),
+			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
+		);
+	}
+
+	/**
+	 * A group-only postcheck sees survivors with arbitrary arguments and rejects false clearance.
+	 *
+	 * @return  void
+	 */
+	public function test_group_only_unschedule_reports_an_in_progress_survivor(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_has_scheduled_action' => array( true ),
+		);
+
+		$error = $this->assert_failure_reason(
+			$this->backend( self::READY_FACTS )->unschedule( '', array(), 'reports|run-22' ),
+			SchedulingErrorReason::ScheduleFailed
+		);
+
+		self::assertStringContainsString( 'pending or in-progress action', $error->message );
+		self::assertSame(
 			array( '', array(), 'reports|run-22' ),
+			$this->as_calls( 'as_unschedule_all_actions' )[0]['args']
+		);
+		self::assertSame(
+			array( '', null, 'reports|run-22' ),
 			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
 		);
 	}

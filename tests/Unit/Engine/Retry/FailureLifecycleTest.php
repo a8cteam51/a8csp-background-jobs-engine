@@ -138,7 +138,7 @@ final class FailureLifecycleTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores                     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
 			$this->clock,

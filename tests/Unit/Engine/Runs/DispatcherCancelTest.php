@@ -137,10 +137,12 @@ final class DispatcherCancelTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$option_rows                = new OptionRows( $this->wpdb );
 		$this->stores               = new StoreFactory( $this->clock, $option_rows );
+		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_transitions = new TerminalTransitions(
 			$guard,
 			$this->stores,
 			$this->clock,
+			$lock_windows,
 			$this->logger
 		);
 		$scheduler                  = new SchedulerFacade(
@@ -155,7 +157,7 @@ final class DispatcherCancelTest extends TestCase {
 			$this->clock,
 			new RecordingRandomizer( 42 ),
 			$this->logger,
-			new LockWindows( $this->clock ),
+			$lock_windows,
 			$this->terminal_transitions,
 		);
 	}
@@ -330,13 +332,13 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertSame( array(), $this->task->calls );
 	}
 
-	/** Cancellation mirrors retry_failed's corrective refusal for an unregistered name. */
-	public function test_cancel_rejects_an_unregistered_name_with_retry_failed_wording(): void {
+	/** Cancellation gives an unregistered name a cancel-specific correction. */
+	public function test_cancel_rejects_an_unregistered_name_with_cancel_wording(): void {
 		$result = $this->dispatcher->cancel( 'unknown', 'run-1' );
 
 		$this->assert_engine_failure(
 			$result,
-			'Background-work "unknown" is not registered; register the matching task or batch before retrying its failed run.'
+			'Background-work "unknown" is not registered; register the matching task or batch before cancelling its run.'
 		);
 		$this->assert_no_scheduler_or_hook_effects();
 	}
@@ -374,8 +376,8 @@ final class DispatcherCancelTest extends TestCase {
 		$this->assert_successful_cancel( $result, self::BATCH_NAME, $run_id );
 	}
 
-	/** An advanced batch with an empty queue preserves its pending cleanup and success callback. */
-	public function test_cancel_rejects_an_empty_materialized_batch(): void {
+	/** A zero-chunk batch preserves its pending cleanup and success callback. */
+	public function test_cancel_rejects_a_zero_chunk_batch_pending_cleanup(): void {
 		$run_id = $this->start_batch();
 		$this->replace_state(
 			self::BATCH_NAME,
@@ -388,7 +390,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$this->assert_engine_failure(
 			$result,
-			'Run "00000000001700000000-0000000000000000042" has processed its queue; the pending cleanup completes it.'
+			'Run "00000000001700000000-0000000000000000042" has no chunks left to process; the pending cleanup completes it.'
 		);
 		self::assertSame( array(), $this->run_state( self::BATCH_NAME, $run_id )->queue );
 		$this->assert_no_scheduler_or_hook_effects();

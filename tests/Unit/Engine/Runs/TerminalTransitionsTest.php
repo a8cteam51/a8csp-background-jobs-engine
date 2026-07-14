@@ -44,6 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( LockRows::class )]
+#[UsesClass( LockWindows::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
@@ -136,7 +137,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores                     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
 			$this->clock,
@@ -229,6 +230,145 @@ final class TerminalTransitionsTest extends TestCase {
 			),
 			$this->logger->records
 		);
+	}
+
+	/**
+	 * A fresh execution marker excludes a same-sequence delivery before another fence write.
+	 *
+	 * @return  void
+	 */
+	public function test_active_run_state_drops_a_fresh_same_sequence_delivery(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$first     = $this->terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$this->action_seq(),
+			$run_store
+		);
+		self::assertInstanceOf( RunState::class, $first );
+		self::assertTrue( $first->executing );
+		$expected_run  = $this->option( $this->run_option_name() );
+		$expected_lock = $this->lock();
+
+		$this->logger->records                       = array();
+		$this->wpdb->recorded_queries                = array();
+		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+
+		$duplicate = $this->terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$this->action_seq(),
+			$run_store
+		);
+
+		self::assertNull( $duplicate );
+		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
+		self::assertSame( $expected_lock, $this->lock() );
+		self::assertSame( array(), $this->wpdb->recorded_queries );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_lifecycle_events'] );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
+					'context' => array(
+						'task_name'  => self::NAME,
+						'run_id'     => self::RUN_ID,
+						'action_seq' => 1,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * A stale execution marker re-enters the ownership fence and receives a fresh heartbeat.
+	 *
+	 * @return  void
+	 */
+	public function test_active_run_state_admits_and_refences_a_stale_execution_marker(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$first     = $this->terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$this->action_seq(),
+			$run_store
+		);
+		self::assertInstanceOf( RunState::class, $first );
+		self::assertTrue( $first->executing );
+
+		$this->clock->timestamp = self::NOW + 991;
+		$this->logger->records  = array();
+
+		$reclaimed = $this->terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$this->action_seq(),
+			$run_store
+		);
+
+		self::assertInstanceOf( RunState::class, $reclaimed );
+		self::assertTrue( $reclaimed->executing );
+		self::assertSame( self::NOW + 991, $reclaimed->heartbeat_at );
+		self::assertSame( self::NOW + 991, $this->lock()['heartbeat_at'] ?? null );
+		self::assertEquals( $reclaimed, $run_store->get( self::RUN_ID ) );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A throwing group-clear listener cannot strand cancellation state or suppress lifecycle hooks.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_run_finishes_terminal_state_when_group_clear_throws(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$snapshot  = $run_store->inspect( self::RUN_ID );
+		self::assertNotNull( $snapshot );
+		self::assertInstanceOf( RunState::class, $snapshot['state'] );
+		$throwable = new \RuntimeException( 'Group-clear listener failed.' );
+
+		try {
+			$this->terminal_transitions->cancel_run(
+				self::NAME,
+				self::RUN_ID,
+				$snapshot['state'],
+				$run_store,
+				$snapshot['raw'],
+				static function () use ( $throwable ): void {
+					throw $throwable;
+				}
+			);
+			self::fail( 'The group-clear listener exception must propagate to the caller.' );
+		} catch ( \RuntimeException $caught ) {
+			self::assertSame( $throwable, $caught );
+		}
+
+		self::assertNull( $run_store->inspect( self::RUN_ID ) );
+		self::assertNull( $this->lock() );
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp/background_tasks/cancelled/' . self::NAME,
+					'args'      => array( self::RUN_ID, self::ARGS ),
+				),
+				array(
+					'hook_name' => 'a8csp/background_tasks/cancelled',
+					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+				),
+			),
+			$this->fired_actions()
+		);
+		$this->assert_terminal_history( 'cancelled' );
 	}
 
 	/**
@@ -664,7 +804,7 @@ final class TerminalTransitionsTest extends TestCase {
 	/**
 	 * Asserts that the terminal buffer records the run outcome.
 	 *
-	 * @phpstan-param 'completed'|'superseded' $status
+	 * @phpstan-param 'completed'|'cancelled'|'superseded' $status
 	 *
 	 * @param   string $status Expected terminal status.
 	 *

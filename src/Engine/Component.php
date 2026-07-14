@@ -98,7 +98,7 @@ final class Component implements ComponentContract {
 		$guard                = new OverlapGuard( $clock, $logger, $lock_rows );
 		$stores               = new StoreFactory( $clock, $option_rows );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 		$scheduler            = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend(),

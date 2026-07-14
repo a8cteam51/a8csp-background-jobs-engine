@@ -1029,7 +1029,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,

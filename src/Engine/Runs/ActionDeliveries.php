@@ -22,7 +22,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Delivers the engine's internal task and batch actions.
  *
- * Same-sequence redelivery remains at-least-once execution and relies on task and batch idempotency.
+ * Fresh execution markers exclude same-sequence redelivery; stale crash recovery remains at-least-once
+ * and relies on task and batch idempotency.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -347,6 +348,7 @@ final readonly class ActionDeliveries {
 						'run_id'    => $run_id,
 					)
 				);
+				$run_store->transition_state( $run_id, $state, $state->with_executing( false ) );
 
 				return;
 			}
@@ -365,6 +367,7 @@ final readonly class ActionDeliveries {
 						'run_id'     => $run_id,
 					)
 				);
+				$run_store->transition_state( $run_id, $state, $state->with_executing( false ) );
 
 				return;
 			}

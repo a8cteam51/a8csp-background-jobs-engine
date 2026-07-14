@@ -23,6 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
@@ -51,6 +52,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
+#[UsesClass( SchedulerFacade::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
@@ -133,7 +135,7 @@ final class DispatcherTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->dispatcher     = new Dispatcher(
 			$this->registry,
 			$batches,
@@ -241,6 +243,39 @@ final class DispatcherTest extends TestCase {
 				),
 			),
 			$this->fired_actions()
+		);
+	}
+
+	/**
+	 * Cancellation wraps a raw backend before issuing its group-only clear.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_wraps_a_recording_backend_for_group_clearance(): void {
+		$enqueued = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $enqueued );
+		$this->backend->calls = array();
+
+		$cancelled = $this->dispatcher->cancel( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $cancelled );
+		self::assertSame( self::RUN_ID, $cancelled->value );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'is_ready',
+					'args' => array(),
+				),
+				array(
+					'verb' => 'unschedule',
+					'args' => array(
+						'hook'  => '',
+						'args'  => array(),
+						'group' => self::NAME . '|' . self::RUN_ID,
+					),
+				),
+			),
+			$this->backend->calls
 		);
 	}
 

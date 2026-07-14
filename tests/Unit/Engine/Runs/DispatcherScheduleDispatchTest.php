@@ -105,8 +105,8 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
 		$lock_windows         = new LockWindows( $clock );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 
 		$this->dispatcher = new Dispatcher(
 			$tasks,

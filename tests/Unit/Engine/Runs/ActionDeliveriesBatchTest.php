@@ -142,7 +142,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
 			$this->backend,
 			$this->clock,
@@ -697,6 +697,52 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/**
+	 * Missing chunk arguments on a batch delivery clear its marker for the correctly shaped redelivery.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_clears_the_batch_marker_after_missing_argument_misdelivery(): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$action_seq = $this->action_seq();
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		$state = $this->run_state();
+		self::assertSame( 'running', $state['status'] );
+		self::assertFalse( $state['executing'] );
+		self::assertSame( $action_seq, $state['action_seq'] );
+		self::assertSame( array( $chunk_args ), $state['queue'] );
+		self::assertSame( array(), $this->batch->process_calls );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
+					'context' => array(
+						'batch_name' => self::NAME,
+						'run_id'     => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+
+		$this->clear_action_observations();
+		$this->lifecycle_deliveries->handle_run_action(
+			self::NAME,
+			self::RUN_ID,
+			$chunk_args,
+			$action_seq
+		);
+
+		self::assertCount( 1, $this->batch->process_calls );
+		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
 	}
 
 	/**
