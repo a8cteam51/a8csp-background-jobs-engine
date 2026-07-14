@@ -20,6 +20,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
@@ -982,7 +983,8 @@ final class SchedulesTest extends TestCase {
 			$registry,
 			$dispatcher,
 			new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
-			$backend,
+			new SchedulerFacade( array( $backend ) ),
+			new OptionRows( $wpdb ),
 			$clock,
 			$logger
 		);

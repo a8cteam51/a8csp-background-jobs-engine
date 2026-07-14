@@ -128,6 +128,18 @@ interface BackendInterface {
 	public function is_ready(): bool;
 
 	/**
+	 * Returns whether the backend candidate has no runtime implementation to consult.
+	 *
+	 * @internal Scheduler-facade clearance authority only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function is_absent(): bool;
+
+	/**
 	 * Returns whether the backend adapter exposes calendar cron expressions.
 	 *
 	 * Readiness remains a separate runtime fact.

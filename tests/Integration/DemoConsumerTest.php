@@ -214,14 +214,19 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			$task_started_generic
 		);
 
-		$manual_actions_processed = \class_exists( \ActionScheduler::class )
-			? $this->run_next_due_action()
-			: $this->run_matching_due_cron_event(
-				static fn ( string $hook, array $args ): bool =>
-					'a8csp/background_tasks/run' === $hook
-					&& ( $args[1] ?? null ) === $manual_run_id
-			);
+		$schedule_due_before_manual = \did_action( 'a8csp/background_tasks/schedule_due' );
+		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
+			'a8csp/background_tasks/run' === $hook
+			&& ( $args[1] ?? null ) === $manual_run_id;
+		$manual_actions_processed   = \class_exists( \ActionScheduler::class )
+			? $this->run_matching_due_action( $matches_manual_run )
+			: $this->run_matching_due_cron_event( $matches_manual_run );
 		self::assertSame( 1, $manual_actions_processed, 'The scheduler must execute the direct demo task' );
+		self::assertSame(
+			$schedule_due_before_manual,
+			\did_action( 'a8csp/background_tasks/schedule_due' ),
+			'The direct task drive must not consume the recurring schedule occurrence'
+		);
 		$this->assert_site_health_snapshot( self::MANUAL_SNAPSHOT_TRANSIENT );
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $task_completed_named );
 		self::assertSame(
@@ -234,7 +239,11 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertSame(
 			1,
 			\class_exists( \ActionScheduler::class )
-				? $this->run_next_due_action()
+				? $this->run_matching_due_action(
+					static fn ( string $hook, array $args ): bool =>
+						'a8csp/background_tasks/schedule_due' === $hook
+						&& array( DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME ) === $args
+				)
 				: $this->run_matching_due_cron_event(
 					static fn ( string $hook, array $args ): bool =>
 						'a8csp/background_tasks/schedule_due' === $hook

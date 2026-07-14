@@ -95,6 +95,25 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * Absence requires every procedural entry point to be missing.
+	 *
+	 * @return  void
+	 */
+	public function test_absence_distinguishes_no_runtime_from_a_partial_runtime(): void {
+		$absent  = new ActionSchedulerBackend(
+			static fn (): bool => false,
+			static fn ( string $function_name ): bool => false,
+		);
+		$partial = new ActionSchedulerBackend(
+			static fn (): bool => false,
+			static fn ( string $function_name ): bool => 'as_enqueue_async_action' === $function_name,
+		);
+
+		self::assertTrue( $absent->is_absent() );
+		self::assertFalse( $partial->is_absent() );
+	}
+
+	/**
 	 * The v1 adapter does not expose Action Scheduler's cron-expression function.
 	 *
 	 * @return  void

@@ -250,6 +250,19 @@ final class WPCronBackend implements BackendInterface {
 	 * @return  bool
 	 */
 	#[\Override]
+	public function is_absent(): bool {
+		return false;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
 	public function supports_cron_expressions(): bool {
 		return false;
 	}

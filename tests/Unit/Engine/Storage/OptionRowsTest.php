@@ -67,4 +67,18 @@ final class OptionRowsTest extends TestCase {
 
 		self::assertFalse( $rows->delete( self::KEY, 'expected-raw' ) );
 	}
+
+	/** Literal wildcard characters are escaped and imprecise database matches are filtered. */
+	public function test_option_names_escapes_and_refilters_a_literal_prefix(): void {
+		$prefix                    = 'a8csp_bgte_%_';
+		$expected                  = $prefix . 'intent';
+		$wpdb                      = new WpdbLockSpy();
+		$wpdb->option_name_results = array( $expected, 'a8cspXbgteXwildcard-match', 42 );
+
+		self::assertSame( array( $expected ), ( new OptionRows( $wpdb ) )->option_names( $prefix ) );
+		self::assertStringContainsString(
+			"LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'",
+			$wpdb->recorded_queries[0]
+		);
+	}
 }

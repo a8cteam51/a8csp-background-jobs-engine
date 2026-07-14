@@ -134,7 +134,7 @@ final class EngineComponentTest extends TestCase {
 			\array_column( $filters, 'hook_name' )
 		);
 		self::assertSame(
-			array( 3, 3, 4, 3, 2, 1 ),
+			array( 3, 3, 4, 3, 1, 1 ),
 			\array_column( \array_slice( $actions, 1 ), 'accepted_args' )
 		);
 	}

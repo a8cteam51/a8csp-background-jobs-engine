@@ -342,6 +342,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$dispatcher,
 			$occurrence_lease,
 			$scheduler,
+			$rows,
 			$clock,
 			$logger
 		);

@@ -348,6 +348,25 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  bool
 	 */
 	#[\Override]
+	public function is_absent(): bool {
+		foreach ( self::REQUIRED_FUNCTIONS as $function_name ) {
+			if ( ( $this->function_exists_probe )( $function_name ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
 	public function supports_cron_expressions(): bool {
 		return false;
 	}

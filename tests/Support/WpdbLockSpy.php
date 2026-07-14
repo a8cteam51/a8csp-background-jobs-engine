@@ -15,6 +15,9 @@ final class WpdbLockSpy extends \wpdb {
 	/** @var list<string> Prepared statements in execution order. */
 	public array $recorded_queries = array();
 
+	/** @var list<mixed>|null Scripted option-name scan result. */
+	public ?array $option_name_results = null;
+
 	/** @var array<string, array{template: string, args: list<mixed>}> */
 	private array $prepared = array();
 
@@ -230,7 +233,7 @@ final class WpdbLockSpy extends \wpdb {
 	 * @param   mixed $query Prepared statement.
 	 * @param   mixed $x     Column offset.
 	 *
-	 * @return  list<string>
+	 * @return  list<mixed>
 	 */
 	#[\Override]
 	public function get_col( $query = null, $x = 0 ): array {
@@ -244,8 +247,12 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		$this->recorded_queries[] = $query;
-		$args                     = self::without_table( $statement['args'] );
-		$pattern                  = $args[0] ?? null;
+		if ( null !== $this->option_name_results ) {
+			return $this->option_name_results;
+		}
+
+		$args    = self::without_table( $statement['args'] );
+		$pattern = $args[0] ?? null;
 		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) ) {
 			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require one trailing-wildcard pattern.' );
 		}

@@ -85,6 +85,30 @@ final readonly class SchedulerFacade implements BackendInterface {
 
 	// endregion
 
+	// region METHODS
+
+	/**
+	 * Returns whether every configured backend is ready to clear or absent from the runtime.
+	 *
+	 * @internal Unknown-schedule convergence only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function clear_is_authoritative(): bool {
+		foreach ( $this->backends as $backend ) {
+			if ( ! $backend->is_ready() && ! $backend->is_absent() ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	// endregion
+
 	// region INHERITED METHODS
 
 	/**
@@ -252,6 +276,25 @@ final readonly class SchedulerFacade implements BackendInterface {
 	#[\Override]
 	public function is_ready(): bool {
 		return array() !== $this->ready_backends();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function is_absent(): bool {
+		foreach ( $this->backends as $backend ) {
+			if ( ! $backend->is_absent() ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

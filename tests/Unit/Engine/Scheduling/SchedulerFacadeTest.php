@@ -629,6 +629,27 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Clearance is authoritative only when every configured candidate is ready or absent.
+	 *
+	 * @return  void
+	 */
+	public function test_clear_authority_requires_every_present_backend_to_be_ready(): void {
+		$absent         = new RecordingBackend();
+		$absent->ready  = false;
+		$absent->absent = true;
+		$ready          = new RecordingBackend();
+
+		self::assertTrue( ( new SchedulerFacade( array( $absent, $ready ) ) )->clear_is_authoritative() );
+
+		$present_unready        = new RecordingBackend();
+		$present_unready->ready = false;
+
+		self::assertFalse(
+			( new SchedulerFacade( array( $absent, $ready, $present_unready ) ) )->clear_is_authoritative()
+		);
+	}
+
+	/**
 	 * Hook registration reaches every backend without consulting readiness.
 	 *
 	 * @return  void

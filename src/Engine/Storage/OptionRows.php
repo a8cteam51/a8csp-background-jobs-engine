@@ -110,6 +110,39 @@ final readonly class OptionRows {
 	}
 
 	/**
+	 * Returns exact option names under one escaped literal prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $prefix Literal option-name prefix.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site.
+	 *
+	 * @return  list<string>
+	 */
+	public function option_names( string $prefix ): array {
+		$this->assert_site();
+		$wpdb  = $this->wpdb;
+		$names = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC',
+				$wpdb->options,
+				$wpdb->esc_like( $prefix ) . '%'
+			)
+		);
+
+		$typed = array();
+		foreach ( $names as $name ) {
+			if ( \is_string( $name ) && \str_starts_with( $name, $prefix ) ) {
+				$typed[] = $name;
+			}
+		}
+
+		return $typed;
+	}
+
+	/**
 	 * Returns whether the immediately preceding authoritative select failed at the database boundary.
 	 *
 	 * @since   1.0.0

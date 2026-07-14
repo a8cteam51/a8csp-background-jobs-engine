@@ -848,7 +848,10 @@ final class WPCronBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_is_ready_is_always_true(): void {
-		self::assertTrue( ( new WPCronBackend() )->is_ready() );
+		$backend = new WPCronBackend();
+
+		self::assertTrue( $backend->is_ready() );
+		self::assertFalse( $backend->is_absent() );
 	}
 
 	/**

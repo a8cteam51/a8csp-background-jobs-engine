@@ -131,6 +131,53 @@ abstract class IntegrationTestCase extends TestCase {
 	}
 
 	/**
+	 * Runs at most one due Action Scheduler action accepted by a hook-and-arguments predicate.
+	 *
+	 * @phpstan-param callable(string, array<array-key, mixed>): bool $matches
+	 *
+	 * @param   callable $matches Due-action identity predicate.
+	 *
+	 * @return  int Number of actions processed.
+	 */
+	protected function run_matching_due_action( callable $matches ): int {
+		$store      = $this->action_scheduler_store();
+		$action_ids = $store->query_actions(
+			array(
+				'status'       => \ActionScheduler_Store::STATUS_PENDING,
+				'claimed'      => false,
+				'date'         => \as_get_datetime_object(),
+				'date_compare' => '<=',
+				'per_page'     => -1,
+				'orderby'      => 'action_id',
+				'order'        => 'ASC',
+			)
+		);
+		self::assertIsArray( $action_ids );
+
+		foreach ( $action_ids as $action_id ) {
+			self::assertIsString( $action_id );
+			$action = $store->fetch_action( $action_id );
+			self::assertInstanceOf( \ActionScheduler_Action::class, $action );
+
+			$hook = $action->get_hook();
+			self::assertIsString( $hook );
+			$args = $action->get_args();
+			self::assertIsArray( $args );
+			if ( ! \array_is_list( $args ) || ! $matches( $hook, $args ) ) {
+				continue;
+			}
+
+			$runner = \ActionScheduler::runner();
+			self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
+			$runner->process_action( (int) $action_id, 'Integration Test' );
+
+			return 1;
+		}
+
+		return 0;
+	}
+
+	/**
 	 * Returns Action Scheduler's initialized custom-table store.
 	 *
 	 * @return  \ActionScheduler_Store

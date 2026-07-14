@@ -44,6 +44,9 @@ final class RecordingBackend implements BackendInterface {
 	/** Whether the backend reports itself ready. */
 	public bool $ready = true;
 
+	/** Whether the backend candidate has no runtime implementation. */
+	public bool $absent = false;
+
 	/** Whether the backend adapter exposes calendar cron expressions. */
 	public bool $cron_supported = false;
 
@@ -239,6 +242,17 @@ final class RecordingBackend implements BackendInterface {
 		$readiness = \array_shift( $this->readiness_results );
 
 		return null === $readiness ? $this->ready : $readiness;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function is_absent(): bool {
+		$this->calls[] = array(
+			'verb' => 'is_absent',
+			'args' => array(),
+		);
+
+		return $this->absent;
 	}
 
 	/** {@inheritDoc} */

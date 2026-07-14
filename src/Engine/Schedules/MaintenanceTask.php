@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\AbstractTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -70,15 +71,17 @@ final class MaintenanceTask extends AbstractTask {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \wpdb             $wpdb           Site-bound WordPress database connection.
-	 * @param   RunReconciliation $reconciliation Run-reconciliation boundary.
-	 * @param   OverlapGuard      $guard          Lock schema and exact-delete boundary.
-	 * @param   LoggerInterface   $logger         Log event sink.
+	 * @param   OptionRows         $rows                Authoritative option-name enumeration.
+	 * @param   RunReconciliation  $reconciliation      Run-reconciliation boundary.
+	 * @param   OverlapGuard       $guard               Lock schema and exact-delete boundary.
+	 * @param   OccurrenceDelivery $occurrence_delivery Unknown-chain convergence boundary.
+	 * @param   LoggerInterface    $logger              Log event sink.
 	 */
 	public function __construct(
-		private readonly \wpdb $wpdb,
+		private readonly OptionRows $rows,
 		private readonly RunReconciliation $reconciliation,
 		private readonly OverlapGuard $guard,
+		private readonly OccurrenceDelivery $occurrence_delivery,
 		private readonly LoggerInterface $logger,
 	) {}
 
@@ -113,7 +116,7 @@ final class MaintenanceTask extends AbstractTask {
 	public function handle( array $args ): void {
 		// Run reconciliation consumes transfer evidence before orphan-lock reclamation can erase it.
 		$protected_transfers = array();
-		foreach ( $this->option_names( self::RUN_PREFIX ) as $option_name ) {
+		foreach ( $this->rows->option_names( self::RUN_PREFIX ) as $option_name ) {
 			$identity = self::run_identity( $option_name );
 			if ( null === $identity ) {
 				continue;
@@ -129,7 +132,7 @@ final class MaintenanceTask extends AbstractTask {
 			}
 		}
 
-		foreach ( $this->option_names( self::LOCK_PREFIX ) as $option_name ) {
+		foreach ( $this->rows->option_names( self::LOCK_PREFIX ) as $option_name ) {
 			$identity = self::lock_identity( $option_name );
 			if ( null === $identity ) {
 				continue;
@@ -168,41 +171,13 @@ final class MaintenanceTask extends AbstractTask {
 				$lock['run_id']
 			);
 		}
+
+		$this->occurrence_delivery->converge_pending_intents();
 	}
 
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Returns exact option names under one escaped literal prefix.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $prefix Literal option-name prefix.
-	 *
-	 * @return  list<string>
-	 */
-	private function option_names( string $prefix ): array {
-		$wpdb  = $this->wpdb;
-		$names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC',
-				$wpdb->options,
-				$wpdb->esc_like( $prefix ) . '%'
-			)
-		);
-
-		$typed = array();
-		foreach ( $names as $name ) {
-			if ( \is_string( $name ) && \str_starts_with( $name, $prefix ) ) {
-				$typed[] = $name;
-			}
-		}
-
-		return $typed;
-	}
 
 	/**
 	 * Parses a lock option whose fixed hash suffix removes name-boundary ambiguity.

@@ -5,11 +5,13 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -24,6 +26,20 @@ use Psr\Log\LoggerInterface;
  * @version 1.0.0
  */
 final readonly class OccurrenceDelivery {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Prefix for durable unknown-chain cleanup intents.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const INTENT_PREFIX = 'a8csp_bgte_cleanup_';
+
+	// endregion
+
 	// region MAGIC METHODS
 
 	/**
@@ -32,18 +48,20 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleRegistry $registry   Owner-scoped schedule registry.
-	 * @param   Dispatcher       $dispatcher Policy-aware target-task dispatcher.
-	 * @param   OccurrenceLease  $lease      Per-registration occurrence decision lease.
-	 * @param   BackendInterface $scheduler  Scheduling backend facade.
-	 * @param   ClockInterface   $clock      Current-time source.
-	 * @param   LoggerInterface  $logger     Log event sink.
+	 * @param   ScheduleRegistry $registry    Owner-scoped schedule registry.
+	 * @param   Dispatcher       $dispatcher  Policy-aware target-task dispatcher.
+	 * @param   OccurrenceLease  $lease       Per-registration occurrence decision lease.
+	 * @param   SchedulerFacade  $scheduler   Scheduling backend facade.
+	 * @param   OptionRows       $option_rows Authoritative cleanup-intent row I/O.
+	 * @param   ClockInterface   $clock       Current-time source.
+	 * @param   LoggerInterface  $logger      Log event sink.
 	 */
 	public function __construct(
 		private ScheduleRegistry $registry,
 		private Dispatcher $dispatcher,
 		private OccurrenceLease $lease,
-		private BackendInterface $scheduler,
+		private SchedulerFacade $scheduler,
+		private OptionRows $option_rows,
 		private ClockInterface $clock,
 		private LoggerInterface $logger,
 	) {}
@@ -65,7 +83,7 @@ final readonly class OccurrenceDelivery {
 			'a8csp/background_tasks/schedule_due',
 			array( $this, 'handle_schedule_due' ),
 			10,
-			2
+			1
 		);
 	}
 
@@ -79,17 +97,10 @@ final readonly class OccurrenceDelivery {
 	 * @version 1.0.0
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   string $delivery         Delivery kind; cleanup singles carry `cleanup`.
 	 *
 	 * @return  void
 	 */
-	public function handle_schedule_due( string $registration_key, string $delivery = 'occurrence' ): void {
-		if ( 'cleanup' === $delivery ) {
-			$this->handle_cleanup_delivery( $registration_key );
-
-			return;
-		}
-
+	public function handle_schedule_due( string $registration_key ): void {
 		$lease_raw = $this->lease->claim( $registration_key );
 		if ( null === $lease_raw ) {
 			$this->logger->debug(
@@ -106,6 +117,47 @@ final readonly class OccurrenceDelivery {
 		} finally {
 			if ( ! $lease_released ) {
 				$this->lease->release( $registration_key, $lease_raw );
+			}
+		}
+	}
+
+	/**
+	 * Converges every well-formed durable unknown-chain cleanup intent.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function converge_pending_intents(): void {
+		try {
+			$registration_keys = $this->intent_keys();
+		} catch ( \Throwable $throwable ) {
+			$this->log_pending_intent(
+				'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
+				array(
+					'exception_class'   => $throwable::class,
+					'exception_message' => $throwable->getMessage(),
+				)
+			);
+
+			return;
+		}
+
+		foreach ( $registration_keys as $registration_key ) {
+			try {
+				$this->converge_unknown_chain( $registration_key );
+			} catch ( \Throwable $throwable ) {
+				$this->log_pending_intent(
+					'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
+					array(
+						'registration_key'  => $registration_key,
+						'exception_class'   => $throwable::class,
+						'exception_message' => $throwable->getMessage(),
+					)
+				);
 			}
 		}
 	}
@@ -161,28 +213,12 @@ final readonly class OccurrenceDelivery {
 	private function handle_occurrence( string $registration_key, string $lease_raw, bool &$lease_released ): void {
 		$registration = $this->registry->registration( $registration_key );
 		if ( null === $registration ) {
-			$removed = $this->scheduler->unschedule(
-				'a8csp/background_tasks/schedule_due',
-				array( $registration_key ),
-				$registration_key
+			$this->record_intent( $registration_key );
+			$converged = $this->converge_unknown_chain( $registration_key );
+			$context   = array(
+				'registration_key' => $registration_key,
+				'converged'        => $converged,
 			);
-			$cleanup = $this->scheduler->schedule_single(
-				'a8csp/background_tasks/schedule_due',
-				$this->clock->now()->getTimestamp(),
-				array( $registration_key, 'cleanup' ),
-				$registration_key
-			);
-			$context = array(
-				'registration_key'  => $registration_key,
-				'unscheduled'       => $removed->is_success(),
-				'cleanup_scheduled' => $cleanup->is_success(),
-			);
-			if ( $removed->is_failure() ) {
-				$context['unschedule_error'] = $removed->error->message;
-			}
-			if ( $cleanup->is_failure() ) {
-				$context['cleanup_error'] = $cleanup->error->message;
-			}
 
 			$this->logger->warning(
 				\sprintf(
@@ -449,35 +485,178 @@ final readonly class OccurrenceDelivery {
 	// region HELPERS
 
 	/**
-	 * Clears an unknown recurring chain after its backend has created any successor.
+	 * Records one durable cleanup intent while preserving an existing generation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
+	 * @throws  \LogicException When WordPress does not serialize the intent to a string.
+	 *
 	 * @return  void
 	 */
-	private function handle_cleanup_delivery( string $registration_key ): void {
+	private function record_intent( string $registration_key ): void {
+		$raw = \maybe_serialize(
+			array(
+				'key'        => $registration_key,
+				'created_at' => $this->clock->now()->getTimestamp(),
+			)
+		);
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'WordPress must serialize an unknown-schedule cleanup intent to a string.' );
+		}
+
+		$this->option_rows->insert( self::intent_option_name( $registration_key ), $raw );
+	}
+
+	/**
+	 * Reads one intent generation as exact persisted bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 *
+	 * @return  string|null
+	 */
+	private function read_intent( string $registration_key ): ?string {
+		return $this->option_rows->select( self::intent_option_name( $registration_key ) );
+	}
+
+	/**
+	 * Deletes only the observed cleanup-intent generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $expected_raw     Exact selected intent value.
+	 *
+	 * @return  bool
+	 */
+	private function clear_intent( string $registration_key, string $expected_raw ): bool {
+		return $this->option_rows->delete( self::intent_option_name( $registration_key ), $expected_raw );
+	}
+
+	/**
+	 * Returns registration keys carried by well-formed cleanup-intent rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<string>
+	 */
+	private function intent_keys(): array {
+		$keys = array();
+		foreach ( $this->option_rows->option_names( self::INTENT_PREFIX ) as $option_name ) {
+			$raw = $this->option_rows->select( $option_name );
+			if ( null === $raw ) {
+				continue;
+			}
+
+			$value = RawOptionDecoder::decode( $raw );
+			if (
+				! \is_array( $value )
+				|| 2 !== \count( $value )
+				|| ! \is_string( $value['key'] ?? null )
+				|| ! \is_int( $value['created_at'] ?? null )
+				|| self::intent_option_name( $value['key'] ) !== $option_name
+			) {
+				continue;
+			}
+
+			$keys[] = $value['key'];
+		}
+
+		return $keys;
+	}
+
+	/**
+	 * Resolves one observed cleanup intent against current registry and scheduler state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 *
+	 * @return  bool Whether the observed intent no longer needs convergence.
+	 */
+	private function converge_unknown_chain( string $registration_key ): bool {
+		$expected_raw = $this->read_intent( $registration_key );
+		if ( null === $expected_raw ) {
+			return true;
+		}
+
+		if ( null !== $this->registry->registration( $registration_key ) ) {
+			$this->clear_intent( $registration_key, $expected_raw );
+
+			return true;
+		}
+
 		$removed = $this->scheduler->unschedule(
 			'a8csp/background_tasks/schedule_due',
 			array( $registration_key ),
 			$registration_key
 		);
-		if ( $removed->is_success() ) {
-			return;
+		if ( $removed->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown schedule cleanup intent remains pending because verified clearance failed.',
+				array(
+					'registration_key' => $registration_key,
+					'error'            => $removed->error->message,
+				)
+			);
+
+			return false;
 		}
 
-		$this->logger->warning(
-			\sprintf(
-				'Unknown schedule registration "%s" cleanup could not clear its recurring occurrence; repair the scheduler store or re-declare the schedule.',
-				$registration_key
-			),
-			array(
-				'registration_key' => $registration_key,
-				'error'            => $removed->error->message,
-			)
-		);
+		if ( ! $this->scheduler->clear_is_authoritative() ) {
+			$this->log_pending_intent(
+				'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.',
+				array( 'registration_key' => $registration_key )
+			);
+
+			return false;
+		}
+
+		$this->clear_intent( $registration_key, $expected_raw );
+
+		return true;
+	}
+
+	/**
+	 * Returns the fixed-size option identity for one registration key.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 *
+	 * @return  string
+	 */
+	private static function intent_option_name( string $registration_key ): string {
+		return self::INTENT_PREFIX . \hash( 'sha256', $registration_key );
+	}
+
+	/**
+	 * Emits a maintenance diagnostic without allowing the diagnostic sink to abort the sweep.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string               $message Log message.
+	 * @param   array<string, mixed> $context Log context.
+	 *
+	 * @return  void
+	 */
+	private function log_pending_intent( string $message, array $context ): void {
+		try {
+			$this->logger->debug( $message, $context );
+		} catch ( \Throwable ) {
+			// Maintenance convergence remains retryable even when diagnostics are unavailable.
+			return;
+		}
 	}
 
 	/**

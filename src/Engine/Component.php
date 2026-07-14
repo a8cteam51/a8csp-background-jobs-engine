@@ -145,15 +145,24 @@ final class Component implements ComponentContract {
 			$tasks,
 			$batches
 		);
-		$tasks->register( new MaintenanceTask( $wpdb, $reconciliation, $guard, $logger ) );
 		$occurrence_lease     = new OccurrenceLease( $lock_rows, $clock, $randomizer );
 		$occurrence_delivery  = new OccurrenceDelivery(
 			$schedules,
 			$dispatcher,
 			$occurrence_lease,
 			$scheduler,
+			$option_rows,
 			$clock,
 			$logger
+		);
+		$tasks->register(
+			new MaintenanceTask(
+				$option_rows,
+				$reconciliation,
+				$guard,
+				$occurrence_delivery,
+				$logger
+			)
 		);
 		$schedule_api         = new Schedules(
 			$schedules,

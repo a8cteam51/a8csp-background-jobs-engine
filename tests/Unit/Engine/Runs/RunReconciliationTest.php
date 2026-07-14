@@ -17,6 +17,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
@@ -108,8 +112,9 @@ final class RunReconciliationTest extends TestCase {
 		$tasks         = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::NAME ) );
 		$backend                    = new RecordingBackend();
+		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores                     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$stores                     = new StoreFactory( $this->clock, $option_rows );
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$terminal_transitions       = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
 		$failure_lifecycle          = new FailureLifecycle(
@@ -153,10 +158,20 @@ final class RunReconciliationTest extends TestCase {
 			$tasks,
 			$this->batches,
 		);
+		$occurrence_delivery        = new OccurrenceDelivery(
+			new ScheduleRegistry( $option_rows ),
+			$this->dispatcher,
+			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, $randomizer ),
+			new SchedulerFacade( array( $backend ) ),
+			$option_rows,
+			$this->clock,
+			$this->logger
+		);
 		$this->maintenance          = new MaintenanceTask(
-			$this->wpdb,
+			$option_rows,
 			$reconciliation,
 			$guard,
+			$occurrence_delivery,
 			$this->logger
 		);
 	}
@@ -172,6 +187,28 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_task_name_is_engine_reserved(): void {
 		self::assertSame( 'a8csp-bgte-maintenance', $this->maintenance->get_name() );
+	}
+
+	/**
+	 * The final maintenance phase converges durable unknown-chain intent.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_converges_pending_unknown_chain_intent(): void {
+		$registration_key = 'orphan-owner:orphan-schedule';
+		$option_name      = 'a8csp_bgte_cleanup_' . \hash( 'sha256', $registration_key );
+		$raw              = \maybe_serialize(
+			array(
+				'key'        => $registration_key,
+				'created_at' => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( $option_name, $raw );
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
 	}
 
 	/**
