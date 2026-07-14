@@ -51,10 +51,25 @@ add_filter(
 			$latest_release_info = array();
 		}
 
-		$release_tag       = $latest_release_info['tag_name'] ?? null;
-		$release_url       = $latest_release_info['html_url'] ?? null;
-		$release_assets    = $latest_release_info['assets'] ?? null;
-		$release_asset     = \is_array( $release_assets ) && \is_array( $release_assets[0] ?? null ) ? $release_assets[0]['browser_download_url'] ?? null : null;
+		$release_tag    = $latest_release_info['tag_name'] ?? null;
+		$release_url    = $latest_release_info['html_url'] ?? null;
+		$release_assets = $latest_release_info['assets'] ?? null;
+
+		$release_asset = null;
+		foreach ( \is_array( $release_assets ) ? $release_assets : array() as $asset ) {
+			if ( ! \is_array( $asset ) ) {
+				continue;
+			}
+
+			$asset_name = $asset['name'] ?? null;
+			if ( 'a8csp-background-tasks-engine.zip' !== $asset_name ) {
+				continue;
+			}
+
+			$release_asset = $asset['browser_download_url'] ?? null;
+			break;
+		}
+
 		$release_is_usable = \is_string( $release_tag ) && \is_string( $release_url ) && \is_string( $release_asset );
 		if ( isset( $response ) ) {
 			set_transient(

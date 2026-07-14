@@ -28,9 +28,7 @@ final readonly class Success extends AbstractResult {
 	 *
 	 * @param   TValue $value Return value carried by the success.
 	 */
-	public function __construct(
-		public mixed $value
-	) {}
+	public function __construct( public mixed $value ) {}
 
 	// endregion
 

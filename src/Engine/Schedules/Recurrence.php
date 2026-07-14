@@ -22,10 +22,7 @@ final readonly class Recurrence {
 	 * @param   'every'|'cron' $type  Recurrence representation.
 	 * @param   int|string     $value Positive seconds or cron expression.
 	 */
-	private function __construct(
-		private string $type,
-		private int|string $value,
-	) {}
+	private function __construct( private string $type, private int|string $value ) {}
 
 	// endregion
 

@@ -30,9 +30,7 @@ final readonly class Failure extends AbstractResult {
 	 *
 	 * @param   TError $error Error carried by the failure.
 	 */
-	public function __construct(
-		public mixed $error
-	) {}
+	public function __construct( public mixed $error ) {}
 
 	// endregion
 

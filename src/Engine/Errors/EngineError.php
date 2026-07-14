@@ -28,10 +28,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @param   string      $message         Human-readable failure detail.
 	 * @param   string|null $exception_class Exception class associated with the failure.
 	 */
-	public function __construct(
-		public string $message,
-		public ?string $exception_class = null,
-	) {}
+	public function __construct( public string $message, public ?string $exception_class = null ) {}
 
 	// endregion
 
@@ -71,12 +68,7 @@ final readonly class EngineError implements ErrorInterface {
 	 *
 	 * @return  self
 	 */
-	public static function scheduling(
-		string $work_type,
-		string $name,
-		string $stage,
-		SchedulingError $error
-	): self {
+	public static function scheduling( string $work_type, string $name, string $stage, SchedulingError $error ): self {
 		return new self(
 			\sprintf(
 				'%1$s "%2$s" could not schedule the %3$s action: %4$s',

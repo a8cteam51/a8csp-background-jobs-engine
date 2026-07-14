@@ -115,13 +115,7 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue(
-		string $task_name,
-		array $args = array(),
-		int $delay = 0,
-		bool $unique = false,
-		int $priority = 10
-	): AbstractResult {
+	public function enqueue( string $task_name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
 		$result = $this->dispatch_task(
 			$task_name,
 			$args,
@@ -163,13 +157,7 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a scheduled-task dispatch failure must be handled, not dropped' )]
-	public function dispatch_scheduled_task(
-		string $task_name,
-		array $args,
-		OverlapPolicy $overlap,
-		int $priority = 10,
-		?\Closure $on_accepted = null
-	): AbstractResult {
+	public function dispatch_scheduled_task( string $task_name, array $args, OverlapPolicy $overlap, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
 		return $this->dispatch_task(
 			$task_name,
 			$args,
@@ -202,12 +190,7 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-	public function start_batch(
-		string $batch_name,
-		array $start_args = array(),
-		bool $unique = false,
-		int $priority = 10
-	): AbstractResult {
+	public function start_batch( string $batch_name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
 		$batch = $this->batches->get( $batch_name );
 		if ( null !== $batch && null !== $this->tasks->get( $batch_name ) ) {
 			$error = EngineError::ambiguous_name( $batch_name );
@@ -559,15 +542,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
 	 */
-	private function dispatch_task(
-		string $task_name,
-		array $args,
-		int $delay,
-		bool $unique,
-		int $priority,
-		OverlapPolicy $overlap,
-		?\Closure $on_accepted = null
-	): AbstractResult {
+	private function dispatch_task( string $task_name, array $args, int $delay, bool $unique, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
 		$task = $this->tasks->get( $task_name );
 		if ( null !== $task && null !== $this->batches->get( $task_name ) ) {
 			$error = EngineError::ambiguous_name( $task_name );

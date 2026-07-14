@@ -29,11 +29,7 @@ final readonly class SchedulingError implements ErrorInterface {
 	 * @param   string                $message Human-readable corrective action.
 	 * @param   array<string, mixed>  $context Structured diagnostic detail.
 	 */
-	public function __construct(
-		public SchedulingErrorReason $reason,
-		public string $message,
-		public array $context = array(),
-	) {}
+	public function __construct( public SchedulingErrorReason $reason, public string $message, public array $context = array() ) {}
 
 	// endregion
 

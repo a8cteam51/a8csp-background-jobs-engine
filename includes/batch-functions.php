@@ -24,12 +24,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\Schedulin
  * @return  AbstractResult<string, EngineError|SchedulingError>
  */
 #[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-function a8csp_bgte_start_batch(
-	string $name,
-	array $start_args = array(),
-	bool $unique = false,
-	int $priority = 10
-): AbstractResult {
-	return a8csp_bgte_engine()?->batches()->start( $name, $start_args, $unique, $priority )
-		?? a8csp_bgte_engine_unavailable_failure();
+function a8csp_bgte_start_batch( string $name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
+	return a8csp_bgte_engine()?->batches()->start( $name, $start_args, $unique, $priority ) ?? a8csp_bgte_engine_unavailable_failure();
 }

@@ -46,11 +46,7 @@ final readonly class RunStore {
 	 * @param   ClockInterface $clock Timestamp source.
 	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
 	 */
-	public function __construct(
-		private string $name,
-		private ClockInterface $clock,
-		private OptionRows $rows,
-	) {}
+	public function __construct( private string $name, private ClockInterface $clock, private OptionRows $rows ) {}
 
 	// endregion
 

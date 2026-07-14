@@ -28,10 +28,7 @@ final readonly class StoreFactory {
 	 * @param   ClockInterface $clock Run timestamp source.
 	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
 	 */
-	public function __construct(
-		private ClockInterface $clock,
-		private OptionRows $rows,
-	) {}
+	public function __construct( private ClockInterface $clock, private OptionRows $rows ) {}
 
 	// endregion
 

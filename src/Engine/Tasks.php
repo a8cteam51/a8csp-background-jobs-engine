@@ -31,10 +31,7 @@ final readonly class Tasks {
 	 * @param   TaskRegistry $registry   Registered task instances.
 	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
 	 */
-	public function __construct(
-		private TaskRegistry $registry,
-		private Dispatcher $dispatcher,
-	) {}
+	public function __construct( private TaskRegistry $registry, private Dispatcher $dispatcher ) {}
 
 	// endregion
 
@@ -72,13 +69,7 @@ final readonly class Tasks {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue(
-		string $name,
-		array $args = array(),
-		int $delay = 0,
-		bool $unique = false,
-		int $priority = 10
-	): AbstractResult {
+	public function enqueue( string $name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
 		if ( MaintenanceTask::NAME === $name ) {
 			return new Failure(
 				new EngineError(

@@ -309,12 +309,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	public function handle_run_action(
-		string $name,
-		string $run_id,
-		array|int $chunk_args_or_action_seq,
-		?int $action_seq = null
-	): void {
+	public function handle_run_action( string $name, string $run_id, array|int $chunk_args_or_action_seq, ?int $action_seq = null ): void {
 		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
 		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
 		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
@@ -501,13 +496,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	private function handle_task_run_action(
-		TaskInterface $task,
-		string $task_name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store
-	): void {
+	private function handle_task_run_action( TaskInterface $task, string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		try {
 			$task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
@@ -519,15 +508,7 @@ final readonly class ActionDeliveries {
 				$run_store,
 				$throwable,
 				static fn (): RetryPolicy => $task->get_retry_policy(),
-				function (
-					RunState $failure_state,
-					EngineError $error,
-					int $attempts_used
-				) use (
-					$task_name,
-					$run_id,
-					$run_store
-				): void {
+				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $task_name, $run_id, $run_store ): void {
 					$this->terminal_transitions->fail_run(
 						$task_name,
 						$run_id,
@@ -564,14 +545,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	private function handle_batch_run_action(
-		BatchInterface $batch,
-		string $batch_name,
-		string $run_id,
-		array $chunk_args,
-		RunState $state,
-		RunStore $run_store
-	): void {
+	private function handle_batch_run_action( BatchInterface $batch, string $batch_name, string $run_id, array $chunk_args, RunState $state, RunStore $run_store ): void {
 		$context = new BatchContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
 		try {
 			$batch->process_chunk( $chunk_args, $context );
@@ -584,16 +558,7 @@ final readonly class ActionDeliveries {
 				$run_store,
 				$throwable,
 				static fn (): RetryPolicy => $batch->get_retry_policy(),
-				function (
-					RunState $failure_state,
-					EngineError $error,
-					int $attempts_used
-				) use (
-					$batch,
-					$batch_name,
-					$run_id,
-					$run_store
-				): void {
+				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $batch, $batch_name, $run_id, $run_store ): void {
 					$this->terminal_transitions->fail_batch(
 						$batch,
 						$batch_name,
@@ -740,13 +705,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	private function fail_orphaned_run(
-		string $work_type,
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store
-	): void {
+	private function fail_orphaned_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$error = new EngineError(
 			\sprintf(
 				'%1$s name "%2$s" is no longer registered unambiguously for run "%3$s"; re-register exactly one %4$s under that name or purge the run.',

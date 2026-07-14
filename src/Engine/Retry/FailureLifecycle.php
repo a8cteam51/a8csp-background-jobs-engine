@@ -187,16 +187,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  array{state: RunState, error: EngineError}|null Exact failed state and detail, or null after success or a lost fence.
 	 */
-	private function reschedule_retry(
-		string $work_type,
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		RetryPolicy $policy,
-		int $attempt,
-		?array $chunk_args = null
-	): ?array {
+	private function reschedule_retry( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, ?array $chunk_args = null ): ?array {
 		try {
 			$delay = $policy->delay_for_attempt( $attempt, $this->randomizer );
 			$now   = $this->clock->now()->getTimestamp();
@@ -290,13 +281,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fire_retrying_hooks(
-		string $name,
-		string $run_id,
-		array $start_args,
-		int $attempt,
-		int $delay
-	): void {
+	private function fire_retrying_hooks( string $name, string $run_id, array $start_args, int $attempt, int $delay ): void {
 		try {
 			\do_action(
 				'a8csp_background_tasks/retrying/' . $name,

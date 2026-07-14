@@ -57,11 +57,7 @@ final class BatchContext implements BatchContextInterface {
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
 	 * @param   list<array<array-key, mixed>> $queue      Persisted queue awaiting this attempt's mutations.
 	 */
-	public function __construct(
-		private readonly string $run_id,
-		private readonly array $start_args,
-		array $queue,
-	) {
+	public function __construct( private readonly string $run_id, private readonly array $start_args, array $queue ) {
 		$this->queue = $queue;
 	}
 

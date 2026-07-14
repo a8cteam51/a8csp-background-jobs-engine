@@ -21,15 +21,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\Schedulin
  * @return  AbstractResult<string, EngineError|SchedulingError>
  */
 #[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-function a8csp_bgte_enqueue_task(
-	string $name,
-	array $args = array(),
-	int $delay = 0,
-	bool $unique = false,
-	int $priority = 10
-): AbstractResult {
-	return a8csp_bgte_engine()?->tasks()->enqueue( $name, $args, $delay, $unique, $priority )
-		?? a8csp_bgte_engine_unavailable_failure();
+function a8csp_bgte_enqueue_task( string $name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
+	return a8csp_bgte_engine()?->tasks()->enqueue( $name, $args, $delay, $unique, $priority ) ?? a8csp_bgte_engine_unavailable_failure();
 }
 
 /**
@@ -45,8 +38,7 @@ function a8csp_bgte_enqueue_task(
  */
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 function a8csp_bgte_retry_failed_run( string $name, string $run_id ): AbstractResult {
-	return a8csp_bgte_engine()?->retry_failed( $name, $run_id )
-		?? a8csp_bgte_engine_unavailable_failure();
+	return a8csp_bgte_engine()?->retry_failed( $name, $run_id ) ?? a8csp_bgte_engine_unavailable_failure();
 }
 
 /**
@@ -62,6 +54,5 @@ function a8csp_bgte_retry_failed_run( string $name, string $run_id ): AbstractRe
  */
 #[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 function a8csp_bgte_cancel_run( string $name, string $run_id ): AbstractResult {
-	return a8csp_bgte_engine()?->cancel( $name, $run_id )
-		?? a8csp_bgte_engine_unavailable_failure();
+	return a8csp_bgte_engine()?->cancel( $name, $run_id ) ?? a8csp_bgte_engine_unavailable_failure();
 }

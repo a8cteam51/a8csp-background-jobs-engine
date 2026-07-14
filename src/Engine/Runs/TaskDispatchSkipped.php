@@ -26,10 +26,7 @@ final readonly class TaskDispatchSkipped {
 	 * @param   string      $running_run_id Discoverable incumbent run identifier.
 	 * @param   EngineError $error          Caller-facing held-lock failure for the consuming API.
 	 */
-	public function __construct(
-		public string $running_run_id,
-		public EngineError $error,
-	) {}
+	public function __construct( public string $running_run_id, public EngineError $error ) {}
 
 	// endregion
 }

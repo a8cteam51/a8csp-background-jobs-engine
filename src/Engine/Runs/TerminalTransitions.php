@@ -82,13 +82,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  RunState|null
 	 */
-	public function active_run_state(
-		string $work_type,
-		string $name,
-		string $run_id,
-		?int $action_seq,
-		RunStore $run_store
-	): ?RunState {
+	public function active_run_state( string $work_type, string $name, string $run_id, ?int $action_seq, RunStore $run_store ): ?RunState {
 		$state        = $run_store->get( $run_id );
 		$context_name = \strtolower( $work_type ) . '_name';
 		if ( null === $state ) {
@@ -218,14 +212,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the cancellation transition was claimed.
 	 */
-	public function cancel_run(
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		string $expected_raw,
-		\Closure $clear_pending_actions
-	): bool {
+	public function cancel_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state
 			->with_status( RunStatus::Cancelled )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
@@ -391,15 +378,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	public function fail_run(
-		string $task_name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		EngineError $error,
-		int $attempts_used,
-		?string $expected_raw = null
-	): void {
+	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
@@ -442,13 +421,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the run option was confirmed absent before history was appended.
 	 */
-	public function finish_claimed_transition(
-		string $name,
-		string $run_id,
-		RunState $state,
-		string $terminal_raw,
-		RunStore $run_store
-	): bool {
+	public function finish_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
 		return $this->finish_terminal_run( $name, $run_id, $state, $terminal_raw, $run_store );
 	}
 
@@ -485,14 +458,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the failed fence transitioned the run to Superseded.
 	 */
-	public function supersede_if_fence_lost(
-		string $work_type,
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		?int $at = null
-	): bool {
+	public function supersede_if_fence_lost( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null ): bool {
 		if ( $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at ) ) {
 			return false;
 		}
@@ -528,15 +494,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	public function supersede_run(
-		string $name,
-		string $run_id,
-		?string $latest_run_id,
-		RunState $state,
-		RunStore $run_store,
-		string $work_type,
-		?string $expected_raw = null
-	): void {
+	public function supersede_run( string $name, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, string $work_type, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Superseded )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
@@ -581,13 +539,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.
 	 */
-	private function claim_terminal_transition(
-		string $run_id,
-		RunState $expected,
-		RunState $replacement,
-		RunStore $run_store,
-		?string $expected_raw = null
-	): ?string {
+	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): ?string {
 		return null === $expected_raw
 			? $run_store->transition_state( $run_id, $expected, $replacement )
 			: $run_store->transition( $run_id, $expected_raw, $replacement );
@@ -607,13 +559,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the run option was confirmed absent before history was appended.
 	 */
-	private function finish_terminal_run(
-		string $name,
-		string $run_id,
-		RunState $state,
-		string $terminal_raw,
-		RunStore $run_store
-	): bool {
+	private function finish_terminal_run( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
 		$this->overlap_guard->release( $name, $state->args_hash, $run_id );
 		if ( ! $run_store->delete_exact( $run_id, $terminal_raw ) ) {
 			$this->logger->error(
@@ -649,13 +595,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	private function fire_lifecycle_hooks(
-		string $event,
-		string $name,
-		string $run_id,
-		array $start_args,
-		?EngineError $error = null
-	): void {
+	private function fire_lifecycle_hooks( string $event, string $name, string $run_id, array $start_args, ?EngineError $error = null ): void {
 		$hook = self::LIFECYCLE_HOOKS[ $event ];
 
 		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.

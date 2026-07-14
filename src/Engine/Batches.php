@@ -31,10 +31,7 @@ final readonly class Batches {
 	 * @param   BatchRegistry $registry   Registered batch instances.
 	 * @param   Dispatcher    $dispatcher Background-work admission coordinator.
 	 */
-	public function __construct(
-		private BatchRegistry $registry,
-		private Dispatcher $dispatcher,
-	) {}
+	public function __construct( private BatchRegistry $registry, private Dispatcher $dispatcher ) {}
 
 	// endregion
 
@@ -81,12 +78,7 @@ final readonly class Batches {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-	public function start(
-		string $name,
-		array $start_args = array(),
-		bool $unique = false,
-		int $priority = 10
-	): AbstractResult {
+	public function start( string $name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
 		if ( MaintenanceTask::NAME === $name ) {
 			return new Failure(
 				new EngineError(

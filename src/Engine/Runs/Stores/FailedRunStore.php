@@ -63,10 +63,7 @@ final readonly class FailedRunStore {
 	 * @param   string     $name Stable task or batch name.
 	 * @param   OptionRows $rows Authoritative raw option-row I/O.
 	 */
-	public function __construct(
-		private string $name,
-		private OptionRows $rows,
-	) {}
+	public function __construct( private string $name, private OptionRows $rows ) {}
 
 	// endregion
 

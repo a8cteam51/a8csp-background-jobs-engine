@@ -27,10 +27,7 @@ final readonly class ClearanceResult {
 	 * @param   AbstractResult<true, SchedulingError> $result        Backend clear result.
 	 * @param   bool                                  $authoritative Whether the cleared snapshot covers every present backend.
 	 */
-	public function __construct(
-		public AbstractResult $result,
-		public bool $authoritative,
-	) {}
+	public function __construct( public AbstractResult $result, public bool $authoritative ) {}
 
 	// endregion
 }

@@ -54,11 +54,7 @@ final readonly class OccurrenceLease {
 	 * @param   ClockInterface      $clock      Current-time source.
 	 * @param   RandomizerInterface $randomizer Per-claim identity source.
 	 */
-	public function __construct(
-		private LockRows $rows,
-		private ClockInterface $clock,
-		private RandomizerInterface $randomizer,
-	) {}
+	public function __construct( private LockRows $rows, private ClockInterface $clock, private RandomizerInterface $randomizer ) {}
 
 	// endregion
 

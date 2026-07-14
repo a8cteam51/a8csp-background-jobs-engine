@@ -53,7 +53,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
-	 * A newer release returns the first asset and populates the positive cache.
+	 * A newer release returns the matching asset and populates the positive cache.
 	 *
 	 * @return  void
 	 */
@@ -80,6 +80,34 @@ final class GitHubUpdateCheckTest extends TestCase {
 				),
 			),
 			$GLOBALS['a8csp_bgte_test_set_transient_calls']
+		);
+	}
+
+	/**
+	 * A foreign asset before the plugin ZIP does not affect the update package.
+	 *
+	 * @return  void
+	 */
+	public function test_newer_release_selects_matching_asset_after_foreign_asset(): void {
+		$release                                    = $this->release( 'v1.1.0' );
+		$plugin_asset                               = $release['assets'][0];
+		$release['assets']                          = array(
+			array(
+				'name'                 => 'checksums.txt',
+				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/v1.1.0/checksums.txt',
+			),
+			$plugin_asset,
+		);
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+
+		self::assertSame(
+			array(
+				'slug'    => 'a8csp-background-tasks-engine',
+				'version' => '1.1.0',
+				'url'     => $release['html_url'],
+				'package' => $plugin_asset['browser_download_url'],
+			),
+			( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE )
 		);
 	}
 
@@ -111,13 +139,32 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
-	 * A release without a first asset is guarded and negatively cached.
+	 * A release without assets is guarded and negatively cached.
 	 *
 	 * @return  void
 	 */
-	public function test_missing_first_asset_is_negatively_cached(): void {
+	public function test_empty_assets_are_negatively_cached(): void {
 		$release                                    = $this->release( 'v1.1.0' );
 		$release['assets']                          = array();
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+
+		self::assertFalse( ( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE ) );
+		$this->assert_negative_cache();
+	}
+
+	/**
+	 * A release without the plugin ZIP is guarded and negatively cached.
+	 *
+	 * @return  void
+	 */
+	public function test_missing_matching_asset_is_negatively_cached(): void {
+		$release                                    = $this->release( 'v1.1.0' );
+		$release['assets']                          = array(
+			array(
+				'name'                 => 'checksums.txt',
+				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/v1.1.0/checksums.txt',
+			),
+		);
 		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
 
 		self::assertFalse( ( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE ) );
@@ -177,7 +224,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 *
 	 * @param   string $tag Release tag.
 	 *
-	 * @return  array{tag_name: string, html_url: string, assets: list<array{browser_download_url: string}>}
+	 * @return  array{tag_name: string, html_url: string, assets: list<array{name: string, browser_download_url: string}>}
 	 */
 	private function release( string $tag ): array {
 		return array(
@@ -185,6 +232,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 			'html_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/tag/' . $tag,
 			'assets'   => array(
 				array(
+					'name'                 => 'a8csp-background-tasks-engine.zip',
 					'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/' . $tag . '/a8csp-background-tasks-engine.zip',
 				),
 			),

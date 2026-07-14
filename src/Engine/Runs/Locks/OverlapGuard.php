@@ -62,11 +62,7 @@ final readonly class OverlapGuard {
 	 * @param   LoggerInterface $logger Log event sink.
 	 * @param   LockRows        $rows   Authoritative lock-row I/O.
 	 */
-	public function __construct(
-		private ClockInterface $clock,
-		private LoggerInterface $logger,
-		private LockRows $rows,
-	) {}
+	public function __construct( private ClockInterface $clock, private LoggerInterface $logger, private LockRows $rows ) {}
 
 	// endregion
 
@@ -88,12 +84,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @return  ClaimResult
 	 */
-	public function claim(
-		string $name,
-		string $args_hash,
-		string $run_id,
-		int $staleness_window
-	): ClaimResult {
+	public function claim( string $name, string $args_hash, string $run_id, int $staleness_window ): ClaimResult {
 		$key      = $this->option_name( $name, $args_hash );
 		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
@@ -161,11 +152,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @return  bool Whether ownership moved to the replacement run.
 	 */
-	public function replace(
-		string $name,
-		string $args_hash,
-		string $replacement_run_id
-	): bool {
+	public function replace( string $name, string $args_hash, string $replacement_run_id ): bool {
 		$key = $this->option_name( $name, $args_hash );
 		$raw = $this->rows->select( $key );
 		if ( null === $raw ) {
@@ -365,12 +352,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @return  bool Whether the exact stale row was deleted.
 	 */
-	public function delete_stale_owned_lock(
-		string $name,
-		string $args_hash,
-		string $run_id,
-		int $staleness_window
-	): bool {
+	public function delete_stale_owned_lock( string $name, string $args_hash, string $run_id, int $staleness_window ): bool {
 		$snapshot = $this->inspect_persisted_lock( $name, $args_hash );
 		if ( null === $snapshot || null === $snapshot['lock'] ) {
 			return false;
@@ -402,12 +384,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @return  MaintenanceFenceOutcome Typed ownership classification.
 	 */
-	public function fence_abandoned_run(
-		string $name,
-		string $args_hash,
-		string $run_id,
-		int $staleness_window
-	): MaintenanceFenceOutcome {
+	public function fence_abandoned_run( string $name, string $args_hash, string $run_id, int $staleness_window ): MaintenanceFenceOutcome {
 		$snapshot = $this->inspect_persisted_lock( $name, $args_hash );
 		if ( null === $snapshot ) {
 			return $this->rows->last_select_failed()
@@ -456,15 +433,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @return  ClaimResult
 	 */
-	private function reclaim(
-		string $key,
-		string $raw,
-		?array $old_lock,
-		array $new_lock,
-		string $name,
-		string $args_hash,
-		string $run_id
-	): ClaimResult {
+	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $name, string $args_hash, string $run_id ): ClaimResult {
 		if ( ! $this->rows->delete( $key, $raw ) || ! $this->rows->insert( $key, $new_lock ) ) {
 			return ClaimResult::Held;
 		}

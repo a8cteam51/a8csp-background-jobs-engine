@@ -90,11 +90,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @param   callable|null $function_exists_probe Function-existence predicate for runtime facts.
 	 * @param   callable|null $did_action_probe      Action-fire-count predicate for runtime facts.
 	 */
-	public function __construct(
-		?callable $readiness_probe = null,
-		?callable $function_exists_probe = null,
-		?callable $did_action_probe = null,
-	) {
+	public function __construct( ?callable $readiness_probe = null, ?callable $function_exists_probe = null, ?callable $did_action_probe = null ) {
 		$this->function_exists_probe = \Closure::fromCallable(
 			$function_exists_probe ?? static fn ( string $function_name ): bool => \function_exists( $function_name )
 		);
@@ -495,14 +491,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function result_for_potentially_unique_action_id(
-		int $action_id,
-		string $hook,
-		array $args,
-		string $group,
-		bool $unique,
-		string $function_name
-	): AbstractResult {
+	private function result_for_potentially_unique_action_id( int $action_id, string $hook, array $args, string $group, bool $unique, string $function_name ): AbstractResult {
 		$diagnostic_facts = null;
 		$failure_cause    = null;
 		if ( 0 === $action_id && $unique ) {

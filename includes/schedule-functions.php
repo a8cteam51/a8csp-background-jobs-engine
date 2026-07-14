@@ -22,8 +22,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\Schedulin
  */
 #[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 function a8csp_bgte_sync_schedules( string $owner, array $schedules ): AbstractResult {
-	return a8csp_bgte_engine()?->schedules()->sync( $owner, $schedules )
-		?? a8csp_bgte_engine_unavailable_failure();
+	return a8csp_bgte_engine()?->schedules()->sync( $owner, $schedules ) ?? a8csp_bgte_engine_unavailable_failure();
 }
 
 /**
@@ -39,6 +38,5 @@ function a8csp_bgte_sync_schedules( string $owner, array $schedules ): AbstractR
  */
 #[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
 function a8csp_bgte_run_schedule_now( string $owner, string $name ): AbstractResult {
-	return a8csp_bgte_engine()?->schedules()->run_now( $owner, $name )
-		?? a8csp_bgte_engine_unavailable_failure();
+	return a8csp_bgte_engine()?->schedules()->run_now( $owner, $name ) ?? a8csp_bgte_engine_unavailable_failure();
 }
