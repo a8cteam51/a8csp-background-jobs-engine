@@ -202,7 +202,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp/background_tasks/run',
+				'hook'     => 'a8csp_background_tasks/run',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -217,7 +217,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp/background_tasks/run', $action->get_hook() );
+		self::assertSame( 'a8csp_background_tasks/run', $action->get_hook() );
 		self::assertSame( array( $name, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
@@ -244,7 +244,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp/background_tasks/run',
+				'hook'     => 'a8csp_background_tasks/run',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -259,7 +259,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp/background_tasks/run', $action->get_hook() );
+		self::assertSame( 'a8csp_background_tasks/run', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
 		$action_args = $action->get_args();
 		self::assertIsArray( $action_args );

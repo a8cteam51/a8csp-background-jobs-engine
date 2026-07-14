@@ -317,8 +317,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $options );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -359,8 +359,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -405,7 +405,7 @@ final class RunReconciliationTest extends TestCase {
 		$replacement_run_id = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW );
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp/background_tasks/continue_delay' => static function (
+			'a8csp_background_tasks/continue_delay' => static function (
 				int $delay,
 				string $name,
 				string $run_id
@@ -430,8 +430,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -504,8 +504,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( 'a8csp_bgte_failed_' . $name, $options );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/failed/' . $name,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/failed/' . $name,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -651,8 +651,8 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -811,8 +811,8 @@ final class RunReconciliationTest extends TestCase {
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);

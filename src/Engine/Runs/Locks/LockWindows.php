@@ -56,7 +56,7 @@ final readonly class LockWindows {
 	 */
 	public function continue_delay( string $batch_name, string $run_id ): int {
 		$delay = \apply_filters(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			self::CONTINUE_DELAY,
 			$batch_name,
 			$run_id
@@ -81,7 +81,7 @@ final readonly class LockWindows {
 
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
 		$staleness         = \apply_filters(
-			'a8csp/background_tasks/lock_staleness/' . $name,
+			'a8csp_background_tasks/lock_staleness/' . $name,
 			$default_staleness
 		);
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {

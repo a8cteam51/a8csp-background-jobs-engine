@@ -122,12 +122,12 @@ final class EngineComponentTest extends TestCase {
 		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/log',
-				'a8csp/background_tasks/start',
-				'a8csp/background_tasks/continue',
-				'a8csp/background_tasks/run',
-				'a8csp/background_tasks/cleanup',
-				'a8csp/background_tasks/schedule_due',
+				'a8csp_background_tasks/log',
+				'a8csp_background_tasks/start',
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/cleanup',
+				'a8csp_background_tasks/schedule_due',
 				'init',
 			),
 			\array_column( $actions, 'hook_name' )
@@ -290,7 +290,7 @@ final class EngineComponentTest extends TestCase {
 					'args'     => array( 'email-digest', $task_result->value, 1 ),
 				),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/run' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/run' )
 		);
 
 		$batch_result = \a8csp_bgte_start_batch(
@@ -310,7 +310,7 @@ final class EngineComponentTest extends TestCase {
 					'args'     => array( 'catalog-sync', $batch_result->value, 1 ),
 				),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/start' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/start' )
 		);
 		self::assertSame( 3, $this->cron_event_count() );
 
@@ -330,7 +330,7 @@ final class EngineComponentTest extends TestCase {
 					'args'     => array( 'consumer-plugin:connection-monitor' ),
 				),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/schedule_due' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/schedule_due' )
 		);
 		$registrations = \get_option( 'a8csp_bgte_schedules', null );
 		self::assertIsArray( $registrations );
@@ -377,7 +377,7 @@ final class EngineComponentTest extends TestCase {
 				'schedule' => false,
 				'args'     => array( MaintenanceTask::NAME, $maintenance_run_now_result->value, 1 ),
 			),
-			$this->cron_events_for_hook( 'a8csp/background_tasks/run' )
+			$this->cron_events_for_hook( 'a8csp_background_tasks/run' )
 		);
 		self::assertSame( 5, $this->cron_event_count() );
 
@@ -451,7 +451,7 @@ final class EngineComponentTest extends TestCase {
 				array(
 					'function' => 'as_enqueue_async_action',
 					'args'     => array(
-						'a8csp/background_tasks/run',
+						'a8csp_background_tasks/run',
 						array( 'preferred-backend', $result->value, 1 ),
 						'preferred-backend|' . $result->value,
 						false,

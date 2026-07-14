@@ -60,7 +60,7 @@ final class LogTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name'     => 'a8csp/background_tasks/log',
+					'hook_name'     => 'a8csp_background_tasks/log',
 					'callback'      => array( ErrorLogSink::class, 'log' ),
 					'priority'      => 10,
 					'accepted_args' => 3,

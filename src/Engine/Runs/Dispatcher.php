@@ -290,7 +290,7 @@ final readonly class Dispatcher {
 
 		$latest_pointer->record( $run_id, $args_hash );
 		$scheduled = $this->scheduler->enqueue_async(
-			'a8csp/background_tasks/start',
+			'a8csp_background_tasks/start',
 			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id,
 			$unique,
@@ -713,8 +713,8 @@ final readonly class Dispatcher {
 		$action_args = array( $task_name, $run_id, $state->action_seq );
 		$group       = $task_name . '|' . $run_id;
 		$scheduled   = 0 === $delay
-			? $this->scheduler->enqueue_async( 'a8csp/background_tasks/run', $action_args, $group, $unique, $priority )
-			: $this->scheduler->schedule_single( 'a8csp/background_tasks/run', $now + $delay, $action_args, $group, $priority );
+			? $this->scheduler->enqueue_async( 'a8csp_background_tasks/run', $action_args, $group, $unique, $priority )
+			: $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $now + $delay, $action_args, $group, $priority );
 
 		if ( $scheduled->is_failure() ) {
 			$this->overlap_guard->release( $task_name, $args_hash, $run_id );

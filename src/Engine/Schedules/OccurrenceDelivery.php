@@ -80,7 +80,7 @@ final readonly class OccurrenceDelivery {
 	 */
 	public function register_hooks(): void {
 		\add_action(
-			'a8csp/background_tasks/schedule_due',
+			'a8csp_background_tasks/schedule_due',
 			array( $this, 'handle_schedule_due' ),
 			10,
 			1
@@ -282,7 +282,7 @@ final readonly class OccurrenceDelivery {
 		}
 
 		$grace = \apply_filters(
-			'a8csp/background_tasks/misfire_grace/' . $name,
+			'a8csp_background_tasks/misfire_grace/' . $name,
 			$interval,
 			$owner,
 			$name
@@ -316,14 +316,14 @@ final readonly class OccurrenceDelivery {
 			try {
 				try {
 					\do_action(
-						'a8csp/background_tasks/misfired/' . $name,
+						'a8csp_background_tasks/misfired/' . $name,
 						$owner,
 						$misfired_due,
 						$now
 					);
 				} finally {
 					\do_action(
-						'a8csp/background_tasks/misfired',
+						'a8csp_background_tasks/misfired',
 						$name,
 						$owner,
 						$misfired_due,
@@ -598,7 +598,7 @@ final readonly class OccurrenceDelivery {
 		}
 
 		$clearance = $this->scheduler->unschedule_for_convergence(
-			'a8csp/background_tasks/schedule_due',
+			'a8csp_background_tasks/schedule_due',
 			array( $registration_key ),
 			$registration_key
 		);

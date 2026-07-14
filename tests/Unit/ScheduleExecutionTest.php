@@ -182,7 +182,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp/background_tasks/started/' . self::TASK => function (): void {
+			'a8csp_background_tasks/started/' . self::TASK => function (): void {
 				$this->clock->timestamp += 61;
 				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 			},
@@ -209,7 +209,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp/background_tasks/history_size' => function ( int $size ): int {
+			'a8csp_background_tasks/history_size' => function ( int $size ): int {
 				$this->clock->timestamp += 61;
 				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
@@ -234,7 +234,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/started/' . self::TASK => new \RuntimeException( 'listener failed' ),
+			'a8csp_background_tasks/started/' . self::TASK => new \RuntimeException( 'listener failed' ),
 		);
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
@@ -289,7 +289,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule() );
 		$filter_args                              = null;
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp/background_tasks/misfire_grace/' . self::NAME =>
+			'a8csp_background_tasks/misfire_grace/' . self::NAME =>
 			static function ( int $grace, string $owner, string $name ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -345,11 +345,11 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/misfired/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/misfired/' . self::NAME,
 					'args'      => array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/misfired',
+					'hook_name' => 'a8csp_background_tasks/misfired',
 					'args'      => array( self::NAME, self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
 				),
 			),
@@ -369,7 +369,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_misfire_listener_failure_is_logged_after_state_persists(): void {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/misfired/' . self::NAME => new \RuntimeException( 'listener failed' ),
+			'a8csp_background_tasks/misfired/' . self::NAME => new \RuntimeException( 'listener failed' ),
 		);
 		$this->clock->timestamp                       = self::NOW + self::INTERVAL + 901;
 
@@ -379,8 +379,8 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( 1, $this->registration()['misfires'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/misfired/' . self::NAME,
-				'a8csp/background_tasks/misfired',
+				'a8csp_background_tasks/misfired/' . self::NAME,
+				'a8csp_background_tasks/misfired',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -878,7 +878,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$observed = null;
 
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp/background_tasks/started/' . self::TASK => function () use ( &$observed ): void {
+			'a8csp_background_tasks/started/' . self::TASK => function () use ( &$observed ): void {
 				$observed = array(
 					'last_fired' => $this->registration()['last_fired'] ?? null,
 					'lease_held' => \array_key_exists(
@@ -1161,7 +1161,7 @@ final class ScheduleExecutionTest extends TestCase {
 				$this->fired_actions(),
 				static fn ( array $action ): bool => \str_starts_with(
 					$action['hook_name'],
-					'a8csp/background_tasks/misfired'
+					'a8csp_background_tasks/misfired'
 				)
 			)
 		);

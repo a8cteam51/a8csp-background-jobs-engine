@@ -111,7 +111,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->record_misfire_hooks( self::RUN_ONCE_SCHEDULE, $dynamic_misfires, $generic_misfires );
 
 		\do_action(
-			'a8csp/background_tasks/schedule_due',
+			'a8csp_background_tasks/schedule_due',
 			self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE
 		);
 		self::assertSame( array(), $task->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the task inline' );
@@ -160,7 +160,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$generic_misfires = array();
 		$this->record_misfire_hooks( self::SKIP_SCHEDULE, $dynamic_misfires, $generic_misfires );
 
-		\do_action( 'a8csp/background_tasks/schedule_due', self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-task action for the dropped occurrence' );
 		self::assertSame( array(), $task->calls, 'Skip must not execute a task for the dropped occurrence' );
@@ -239,9 +239,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->record_misfire_hooks( self::EXACT_SCHEDULE, $exact_dynamic, $exact_generic );
 		$this->record_misfire_hooks( self::BEYOND_SCHEDULE, $beyond_dynamic, $beyond_generic );
 
-		\do_action( 'a8csp/background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE );
 		self::assertSame( 1, $this->run_next_due_action(), 'An occurrence exactly at grace must execute normally' );
-		\do_action( 'a8csp/background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE );
 		self::assertSame( 0, $this->run_next_due_action(), 'An occurrence one second beyond grace must be dropped' );
 
 		self::assertSame( array( array() ), $exact_task->calls, 'Exactly-at-grace must remain a due task occurrence' );
@@ -359,11 +359,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$dispatcher
 		);
 
-		\remove_all_actions( 'a8csp/background_tasks/start' );
-		\remove_all_actions( 'a8csp/background_tasks/continue' );
-		\remove_all_actions( 'a8csp/background_tasks/run' );
-		\remove_all_actions( 'a8csp/background_tasks/cleanup' );
-		\remove_all_actions( 'a8csp/background_tasks/schedule_due' );
+		\remove_all_actions( 'a8csp_background_tasks/start' );
+		\remove_all_actions( 'a8csp_background_tasks/continue' );
+		\remove_all_actions( 'a8csp_background_tasks/run' );
+		\remove_all_actions( 'a8csp_background_tasks/cleanup' );
+		\remove_all_actions( 'a8csp_background_tasks/schedule_due' );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -447,7 +447,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 */
 	private function record_misfire_hooks( string $name, array &$dynamic, array &$generic ): void {
 		\add_action(
-			'a8csp/background_tasks/misfired/' . $name,
+			'a8csp_background_tasks/misfired/' . $name,
 			static function ( string $owner, int $due, int $fired_at ) use ( &$dynamic ): void {
 				$dynamic[] = array( $owner, $due, $fired_at );
 			},
@@ -455,7 +455,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/misfired',
+			'a8csp_background_tasks/misfired',
 			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $name, &$generic ): void {
 				if ( $schedule === $name ) {
 					$generic[] = array( $schedule, $owner, $due, $fired_at );

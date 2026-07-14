@@ -152,7 +152,7 @@ final readonly class FailureLifecycle {
 	 */
 	private function retry_policy( string $name, RetryPolicy $contract_policy ): RetryPolicy {
 		$filtered_policy = \apply_filters(
-			'a8csp/background_tasks/retry_policy/' . $name,
+			'a8csp_background_tasks/retry_policy/' . $name,
 			$contract_policy
 		);
 		if ( $filtered_policy instanceof RetryPolicy ) {
@@ -254,7 +254,7 @@ final readonly class FailureLifecycle {
 			$action_args[] = $state->action_seq;
 
 			$scheduled = $this->scheduler->schedule_single(
-				'a8csp/background_tasks/run',
+				'a8csp_background_tasks/run',
 				$fire_at,
 				$action_args,
 				$name . '|' . $run_id,
@@ -299,7 +299,7 @@ final readonly class FailureLifecycle {
 	): void {
 		try {
 			\do_action(
-				'a8csp/background_tasks/retrying/' . $name,
+				'a8csp_background_tasks/retrying/' . $name,
 				$run_id,
 				$start_args,
 				$attempt,
@@ -307,7 +307,7 @@ final readonly class FailureLifecycle {
 			);
 		} finally {
 			\do_action(
-				'a8csp/background_tasks/retrying',
+				'a8csp_background_tasks/retrying',
 				$name,
 				$run_id,
 				$start_args,

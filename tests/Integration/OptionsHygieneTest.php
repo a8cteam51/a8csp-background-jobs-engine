@@ -45,7 +45,7 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::TASK_NAME );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_NAME );
 		\add_filter(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			static fn ( int $delay, string $name, string $run_id ): int => 0,
 			10,
 			3

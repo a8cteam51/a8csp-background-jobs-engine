@@ -38,7 +38,7 @@ final class ErrorLogSink implements Component {
 	 */
 	#[\Override]
 	public function initialize(): void {
-		\add_action( 'a8csp/background_tasks/log', array( self::class, 'log' ), 10, 3 );
+		\add_action( 'a8csp_background_tasks/log', array( self::class, 'log' ), 10, 3 );
 	}
 
 	// endregion

@@ -61,7 +61,7 @@ final class HookLogger extends AbstractLogger {
 		 * @param   array<array-key, mixed> $context The structured context.
 		 */
 		\do_action(
-			'a8csp/background_tasks/log',
+			'a8csp_background_tasks/log',
 			(string) $level,
 			\strtr( (string) $message, $replacements ),
 			$context

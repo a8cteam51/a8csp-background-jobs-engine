@@ -91,7 +91,7 @@ final readonly class Inspection {
 	 *
 	 * @var     string
 	 */
-	private const SCHEDULE_HOOK = 'a8csp/background_tasks/schedule_due';
+	private const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
 
 	// endregion
 

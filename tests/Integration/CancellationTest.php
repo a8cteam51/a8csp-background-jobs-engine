@@ -146,7 +146,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ) );
 		$retry_action_id = $this->assert_sole_pending_action(
-			'a8csp/background_tasks/run',
+			'a8csp_background_tasks/run',
 			$group,
 			array( self::BACKOFF_NAME, $run_id, 2 )
 		);
@@ -218,7 +218,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( 3, $pre_run_state['action_seq'] ?? null );
 		self::assertFalse( $pre_run_state['executing'] ?? true, 'The queued RUN must retain a cancellable head' );
 		$this->assert_sole_pending_action(
-			'a8csp/background_tasks/run',
+			'a8csp_background_tasks/run',
 			$group,
 			array( self::BATCH_NAME, $run_id, $first_chunk, 3 )
 		);
@@ -231,7 +231,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( 4, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
 		$continue_action_id = $this->assert_sole_pending_action(
-			'a8csp/background_tasks/continue',
+			'a8csp_background_tasks/continue',
 			$group,
 			array( self::BATCH_NAME, $run_id, 4 )
 		);
@@ -317,7 +317,7 @@ final class CancellationTest extends IntegrationTestCase {
 			1,
 			$this->run_matching_due_action(
 				static fn ( string $hook, array $action_args ): bool =>
-					'a8csp/background_tasks/run' === $hook
+					'a8csp_background_tasks/run' === $hook
 					&& ( $action_args[1] ?? null ) === $run_b
 			),
 			'Action Scheduler must execute the surviving sibling'
@@ -377,7 +377,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$raw_deliveries = array();
 		\add_action(
-			'a8csp/background_tasks/run',
+			'a8csp_background_tasks/run',
 			static function ( string $name, string $run_id, int $action_seq ) use ( &$raw_deliveries ): void {
 				if ( self::DEGRADED_NAME === $name ) {
 					$raw_deliveries[] = array( $name, $run_id, $action_seq );
@@ -398,7 +398,7 @@ final class CancellationTest extends IntegrationTestCase {
 		if ( \class_exists( \ActionScheduler::class ) ) {
 			$action_id = $this->assert_pending_task_action( self::DEGRADED_NAME, $run_id, $group );
 		} else {
-			$cron_before = $this->wordpress_cron_events( 'a8csp/background_tasks/run', $action_args );
+			$cron_before = $this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args );
 			self::assertCount( 1, $cron_before, 'The degraded backend must retain one pending WP-Cron single' );
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
@@ -416,14 +416,14 @@ final class CancellationTest extends IntegrationTestCase {
 		} else {
 			self::assertSame(
 				$cron_before,
-				$this->wordpress_cron_events( 'a8csp/background_tasks/run', $action_args ),
+				$this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args ),
 				'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation'
 			);
 			self::assertSame(
 				1,
 				$this->run_matching_due_cron_event(
 					static fn ( string $hook, array $event_args ): bool =>
-						'a8csp/background_tasks/run' === $hook
+						'a8csp_background_tasks/run' === $hook
 						&& $event_args === $action_args
 				),
 				'The surviving WP-Cron single must reach the shared run-admission hook once'
@@ -431,7 +431,7 @@ final class CancellationTest extends IntegrationTestCase {
 			self::assertSame( array( $action_args ), $raw_deliveries );
 			self::assertSame(
 				array(),
-				$this->wordpress_cron_events( 'a8csp/background_tasks/run', $action_args )
+				$this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args )
 			);
 		}
 

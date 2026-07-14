@@ -197,8 +197,8 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertIsArray( $actions );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/started/' . self::NAME,
-				'a8csp/background_tasks/started',
+				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started',
 			),
 			\array_column( $actions, 'hook_name' )
 		);

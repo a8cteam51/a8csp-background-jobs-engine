@@ -31,11 +31,11 @@ final readonly class TerminalTransitions {
 	 * @var     array<string, string>
 	 */
 	private const LIFECYCLE_HOOKS = array(
-		'started'    => 'a8csp/background_tasks/started',
-		'completed'  => 'a8csp/background_tasks/completed',
-		'failed'     => 'a8csp/background_tasks/failed',
-		'cancelled'  => 'a8csp/background_tasks/cancelled',
-		'superseded' => 'a8csp/background_tasks/superseded',
+		'started'    => 'a8csp_background_tasks/started',
+		'completed'  => 'a8csp_background_tasks/completed',
+		'failed'     => 'a8csp_background_tasks/failed',
+		'cancelled'  => 'a8csp_background_tasks/cancelled',
+		'superseded' => 'a8csp_background_tasks/superseded',
 	);
 
 	// endregion

@@ -175,7 +175,7 @@ final class DispatcherBatchTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/start',
+						'hook'     => 'a8csp_background_tasks/start',
 						'args'     => array( self::NAME, self::RUN_ID, 1 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => true,
@@ -266,7 +266,7 @@ final class DispatcherBatchTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/start',
+						'hook'     => 'a8csp_background_tasks/start',
 						'args'     => array( self::NAME, $new_run_id, 1 ),
 						'group'    => self::NAME . '|' . $new_run_id,
 						'unique'   => false,
@@ -412,7 +412,7 @@ final class DispatcherBatchTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/start',
+						'hook'     => 'a8csp_background_tasks/start',
 						'args'     => array( self::NAME, self::RUN_ID, 1 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => false,

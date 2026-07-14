@@ -179,7 +179,7 @@ final class DispatcherTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/run',
+						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( self::NAME, self::RUN_ID, 1 ),
 						'group'    => self::NAME . '|' . self::RUN_ID,
 						'unique'   => false,
@@ -234,11 +234,11 @@ final class DispatcherTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/started/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/started/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/started',
+					'hook_name' => 'a8csp_background_tasks/started',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -286,7 +286,7 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_enqueue_terminalizes_when_a_task_started_listener_throws(): void {
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/started/' . self::NAME => new \RuntimeException(
+			'a8csp_background_tasks/started/' . self::NAME => new \RuntimeException(
 				'Started listener exploded.'
 			),
 		);
@@ -311,10 +311,10 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( $result->error->message, $stored_error['message'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/started/' . self::NAME,
-				'a8csp/background_tasks/started',
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started',
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -334,12 +334,12 @@ final class DispatcherTest extends TestCase {
 	): void {
 		if ( null !== $staleness_filter ) {
 			$this->set_filter_value(
-				'a8csp/background_tasks/lock_staleness/' . self::NAME,
+				'a8csp_background_tasks/lock_staleness/' . self::NAME,
 				$staleness_filter
 			);
 		}
 		if ( null !== $continue_filter ) {
-			$this->set_filter_value( 'a8csp/background_tasks/continue_delay', $continue_filter );
+			$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $continue_filter );
 		}
 
 		$this->seed_running_lock( $heartbeat_age );
@@ -371,7 +371,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_passes_all_documented_arguments_to_the_lock_staleness_filter(): void {
 		$filter_args = null;
 		$this->set_filter_value(
-			'a8csp/background_tasks/lock_staleness/' . self::NAME,
+			'a8csp_background_tasks/lock_staleness/' . self::NAME,
 			static function ( int $default_staleness ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -478,7 +478,7 @@ final class DispatcherTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp/background_tasks/run',
+						'hook'      => 'a8csp_background_tasks/run',
 						'timestamp' => self::NOW + 120,
 						'args'      => array( self::NAME, self::RUN_ID, 1 ),
 						'group'     => self::NAME . '|' . self::RUN_ID,
@@ -690,7 +690,7 @@ final class DispatcherTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/run',
+						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( self::NAME, $new_run_id, 1 ),
 						'group'    => self::NAME . '|' . $new_run_id,
 						'unique'   => false,

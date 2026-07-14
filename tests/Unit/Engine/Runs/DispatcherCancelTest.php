@@ -552,11 +552,11 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/cancelled/' . $name,
+					'hook_name' => 'a8csp_background_tasks/cancelled/' . $name,
 					'args'      => array( $run_id, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/cancelled',
+					'hook_name' => 'a8csp_background_tasks/cancelled',
 					'args'      => array( $name, $run_id, self::ARGS ),
 				),
 			),

@@ -32,13 +32,13 @@ interface TaskInterface {
 	/**
 	 * Handles one invocation of the task.
 	 *
-	 * Terminal failures dispatch `a8csp/background_tasks/failed/{name}` with the run identifier,
-	 * start arguments, and engine error, followed by `a8csp/background_tasks/failed` with the task
+	 * Terminal failures dispatch `a8csp_background_tasks/failed/{name}` with the run identifier,
+	 * start arguments, and engine error, followed by `a8csp_background_tasks/failed` with the task
 	 * name prepended to the same payload.
 	 *
-	 * Retry reschedules dispatch `a8csp/background_tasks/retrying/{name}` with the exact signature
+	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{name}` with the exact signature
 	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
-	 * by `a8csp/background_tasks/retrying` with the task name prepended to the same payload.
+	 * by `a8csp_background_tasks/retrying` with the task name prepended to the same payload.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -55,7 +55,7 @@ interface TaskInterface {
 	/**
 	 * Returns the retry policy for failed invocations.
 	 *
-	 * The engine applies `a8csp/background_tasks/retry_policy/{name}` with the exact signature
+	 * The engine applies `a8csp_background_tasks/retry_policy/{name}` with the exact signature
 	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
 	 *
 	 * @since   1.0.0

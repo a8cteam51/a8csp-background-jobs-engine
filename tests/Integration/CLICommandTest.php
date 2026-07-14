@@ -688,7 +688,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter(
-			'a8csp/background_tasks/retry_policy/' . self::INSPECTION_TASK,
+			'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK,
 			static fn (): RetryPolicy => $retry_policy
 		);
 

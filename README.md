@@ -205,7 +205,7 @@ Overlap applies to a matching task name and argument identity. Catch-up determin
 
 `Allow` gives each run an independent overlap identity. `Skip` leaves the active run in place. `Replace` transfers ownership; an incumbent already inside a callback reaches its next fencing boundary rather than being interrupted mid-callback.
 
-An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp/background_tasks/misfire_grace/{schedule}`. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
+An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{schedule}`. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
 
 ## Hooks and filters
 
@@ -221,7 +221,7 @@ For each lifecycle pair, the dynamic hook fires first and the generic companion 
 | Misfired | `misfired/{schedule}`: `($owner, $due_at, $observed_at)` | `misfired`: `($schedule, $owner, $due_at, $observed_at)` |
 | Log | `log`: `($level, $message, $context)` | No generic companion. |
 
-All hook names above use the `a8csp/background_tasks/` prefix. Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `EngineError` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
+All hook names above use the `a8csp_background_tasks/` prefix. Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `EngineError` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
 Consumers never hook the engine's internal delivery actions: `start`, `continue`, `run`, `cleanup`, or `schedule_due`.
 
@@ -234,7 +234,7 @@ Consumers never hook the engine's internal delivery actions: `start`, `continue`
 | `retry_policy/{name}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |
 | `misfire_grace/{schedule}` | `($grace, $owner, $schedule)` returns a non-negative grace in seconds; the default is one interval. |
 
-Filter names also use the `a8csp/background_tasks/` prefix.
+Filter names also use the `a8csp_background_tasks/` prefix.
 
 ## Priority is advisory
 

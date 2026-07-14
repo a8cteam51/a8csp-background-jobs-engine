@@ -38,7 +38,7 @@ interface BatchInterface {
 	 * Generates one argument array for each initial chunk.
 	 *
 	 * The engine materializes the iterable, then applies
-	 * `a8csp/background_tasks/queue/{batch}` with the exact signature
+	 * `a8csp_background_tasks/queue/{batch}` with the exact signature
 	 * `(list<array<array-key, mixed>> $queue, array<array-key, mixed> $start_args, string $run_id):`
 	 * `list<array<array-key, mixed>>` before persistence.
 	 *
@@ -55,9 +55,9 @@ interface BatchInterface {
 	 * Processes one queued chunk.
 	 *
 	 * A normal return marks the chunk successful, while throwing marks the attempt failed.
-	 * Retry reschedules dispatch `a8csp/background_tasks/retrying/{name}` with the exact signature
+	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{name}` with the exact signature
 	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
-	 * by `a8csp/background_tasks/retrying` with the batch name prepended to the same payload.
+	 * by `a8csp_background_tasks/retrying` with the batch name prepended to the same payload.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -105,7 +105,7 @@ interface BatchInterface {
 	/**
 	 * Returns the retry policy for failed chunks.
 	 *
-	 * The engine applies `a8csp/background_tasks/retry_policy/{name}` with the exact signature
+	 * The engine applies `a8csp_background_tasks/retry_policy/{name}` with the exact signature
 	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
 	 *
 	 * @since   1.0.0

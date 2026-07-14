@@ -104,7 +104,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		$batch_completed_global = array();
 
 		\add_action(
-			'a8csp/background_tasks/started/' . SiteHealthPingTask::NAME,
+			'a8csp_background_tasks/started/' . SiteHealthPingTask::NAME,
 			static function (
 				string $run_id,
 				array $args
@@ -122,7 +122,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/started',
+			'a8csp_background_tasks/started',
 			static function ( string $name, string $run_id, array $args ) use ( &$task_started_generic ): void {
 				if ( SiteHealthPingTask::NAME === $name ) {
 					$task_started_generic[] = array( $name, $run_id, $args );
@@ -132,7 +132,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/completed/' . SiteHealthPingTask::NAME,
+			'a8csp_background_tasks/completed/' . SiteHealthPingTask::NAME,
 			static function ( string $run_id, array $args ) use ( &$task_completed_named ): void {
 				$task_completed_named[] = array( $run_id, $args );
 			},
@@ -140,7 +140,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/completed',
+			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( &$task_completed_generic ): void {
 				if ( SiteHealthPingTask::NAME === $name ) {
 					$task_completed_generic[] = array( $name, $run_id, $args );
@@ -166,7 +166,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/completed/' . CommentCountRecountBatch::NAME,
+			'a8csp_background_tasks/completed/' . CommentCountRecountBatch::NAME,
 			static function ( string $run_id, array $args ) use ( &$batch_completed_named ): void {
 				$batch_completed_named[] = array( $run_id, $args );
 			},
@@ -174,7 +174,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/completed',
+			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( &$batch_completed_global ): void {
 				if ( CommentCountRecountBatch::NAME === $name ) {
 					$batch_completed_global[] = array( $name, $run_id, $args );
@@ -184,7 +184,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			3
 		);
 		\add_filter(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			static fn ( int $delay, string $name ): int => CommentCountRecountBatch::NAME === $name ? 0 : $delay,
 			10,
 			2
@@ -214,9 +214,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			$task_started_generic
 		);
 
-		$schedule_due_before_manual = \did_action( 'a8csp/background_tasks/schedule_due' );
+		$schedule_due_before_manual = \did_action( 'a8csp_background_tasks/schedule_due' );
 		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
-			'a8csp/background_tasks/run' === $hook
+			'a8csp_background_tasks/run' === $hook
 			&& ( $args[1] ?? null ) === $manual_run_id;
 		$manual_actions_processed   = \class_exists( \ActionScheduler::class )
 			? $this->run_matching_due_action( $matches_manual_run )
@@ -224,7 +224,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertSame( 1, $manual_actions_processed, 'The scheduler must execute the direct demo task' );
 		self::assertSame(
 			$schedule_due_before_manual,
-			\did_action( 'a8csp/background_tasks/schedule_due' ),
+			\did_action( 'a8csp_background_tasks/schedule_due' ),
 			'The direct task drive must not consume the recurring schedule occurrence'
 		);
 		$this->assert_site_health_snapshot( self::MANUAL_SNAPSHOT_TRANSIENT );
@@ -235,25 +235,25 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		);
 
 		\sleep( 1 );
-		$schedule_due_before = \did_action( 'a8csp/background_tasks/schedule_due' );
+		$schedule_due_before = \did_action( 'a8csp_background_tasks/schedule_due' );
 		self::assertSame(
 			1,
 			\class_exists( \ActionScheduler::class )
 				? $this->run_matching_due_action(
 					static fn ( string $hook, array $args ): bool =>
-						'a8csp/background_tasks/schedule_due' === $hook
+						'a8csp_background_tasks/schedule_due' === $hook
 						&& array( DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME ) === $args
 				)
 				: $this->run_matching_due_cron_event(
 					static fn ( string $hook, array $args ): bool =>
-						'a8csp/background_tasks/schedule_due' === $hook
+						'a8csp_background_tasks/schedule_due' === $hook
 						&& array( DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME ) === $args
 				),
 			'The scheduler must execute the demo consumer recurring occurrence'
 		);
 		self::assertSame(
 			$schedule_due_before + 1,
-			\did_action( 'a8csp/background_tasks/schedule_due' ),
+			\did_action( 'a8csp_background_tasks/schedule_due' ),
 			'The registered recurring occurrence must fire the engine schedule-due action'
 		);
 		self::assertCount( 2, $task_started_named, 'Schedule delivery must enqueue one additional task run' );

@@ -184,8 +184,8 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->logger->records );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/completed/' . self::NAME,
-				'a8csp/background_tasks/completed',
+				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -358,11 +358,11 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/cancelled/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/cancelled/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/cancelled',
+					'hook_name' => 'a8csp_background_tasks/cancelled',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -428,8 +428,8 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -470,11 +470,11 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/superseded/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/superseded',
+					'hook_name' => 'a8csp_background_tasks/superseded',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -521,8 +521,8 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/completed/' . self::NAME,
-				'a8csp/background_tasks/completed',
+				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -570,8 +570,8 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( array( array( 'identity' => 0 ) ), $this->task->calls );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/completed/' . self::NAME,
-				'a8csp/background_tasks/completed',
+				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -605,8 +605,8 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -953,7 +953,7 @@ final class TerminalTransitionsTest extends TestCase {
 			if ( 'action' === $type ) {
 				$hook_name = $event['hook_name'];
 				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp/background_tasks/', '', $hook_name );
+				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
 				continue;
 			}
 

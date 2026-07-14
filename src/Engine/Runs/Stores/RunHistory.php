@@ -218,7 +218,7 @@ final readonly class RunHistory {
 	 * @return  int
 	 */
 	private function history_size(): int {
-		$size = \apply_filters( 'a8csp/background_tasks/history_size', self::DEFAULT_SIZE );
+		$size = \apply_filters( 'a8csp_background_tasks/history_size', self::DEFAULT_SIZE );
 
 		return \is_int( $size ) && 0 < $size ? $size : self::DEFAULT_SIZE;
 	}

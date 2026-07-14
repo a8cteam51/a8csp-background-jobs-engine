@@ -185,25 +185,25 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name'     => 'a8csp/background_tasks/start',
+					'hook_name'     => 'a8csp_background_tasks/start',
 					'callback'      => array( $this->lifecycle_deliveries, 'handle_start_action' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
 				array(
-					'hook_name'     => 'a8csp/background_tasks/continue',
+					'hook_name'     => 'a8csp_background_tasks/continue',
 					'callback'      => array( $this->lifecycle_deliveries, 'handle_continue_action' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
 				array(
-					'hook_name'     => 'a8csp/background_tasks/run',
+					'hook_name'     => 'a8csp_background_tasks/run',
 					'callback'      => array( $this->lifecycle_deliveries, 'handle_run_action' ),
 					'priority'      => 10,
 					'accepted_args' => 4,
 				),
 				array(
-					'hook_name'     => 'a8csp/background_tasks/cleanup',
+					'hook_name'     => 'a8csp_background_tasks/cleanup',
 					'callback'      => array( $this->lifecycle_deliveries, 'handle_cleanup_action' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
@@ -244,11 +244,11 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/completed/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/completed/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/completed',
+					'hook_name' => 'a8csp_background_tasks/completed',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -408,8 +408,8 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( 1, $failed_run['attempts'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -514,11 +514,11 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/superseded/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/superseded',
+					'hook_name' => 'a8csp_background_tasks/superseded',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -595,7 +595,7 @@ final class ActionDeliveriesTest extends TestCase {
 			if ( 'action' === $type ) {
 				$hook_name = $event['hook_name'];
 				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp/background_tasks/', '', $hook_name );
+				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
 				continue;
 			}
 

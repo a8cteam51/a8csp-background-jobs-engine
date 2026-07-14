@@ -126,7 +126,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'is_scheduled',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -134,7 +134,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'schedule_recurring',
 					'args' => array(
-						'hook'                => 'a8csp/background_tasks/schedule_due',
+						'hook'                => 'a8csp_background_tasks/schedule_due',
 						'interval'            => 300,
 						'args'                => array( 'owner-a:nightly' ),
 						'first_run_timestamp' => self::NOW + 300,
@@ -174,7 +174,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'is_scheduled',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -212,7 +212,7 @@ final class SchedulesTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'hook'  => 'a8csp/background_tasks/schedule_due',
+				'hook'  => 'a8csp_background_tasks/schedule_due',
 				'args'  => array( 'owner-a:nightly' ),
 				'group' => 'owner-a:nightly',
 			),
@@ -241,7 +241,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'unschedule',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -287,7 +287,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'is_scheduled',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -295,7 +295,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'schedule_recurring',
 					'args' => array(
-						'hook'                => 'a8csp/background_tasks/schedule_due',
+						'hook'                => 'a8csp_background_tasks/schedule_due',
 						'interval'            => 300,
 						'args'                => array( 'owner-a:nightly' ),
 						'first_run_timestamp' => self::NOW - 60,
@@ -335,7 +335,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'is_scheduled',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -343,7 +343,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'unschedule',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -351,7 +351,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'schedule_recurring',
 					'args' => array(
-						'hook'                => 'a8csp/background_tasks/schedule_due',
+						'hook'                => 'a8csp_background_tasks/schedule_due',
 						'interval'            => 300,
 						'args'                => array( 'owner-a:nightly' ),
 						'first_run_timestamp' => self::NOW + 300,
@@ -480,7 +480,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'unschedule',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -517,7 +517,7 @@ final class SchedulesTest extends TestCase {
 				array(
 					'verb' => 'unschedule',
 					'args' => array(
-						'hook'  => 'a8csp/background_tasks/schedule_due',
+						'hook'  => 'a8csp_background_tasks/schedule_due',
 						'args'  => array( 'owner-a:nightly' ),
 						'group' => 'owner-a:nightly',
 					),
@@ -996,7 +996,7 @@ final class SchedulesTest extends TestCase {
 			array(
 				'verb' => 'unschedule',
 				'args' => array(
-					'hook'  => 'a8csp/background_tasks/schedule_due',
+					'hook'  => 'a8csp_background_tasks/schedule_due',
 					'args'  => array( 'owner-a:nightly' ),
 					'group' => 'owner-a:nightly',
 				),

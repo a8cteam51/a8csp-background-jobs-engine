@@ -43,7 +43,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 		$this->expect_option( 'a8csp_bgte_latest_' . self::NAME );
 		\add_filter(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			static fn ( int $delay, string $name, string $run_id ): int => 0,
 			10,
 			3
@@ -59,9 +59,9 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$generic_completed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp/background_tasks/superseded/' . self::NAME,
+			'a8csp_background_tasks/superseded/' . self::NAME,
 			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {
 				$named_superseded[] = array( $run_id, $args );
 			},
@@ -69,7 +69,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/superseded',
+			'a8csp_background_tasks/superseded',
 			static function ( string $name, string $run_id, array $args ) use ( &$generic_superseded ): void {
 				$generic_superseded[] = array( $name, $run_id, $args );
 			},
@@ -77,7 +77,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/completed/' . self::NAME,
+			'a8csp_background_tasks/completed/' . self::NAME,
 			static function ( string $run_id, array $args ) use ( &$named_completed ): void {
 				$named_completed[] = array( $run_id, $args );
 			},
@@ -85,7 +85,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp/background_tasks/completed',
+			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( &$generic_completed ): void {
 				$generic_completed[] = array( $name, $run_id, $args );
 			},
@@ -93,7 +93,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp/background_tasks/log',
+			'a8csp_background_tasks/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -373,7 +373,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp/background_tasks/start',
+				'hook'     => 'a8csp_background_tasks/start',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -388,7 +388,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp/background_tasks/start', $action->get_hook() );
+		self::assertSame( 'a8csp_background_tasks/start', $action->get_hook() );
 		self::assertSame( array( self::NAME, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );

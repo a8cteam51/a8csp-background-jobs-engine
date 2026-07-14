@@ -202,7 +202,7 @@ final class RunHistoryTest extends TestCase {
 			$history->record_terminal( 'completed-b' . $index, 'hash-b', RunStatus::Completed );
 		}
 
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp/background_tasks/history_size' => 2 );
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp_background_tasks/history_size' => 2 );
 		$history->record_started( 'started-a3', 'hash-a' );
 
 		$option = $this->option( 'a8csp_bgte_history_imports' );

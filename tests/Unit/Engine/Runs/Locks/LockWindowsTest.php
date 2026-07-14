@@ -67,7 +67,7 @@ final class LockWindowsTest extends TestCase {
 	 */
 	#[DataProvider( 'continue_delay_filter_values' )]
 	public function test_continue_delay_resolves_filter_values( mixed $filtered_delay, int $expected_delay ): void {
-		$this->set_filter_value( 'a8csp/background_tasks/continue_delay', $filtered_delay );
+		$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $filtered_delay );
 
 		self::assertSame( $expected_delay, $this->lock_windows->continue_delay( self::NAME, self::RUN_ID ) );
 	}
@@ -80,7 +80,7 @@ final class LockWindowsTest extends TestCase {
 	public function test_continue_delay_passes_all_documented_filter_arguments(): void {
 		$filter_call = null;
 		$this->set_filter_value(
-			'a8csp/background_tasks/continue_delay',
+			'a8csp_background_tasks/continue_delay',
 			static function ( int $default_delay, string $batch_name, string $run_id ) use ( &$filter_call ): int {
 				$filter_call = array(
 					'arity' => \func_num_args(),
@@ -114,12 +114,12 @@ final class LockWindowsTest extends TestCase {
 	): void {
 		if ( null !== $staleness_filter ) {
 			$this->set_filter_value(
-				'a8csp/background_tasks/lock_staleness/' . self::NAME,
+				'a8csp_background_tasks/lock_staleness/' . self::NAME,
 				$staleness_filter
 			);
 		}
 		if ( null !== $continue_filter ) {
-			$this->set_filter_value( 'a8csp/background_tasks/continue_delay', $continue_filter );
+			$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $continue_filter );
 		}
 
 		self::assertSame( $expected_staleness, $this->lock_windows->lock_staleness( self::NAME, self::RUN_ID ) );
@@ -133,7 +133,7 @@ final class LockWindowsTest extends TestCase {
 	public function test_lock_staleness_passes_all_documented_filter_arguments(): void {
 		$filter_call = null;
 		$this->set_filter_value(
-			'a8csp/background_tasks/lock_staleness/' . self::NAME,
+			'a8csp_background_tasks/lock_staleness/' . self::NAME,
 			static function ( int $default_staleness ) use ( &$filter_call ): int {
 				$filter_call = array(
 					'arity' => \func_num_args(),

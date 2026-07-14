@@ -184,7 +184,7 @@ final class EngineTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp/background_tasks/run',
+						'hook'      => 'a8csp_background_tasks/run',
 						'timestamp' => self::NOW + 300,
 						'args'      => array( 'email-digest', self::RUN_ID, 1 ),
 						'group'     => 'email-digest|' . self::RUN_ID,
@@ -202,8 +202,8 @@ final class EngineTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/started/email-digest',
-				'a8csp/background_tasks/started',
+				'a8csp_background_tasks/started/email-digest',
+				'a8csp_background_tasks/started',
 			),
 			$this->fired_hook_names()
 		);
@@ -243,7 +243,7 @@ final class EngineTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/start',
+						'hook'     => 'a8csp_background_tasks/start',
 						'args'     => array( 'catalog-sync', self::RUN_ID, 1 ),
 						'group'    => 'catalog-sync|' . self::RUN_ID,
 						'unique'   => true,
@@ -414,7 +414,7 @@ final class EngineTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp/background_tasks/run',
+						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( MaintenanceTask::NAME, self::RUN_ID, 1 ),
 						'group'    => MaintenanceTask::NAME . '|' . self::RUN_ID,
 						'unique'   => false,

@@ -76,13 +76,13 @@ final class PluginBootGateTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/log',
+				'a8csp_background_tasks/log',
 				'cron_schedules',
-				'a8csp/background_tasks/start',
-				'a8csp/background_tasks/continue',
-				'a8csp/background_tasks/run',
-				'a8csp/background_tasks/cleanup',
-				'a8csp/background_tasks/schedule_due',
+				'a8csp_background_tasks/start',
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/cleanup',
+				'a8csp_background_tasks/schedule_due',
 				'init',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']
@@ -107,13 +107,13 @@ final class PluginBootGateTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/log',
+				'a8csp_background_tasks/log',
 				'cron_schedules',
-				'a8csp/background_tasks/start',
-				'a8csp/background_tasks/continue',
-				'a8csp/background_tasks/run',
-				'a8csp/background_tasks/cleanup',
-				'a8csp/background_tasks/schedule_due',
+				'a8csp_background_tasks/start',
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/cleanup',
+				'a8csp_background_tasks/schedule_due',
 				'init',
 			),
 			$GLOBALS['a8csp_bgte_test_hooks']

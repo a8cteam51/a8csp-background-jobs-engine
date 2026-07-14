@@ -200,7 +200,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->set_filter_value(
-			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
@@ -234,7 +234,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->randomizer->value = 7;
 		$this->randomizer->calls = array();
 		$this->set_filter_value(
-			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				for ( $index = 0; 3 > $index; ++$index ) {
 					$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $lock_spy ): void {} );
@@ -256,10 +256,10 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/retrying/' . self::NAME,
-				'a8csp/background_tasks/retrying',
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/retrying/' . self::NAME,
+				'a8csp_background_tasks/retrying',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -297,7 +297,7 @@ final class FailureLifecycleTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp/background_tasks/run',
+						'hook'      => 'a8csp_background_tasks/run',
 						'timestamp' => self::NOW + 107,
 						'args'      => array( self::NAME, self::RUN_ID, 2 ),
 						'group'     => self::NAME . '|' . self::RUN_ID,
@@ -319,11 +319,11 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/retrying/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/retrying/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS, 1, 17 ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/retrying',
+					'hook_name' => 'a8csp_background_tasks/retrying',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, 1, 17 ),
 				),
 			),
@@ -387,7 +387,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$filter_args = null;
 		$this->set_filter_value(
-			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			static function ( RetryPolicy $policy ) use ( &$filter_args ): RetryPolicy {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -428,7 +428,7 @@ final class FailureLifecycleTest extends TestCase {
 			max_delay: 120
 		);
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->set_filter_value( 'a8csp/background_tasks/retry_policy/' . self::NAME, 'invalid-policy' );
+		$this->set_filter_value( 'a8csp_background_tasks/retry_policy/' . self::NAME, 'invalid-policy' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 7;
 		$this->randomizer->calls = array();
@@ -470,7 +470,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->retry_policy = new RetryPolicy( max_attempts: 2 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
-			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			static function ( RetryPolicy $policy ): RetryPolicy {
 				throw new \DomainException( 'Retry policy filter exploded.' );
 			}
@@ -498,8 +498,8 @@ final class FailureLifecycleTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -514,7 +514,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->retry_policy = new RetryPolicy( max_attempts: 2 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
-			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
@@ -549,7 +549,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->randomizer->calls = array();
 
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/retrying/' . self::NAME => new \RuntimeException(
+			'a8csp_background_tasks/retrying/' . self::NAME => new \RuntimeException(
 				'Retrying listener exploded.'
 			),
 		);
@@ -573,10 +573,10 @@ final class FailureLifecycleTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/retrying/' . self::NAME,
-				'a8csp/background_tasks/retrying',
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/retrying/' . self::NAME,
+				'a8csp_background_tasks/retrying',
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -598,7 +598,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->randomizer->value = 7;
 		$this->randomizer->calls = array();
 		$this->set_filter_value(
-			'a8csp/background_tasks/retry_policy/' . self::NAME,
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				for ( $index = 0; 3 > $index; ++$index ) {
 					$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $lock_spy ): void {} );
@@ -615,7 +615,7 @@ final class FailureLifecycleTest extends TestCase {
 			}
 		);
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp/background_tasks/retrying/' . self::NAME => new \RuntimeException(
+			'a8csp_background_tasks/retrying/' . self::NAME => new \RuntimeException(
 				'Retrying listener exploded.'
 			),
 		);
@@ -625,10 +625,10 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/retrying/' . self::NAME,
-				'a8csp/background_tasks/retrying',
-				'a8csp/background_tasks/superseded/' . self::NAME,
-				'a8csp/background_tasks/superseded',
+				'a8csp_background_tasks/retrying/' . self::NAME,
+				'a8csp_background_tasks/retrying',
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -675,10 +675,10 @@ final class FailureLifecycleTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'a8csp/background_tasks/retrying/' . self::NAME,
-				'a8csp/background_tasks/retrying',
-				'a8csp/background_tasks/failed/' . self::NAME,
-				'a8csp/background_tasks/failed',
+				'a8csp_background_tasks/retrying/' . self::NAME,
+				'a8csp_background_tasks/retrying',
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -833,13 +833,13 @@ final class FailureLifecycleTest extends TestCase {
 
 		$actions = $this->fired_actions();
 		self::assertCount( 2, $actions );
-		self::assertSame( 'a8csp/background_tasks/failed/' . self::NAME, $actions[0]['hook_name'] );
+		self::assertSame( 'a8csp_background_tasks/failed/' . self::NAME, $actions[0]['hook_name'] );
 		self::assertSame( self::RUN_ID, $actions[0]['args'][0] );
 		self::assertSame( self::ARGS, $actions[0]['args'][1] );
 		self::assertInstanceOf( EngineError::class, $actions[0]['args'][2] );
 		self::assertSame( $throwable->getMessage(), $actions[0]['args'][2]->message );
 		self::assertSame( $throwable::class, $actions[0]['args'][2]->exception_class );
-		self::assertSame( 'a8csp/background_tasks/failed', $actions[1]['hook_name'] );
+		self::assertSame( 'a8csp_background_tasks/failed', $actions[1]['hook_name'] );
 		self::assertSame(
 			array( self::NAME, self::RUN_ID, self::ARGS, $actions[0]['args'][2] ),
 			$actions[1]['args']
@@ -876,11 +876,11 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp/background_tasks/superseded/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp/background_tasks/superseded',
+					'hook_name' => 'a8csp_background_tasks/superseded',
 					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -957,7 +957,7 @@ final class FailureLifecycleTest extends TestCase {
 			if ( 'action' === $type ) {
 				$hook_name = $event['hook_name'];
 				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp/background_tasks/', '', $hook_name );
+				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
 				continue;
 			}
 

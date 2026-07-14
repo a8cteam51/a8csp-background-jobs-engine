@@ -22,7 +22,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Schedule-delivery hook shared with the live engine. */
-	private const HOOK = 'a8csp/background_tasks/schedule_due';
+	private const HOOK = 'a8csp_background_tasks/schedule_due';
 
 	/** Unknown registration identity isolated to this integration test. */
 	private const KEY = 'integration-owner:unknown-cleanup';
@@ -58,9 +58,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp/background_tasks/log',
+			'a8csp_background_tasks/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -183,7 +183,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( 'a8csp_bgte_schedules' );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_TASK );
-		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$unknown_action_id = \as_schedule_recurring_action(
 			\time() - 1,
@@ -277,7 +277,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertSame(
 			1,
 			$this->run_matching_due_action(
-				static fn ( string $hook, array $args ): bool => 'a8csp/background_tasks/run' === $hook
+				static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run' === $hook
 					&& self::REDECLARED_TASK === ( $args[0] ?? null )
 			),
 			'The retained schedule occurrence must dispatch its declared task'
@@ -295,9 +295,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::WP_CRON_KEY );
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp/background_tasks/log',
+			'a8csp_background_tasks/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -354,7 +354,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	public function test_complete_before_repeat_race_re_records_the_intent_on_the_successor_delivery(): void {
 		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( $intent_option );
-		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$engine = \a8csp_bgte_engine();
 		self::assertNotNull( $engine, 'The live plugin must publish its engine before convergence' );

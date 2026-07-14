@@ -19,7 +19,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	private const REGISTRY_OPTION = 'a8csp_bgte_schedules';
 
 	/** Internal occurrence hook owned by the engine. */
-	private const SCHEDULE_HOOK = 'a8csp/background_tasks/schedule_due';
+	private const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
 
 	/** Foreign WP-Cron hook outside the engine namespace. */
 	private const FOREIGN_CRON_HOOK = 'third_party/integration/declarative_sync/foreign_cron';

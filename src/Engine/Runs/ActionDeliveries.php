@@ -39,7 +39,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const CONTINUE_HOOK = 'a8csp/background_tasks/continue';
+	private const CONTINUE_HOOK = 'a8csp_background_tasks/continue';
 
 	/**
 	 * Internal hook that reconciles a terminal batch run.
@@ -49,7 +49,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const CLEANUP_HOOK = 'a8csp/background_tasks/cleanup';
+	private const CLEANUP_HOOK = 'a8csp_background_tasks/cleanup';
 
 	/**
 	 * Internal hook that executes task work or one batch chunk.
@@ -59,7 +59,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const RUN_HOOK = 'a8csp/background_tasks/run';
+	private const RUN_HOOK = 'a8csp_background_tasks/run';
 
 	/**
 	 * Internal hook that generates and starts a batch queue.
@@ -69,7 +69,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const START_HOOK = 'a8csp/background_tasks/start';
+	private const START_HOOK = 'a8csp_background_tasks/start';
 
 	// endregion
 
@@ -137,7 +137,7 @@ final readonly class ActionDeliveries {
 			$queue = $this->materialize_queue( $batch->generate_queue( $state->start_args ) );
 			$queue = $this->materialize_filtered_queue(
 				\apply_filters(
-					'a8csp/background_tasks/queue/' . $batch_name,
+					'a8csp_background_tasks/queue/' . $batch_name,
 					$queue,
 					$state->start_args,
 					$run_id
