@@ -217,15 +217,19 @@ final readonly class Schedules {
 				}
 			}
 
-			if ( null !== $current ) {
-				unset( $next[ $name ] );
-				if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-					return $this->registry_failure( $owner );
-				}
+			$interval      = $interval_by_name[ $name ];
+			$next_due      = $next_due_by_name[ $name ];
+			$next[ $name ] = array(
+				'fingerprint' => $schedule->fingerprint(),
+				'next_due'    => $next_due,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			);
+			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
+				return $this->registry_failure( $owner );
 			}
 
-			$interval  = $interval_by_name[ $name ];
-			$next_due  = $next_due_by_name[ $name ];
 			$scheduled = $this->scheduler->schedule_recurring(
 				'a8csp/background_tasks/schedule_due',
 				$interval,
@@ -236,27 +240,10 @@ final readonly class Schedules {
 				priority: $schedule->priority
 			);
 			if ( $scheduled->is_failure() ) {
+				// A scheduling failure leaves the benign registration-without-chain that the fingerprint-match fast path
+				// recreates; rolling back can race a delivery and manufacture chain-without-registration, the exact orphan
+				// the intent protocol cleans.
 				return $scheduled;
-			}
-
-			$next[ $name ] = array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => $next_due,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			);
-			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-				$rollback = $this->scheduler->unschedule(
-					'a8csp/background_tasks/schedule_due',
-					array( $registration_key ),
-					$registration_key
-				);
-				if ( $rollback->is_failure() ) {
-					return $rollback;
-				}
-
-				return $this->registry_failure( $owner );
 			}
 		}
 

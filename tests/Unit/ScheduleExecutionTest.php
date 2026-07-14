@@ -780,6 +780,43 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * Run-now accepts a persisted registration and its request-local declaration after recurring scheduling fails.
+	 *
+	 * @return  void
+	 */
+	public function test_run_now_accepts_a_persisted_chainless_registration_in_the_same_request(): void {
+		$schedule = $this->schedule();
+		$failure  = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Repair the scheduler store before retrying schedule sync.'
+			)
+		);
+
+		$this->backend->results['schedule_recurring'] = $failure;
+
+		$synced = $this->api->sync( self::OWNER, array( $schedule ) );
+
+		self::assertSame( $failure, $synced );
+		self::assertSame( $schedule->fingerprint(), $this->registration()['fingerprint'] ?? null );
+		self::assertSame(
+			array( 'is_scheduled', 'schedule_recurring' ),
+			\array_column( $this->backend->calls, 'verb' )
+		);
+
+		unset( $this->backend->results['schedule_recurring'] );
+		$this->backend->calls = array();
+
+		$result = $this->api->run_now( self::OWNER, self::NAME );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['next_due'] ?? null );
+		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
+	}
+
+	/**
 	 * Run-now dispatches immediately, records last-fired, and preserves recurrence.
 	 *
 	 * @return  void

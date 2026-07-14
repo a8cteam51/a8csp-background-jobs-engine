@@ -807,14 +807,15 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
-	 * A failed replacement removes stale state so either declaration can repair the occurrence.
+	 * A failed replacement retains the changed registration so another declaration repairs through the change path.
 	 *
 	 * @return  void
 	 */
-	public function test_failed_replacement_leaves_no_stale_fingerprint_and_the_old_declaration_repairs(): void {
+	public function test_failed_replacement_persists_the_changed_registration_and_the_old_declaration_replaces_it(): void {
 		$backend = new RecordingBackend();
 		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
 		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$changed = new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh-index' );
 		$seeded  = $api->sync( 'owner-a', array( $initial ) );
 		self::assertInstanceOf( Success::class, $seeded );
 		$this->clear_backend_calls( $backend );
@@ -828,13 +829,19 @@ final class SchedulesTest extends TestCase {
 
 		$backend->results['schedule_recurring'] = $failure;
 
-		$result = $api->sync(
-			'owner-a',
-			array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh-index' ) )
-		);
+		$result = $api->sync( 'owner-a', array( $changed ) );
 
 		self::assertSame( $failure, $result );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $this->options() );
+		self::assertSame(
+			array(
+				'fingerprint' => $changed->fingerprint(),
+				'next_due'    => self::NOW + 600,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+			$this->registration( 'owner-a', 'nightly' )
+		);
 		self::assertSame(
 			array( 'unschedule', 'schedule_recurring' ),
 			\array_column( $backend->calls, 'verb' )
@@ -845,39 +852,65 @@ final class SchedulesTest extends TestCase {
 		$repaired = $api->sync( 'owner-a', array( $initial ) );
 
 		self::assertInstanceOf( Success::class, $repaired );
-		self::assertSame( array( 'is_scheduled', 'schedule_recurring' ), \array_column( $backend->calls, 'verb' ) );
+		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $backend->calls, 'verb' ) );
 		self::assertSame( 300, $backend->calls[1]['args']['interval'] );
+		self::assertSame( $initial->fingerprint(), $this->registration( 'owner-a', 'nightly' )['fingerprint'] );
 	}
 
 	/**
-	 * A failed registry write rolls back a newly scheduled unresolvable occurrence.
+	 * A schedule failure leaves its registration for the fast path to recreate the missing occurrence.
 	 *
 	 * @return  void
 	 */
-	public function test_registry_update_failure_returns_failure_and_rolls_back_the_backend_add(): void {
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array(
-			'a8csp_bgte_schedules' => false,
-		);
-		$backend = new RecordingBackend();
-		$api     = $this->new_schedules( $this->new_registry(), $backend, new FixedClock( self::NOW ) );
-
-		$result = $api->sync(
-			'owner-a',
-			array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) )
+	public function test_schedule_failure_persists_the_registration_and_the_next_sync_recreates_the_occurrence(): void {
+		$backend  = new RecordingBackend();
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$failure  = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Repair the scheduler store before retrying schedule sync.'
+			)
 		);
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
-		self::assertSame(
-			'Schedule registry for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
-			$result->error->message
+		$backend->results['schedule_recurring'] = $failure;
+		$api                                    = $this->new_schedules(
+			$this->new_registry(),
+			$backend,
+			new FixedClock( self::NOW )
 		);
+
+		$result = $api->sync( 'owner-a', array( $schedule ) );
+
+		$expected_registration = array(
+			'fingerprint' => $schedule->fingerprint(),
+			'next_due'    => self::NOW + 300,
+			'last_fired'  => null,
+			'misfires'    => 0,
+			'skips'       => 0,
+		);
+		self::assertSame( $failure, $result );
+		self::assertSame( $expected_registration, $this->registration( 'owner-a', 'nightly' ) );
 		self::assertSame(
-			array( 'is_scheduled', 'schedule_recurring', 'unschedule' ),
+			array( 'is_scheduled', 'schedule_recurring' ),
 			\array_column( $backend->calls, 'verb' )
 		);
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $this->options() );
+
+		$persisted = $this->options();
+		unset( $backend->results['schedule_recurring'] );
+		$this->clear_backend_calls( $backend );
+		$GLOBALS['a8csp_bgte_test_option_calls'] = array();
+
+		$repaired = $api->sync( 'owner-a', array( $schedule ) );
+
+		self::assertInstanceOf( Success::class, $repaired );
+		self::assertSame(
+			array( 'is_scheduled', 'schedule_recurring' ),
+			\array_column( $backend->calls, 'verb' )
+		);
+		self::assertSame( 300, $backend->calls[1]['args']['interval'] );
+		self::assertSame( self::NOW + 300, $backend->calls[1]['args']['first_run_timestamp'] );
+		self::assertSame( $persisted, $this->options() );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 	}
 
 	/**

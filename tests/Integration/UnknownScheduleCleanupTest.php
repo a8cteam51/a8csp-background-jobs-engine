@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
@@ -156,6 +157,171 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			),
 			'No pending action may remain in the unknown registration group after convergence'
 		);
+	}
+
+	/**
+	 * A complete-before-repeat convergence race re-records its intent when the recurring successor delivers.
+	 *
+	 * @return  void
+	 */
+	public function test_complete_before_repeat_race_re_records_the_intent_on_the_successor_delivery(): void {
+		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
+		$this->expect_option( $intent_option );
+		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+
+		$engine = \a8csp_bgte_engine();
+		self::assertNotNull( $engine, 'The live plugin must publish its engine before convergence' );
+		$delivery = $this->occurrence_delivery();
+
+		$action_id = \as_schedule_recurring_action(
+			\time() - 1,
+			300,
+			self::HOOK,
+			array( self::KEY ),
+			self::KEY,
+			true,
+			10
+		);
+		self::assertGreaterThan( 0, $action_id );
+
+		$store                         = $this->action_scheduler_store();
+		$missing_intent                = new \stdClass();
+		$completed_hook_calls          = 0;
+		$gap_status                    = null;
+		$gap_intent_before_convergence = null;
+		$gap_chain_present             = null;
+		$gap_intent_after_convergence  = null;
+		$gap_pending_ids               = null;
+		$completed_hook                = static function ( int $completed_action_id ) use (
+			$action_id,
+			$delivery,
+			$intent_option,
+			$missing_intent,
+			$store,
+			&$completed_hook_calls,
+			&$gap_status,
+			&$gap_intent_before_convergence,
+			&$gap_chain_present,
+			&$gap_intent_after_convergence,
+			&$gap_pending_ids
+		): void {
+			if ( $action_id !== $completed_action_id ) {
+				return;
+			}
+
+			++$completed_hook_calls;
+			$gap_status                    = $store->get_status( (string) $completed_action_id );
+			$gap_intent_before_convergence = \get_option( $intent_option, $missing_intent );
+			$gap_chain_present             = \as_has_scheduled_action(
+				self::HOOK,
+				array( self::KEY ),
+				self::KEY
+			);
+			$delivery->converge_pending_intents();
+			$gap_intent_after_convergence = \get_option( $intent_option, $missing_intent );
+			$gap_pending_ids              = $store->query_actions(
+				array(
+					'hook'     => self::HOOK,
+					'args'     => array( self::KEY ),
+					'group'    => self::KEY,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				)
+			);
+		};
+		\add_action( 'action_scheduler_completed_action', $completed_hook, 10, 1 );
+
+		self::assertSame( 1, $this->run_next_due_action() );
+		\remove_action( 'action_scheduler_completed_action', $completed_hook, 10 );
+
+		self::assertSame( 1, $completed_hook_calls );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $gap_status );
+		self::assertIsArray( $gap_intent_before_convergence );
+		self::assertSame( self::KEY, $gap_intent_before_convergence['key'] ?? null );
+		self::assertFalse( $gap_chain_present, 'The completed action is clear before repeat creates its successor' );
+		self::assertSame( $missing_intent, $gap_intent_after_convergence );
+		self::assertSame( array(), $gap_pending_ids );
+		self::assertSame( $missing_intent, \get_option( $intent_option, $missing_intent ) );
+
+		$successor_ids = $store->query_actions(
+			array(
+				'hook'     => self::HOOK,
+				'args'     => array( self::KEY ),
+				'group'    => self::KEY,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+				'orderby'  => 'action_id',
+				'order'    => 'ASC',
+			)
+		);
+		self::assertIsArray( $successor_ids );
+		self::assertCount( 1, $successor_ids, 'Repeat must birth one successor after the gap convergence returns' );
+		self::assertIsString( $successor_ids[0] ?? null );
+		$successor_id = $successor_ids[0];
+		self::assertNotSame( (string) $action_id, $successor_id );
+
+		$successor = $store->fetch_action( $successor_id );
+		self::assertInstanceOf( \ActionScheduler_Action::class, $successor );
+		self::assertSame( self::HOOK, $successor->get_hook() );
+		self::assertSame( array( self::KEY ), $successor->get_args() );
+		self::assertSame( self::KEY, $successor->get_group() );
+		self::assertTrue( $successor->get_schedule()->is_recurring() );
+
+		$runner = \ActionScheduler::runner();
+		self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
+		$runner->process_action( (int) $successor_id, 'Integration Test' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $successor_id ) );
+		self::assertSame( 1, $completed_hook_calls );
+
+		$re_recorded_intent = \get_option( $intent_option, null );
+		self::assertIsArray( $re_recorded_intent );
+		self::assertCount( 2, $re_recorded_intent );
+		self::assertSame( self::KEY, $re_recorded_intent['key'] ?? null );
+		self::assertIsInt( $re_recorded_intent['created_at'] ?? null );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Returns the live occurrence-delivery callback registered on the shared schedule hook.
+	 *
+	 * @return  OccurrenceDelivery
+	 */
+	private function occurrence_delivery(): OccurrenceDelivery {
+		$wp_filter = $GLOBALS['wp_filter'] ?? null;
+		if ( ! \is_array( $wp_filter ) ) {
+			throw new \LogicException( 'The WordPress hook registry is unavailable.' );
+		}
+
+		$hook = $wp_filter[ self::HOOK ] ?? null;
+		self::assertInstanceOf( \WP_Hook::class, $hook, 'The live schedule hook must be registered' );
+
+		foreach ( $hook->callbacks as $callbacks ) {
+			if ( ! \is_array( $callbacks ) ) {
+				continue;
+			}
+
+			foreach ( $callbacks as $callback ) {
+				if ( ! \is_array( $callback ) ) {
+					continue;
+				}
+
+				$function = $callback['function'] ?? null;
+				if ( ! \is_array( $function ) ) {
+					continue;
+				}
+
+				$object = $function[0] ?? null;
+				$method = $function[1] ?? null;
+				if ( $object instanceof OccurrenceDelivery && 'handle_schedule_due' === $method ) {
+					return $object;
+				}
+			}
+		}
+
+		throw new \LogicException( 'The live occurrence-delivery callback is unavailable.' );
 	}
 
 	// endregion.
