@@ -5,11 +5,11 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -45,7 +45,7 @@ use PHPUnit\Framework\TestCase;
  * Pins batch lifecycle deliveries across scheduling, storage, hooks, locks, and callbacks.
  *
  */
-#[CoversClass( LifecycleDeliveries::class )]
+#[CoversClass( ActionDeliveries::class )]
 #[UsesClass( BatchContext::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( EngineError::class )]
@@ -62,7 +62,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
-final class LifecycleDeliveriesBatchTest extends TestCase {
+final class ActionDeliveriesBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS = array(
@@ -78,7 +78,7 @@ final class LifecycleDeliveriesBatchTest extends TestCase {
 	private FixedClock $clock;
 	private RecordingBackend $backend;
 	private RecordingBatch $batch;
-	private LifecycleDeliveries $lifecycle_deliveries;
+	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private BatchRegistry $batches;
@@ -151,7 +151,7 @@ final class LifecycleDeliveriesBatchTest extends TestCase {
 			$terminal_transitions
 		);
 
-		$this->lifecycle_deliveries = new LifecycleDeliveries(
+		$this->lifecycle_deliveries = new ActionDeliveries(
 			$this->tasks,
 			$this->batches,
 			$this->backend,

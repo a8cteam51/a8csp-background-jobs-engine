@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -38,7 +38,7 @@ use PHPUnit\Framework\TestCase;
  * Pins the observable single-task delivery lifecycle across storage, hooks, locks, and logs.
  *
  */
-#[CoversClass( LifecycleDeliveries::class )]
+#[CoversClass( ActionDeliveries::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
@@ -54,7 +54,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
-final class LifecycleDeliveriesTest extends TestCase {
+final class ActionDeliveriesTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS = array(
@@ -69,7 +69,7 @@ final class LifecycleDeliveriesTest extends TestCase {
 
 	private FixedClock $clock;
 	private RecordingBackend $backend;
-	private LifecycleDeliveries $lifecycle_deliveries;
+	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private RecordingTask $task;
@@ -143,7 +143,7 @@ final class LifecycleDeliveriesTest extends TestCase {
 			$terminal_transitions
 		);
 
-		$this->lifecycle_deliveries = new LifecycleDeliveries(
+		$this->lifecycle_deliveries = new ActionDeliveries(
 			$this->registry,
 			$batches,
 			$this->backend,
@@ -292,7 +292,7 @@ final class LifecycleDeliveriesTest extends TestCase {
 			$this->logger,
 			$terminal_transitions
 		);
-		$lifecycle_deliveries = new LifecycleDeliveries(
+		$lifecycle_deliveries = new ActionDeliveries(
 			$tasks,
 			$batches,
 			$this->backend,

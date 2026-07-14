@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -50,7 +50,7 @@ final class RunReconciliationTest extends TestCase {
 	private FixedClock $clock;
 	private BatchRegistry $batches;
 	private Dispatcher $dispatcher;
-	private LifecycleDeliveries $lifecycle_deliveries;
+	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
 	private WpdbLockSpy $wpdb;
@@ -120,7 +120,7 @@ final class RunReconciliationTest extends TestCase {
 			$terminal_transitions
 		);
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->lifecycle_deliveries = new LifecycleDeliveries(
+		$this->lifecycle_deliveries = new ActionDeliveries(
 			$tasks,
 			$this->batches,
 			$backend,

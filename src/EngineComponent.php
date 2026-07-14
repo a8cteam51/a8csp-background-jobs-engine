@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
@@ -109,7 +109,7 @@ final class EngineComponent implements Component {
 			$logger,
 			$terminal_transitions
 		);
-		$lifecycle_deliveries = new LifecycleDeliveries(
+		$action_deliveries    = new ActionDeliveries(
 			$tasks,
 			$batches,
 			$scheduler,
@@ -130,7 +130,7 @@ final class EngineComponent implements Component {
 			$randomizer,
 			$logger,
 			$lock_windows,
-			$terminal_transitions,
+			$terminal_transitions
 		);
 		$reconciliation       = new RunReconciliation(
 			$guard,
@@ -140,7 +140,7 @@ final class EngineComponent implements Component {
 			$lock_windows,
 			$terminal_transitions,
 			$tasks,
-			$batches,
+			$batches
 		);
 		$tasks->register( new MaintenanceTask( $wpdb, $reconciliation, $guard, $logger ) );
 		$occurrence_lease     = new OccurrenceLease( $lock_rows, $clock, $randomizer );
@@ -163,11 +163,11 @@ final class EngineComponent implements Component {
 			new Tasks( $tasks, $dispatcher ),
 			$schedule_api,
 			new Batches( $batches, $dispatcher ),
-			$dispatcher,
+			$dispatcher
 		);
 
 		$scheduler->register_hooks();
-		$lifecycle_deliveries->register_hooks();
+		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
 		$maintenance_schedule->register_hooks();
 

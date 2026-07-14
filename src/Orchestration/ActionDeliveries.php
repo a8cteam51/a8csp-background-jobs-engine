@@ -15,14 +15,14 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Delivers the engine's internal task and batch lifecycle actions.
+ * Delivers the engine's internal task and batch actions.
  *
  * Same-sequence redelivery remains at-least-once execution and relies on task and batch idempotency.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class LifecycleDeliveries {
+final readonly class ActionDeliveries {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -446,6 +446,7 @@ final readonly class LifecycleDeliveries {
 					);
 				}
 			},
+			true,
 			'completed'
 		);
 	}
@@ -757,7 +758,9 @@ final readonly class LifecycleDeliveries {
 					$error
 				);
 			},
+			false,
 			'failed',
+			null,
 			$error
 		);
 	}

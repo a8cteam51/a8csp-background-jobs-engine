@@ -83,9 +83,9 @@ final readonly class TerminalTransitions {
 		?int $action_seq,
 		RunStore $run_store
 	): ?RunState {
-		$state = $run_store->get( $run_id );
+		$state        = $run_store->get( $run_id );
+		$context_name = \strtolower( $work_type ) . '_name';
 		if ( null === $state ) {
-			$context_name = \strtolower( $work_type ) . '_name';
 			$this->logger->warning(
 				$work_type . ' run state is missing or corrupt; allow the reconciliation sweep to release any remaining lock.',
 				array(
@@ -110,7 +110,6 @@ final readonly class TerminalTransitions {
 			return null;
 		}
 
-		$context_name = \strtolower( $work_type ) . '_name';
 		if ( RunStatus::Running !== $state->status ) {
 			$this->logger->warning(
 				$work_type . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
@@ -178,20 +177,25 @@ final readonly class TerminalTransitions {
 	/**
 	 * Claims and completes one winner-gated terminal transition.
 	 *
+	 * Required cleanup encloses winner effects and hooks in the finish contour so an effect failure cannot strand terminal state.
+	 * Re-drivable effects remain outside that contour so an effect failure preserves the claim for maintenance.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param 'completed'|'failed'|'superseded' $event
 	 * @phpstan-param EngineError|null ...$hook_extras
 	 *
-	 * @param   string   $name             Stable task or batch name.
-	 * @param   string   $run_id           Run identifier.
-	 * @param   RunState $state            Running state.
-	 * @param   RunState $terminal_state   Terminal replacement state.
-	 * @param   RunStore $run_store        Active-run store.
-	 * @param   \Closure $pre_hook_effects Winner-only side effects that precede lifecycle hooks.
-	 * @param   string   $event            Terminal lifecycle event name.
-	 * @param   mixed    ...$hook_extras   Lifecycle-hook payload after the start arguments.
+	 * @param   string      $name                          Stable task or batch name.
+	 * @param   string      $run_id                        Run identifier.
+	 * @param   RunState    $state                         Running state.
+	 * @param   RunState    $terminal_state                Terminal replacement state.
+	 * @param   RunStore    $run_store                     Active-run store.
+	 * @param   \Closure    $pre_hook_effects              Winner-only side effects that precede lifecycle hooks.
+	 * @param   bool        $finish_despite_effect_failure Whether effect failure still finishes terminal cleanup.
+	 * @param   string      $event                         Terminal lifecycle event name.
+	 * @param   string|null $expected_raw                  Exact maintenance snapshot, or null for a live transition.
+	 * @param   mixed       ...$hook_extras                Lifecycle-hook payload after the start arguments.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
@@ -202,20 +206,37 @@ final readonly class TerminalTransitions {
 		RunState $terminal_state,
 		RunStore $run_store,
 		\Closure $pre_hook_effects,
+		bool $finish_despite_effect_failure,
 		string $event,
+		?string $expected_raw = null,
 		mixed ...$hook_extras
 	): bool {
-		$terminal_raw = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
+		$terminal_raw = $this->claim_terminal_transition(
+			$run_id,
+			$state,
+			$terminal_state,
+			$run_store,
+			$expected_raw
+		);
 		if ( null === $terminal_raw ) {
 			return false;
 		}
 
-		$pre_hook_effects();
+		if ( $finish_despite_effect_failure ) {
+			try {
+				$pre_hook_effects();
+				$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
+			} finally {
+				$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
+			}
+		} else {
+			$pre_hook_effects();
 
-		try {
-			$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
-		} finally {
-			$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
+			try {
+				$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
+			} finally {
+				$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
+			}
 		}
 
 		return true;
@@ -310,29 +331,27 @@ final readonly class TerminalTransitions {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-		$terminal_raw   = $this->claim_terminal_transition(
+
+		$this->execute_terminal_transition(
+			$task_name,
 			$run_id,
 			$state,
 			$terminal_state,
 			$run_store,
-			$expected_raw
-		);
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$this->stores->failed_run_store( $task_name )->record(
-			$run_id,
-			$this->clock->now()->getTimestamp(),
-			$state->start_args,
-			$attempts_used,
+			function () use ( $attempts_used, $error, $run_id, $state, $task_name ): void {
+				$this->stores->failed_run_store( $task_name )->record(
+					$run_id,
+					$this->clock->now()->getTimestamp(),
+					$state->start_args,
+					$attempts_used,
+					$error
+				);
+			},
+			false,
+			'failed',
+			$expected_raw,
 			$error
 		);
-
-		try {
-			$this->fire_lifecycle_hooks( 'failed', $task_name, $run_id, $state->start_args, $error );
-		} finally {
-			$this->finish_terminal_run( $task_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
 	}
 
 	/**
@@ -443,7 +462,7 @@ final readonly class TerminalTransitions {
 		?string $latest_run_id,
 		RunState $state,
 		RunStore $run_store,
-		string $work_type = 'Task',
+		string $work_type,
 		?string $expected_raw = null
 	): void {
 		$terminal_state = $state

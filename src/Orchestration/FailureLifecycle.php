@@ -146,7 +146,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  RetryPolicy
 	 */
-	public function retry_policy( string $name, RetryPolicy $contract_policy ): RetryPolicy {
+	private function retry_policy( string $name, RetryPolicy $contract_policy ): RetryPolicy {
 		$filtered_policy = \apply_filters(
 			'a8csp/background_tasks/retry_policy/' . $name,
 			$contract_policy
@@ -183,7 +183,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  array{state: RunState, error: EngineError}|null Exact failed state and detail, or null after success or a lost fence.
 	 */
-	public function reschedule_retry(
+	private function reschedule_retry(
 		string $work_type,
 		string $name,
 		string $run_id,

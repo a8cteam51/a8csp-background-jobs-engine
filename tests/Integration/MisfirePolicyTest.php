@@ -4,13 +4,14 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
@@ -24,6 +25,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
@@ -285,15 +289,21 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$rows                 = new OptionRows( $wpdb );
 		$tasks                = new TaskRegistry();
 		$batches              = new BatchRegistry();
-		$scheduler            = $this->scheduler_facade_with_action_scheduler_probe( static fn (): bool => true );
+		$schedule_registry    = new ScheduleRegistry( $rows );
+		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new LockRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
 		$stores               = new StoreFactory( $clock, $rows );
-		$randomizer           = new RecordingRandomizer( 42 );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
-		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
 		$lock_windows         = new LockWindows( $clock );
-		$lifecycle_deliveries = new LifecycleDeliveries(
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
+		$scheduler            = new SchedulerFacade(
+			array(
+				new ActionSchedulerBackend( static fn (): bool => true ),
+				new WPCronBackend(),
+			)
+		);
+		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+		$action_deliveries    = new ActionDeliveries(
 			$tasks,
 			$batches,
 			$scheduler,
@@ -314,13 +324,23 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$randomizer,
 			$logger,
 			$lock_windows,
-			$terminal_transitions,
+			$terminal_transitions
 		);
-		$schedule_registry    = new ScheduleRegistry( $rows );
+		$reconciliation       = new RunReconciliation(
+			$guard,
+			$stores,
+			$clock,
+			$logger,
+			$lock_windows,
+			$terminal_transitions,
+			$tasks,
+			$batches
+		);
+		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$occurrence_delivery  = new OccurrenceDelivery(
 			$schedule_registry,
 			$dispatcher,
-			new OccurrenceLease( $locks, $clock, $randomizer ),
+			$occurrence_lease,
 			$scheduler,
 			$clock,
 			$logger
@@ -331,18 +351,23 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$clock,
 			$occurrence_delivery
 		);
-
-		\remove_all_actions( 'a8csp/background_tasks/schedule_due' );
-		\remove_all_actions( 'a8csp/background_tasks/run' );
-		\add_action( 'a8csp/background_tasks/schedule_due', array( $occurrence_delivery, 'handle_schedule_due' ), 10, 2 );
-		\add_action( 'a8csp/background_tasks/run', array( $lifecycle_deliveries, 'handle_run_action' ), 10, 4 );
-
-		return new Engine(
+		$engine               = new Engine(
 			new Tasks( $tasks, $dispatcher ),
 			$schedules,
 			new Batches( $batches, $dispatcher ),
 			$dispatcher
 		);
+
+		\remove_all_actions( 'a8csp/background_tasks/start' );
+		\remove_all_actions( 'a8csp/background_tasks/continue' );
+		\remove_all_actions( 'a8csp/background_tasks/run' );
+		\remove_all_actions( 'a8csp/background_tasks/cleanup' );
+		\remove_all_actions( 'a8csp/background_tasks/schedule_due' );
+		$scheduler->register_hooks();
+		$action_deliveries->register_hooks();
+		$occurrence_delivery->register_hooks();
+
+		return $engine;
 	}
 
 	/**
