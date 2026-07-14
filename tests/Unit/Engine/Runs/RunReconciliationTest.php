@@ -6,7 +6,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -40,7 +39,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( MaintenanceTask::class )]
 #[UsesClass( OverlapGuard::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 #[UsesClass( StoreFactory::class )]
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -113,7 +112,7 @@ final class RunReconciliationTest extends TestCase {
 		$tasks->register( new RecordingTask( self::NAME ) );
 		$backend                    = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores                     = new StoreFactory( $this->clock, $option_rows );
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock );
@@ -161,7 +160,7 @@ final class RunReconciliationTest extends TestCase {
 		$occurrence_delivery        = new OccurrenceDelivery(
 			new ScheduleRegistry( $option_rows ),
 			$this->dispatcher,
-			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, $randomizer ),
+			new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, $randomizer ),
 			new SchedulerFacade( array( $backend ) ),
 			$option_rows,
 			$this->clock,

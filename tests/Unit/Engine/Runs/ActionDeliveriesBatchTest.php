@@ -10,7 +10,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -52,7 +51,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( Dispatcher::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -139,7 +138,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batches        = new BatchRegistry();
 		$this->tasks          = new TaskRegistry();
 		$this->wpdb           = new WpdbLockSpy();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );

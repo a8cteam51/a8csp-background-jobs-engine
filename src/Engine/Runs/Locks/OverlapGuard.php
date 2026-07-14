@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -60,12 +61,12 @@ final readonly class OverlapGuard {
 	 *
 	 * @param   ClockInterface  $clock  Timestamp source.
 	 * @param   LoggerInterface $logger Log event sink.
-	 * @param   LockRows        $rows   Authoritative lock-row I/O.
+	 * @param   OptionRows      $rows   Authoritative raw lock-row I/O.
 	 */
 	public function __construct(
 		private ClockInterface $clock,
 		private LoggerInterface $logger,
-		private LockRows $rows,
+		private OptionRows $rows,
 	) {}
 
 	// endregion
@@ -93,7 +94,7 @@ final readonly class OverlapGuard {
 		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
-		if ( $this->rows->insert( $key, $new_lock ) ) {
+		if ( $this->rows->insert( $key, self::serialize( $new_lock ) ) ) {
 			return ClaimResult::Claimed;
 		}
 
@@ -117,7 +118,7 @@ final readonly class OverlapGuard {
 
 		$lock['heartbeat_at'] = $now;
 
-		return $this->rows->replace( $key, $raw, $lock )
+		return $this->rows->replace( $key, $raw, self::serialize( $lock ) )
 			? ClaimResult::Claimed
 			: ClaimResult::Held;
 	}
@@ -165,7 +166,7 @@ final readonly class OverlapGuard {
 
 		$now = $this->clock->now()->getTimestamp();
 
-		return $this->rows->replace( $key, $raw, self::new_lock( $replacement_run_id, $now ) );
+		return $this->rows->replace( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
 	}
 
 	/**
@@ -211,7 +212,7 @@ final readonly class OverlapGuard {
 		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
 
 		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
-		return $this->rows->replace( $key, $raw, $lock );
+		return $this->rows->replace( $key, $raw, self::serialize( $lock ) );
 	}
 
 	/**
@@ -438,7 +439,7 @@ final readonly class OverlapGuard {
 	 * @return  ClaimResult
 	 */
 	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $name, string $args_hash, string $run_id ): ClaimResult {
-		if ( ! $this->rows->delete( $key, $raw ) || ! $this->rows->insert( $key, $new_lock ) ) {
+		if ( ! $this->rows->delete( $key, $raw ) || ! $this->rows->insert( $key, self::serialize( $new_lock ) ) ) {
 			return ClaimResult::Held;
 		}
 
@@ -500,6 +501,27 @@ final readonly class OverlapGuard {
 			'claimed_at'   => $now,
 			'heartbeat_at' => $now,
 		);
+	}
+
+	/**
+	 * Returns a lock row's exact persisted representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the row to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize( array $row ): string {
+		$value = \maybe_serialize( $row );
+		if ( ! \is_string( $value ) ) {
+			throw new \LogicException( 'WordPress must serialize an execution-overlap lock row to a string.' );
+		}
+
+		return $value;
 	}
 
 	/**

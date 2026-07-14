@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -47,7 +46,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OccurrenceLease::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 #[UsesClass( StoreFactory::class )]
 final class ScheduleExecutionTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -1026,7 +1025,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$tasks   = new TaskRegistry();
 		$batches = new BatchRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
@@ -1047,7 +1046,7 @@ final class ScheduleExecutionTest extends TestCase {
 		return new OccurrenceDelivery(
 			$registry,
 			$dispatcher,
-			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
+			new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
 			$scheduler ?? new SchedulerFacade( array( $this->backend ) ),
 			new OptionRows( $this->wpdb ),
 			$this->clock,

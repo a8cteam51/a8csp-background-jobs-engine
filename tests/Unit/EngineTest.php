@@ -6,7 +6,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -45,7 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Batches::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
@@ -112,7 +111,7 @@ final class EngineTest extends TestCase {
 		$batches              = new BatchRegistry();
 		$this->backend        = new RecordingBackend();
 		$this->wpdb           = new WpdbLockSpy();
-		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock );
@@ -134,7 +133,7 @@ final class EngineTest extends TestCase {
 		$delivery   = new OccurrenceDelivery(
 			$registry,
 			$dispatcher,
-			new OccurrenceLease( new LockRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+			new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
 			new SchedulerFacade( array( $this->backend ) ),
 			new OptionRows( $this->wpdb ),
 			$clock,

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Schedules;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * Pins occurrence-decision lease claims, stale recovery, and exact release.
  */
 #[CoversClass( OccurrenceLease::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 final class OccurrenceLeaseTest extends TestCase {
 	private const KEY = 'owner-a:email-digest';
 	private const NOW = 1_700_000_000;
@@ -45,7 +45,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		$this->clock                            = new FixedClock( self::NOW );
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->lease                            = new OccurrenceLease(
-			new LockRows( $this->wpdb ),
+			new OptionRows( $this->wpdb ),
 			$this->clock,
 			new RecordingRandomizer( 42 )
 		);

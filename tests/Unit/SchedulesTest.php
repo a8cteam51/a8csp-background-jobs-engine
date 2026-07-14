@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -1045,7 +1044,7 @@ final class SchedulesTest extends TestCase {
 	): Schedules {
 		$logger               = new RecordingLogger();
 		$wpdb                 = new WpdbLockSpy();
-		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $wpdb ) );
+		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$tasks                = new TaskRegistry();
@@ -1068,7 +1067,7 @@ final class SchedulesTest extends TestCase {
 		$delivery = new OccurrenceDelivery(
 			$registry,
 			$dispatcher,
-			new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+			new OccurrenceLease( new OptionRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
 			new SchedulerFacade( array( $backend ) ),
 			new OptionRows( $wpdb ),
 			$clock,

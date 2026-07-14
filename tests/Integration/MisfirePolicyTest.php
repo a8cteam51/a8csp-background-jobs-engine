@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -291,7 +290,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$batches              = new BatchRegistry();
 		$schedule_registry    = new ScheduleRegistry( $rows );
 		$randomizer           = new RecordingRandomizer( 42 );
-		$locks                = new LockRows( $wpdb );
+		$locks                = new OptionRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
 		$stores               = new StoreFactory( $clock, $rows );
 		$lock_windows         = new LockWindows( $clock );

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 
@@ -50,12 +50,12 @@ final readonly class OccurrenceLease {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   LockRows            $rows       Authoritative lease-row I/O.
+	 * @param   OptionRows          $rows       Authoritative raw lease-row I/O.
 	 * @param   ClockInterface      $clock      Current-time source.
 	 * @param   RandomizerInterface $randomizer Per-claim identity source.
 	 */
 	public function __construct(
-		private LockRows $rows,
+		private OptionRows $rows,
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
 	) {}
@@ -84,7 +84,7 @@ final readonly class OccurrenceLease {
 		);
 		$raw = self::serialize( $row );
 
-		if ( $this->rows->insert( $key, $row ) ) {
+		if ( $this->rows->insert( $key, $raw ) ) {
 			return $raw === $this->rows->select( $key ) ? $raw : null;
 		}
 
@@ -98,7 +98,7 @@ final readonly class OccurrenceLease {
 			return null;
 		}
 
-		return $this->rows->replace( $key, $expected_raw, $row ) ? $raw : null;
+		return $this->rows->replace( $key, $expected_raw, $raw ) ? $raw : null;
 	}
 
 	/**

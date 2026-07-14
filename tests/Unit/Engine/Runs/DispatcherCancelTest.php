@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
@@ -39,7 +38,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( Dispatcher::class )]
 #[UsesClass( EngineError::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 #[UsesClass( LockWindows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( RunHistory::class )]
@@ -134,7 +133,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->batches->register( new RecordingBatch( self::BATCH_NAME ) );
 		$this->wpdb = new WpdbLockSpy();
 
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$option_rows                = new OptionRows( $this->wpdb );
 		$this->stores               = new StoreFactory( $this->clock, $option_rows );
 		$lock_windows               = new LockWindows( $this->clock );

@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine as EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -105,8 +104,7 @@ final class Component implements ComponentContract {
 		$logger               = new HookLogger();
 		$clock                = new SystemClock();
 		$randomizer           = new Randomizer();
-		$lock_rows            = new LockRows( $wpdb );
-		$guard                = new OverlapGuard( $clock, $logger, $lock_rows );
+		$guard                = new OverlapGuard( $clock, $logger, $option_rows );
 		$stores               = new StoreFactory( $clock, $option_rows );
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
@@ -156,7 +154,7 @@ final class Component implements ComponentContract {
 			$tasks,
 			$batches
 		);
-		$occurrence_lease     = new OccurrenceLease( $lock_rows, $clock, $randomizer );
+		$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 		$occurrence_delivery  = new OccurrenceDelivery(
 			$schedules,
 			$dispatcher,

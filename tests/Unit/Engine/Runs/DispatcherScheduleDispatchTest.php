@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
@@ -34,7 +33,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Dispatcher::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
@@ -102,7 +101,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->backend = new RecordingBackend();
 		$this->wpdb    = new WpdbLockSpy();
 		$tasks->register( new RecordingTask( self::NAME ) );
-		$guard                = new OverlapGuard( $clock, $logger, new LockRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock );

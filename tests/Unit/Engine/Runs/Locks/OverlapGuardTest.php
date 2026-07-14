@@ -3,9 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Locks;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -29,7 +29,7 @@ final class LockRowWakeupProbe {
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( ClaimResult::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
 final class OverlapGuardTest extends TestCase {
 	private const ARGS_HASH = 'args-123';
 	private const KEY       = 'a8csp_bgte_lock_email-digest_args-123';
@@ -37,7 +37,7 @@ final class OverlapGuardTest extends TestCase {
 
 	private WpdbLockSpy $wpdb;
 
-	private LockRows $rows;
+	private OptionRows $rows;
 
 	/** Loads guarded WordPress functions before production classes are autoloaded. */
 	#[\Override]
@@ -58,7 +58,7 @@ final class OverlapGuardTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache']       = array();
 		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
 		$this->wpdb                             = new WpdbLockSpy();
-		$this->rows                             = new LockRows( $this->wpdb );
+		$this->rows                             = new OptionRows( $this->wpdb );
 	}
 
 	/** Claim outcomes expose only the three lowercase-backed contract states. */

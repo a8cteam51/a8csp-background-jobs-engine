@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
@@ -92,7 +91,7 @@ final class InspectionTest extends TestCase {
 		$this->schedules  = new ScheduleRegistry( $rows );
 		$this->stores     = new StoreFactory( $this->clock, $rows );
 		$scheduler        = new SchedulerFacade( array( $this->backend ) );
-		$guard            = new OverlapGuard( $this->clock, new RecordingLogger(), new LockRows( $this->wpdb ) );
+		$guard            = new OverlapGuard( $this->clock, new RecordingLogger(), new OptionRows( $this->wpdb ) );
 		$lock_windows     = new LockWindows( $this->clock );
 		$this->inspection = new Inspection(
 			$this->schedules,
