@@ -172,6 +172,31 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * An unreadable registry releases the occurrence lease without dispatching or creating cleanup state.
+	 *
+	 * @return  void
+	 */
+	public function test_occurrence_aborts_when_the_registry_read_fails(): void {
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted occurrence registry read failure';
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertArrayNotHasKey(
+			'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ),
+			$this->wpdb->rows
+		);
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+	}
+
+	/**
 	 * Accepted state is persisted and unlocked before an unbounded started listener can redeliver it.
 	 *
 	 * @return  void
@@ -495,6 +520,69 @@ final class ScheduleExecutionTest extends TestCase {
 			'Unknown schedule cleanup intent remains pending because verified clearance failed.',
 			$this->logger->records[0]['message'] ?? null
 		);
+	}
+
+	/**
+	 * A failed authoritative intent-name scan skips the sweep without scheduler or row mutation.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_skips_a_failed_name_scan(): void {
+		$this->backend->results['unschedule'] = new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				'Keep the intent pending until the maintenance sweep.'
+			)
+		);
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		unset( $this->backend->results['unschedule'] );
+		$this->backend->calls         = array();
+		$this->wpdb->recorded_queries = array();
+		$scan_failures                = 0;
+		$this->wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $wpdb ) use ( &$scan_failures ): void {
+				++$scan_failures;
+				$wpdb->last_error = 'scripted intent-name scan failure';
+			}
+		);
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( 1, $scan_failures );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+	}
+
+	/**
+	 * An unreadable intent row is retained and skipped without consulting the scheduler.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_skips_a_failed_row_read(): void {
+		$raw = \maybe_serialize(
+			array(
+				'key'        => self::REGISTRATION_KEY,
+				'created_at' => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( $this->intent_option_name(), $raw );
+		$row_read_failures = 0;
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$row_read_failures ): void {
+				++$row_read_failures;
+				$wpdb->last_error = 'scripted intent-row read failure';
+			}
+		);
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertSame( $raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( 1, $row_read_failures );
 	}
 
 	/**

@@ -211,7 +211,12 @@ final readonly class OccurrenceDelivery {
 	 * @return  void
 	 */
 	private function handle_occurrence( string $registration_key, string $lease_raw, bool &$lease_released ): void {
-		$registration = $this->registry->registration( $registration_key );
+		$registration_read = $this->registry->registration( $registration_key );
+		if ( $registration_read->is_failure() ) {
+			return;
+		}
+
+		$registration = $registration_read->value;
 		if ( null === $registration ) {
 			$this->record_intent( $registration_key );
 			$converged = $this->converge_unknown_chain( $registration_key );
@@ -415,8 +420,13 @@ final readonly class OccurrenceDelivery {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	private function dispatch_run_now( string $owner, string $name, string $lease_raw ): AbstractResult {
-		$registration_key = $owner . ':' . $name;
-		$registration     = $this->registry->registration( $registration_key );
+		$registration_key  = $owner . ':' . $name;
+		$registration_read = $this->registry->registration( $registration_key );
+		if ( $registration_read->is_failure() ) {
+			return new Failure( $registration_read->error );
+		}
+
+		$registration = $registration_read->value;
 		if ( null === $registration ) {
 			return new Failure(
 				new EngineError(
@@ -518,10 +528,10 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  string|null
+	 * @return  AbstractResult<string|null, EngineError>
 	 */
-	private function read_intent( string $registration_key ): ?string {
-		return $this->option_rows->select( self::intent_option_name( $registration_key ) );
+	private function read_intent( string $registration_key ): AbstractResult {
+		return $this->option_rows->read( self::intent_option_name( $registration_key ) );
 	}
 
 	/**
@@ -540,8 +550,12 @@ final readonly class OccurrenceDelivery {
 			return true;
 		}
 
-		return null === $this->read_intent( $registration_key )
-			&& ! $this->option_rows->last_select_failed();
+		$selected = $this->read_intent( $registration_key );
+		if ( $selected->is_failure() ) {
+			return false;
+		}
+
+		return null === $selected->value;
 	}
 
 	/**
@@ -553,9 +567,19 @@ final readonly class OccurrenceDelivery {
 	 * @return  list<string>
 	 */
 	private function intent_keys(): array {
-		$keys = array();
-		foreach ( $this->option_rows->option_names( self::INTENT_PREFIX ) as $option_name ) {
-			$raw = $this->option_rows->select( $option_name );
+		$keys  = array();
+		$names = $this->option_rows->option_names( self::INTENT_PREFIX );
+		if ( $names->is_failure() ) {
+			return $keys;
+		}
+
+		foreach ( $names->value as $option_name ) {
+			$selected = $this->option_rows->read( $option_name );
+			if ( $selected->is_failure() ) {
+				continue;
+			}
+
+			$raw = $selected->value;
 			if ( null === $raw ) {
 				continue;
 			}
@@ -588,12 +612,22 @@ final readonly class OccurrenceDelivery {
 	 * @return  bool Whether the observed intent no longer needs convergence.
 	 */
 	private function converge_unknown_chain( string $registration_key ): bool {
-		$expected_raw = $this->read_intent( $registration_key );
+		$selected = $this->read_intent( $registration_key );
+		if ( $selected->is_failure() ) {
+			return false;
+		}
+
+		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
 			return true;
 		}
 
-		if ( null !== $this->registry->registration( $registration_key ) ) {
+		$registration = $this->registry->registration( $registration_key );
+		if ( $registration->is_failure() ) {
+			return false;
+		}
+
+		if ( null !== $registration->value ) {
 			return $this->clear_intent( $registration_key, $expected_raw );
 		}
 

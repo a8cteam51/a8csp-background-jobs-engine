@@ -5,6 +5,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -87,7 +89,12 @@ final readonly class FailedRunStore {
 	 * @return  void
 	 */
 	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error ): void {
-		$entries   = $this->all();
+		$read = $this->all();
+		if ( $read->is_failure() ) {
+			return;
+		}
+
+		$entries   = $read->value;
 		$entries[] = array(
 			'run_id'     => $run_id,
 			'failed_at'  => $failed_at,
@@ -108,18 +115,24 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  list<array{
+	 * @return  AbstractResult<list<array{
 	 *     run_id: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
 	 *     error: array{class: string|null, message: string}
-	 * }>
+	 * }>, EngineError>
 	 */
-	public function all(): array {
-		$raw = $this->rows->select( $this->option_name() );
+	#[\NoDiscard( 'a failed-run read outcome must be handled, not dropped' )]
+	public function all(): AbstractResult {
+		$selected = $this->rows->read( $this->option_name() );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
 
-		return self::entries_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) );
+		$raw = $selected->value;
+
+		return new Success( self::entries_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) ) );
 	}
 
 	/**
@@ -135,7 +148,12 @@ final readonly class FailedRunStore {
 	 * @return  void
 	 */
 	public function remove( string $run_id ): void {
-		$entries   = $this->all();
+		$read = $this->all();
+		if ( $read->is_failure() ) {
+			return;
+		}
+
+		$entries   = $read->value;
 		$remaining = \array_values(
 			\array_filter(
 				$entries,
@@ -159,10 +177,15 @@ final readonly class FailedRunStore {
 	 * @return  int|null Deleted valid-entry count, or null when the authoritative operation fails.
 	 */
 	public function purge(): ?int {
-		$key = $this->option_name();
-		$raw = $this->rows->select( $key );
+		$key      = $this->option_name();
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			return null;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
-			return $this->rows->last_select_failed() ? null : 0;
+			return 0;
 		}
 
 		for ( $attempt = 0; $attempt < self::PURGE_ATTEMPTS; ++$attempt ) {
@@ -175,9 +198,14 @@ final readonly class FailedRunStore {
 				return null;
 			}
 
-			$next_raw = $this->rows->select( $key );
+			$next = $this->rows->read( $key );
+			if ( $next->is_failure() ) {
+				return null;
+			}
+
+			$next_raw = $next->value;
 			if ( null === $next_raw ) {
-				return $this->rows->last_select_failed() ? null : 0;
+				return 0;
 			}
 
 			// An unchanged row rules out comparison loss, so the exact delete itself failed.

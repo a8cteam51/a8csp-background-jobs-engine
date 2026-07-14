@@ -137,13 +137,18 @@ final readonly class Inspection {
 	 *
 	 * @param   string|null $owner Exact owner filter, or null for every owner.
 	 *
-	 * @phpstan-return array{observed_at: int, dormant_candidate: bool, entries: list<ScheduleEntry>}
+	 * @phpstan-return array{observed_at: int, dormant_candidate: bool, entries: list<ScheduleEntry>}|null
 	 *
-	 * @return  array
+	 * @return  array|null Null when authoritative schedule-registry inspection fails.
 	 */
-	public function schedules( ?string $owner = null ): array {
-		$observed_at   = $this->clock->now()->getTimestamp();
-		$registrations = $this->schedules->all_registrations();
+	public function schedules( ?string $owner = null ): ?array {
+		$observed_at = $this->clock->now()->getTimestamp();
+		$read        = $this->schedules->all_registrations();
+		if ( $read->is_failure() ) {
+			return null;
+		}
+
+		$registrations = $read->value;
 		\ksort( $registrations, \SORT_STRING );
 
 		$entries = array();
@@ -189,7 +194,7 @@ final readonly class Inspection {
 	 * @phpstan-return array{
 	 *     observed_at: int,
 	 *     live: list<LiveRunEntry>,
-	 *     history: list<HistoryEntry>,
+	 *     history: list<HistoryEntry>|null,
 	 *     live_error: 'enumeration_failed'|'read_failed'|null,
 	 *     live_scanned: int,
 	 *     live_uninspected: int
@@ -226,9 +231,9 @@ final readonly class Inspection {
 				continue;
 			}
 
-			$run_id   = $identity['run_id'];
-			$snapshot = $run_store->inspect( $run_id );
-			if ( null === $snapshot && $run_store->last_inspect_failed() ) {
+			$run_id    = $identity['run_id'];
+			$inspected = $run_store->inspect( $run_id );
+			if ( $inspected->is_failure() ) {
 				return array(
 					'observed_at'      => $observed_at,
 					'live'             => array(),
@@ -239,7 +244,8 @@ final readonly class Inspection {
 				);
 			}
 
-			$state = $snapshot['state'] ?? null;
+			$snapshot = $inspected->value;
+			$state    = $snapshot['state'] ?? null;
 			if ( null === $state || RunStatus::Running !== $state->status ) {
 				continue;
 			}
@@ -304,11 +310,14 @@ final readonly class Inspection {
 		}
 
 		$args_hash = \hash( 'sha256', $encoded_args );
-		$snapshot  = $this->guard->inspect_persisted_lock( $schedule->task, $args_hash );
+		$inspected = $this->guard->inspect_persisted_lock( $schedule->task, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return array( 'state' => 'read_failed' );
+		}
+
+		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			return array(
-				'state' => $this->guard->last_inspect_failed() ? 'read_failed' : 'free',
-			);
+			return array( 'state' => 'free' );
 		}
 
 		$lock = $snapshot['lock'];
@@ -381,20 +390,30 @@ final readonly class Inspection {
 	 *
 	 * @param   string $name Stable background-work name.
 	 *
-	 * @phpstan-return list<HistoryEntry>
+	 * @phpstan-return list<HistoryEntry>|null
 	 *
-	 * @return  array
+	 * @return  array|null Null when authoritative failed-run or history inspection fails.
 	 */
-	private function history( string $name ): array {
-		$history    = $this->stores->run_history( $name );
-		$failed_ids = array();
-		$entries    = array();
-		$seen       = array();
-		foreach ( $this->stores->failed_run_store( $name )->all() as $failed ) {
+	private function history( string $name ): ?array {
+		$history     = $this->stores->run_history( $name );
+		$failed_ids  = array();
+		$entries     = array();
+		$seen        = array();
+		$failed_runs = $this->stores->failed_run_store( $name )->all();
+		if ( $failed_runs->is_failure() ) {
+			return null;
+		}
+
+		foreach ( $failed_runs->value as $failed ) {
 			$failed_ids[ $failed['run_id'] ] = true;
 		}
 
-		foreach ( \array_reverse( $history->terminal_entries() ) as $entry ) {
+		$terminal_entries = $history->terminal_entries();
+		if ( null === $terminal_entries ) {
+			return null;
+		}
+
+		foreach ( \array_reverse( $terminal_entries ) as $entry ) {
 			if ( isset( $seen[ $entry['run_id'] ] ) ) {
 				continue;
 			}
@@ -407,7 +426,12 @@ final readonly class Inspection {
 			);
 		}
 
-		foreach ( \array_reverse( $history->started_entries() ) as $run_id ) {
+		$started_entries = $history->started_entries();
+		if ( null === $started_entries ) {
+			return null;
+		}
+
+		foreach ( \array_reverse( $started_entries ) as $run_id ) {
 			if ( isset( $seen[ $run_id ] ) ) {
 				continue;
 			}

@@ -223,7 +223,11 @@ final class RunStoreTest extends TestCase {
 		self::assertNull( $store->transition_state( 'run-live', $state, $state->with_action_seq( 3 ) ) );
 		self::assertSame( 2, $store->get( 'run-live' )?->action_seq );
 
-		$snapshot = $store->inspect( 'run-live' );
+		$inspection = $store->inspect( 'run-live' );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The live run snapshot could not be read.' );
+		}
+		$snapshot = $inspection->value;
 		self::assertNotNull( $snapshot );
 		self::assertTrue( $store->delete_exact( 'run-live', $snapshot['raw'] ) );
 		self::assertNull( $store->transition_state( 'run-live', $newer, $newer->with_action_seq( 3 ) ) );
@@ -280,7 +284,11 @@ final class RunStoreTest extends TestCase {
 		$state = $store->create( 'run-fenced', array(), 'hash', array() );
 		self::assertNotNull( $state );
 
-		$running = $store->inspect( 'run-fenced' );
+		$inspection = $store->inspect( 'run-fenced' );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The running snapshot could not be read.' );
+		}
+		$running = $inspection->value;
 		self::assertNotNull( $running );
 		self::assertNotNull( $running['state'] );
 
@@ -303,13 +311,21 @@ final class RunStoreTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 		$store                              = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
 
-		$snapshot = $store->inspect( 'run-corrupt' );
+		$inspection = $store->inspect( 'run-corrupt' );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The corrupt run snapshot could not be read.' );
+		}
+		$snapshot = $inspection->value;
 
 		self::assertNotNull( $snapshot );
 		self::assertSame( 'corrupt-raw', $snapshot['raw'] );
 		self::assertNull( $snapshot['state'] );
 		self::assertTrue( $store->delete_exact( 'run-corrupt', $snapshot['raw'] ) );
-		self::assertNull( $store->inspect( 'run-corrupt' ) );
+		$missing = $store->inspect( 'run-corrupt' );
+		if ( $missing->is_failure() ) {
+			self::fail( 'The deleted run snapshot could not be read.' );
+		}
+		self::assertNull( $missing->value );
 	}
 
 	/**

@@ -2,10 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -121,32 +124,26 @@ final readonly class RunStore {
 	 *
 	 * @param   string $run_id Run identifier.
 	 *
-	 * @return  array{raw: string, state: RunState|null}|null
+	 * @return  AbstractResult<array{raw: string, state: RunState|null}|null, EngineError>
 	 */
-	public function inspect( string $run_id ): ?array {
-		$raw = $this->rows->select( $this->option_name( $run_id ) );
-		if ( null === $raw ) {
-			return null;
+	#[\NoDiscard( 'a run-state read outcome must be handled, not dropped' )]
+	public function inspect( string $run_id ): AbstractResult {
+		$selected = $this->rows->read( $this->option_name( $run_id ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
 		}
 
-		return array(
-			'raw'   => $raw,
-			'state' => self::from_option( RawOptionDecoder::decode( $raw ) ),
-		);
-	}
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return new Success( null );
+		}
 
-	/**
-	 * Returns whether the immediately preceding authoritative inspection failed.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function last_inspect_failed(): bool {
-		return $this->rows->last_select_failed();
+		return new Success(
+			array(
+				'raw'   => $raw,
+				'state' => self::from_option( RawOptionDecoder::decode( $raw ) ),
+			)
+		);
 	}
 
 	/**
@@ -230,7 +227,12 @@ final readonly class RunStore {
 	public function refresh_heartbeat( string $run_id, ?RunState $expected = null ): ?RunState {
 		$raw = null;
 		if ( null === $expected ) {
-			$snapshot = $this->inspect( $run_id );
+			$inspected = $this->inspect( $run_id );
+			if ( $inspected->is_failure() ) {
+				return null;
+			}
+
+			$snapshot = $inspected->value;
 			if ( null === $snapshot || null === $snapshot['state'] ) {
 				return null;
 			}

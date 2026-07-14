@@ -2,8 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -74,16 +77,21 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $owner Stable consumer identifier.
 	 *
-	 * @return  array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 * @return  AbstractResult<array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>, EngineError>
 	 */
-	public function registrations_for( string $owner ): array {
+	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
+	public function registrations_for( string $owner ): AbstractResult {
 		$registry = $this->stored_registry();
-		$rows     = $registry[ $owner ] ?? null;
-		if ( ! \is_array( $rows ) ) {
-			return array();
+		if ( $registry->is_failure() ) {
+			return $registry;
 		}
 
-		return self::registrations_from_rows( $rows );
+		$rows = $registry->value[ $owner ] ?? null;
+		if ( ! \is_array( $rows ) ) {
+			return new Success( array() );
+		}
+
+		return new Success( self::registrations_from_rows( $rows ) );
 	}
 
 	/**
@@ -94,11 +102,17 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>, EngineError>
 	 */
-	public function all_registrations(): array {
+	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
+	public function all_registrations(): AbstractResult {
+		$registry = $this->stored_registry();
+		if ( $registry->is_failure() ) {
+			return $registry;
+		}
+
 		$registrations = array();
-		foreach ( $this->stored_registry() as $owner => $rows ) {
+		foreach ( $registry->value as $owner => $rows ) {
 			if ( ! \is_array( $rows ) ) {
 				continue;
 			}
@@ -111,7 +125,7 @@ final class ScheduleRegistry {
 			}
 		}
 
-		return $registrations;
+		return new Success( $registrations );
 	}
 
 	/**
@@ -131,7 +145,12 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
 	public function replace_owner( string $owner, array $schedules, array $registrations ): bool {
-		$stored = $this->stored_registry();
+		$read = $this->stored_registry();
+		if ( $read->is_failure() ) {
+			return false;
+		}
+
+		$stored = $read->value;
 		$next   = $stored;
 		if ( array() === $registrations ) {
 			unset( $next[ $owner ] );
@@ -194,15 +213,21 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}|null
+	 * @return  AbstractResult<array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}|null, EngineError>
 	 */
-	public function registration( string $registration_key ): ?array {
+	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
+	public function registration( string $registration_key ): AbstractResult {
 		$parts = self::key_parts( $registration_key );
 		if ( null === $parts ) {
-			return null;
+			return new Success( null );
 		}
 
-		return $this->registrations_for( $parts[0] )[ $parts[1] ] ?? null;
+		$registrations = $this->registrations_for( $parts[0] );
+		if ( $registrations->is_failure() ) {
+			return $registrations;
+		}
+
+		return new Success( $registrations->value[ $parts[1] ] ?? null );
 	}
 
 	/**
@@ -227,11 +252,14 @@ final class ScheduleRegistry {
 
 		[ $owner, $name ] = $parts;
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
-			$expected_raw = $this->rows->select( self::OPTION_NAME );
+			$expected = $this->rows->read( self::OPTION_NAME );
+			if ( $expected->is_failure() ) {
+				return RegistrationUpdateOutcome::Failed;
+			}
+
+			$expected_raw = $expected->value;
 			if ( null === $expected_raw ) {
-				return $this->rows->last_select_failed()
-					? RegistrationUpdateOutcome::Failed
-					: RegistrationUpdateOutcome::Pruned;
+				return RegistrationUpdateOutcome::Pruned;
 			}
 
 			$stored = self::decode_registry( $expected_raw );
@@ -252,11 +280,14 @@ final class ScheduleRegistry {
 				return RegistrationUpdateOutcome::Updated;
 			}
 
-			$current_raw = $this->rows->select( self::OPTION_NAME );
+			$current = $this->rows->read( self::OPTION_NAME );
+			if ( $current->is_failure() ) {
+				return RegistrationUpdateOutcome::Failed;
+			}
+
+			$current_raw = $current->value;
 			if ( null === $current_raw ) {
-				return $this->rows->last_select_failed()
-					? RegistrationUpdateOutcome::Failed
-					: RegistrationUpdateOutcome::Pruned;
+				return RegistrationUpdateOutcome::Pruned;
 			}
 			if ( $current_raw === $expected_raw ) {
 				return RegistrationUpdateOutcome::Failed;
@@ -320,17 +351,22 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<array-key, mixed>
+	 * @return  AbstractResult<array<array-key, mixed>, EngineError>
 	 */
-	private function stored_registry(): array {
-		$raw = $this->rows->select( self::OPTION_NAME );
+	private function stored_registry(): AbstractResult {
+		$selected = $this->rows->read( self::OPTION_NAME );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
-			return array();
+			return new Success( array() );
 		}
 
 		$stored = RawOptionDecoder::decode( $raw );
 
-		return \is_array( $stored ) ? $stored : array();
+		return new Success( \is_array( $stored ) ? $stored : array() );
 	}
 
 	/**

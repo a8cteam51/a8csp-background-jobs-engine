@@ -284,6 +284,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_leaves_a_running_run_untouched_when_lock_read_fails(): void {
 		$this->create_running_run();
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -294,6 +295,31 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A run read failure aborts the sweep before lock reconciliation can erase fencing evidence.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_aborts_lock_reconciliation_when_a_run_read_fails(): void {
+		$this->create_running_run();
+		$orphan_lock = 'a8csp_bgte_lock_orphan-task_' . \str_repeat( 'a', 64 );
+		$this->put_lock( $orphan_lock, 'orphan-run', self::NOW - 901 );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient run read failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
+		self::assertArrayHasKey( $orphan_lock, $this->wpdb->rows );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
 		self::assertSame( array(), $this->logger->records );
 	}

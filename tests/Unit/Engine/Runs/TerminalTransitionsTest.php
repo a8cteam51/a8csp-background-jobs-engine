@@ -330,8 +330,12 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_cancel_run_finishes_terminal_state_when_group_clear_throws(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
-		$snapshot  = $run_store->inspect( self::RUN_ID );
+		$run_store  = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$inspection = $run_store->inspect( self::RUN_ID );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The cancellable run snapshot could not be read.' );
+		}
+		$snapshot = $inspection->value;
 		self::assertNotNull( $snapshot );
 		self::assertInstanceOf( RunState::class, $snapshot['state'] );
 		$throwable = new \RuntimeException( 'Group-clear listener failed.' );
@@ -352,7 +356,11 @@ final class TerminalTransitionsTest extends TestCase {
 			self::assertSame( $throwable, $caught );
 		}
 
-		self::assertNull( $run_store->inspect( self::RUN_ID ) );
+		$missing = $run_store->inspect( self::RUN_ID );
+		if ( $missing->is_failure() ) {
+			self::fail( 'The cancelled run snapshot could not be read.' );
+		}
+		self::assertNull( $missing->value );
 		self::assertNull( $this->lock() );
 		self::assertSame(
 			array(

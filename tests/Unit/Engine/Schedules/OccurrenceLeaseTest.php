@@ -61,6 +61,22 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
 	}
 
+	/** An inserted lease remains unclaimed when its authoritative confirmation read fails. */
+	public function test_insert_confirmation_read_failure_does_not_admit_the_claim(): void {
+		$confirmation_failures = 0;
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$confirmation_failures ): void {
+				++$confirmation_failures;
+				$wpdb->last_error = 'scripted lease confirmation failure';
+			}
+		);
+
+		self::assertNull( $this->lease->claim( self::KEY ) );
+		self::assertSame( 1, $confirmation_failures );
+		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
+	}
+
 	/** A heartbeat exactly sixty seconds old remains a held lease. */
 	public function test_fresh_lease_is_held_at_the_sixty_second_boundary(): void {
 		$this->put_lease( self::NOW - 60 );
@@ -75,6 +91,31 @@ final class OccurrenceLeaseTest extends TestCase {
 
 		self::assertIsString( $this->lease->claim( self::KEY ) );
 		self::assertSame( self::NOW, $this->stored_lease()['heartbeat_at'] ?? null );
+	}
+
+	/** An unreadable incumbent is not replaced from non-authoritative absence. */
+	public function test_incumbent_read_failure_does_not_replace_the_lease(): void {
+		$raw = self::raw_lease( 'incumbent', self::NOW - 61 );
+		$this->wpdb->put( self::option_name(), $raw );
+		$incumbent_read_failures = 0;
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$incumbent_read_failures ): void {
+				++$incumbent_read_failures;
+				$wpdb->last_error = 'scripted incumbent lease read failure';
+			}
+		);
+
+		self::assertNull( $this->lease->claim( self::KEY ) );
+		self::assertSame( 1, $incumbent_read_failures );
+		self::assertSame( $raw, $this->wpdb->rows[ self::option_name() ] );
+		self::assertSame(
+			array(),
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
+			)
+		);
 	}
 
 	/** A malformed lease can be recovered without a blind delete window. */

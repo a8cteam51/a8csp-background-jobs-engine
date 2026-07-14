@@ -121,6 +121,10 @@ final class ScheduleRegistryTest extends TestCase {
 				),
 			),
 		);
+		$registrations                      = ( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' );
+		if ( $registrations->is_failure() ) {
+			self::fail( 'The owner schedule registrations could not be read.' );
+		}
 
 		self::assertSame(
 			array(
@@ -132,7 +136,7 @@ final class ScheduleRegistryTest extends TestCase {
 					'skips'       => 0,
 				),
 			),
-			( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' )
+			$registrations->value
 		);
 	}
 
@@ -158,6 +162,10 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		self::assertIsString( $raw );
 		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
+		$registrations = ( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' );
+		if ( $registrations->is_failure() ) {
+			self::fail( 'The owner schedule registrations could not be read.' );
+		}
 
 		self::assertSame(
 			array(
@@ -169,7 +177,7 @@ final class ScheduleRegistryTest extends TestCase {
 					'skips'       => 0,
 				),
 			),
-			( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' )
+			$registrations->value
 		);
 		self::assertFalse( ScheduleRegistryWakeupProbe::$woke );
 	}
@@ -203,14 +211,26 @@ final class ScheduleRegistryTest extends TestCase {
 			),
 		);
 
-		$registry = new ScheduleRegistry( $this->rows );
+		$registry          = new ScheduleRegistry( $this->rows );
+		$owner_b           = $registry->registrations_for( 'owner-b' );
+		$owner_a           = $registry->registrations_for( 'owner-a' );
+		$all_registrations = $registry->all_registrations();
+		if ( $owner_b->is_failure() ) {
+			self::fail( 'The owner-b schedule registrations could not be read.' );
+		}
+		if ( $owner_a->is_failure() ) {
+			self::fail( 'The owner-a schedule registrations could not be read.' );
+		}
+		if ( $all_registrations->is_failure() ) {
+			self::fail( 'The complete schedule registry could not be read.' );
+		}
 
 		self::assertSame(
 			array(
-				'owner-b:hourly'  => $registry->registrations_for( 'owner-b' )['hourly'],
-				'owner-a:nightly' => $registry->registrations_for( 'owner-a' )['nightly'],
+				'owner-b:hourly'  => $owner_b->value['hourly'],
+				'owner-a:nightly' => $owner_a->value['nightly'],
 			),
-			$registry->all_registrations()
+			$all_registrations->value
 		);
 	}
 
@@ -231,6 +251,10 @@ final class ScheduleRegistryTest extends TestCase {
 				),
 			),
 		);
+		$registrations                      = ( new ScheduleRegistry( $this->rows ) )->registrations_for( '123' );
+		if ( $registrations->is_failure() ) {
+			self::fail( 'The numeric owner schedule registrations could not be read.' );
+		}
 
 		self::assertSame(
 			array(
@@ -242,7 +266,7 @@ final class ScheduleRegistryTest extends TestCase {
 					'skips'       => 0,
 				),
 			),
-			( new ScheduleRegistry( $this->rows ) )->registrations_for( '123' )
+			$registrations->value
 		);
 	}
 
@@ -300,6 +324,36 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertFalse( $autoload['a8csp_bgte_schedules'] );
 		self::assertSame( $schedule, $registry->get( 'owner-a:nightly' ) );
 		self::assertNull( $registry->get( 'owner-b:hourly' ) );
+	}
+
+	/** A failed authoritative registry read aborts owner replacement without writing or retaining declarations. */
+	public function test_replace_owner_aborts_without_writing_when_the_registry_read_fails(): void {
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted registry read failure';
+			}
+		);
+		$registry = new ScheduleRegistry( $this->rows );
+
+		$replaced = $registry->replace_owner(
+			'owner-a',
+			array( 'nightly' => $schedule ),
+			array(
+				'nightly' => array(
+					'fingerprint' => $schedule->fingerprint(),
+					'next_due'    => 1_700_000_300,
+					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
+				),
+			)
+		);
+
+		self::assertFalse( $replaced );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertNull( $registry->get( 'owner-a:nightly' ) );
 	}
 
 	/**
@@ -402,6 +456,74 @@ final class ScheduleRegistryTest extends TestCase {
 			array( 'foreign-owner' => array() ),
 			$options['a8csp_bgte_schedules']
 		);
+	}
+
+	/**
+	 * An initial authoritative read failure reports repairable persistence failure without writing.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_failed_when_the_initial_read_fails(): void {
+		$registry = $this->two_registration_registry();
+		$raw      = \maybe_serialize( $registry );
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted initial registry read failure';
+			}
+		);
+		$nightly             = $registry['owner-a']['nightly'];
+		$nightly['next_due'] = 1_700_000_600;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+
+		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
+		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+	}
+
+	/**
+	 * A failed authoritative reread after a lost CAS preserves the concurrent registry bytes.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_failed_when_the_post_cas_reread_fails(): void {
+		$registry     = $this->two_registration_registry();
+		$expected_raw = \maybe_serialize( $registry );
+		$concurrent   = $registry;
+
+		$concurrent['owner-a']['hourly']['last_fired'] = 1_700_000_111;
+
+		$concurrent_raw = \maybe_serialize( $concurrent );
+		self::assertIsString( $expected_raw );
+		self::assertIsString( $concurrent_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $expected_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $concurrent_raw ): void {
+				$wpdb->put( 'a8csp_bgte_schedules', $concurrent_raw );
+			}
+		);
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted post-CAS registry reread failure';
+			}
+		);
+		$nightly             = $registry['owner-a']['nightly'];
+		$nightly['next_due'] = 1_700_000_600;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+
+		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
+		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
 	}
 
 	/**

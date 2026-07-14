@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -69,12 +71,13 @@ final readonly class RunReconciliation {
 	 */
 	public function reconcile_orphaned_lock( string $name, string $args_hash, string $run_id ): void {
 		$run_store = $this->stores->run_store( $name );
-		$snapshot  = $run_store->inspect( $run_id );
-		if ( null === $snapshot && $run_store->last_inspect_failed() ) {
+		$inspected = $run_store->inspect( $run_id );
+		if ( $inspected->is_failure() ) {
 			return;
 		}
 
-		$state = $snapshot['state'] ?? null;
+		$snapshot = $inspected->value;
+		$state    = $snapshot['state'] ?? null;
 		if ( null !== $state && $args_hash === $state->args_hash ) {
 			return;
 		}
@@ -124,14 +127,19 @@ final readonly class RunReconciliation {
 	 * @param   string $run_id         Run identifier.
 	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
-	 * @return  string|null Transferred argument identity whose foreign lock must remain as fence evidence.
+	 * @return  AbstractResult<string|null, EngineError> Transferred argument identity whose foreign lock must remain as fence evidence.
 	 */
-	public function reconcile_run( string $name, string $run_id, int $terminal_grace ): ?string {
+	public function reconcile_run( string $name, string $run_id, int $terminal_grace ): AbstractResult {
 		$run_store = $this->stores->run_store( $name );
-		$snapshot  = $run_store->inspect( $run_id );
-		$state     = $snapshot['state'] ?? null;
+		$inspected = $run_store->inspect( $run_id );
+		if ( $inspected->is_failure() ) {
+			return $inspected;
+		}
+
+		$snapshot = $inspected->value;
+		$state    = $snapshot['state'] ?? null;
 		if ( null === $snapshot ) {
-			return null;
+			return new Success( null );
 		}
 		if ( null === $state ) {
 			if ( $run_store->delete_exact( $run_id, $snapshot['raw'] ) ) {
@@ -144,7 +152,7 @@ final readonly class RunReconciliation {
 				);
 			}
 
-			return null;
+			return new Success( null );
 		}
 
 		if ( RunStatus::Running === $state->status ) {
@@ -159,7 +167,7 @@ final readonly class RunReconciliation {
 				MaintenanceFenceOutcome::Owned === $fence
 				|| MaintenanceFenceOutcome::Indeterminate === $fence
 			) {
-				return null;
+				return new Success( null );
 			}
 
 			$batch     = $this->batches->get( $name );
@@ -167,7 +175,7 @@ final readonly class RunReconciliation {
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the incumbent is still inside its callback; a fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
-					return $state->args_hash;
+					return new Success( $state->args_hash );
 				}
 
 				$latest_run_id = $this->stores
@@ -183,7 +191,7 @@ final readonly class RunReconciliation {
 					$snapshot['raw']
 				);
 
-				return null;
+				return new Success( null );
 			}
 
 			$error = new EngineError(
@@ -224,7 +232,7 @@ final readonly class RunReconciliation {
 				);
 			}
 
-			return null;
+			return new Success( null );
 		}
 
 		$now = $this->clock->now()->getTimestamp();
@@ -232,7 +240,7 @@ final readonly class RunReconciliation {
 			$state->heartbeat_at > \PHP_INT_MAX - $terminal_grace
 			|| $now <= $state->heartbeat_at + $terminal_grace
 		) {
-			return null;
+			return new Success( null );
 		}
 
 		if ( $this->terminal_transitions->finish_claimed_transition( $name, $run_id, $state, $snapshot['raw'], $run_store ) ) {
@@ -246,7 +254,7 @@ final readonly class RunReconciliation {
 			);
 		}
 
-		return null;
+		return new Success( null );
 	}
 
 	// endregion

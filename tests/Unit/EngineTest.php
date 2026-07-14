@@ -407,7 +407,12 @@ final class EngineTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
-		self::assertSame( array(), $store->all() );
+		$remaining = $store->all();
+		if ( $remaining->is_failure() ) {
+			self::fail( $remaining->error->message );
+		}
+
+		self::assertSame( array(), $remaining->value );
 		self::assertSame(
 			array(
 				array(

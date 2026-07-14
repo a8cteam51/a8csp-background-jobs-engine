@@ -970,7 +970,12 @@ final class BackgroundTasksCommand {
 		}
 
 		$snapshot = $inspection->schedules( $owner );
-		$rows     = self::schedule_rows_from_entries( $snapshot['entries'], $snapshot['observed_at'] );
+		if ( null === $snapshot ) {
+			\WP_CLI::error( 'Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.' );
+			return;
+		}
+
+		$rows = self::schedule_rows_from_entries( $snapshot['entries'], $snapshot['observed_at'] );
 		if ( array() === $rows && 'table' === $format ) {
 			\WP_CLI::line(
 				null === $owner
@@ -1016,9 +1021,10 @@ final class BackgroundTasksCommand {
 			return;
 		}
 
-		$live_rows    = self::live_run_rows_from_entries( $snapshot['live'], $snapshot['observed_at'] );
-		$history_rows = self::history_rows_from_entries( $snapshot['history'] );
-		$truncation   = self::live_run_truncation_message(
+		$live_rows           = self::live_run_rows_from_entries( $snapshot['live'], $snapshot['observed_at'] );
+		$history_unavailable = null === $snapshot['history'];
+		$history_rows        = $history_unavailable ? array() : self::history_rows_from_entries( $snapshot['history'] );
+		$truncation          = self::live_run_truncation_message(
 			$snapshot['live_scanned'],
 			$snapshot['live_uninspected']
 		);
@@ -1026,6 +1032,7 @@ final class BackgroundTasksCommand {
 			array() === $live_rows
 			&& array() === $history_rows
 			&& 'table' === $format
+			&& ! $history_unavailable
 			&& null === $truncation
 		) {
 			\WP_CLI::line( \sprintf( 'No live runs or history are retained for "%s".', $name ) );
@@ -1056,6 +1063,9 @@ final class BackgroundTasksCommand {
 				break;
 		}
 
+		if ( $history_unavailable ) {
+			\WP_CLI::warning( 'Recent run history is unavailable because an authoritative database read failed.' );
+		}
 		if ( null !== $truncation ) {
 			\WP_CLI::warning( $truncation );
 		}
@@ -1164,7 +1174,18 @@ final class BackgroundTasksCommand {
 		$option_rows     = new OptionRows( $wpdb );
 		$entries_by_name = array();
 		foreach ( $names as $name ) {
-			$entries_by_name[ $name ] = ( new FailedRunStore( $name, $option_rows ) )->all();
+			$entries = ( new FailedRunStore( $name, $option_rows ) )->all();
+			if ( $entries->is_failure() ) {
+				\WP_CLI::error(
+					\sprintf(
+						'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.',
+						$name
+					)
+				);
+				return;
+			}
+
+			$entries_by_name[ $name ] = $entries->value;
 		}
 
 		$rows = self::rows_from_entries( $entries_by_name );

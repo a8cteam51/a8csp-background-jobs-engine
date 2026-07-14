@@ -85,10 +85,20 @@ final readonly class OccurrenceLease {
 		$raw = self::serialize( $row );
 
 		if ( $this->rows->insert( $key, $raw ) ) {
-			return $raw === $this->rows->select( $key ) ? $raw : null;
+			$selected = $this->rows->read( $key );
+			if ( $selected->is_failure() ) {
+				return null;
+			}
+
+			return $raw === $selected->value ? $raw : null;
 		}
 
-		$expected_raw = $this->rows->select( $key );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			return null;
+		}
+
+		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
 			return null;
 		}

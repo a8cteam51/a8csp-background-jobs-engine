@@ -238,19 +238,29 @@ final readonly class Dispatcher {
 			$this->lock_windows->lock_staleness( $batch_name, $run_id )
 		);
 		if ( ClaimResult::Held === $claim && $unique ) {
-			$running_run_id = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
+			$owner = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
+			if ( $owner->is_failure() ) {
+				return new Failure(
+					new EngineError(
+						\sprintf(
+							'Batch "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
+							$batch_name
+						)
+					)
+				);
+			}
 
 			return new Failure(
 				new EngineError(
-					null === $running_run_id
+					null === $owner->value
 						? \sprintf(
-							'Batch "%s" encountered a held lock whose current owner could not be read; retry the start against the current lock state.',
+							'Batch "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
 							$batch_name
 						)
 						: \sprintf(
 							'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',
 							$batch_name,
-							$running_run_id
+							$owner->value
 						)
 				)
 			);
@@ -326,8 +336,13 @@ final readonly class Dispatcher {
 		}
 
 		$failed_store = $this->stores->failed_run_store( $name );
-		$entries      = $failed_store->all();
-		$entry        = null;
+		$read         = $failed_store->all();
+		if ( $read->is_failure() ) {
+			return $read;
+		}
+
+		$entries = $read->value;
+		$entry   = null;
 		foreach ( $entries as $candidate ) {
 			if ( $run_id === $candidate['run_id'] ) {
 				$entry = $candidate;
@@ -400,7 +415,20 @@ final readonly class Dispatcher {
 		}
 
 		$run_store = $this->stores->run_store( $name );
-		$snapshot  = $run_store->inspect( $run_id );
+		$inspected = $run_store->inspect( $run_id );
+		if ( $inspected->is_failure() ) {
+			return new Failure(
+				new EngineError(
+					\sprintf(
+						'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.',
+						$run_id,
+						$name
+					)
+				)
+			);
+		}
+
+		$snapshot = $inspected->value;
 		if ( null === $snapshot || null === $snapshot['state'] ) {
 			return $this->cancel_not_retained( $name, $run_id );
 		}
@@ -445,7 +473,8 @@ final readonly class Dispatcher {
 			return new Success( $run_id );
 		}
 
-		$latest = $run_store->inspect( $run_id );
+		$latest_read = $run_store->inspect( $run_id );
+		$latest      = $latest_read->is_failure() ? null : $latest_read->value;
 		if ( null !== $latest && null !== $latest['state'] && $latest['state']->executing ) {
 			return $this->cancel_executing( $run_id );
 		}
@@ -607,12 +636,24 @@ final readonly class Dispatcher {
 			$this->lock_windows->lock_staleness( $task_name, $run_id )
 		);
 		if ( ClaimResult::Held === $claim && OverlapPolicy::Skip === $overlap ) {
-			$running_run_id = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
-			if ( null === $running_run_id ) {
+			$owner = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
+			if ( $owner->is_failure() ) {
 				return new Failure(
 					new EngineError(
 						\sprintf(
 							'Task "%s" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
+							$task_name
+						)
+					)
+				);
+			}
+
+			$running_run_id = $owner->value;
+			if ( null === $running_run_id ) {
+				return new Failure(
+					new EngineError(
+						\sprintf(
+							'Task "%s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.',
 							$task_name
 						)
 					)

@@ -136,7 +136,12 @@ final readonly class Schedules {
 			$declared[ $schedule->name ] = $schedule;
 		}
 
-		$existing         = $this->registry->registrations_for( $owner );
+		$registrations = $this->registry->registrations_for( $owner );
+		if ( $registrations->is_failure() ) {
+			return $this->registry_failure( $owner );
+		}
+
+		$existing         = $registrations->value;
 		$interval_by_name = array();
 		$next_due_by_name = array();
 		foreach ( $declared as $name => $schedule ) {

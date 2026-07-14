@@ -431,6 +431,45 @@ final class SchedulesTest extends TestCase {
 		);
 	}
 
+	/** A failed registry read stops synchronization before backend cleanup or persistence. */
+	public function test_registry_read_failure_stops_before_backend_or_registry_mutation(): void {
+		$persisted                          = array(
+			'a8csp_bgte_schedules' => array(
+				'owner-a' => array(
+					'retained' => array(
+						'fingerprint' => 'retained-fingerprint',
+						'next_due'    => self::NOW + 300,
+						'last_fired'  => null,
+						'misfires'    => 0,
+						'skips'       => 0,
+					),
+				),
+			),
+		);
+		$GLOBALS['a8csp_bgte_test_options'] = $persisted;
+		$wpdb                               = new WpdbLockSpy();
+		$wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted registry read failure';
+			}
+		);
+		$backend = new RecordingBackend();
+
+		$result = ( $this->new_schedules(
+			new ScheduleRegistry( new OptionRows( $wpdb ) ),
+			$backend,
+			new FixedClock( self::NOW )
+		) )->sync( 'owner-a', array() );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertSame( array(), $backend->calls );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame( $persisted, $this->options() );
+	}
+
 	/**
 	 * A replacement stops before persistence when the previous identity remains observable.
 	 *

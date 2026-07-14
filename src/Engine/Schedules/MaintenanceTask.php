@@ -116,23 +116,38 @@ final class MaintenanceTask extends AbstractTask {
 	public function handle( array $args ): void {
 		// Run reconciliation consumes transfer evidence before orphan-lock reclamation can erase it.
 		$protected_transfers = array();
-		foreach ( $this->rows->option_names( self::RUN_PREFIX ) as $option_name ) {
+		$run_names           = $this->rows->option_names( self::RUN_PREFIX );
+		if ( $run_names->is_failure() ) {
+			return;
+		}
+
+		foreach ( $run_names->value as $option_name ) {
 			$identity = self::run_identity( $option_name );
 			if ( null === $identity ) {
 				continue;
 			}
 
-			$transferred_hash = $this->reconciliation->reconcile_run(
+			$reconciled = $this->reconciliation->reconcile_run(
 				$identity[0],
 				$identity[1],
 				self::TERMINAL_GRACE
 			);
+			if ( $reconciled->is_failure() ) {
+				return;
+			}
+
+			$transferred_hash = $reconciled->value;
 			if ( null !== $transferred_hash ) {
 				$protected_transfers[ $identity[0] . '|' . $transferred_hash ] = true;
 			}
 		}
 
-		foreach ( $this->rows->option_names( self::LOCK_PREFIX ) as $option_name ) {
+		$lock_names = $this->rows->option_names( self::LOCK_PREFIX );
+		if ( $lock_names->is_failure() ) {
+			return;
+		}
+
+		foreach ( $lock_names->value as $option_name ) {
 			$identity = self::lock_identity( $option_name );
 			if ( null === $identity ) {
 				continue;
@@ -144,7 +159,12 @@ final class MaintenanceTask extends AbstractTask {
 				continue;
 			}
 
-			$snapshot = $this->guard->inspect_persisted_lock( $name, $args_hash );
+			$inspected = $this->guard->inspect_persisted_lock( $name, $args_hash );
+			if ( $inspected->is_failure() ) {
+				continue;
+			}
+
+			$snapshot = $inspected->value;
 			if ( null === $snapshot ) {
 				continue;
 			}

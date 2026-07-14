@@ -453,6 +453,26 @@ final class DispatcherCancelTest extends TestCase {
 		$this->assert_cancelled_history( self::TASK_NAME, $run_id );
 	}
 
+	/** A run-state read failure aborts the cancel with a retryable refusal instead of a not-retained claim. */
+	public function test_cancel_reports_a_retryable_failure_when_the_run_state_read_fails(): void {
+		$run_id = $this->enqueue_task();
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient run-state read failure';
+			}
+		);
+
+		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+
+		$this->assert_engine_failure(
+			$result,
+			\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, self::TASK_NAME )
+		);
+		$this->assert_no_scheduler_or_hook_effects();
+		self::assertNotNull( $this->option( $this->run_option_name( self::TASK_NAME, $run_id ) ) );
+	}
+
 	/** Cancellation declares its result non-discardable at the dispatcher boundary. */
 	public function test_cancel_declares_no_discard_directly(): void {
 		$method = new \ReflectionMethod( Dispatcher::class, 'cancel' );
@@ -504,8 +524,12 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  RunState
 	 */
 	private function replace_state( string $name, string $run_id, \Closure $replacement ): RunState {
-		$run_store = $this->stores->run_store( $name );
-		$snapshot  = $run_store->inspect( $run_id );
+		$run_store  = $this->stores->run_store( $name );
+		$inspection = $run_store->inspect( $run_id );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The retained run snapshot could not be read.' );
+		}
+		$snapshot = $inspection->value;
 		self::assertNotNull( $snapshot );
 		self::assertInstanceOf( RunState::class, $snapshot['state'] );
 		$state = $replacement( $snapshot['state'] );
@@ -523,7 +547,11 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  RunState
 	 */
 	private function run_state( string $name, string $run_id ): RunState {
-		$snapshot = $this->stores->run_store( $name )->inspect( $run_id );
+		$inspection = $this->stores->run_store( $name )->inspect( $run_id );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The retained run snapshot could not be read.' );
+		}
+		$snapshot = $inspection->value;
 		self::assertNotNull( $snapshot );
 		self::assertInstanceOf( RunState::class, $snapshot['state'] );
 
@@ -544,7 +572,11 @@ final class DispatcherCancelTest extends TestCase {
 	private function assert_successful_cancel( AbstractResult $result, string $name, string $run_id ): void {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $run_id, $result->value );
-		self::assertNull( $this->stores->run_store( $name )->inspect( $run_id ) );
+		$inspection = $this->stores->run_store( $name )->inspect( $run_id );
+		if ( $inspection->is_failure() ) {
+			self::fail( 'The cancelled run snapshot could not be read.' );
+		}
+		self::assertNull( $inspection->value );
 		self::assertArrayNotHasKey( $this->lock_option_name( $name ), $this->wpdb->rows );
 		$this->assert_group_clear( $name . '|' . $run_id );
 		$this->assert_cancelled_history( $name, $run_id );

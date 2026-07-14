@@ -112,12 +112,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 * @throws  \LogicException When no authoritative database connection exists to read from.
 	 *
-	 * @return  list<string>
+	 * @return  list<string>|null Null when the authoritative row read fails.
 	 */
-	public function started_entries(): array {
-		return $this->history_from_raw_row()['started'];
+	public function started_entries(): ?array {
+		$history = $this->history_from_raw_row();
+
+		return null === $history ? null : $history['started'];
 	}
 
 	/**
@@ -128,12 +130,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 * @throws  \LogicException When no authoritative database connection exists to read from.
 	 *
-	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>|null Null when the authoritative row read fails.
 	 */
-	public function terminal_entries(): array {
-		return $this->history_from_raw_row()['completed'];
+	public function terminal_entries(): ?array {
+		$history = $this->history_from_raw_row();
+
+		return null === $history ? null : $history['completed'];
 	}
 
 	// endregion
@@ -241,7 +245,7 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 * @throws  \LogicException When no authoritative database connection exists to read from.
 	 *
 	 * @return  array{
 	 *     started: list<string>,
@@ -250,9 +254,9 @@ final readonly class RunHistory {
 	 *         started: list<string>,
 	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
 	 *     }>
-	 * }
+	 * }|null Null when the authoritative row read fails.
 	 */
-	private function history_from_raw_row(): array {
+	private function history_from_raw_row(): ?array {
 		$rows = $this->rows;
 		if ( null === $rows ) {
 			$wpdb = $GLOBALS['wpdb'] ?? null;
@@ -263,7 +267,12 @@ final readonly class RunHistory {
 			$rows = new OptionRows( $wpdb );
 		}
 
-		$raw = $rows->select( $this->option_name() );
+		$selected = $rows->read( $this->option_name() );
+		if ( $selected->is_failure() ) {
+			return null;
+		}
+
+		$raw = $selected->value;
 
 		return self::history_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) );
 	}

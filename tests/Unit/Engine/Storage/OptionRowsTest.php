@@ -2,8 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Storage;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -54,11 +56,15 @@ final class OptionRowsTest extends TestCase {
 		$rows = new OptionRows( $wpdb );
 
 		self::assertFalse( $rows->replace( self::KEY, 'run-state', 'replacement-raw' ) );
-		self::assertSame( 'Run-State', $rows->select( self::KEY ) );
+		$found = $rows->read( self::KEY );
+		self::assertFalse( $found->is_failure() );
+		self::assertSame( 'Run-State', $found->value );
 		self::assertTrue( $rows->replace( self::KEY, 'Run-State', 'replacement-raw' ) );
 		self::assertFalse( $rows->delete( self::KEY, 'Run-State' ) );
 		self::assertTrue( $rows->delete( self::KEY, 'replacement-raw' ) );
-		self::assertNull( $rows->select( self::KEY ) );
+		$missing = $rows->read( self::KEY );
+		self::assertFalse( $missing->is_failure() );
+		self::assertNull( $missing->value );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[2] );
 	}
@@ -77,11 +83,57 @@ final class OptionRowsTest extends TestCase {
 		$wpdb                      = new WpdbLockSpy();
 		$wpdb->option_name_results = array( $expected, 'a8cspXbgteXwildcard-match', 42 );
 
-		self::assertSame( array( $expected ), ( new OptionRows( $wpdb ) )->option_names( $prefix ) );
+		$result = ( new OptionRows( $wpdb ) )->option_names( $prefix );
+		self::assertFalse( $result->is_failure() );
+		self::assertSame( array( $expected ), $result->value );
 		self::assertStringContainsString(
 			"LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'",
 			$wpdb->recorded_queries[0]
 		);
+	}
+
+	/** Authoritative reads distinguish found, missing, and failed outcomes. */
+	public function test_read_returns_explicit_found_missing_and_failed_outcomes(): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->put( self::KEY, 'Run-State' );
+		$rows = new OptionRows( $wpdb );
+
+		$found = $rows->read( self::KEY );
+		self::assertFalse( $found->is_failure() );
+		self::assertSame( 'Run-State', $found->value );
+
+		unset( $wpdb->rows[ self::KEY ], $wpdb->autoload[ self::KEY ] );
+		$missing = $rows->read( self::KEY );
+		self::assertFalse( $missing->is_failure() );
+		self::assertNull( $missing->value );
+
+		$wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted row read failure';
+			}
+		);
+		$failed = $rows->read( self::KEY );
+		self::assertTrue( $failed->is_failure() );
+		self::assertInstanceOf( EngineError::class, $failed->error );
+		self::assertStringContainsString( 'scripted row read failure', $failed->error->message );
+	}
+
+	/** Option-name enumeration returns a failed outcome when its query fails. */
+	public function test_option_names_returns_an_explicit_failed_outcome(): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted option-name read failure';
+			}
+		);
+
+		$result = ( new OptionRows( $wpdb ) )->option_names( 'a8csp_bgte_' );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertStringContainsString( 'scripted option-name read failure', $result->error->message );
 	}
 
 	/**
@@ -116,9 +168,13 @@ final class OptionRowsTest extends TestCase {
 		$rows = new OptionRows( $wpdb );
 		self::prime_stale_caches();
 
-		self::assertSame( '', $rows->select( self::KEY ) );
+		$found = $rows->read( self::KEY );
+		self::assertFalse( $found->is_failure() );
+		self::assertSame( '', $found->value );
 		unset( $wpdb->rows[ self::KEY ], $wpdb->autoload[ self::KEY ] );
-		self::assertNull( $rows->select( self::KEY ) );
+		$missing = $rows->read( self::KEY );
+		self::assertFalse( $missing->is_failure() );
+		self::assertNull( $missing->value );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cache_calls'] );
 	}
 
@@ -327,7 +383,7 @@ final class OptionRowsTest extends TestCase {
 		$expected_raw = 'expected-raw';
 
 		yield 'insert' => array( static fn ( OptionRows $rows ): bool => $rows->insert( self::KEY, $row_raw ) );
-		yield 'select' => array( static fn ( OptionRows $rows ): ?string => $rows->select( self::KEY ) );
+		yield 'read' => array( static fn ( OptionRows $rows ): AbstractResult => $rows->read( self::KEY ) );
 		yield 'replace' => array( static fn ( OptionRows $rows ): bool => $rows->replace( self::KEY, $expected_raw, $row_raw ) );
 		yield 'delete' => array( static fn ( OptionRows $rows ): bool => $rows->delete( self::KEY, $expected_raw ) );
 	}

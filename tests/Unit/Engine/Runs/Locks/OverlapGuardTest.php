@@ -105,6 +105,24 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
+	/** A failed claim read leaves the contended row held without attempting reclamation. */
+	public function test_claim_returns_held_without_writing_after_read_failure(): void {
+		$raw = self::raw( self::row( 'run-owner', 100, 120 ) );
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient claim read failure';
+			}
+		);
+
+		$result = $this->guard_at( 200 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 );
+
+		self::assertSame( ClaimResult::Held, $result );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'insert', 'select' ), $this->operations() );
+	}
+
 	/**
 	 * A fresh lock is replaced only while its exact selected row is unchanged.
 	 *

@@ -420,6 +420,33 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
+	 * Public history inspection reports unavailability when its authoritative row cannot be read.
+	 *
+	 * @return  void
+	 */
+	public function test_read_exposures_report_an_authoritative_read_failure(): void {
+		$history = new RunHistory( 'inspection', $this->rows );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted started-history read failure';
+			}
+		);
+
+		self::assertNull( $history->started_entries() );
+
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted terminal-history read failure';
+			}
+		);
+
+		self::assertNull( $history->terminal_entries() );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+	}
+
+	/**
 	 * Started-entry inspection decodes the raw row without constructing nested serialized classes.
 	 *
 	 * @return  void

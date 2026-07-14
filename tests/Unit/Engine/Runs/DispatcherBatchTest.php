@@ -259,7 +259,12 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
-		self::assertSame( array(), $store->all() );
+		$remaining = $store->all();
+		if ( $remaining->is_failure() ) {
+			self::fail( $remaining->error->message );
+		}
+
+		self::assertSame( array(), $remaining->value );
 		self::assertSame(
 			array(
 				array(
@@ -331,6 +336,46 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/** A failed contended-lock owner read rejects a unique start without admitting replacement work. */
+	public function test_start_batch_rejects_a_unique_start_when_the_lock_owner_read_fails(): void {
+		$this->seed_running_lock();
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient batch owner read failure';
+			}
+		);
+
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Batch "catalog-sync" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
+			$result->error->message
+		);
+		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/** A held claim whose lock row has vanished declines a unique start with a retryable refusal. */
+	public function test_start_batch_rejects_a_unique_start_when_the_held_lock_no_longer_names_an_owner(): void {
+		$this->wpdb->script_result( 'insert', false );
+
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Batch "catalog-sync" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
+			$result->error->message
+		);
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->backend->calls );
 	}
 
 	/**

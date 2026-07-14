@@ -362,6 +362,32 @@ final class DispatcherTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 	}
 
+	/** A failed contended-lock owner read declines admission without persisting or scheduling a run. */
+	public function test_enqueue_declines_when_the_contended_lock_owner_read_fails(): void {
+		$this->seed_running_lock( 0 );
+		$incumbent_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient owner read failure';
+			}
+		);
+
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Task "email-digest" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
+			$result->error->message
+		);
+		self::assertSame( $incumbent_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->backend->calls );
+	}
+
 	/**
 	 * The name-specific lock-staleness filter receives its complete documented payload.
 	 *
@@ -683,7 +709,12 @@ final class DispatcherTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
-		self::assertSame( array(), $store->all() );
+		$remaining = $store->all();
+		if ( $remaining->is_failure() ) {
+			self::fail( $remaining->error->message );
+		}
+
+		self::assertSame( array(), $remaining->value );
 		self::assertSame(
 			array(
 				array(
@@ -742,6 +773,41 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * An unreadable failed-run store rejects retry before a fresh run can be admitted.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_an_authoritative_store_read_failure(): void {
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store->record(
+			'failed-run',
+			self::NOW - 1,
+			self::ARGS,
+			2,
+			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		);
+		$persisted               = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		$this->backend->calls    = array();
+		$this->randomizer->calls = array();
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted retry store read failure';
+			}
+		);
+
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertStringContainsString( 'scripted retry store read failure', $result->error->message );
+		self::assertSame( $persisted, $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->randomizer->calls );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
 	 * A missing failed entry names the retained run identifier that can be retried.
 	 *
 	 * @return  void
@@ -766,7 +832,12 @@ final class DispatcherTest extends TestCase {
 			'Failed run "missing-run" for background-work "email-digest" is not retained; retry one of the retained run identifiers: "retained-run".',
 			$result->error->message
 		);
-		self::assertCount( 1, $store->all() );
+		$remaining = $store->all();
+		if ( $remaining->is_failure() ) {
+			self::fail( $remaining->error->message );
+		}
+
+		self::assertCount( 1, $remaining->value );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( array(), $this->randomizer->calls );
 	}
@@ -785,7 +856,12 @@ final class DispatcherTest extends TestCase {
 			2,
 			new EngineError( 'Database unavailable.', \RuntimeException::class )
 		);
-		$expected_entries = $store->all();
+		$expected = $store->all();
+		if ( $expected->is_failure() ) {
+			self::fail( $expected->error->message );
+		}
+
+		$expected_entries = $expected->value;
 		$failure          = new Failure(
 			new SchedulingError(
 				SchedulingErrorReason::ScheduleFailed,
@@ -799,9 +875,13 @@ final class DispatcherTest extends TestCase {
 		$this->clock->timestamp                  = self::NOW + 100;
 
 		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$actual = $store->all();
+		if ( $actual->is_failure() ) {
+			self::fail( $actual->error->message );
+		}
 
 		self::assertSame( $failure, $result );
-		self::assertSame( $expected_entries, $store->all() );
+		self::assertSame( $expected_entries, $actual->value );
 	}
 
 	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag

@@ -188,9 +188,11 @@ final class InspectionTest extends TestCase {
 			),
 			$this->inspection->schedules()
 		);
+		$owner_snapshot = $this->inspection->schedules( 'owner-b' );
+		self::assertNotNull( $owner_snapshot );
 		self::assertSame(
 			array( 'owner-b' ),
-			\array_column( $this->inspection->schedules( 'owner-b' )['entries'], 'owner' )
+			\array_column( $owner_snapshot['entries'], 'owner' )
 		);
 	}
 
@@ -204,8 +206,25 @@ final class InspectionTest extends TestCase {
 
 		$snapshot = $this->inspection->schedules();
 
+		self::assertNotNull( $snapshot );
 		self::assertTrue( $snapshot['dormant_candidate'] );
 		self::assertSame( array(), $snapshot['entries'] );
+	}
+
+	/**
+	 * An unreadable registry reports schedule inspection as unavailable instead of empty.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_report_an_authoritative_registry_read_failure(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted schedule inspection read failure';
+			}
+		);
+
+		self::assertNull( $this->inspection->schedules() );
 	}
 
 	/**
@@ -264,7 +283,9 @@ final class InspectionTest extends TestCase {
 			}
 		);
 
-		$locks = \array_column( $this->inspection->schedules()['entries'], 'lock', 'name' );
+		$snapshot = $this->inspection->schedules();
+		self::assertNotNull( $snapshot );
+		$locks = \array_column( $snapshot['entries'], 'lock', 'name' );
 
 		self::assertSame( array( 'state' => 'overlap_allowed' ), $locks['allow'] );
 		self::assertSame( array( 'state' => 'read_failed' ), $locks['failed'] );
@@ -380,6 +401,7 @@ final class InspectionTest extends TestCase {
 		self::assertCount( 1, $snapshot['live'] );
 		self::assertSame( 'batch', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
+		self::assertNotNull( $snapshot['history'] );
 		self::assertSame(
 			array(
 				array(
@@ -400,6 +422,26 @@ final class InspectionTest extends TestCase {
 			),
 			$snapshot['history']
 		);
+	}
+
+	/**
+	 * An unreadable failed-run store marks history unavailable instead of reporting no history.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_report_failed_store_history_as_unavailable(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted failed-run inspection failure';
+			}
+		);
+
+		$snapshot = $this->inspection->runs( 'unavailable-history' );
+
+		self::assertNull( $snapshot['live_error'] );
+		self::assertSame( array(), $snapshot['live'] );
+		self::assertNull( $snapshot['history'] );
 	}
 
 	/**

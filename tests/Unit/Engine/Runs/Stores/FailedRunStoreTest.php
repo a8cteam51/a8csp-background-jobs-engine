@@ -63,7 +63,27 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_all_returns_an_empty_list_without_failures(): void {
-		self::assertSame( array(), ( new FailedRunStore( 'reports', $this->rows ) )->all() );
+		$result = ( new FailedRunStore( 'reports', $this->rows ) )->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
+
+		self::assertSame( array(), $result->value );
+	}
+
+	/** A failed authoritative read is returned as a failed store outcome. */
+	public function test_all_returns_an_explicit_failure_when_the_read_fails(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted failed-run read failure';
+			}
+		);
+
+		$result = ( new FailedRunStore( 'reports', $this->rows ) )->all();
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
 	}
 
 	/**
@@ -88,7 +108,12 @@ final class FailedRunStoreTest extends TestCase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture must model hostile raw option bytes.
 		$this->wpdb->put( 'a8csp_bgte_failed_poisoned', \serialize( array( $expected[0], new FailedRunStorePoison() ) ) );
 
-		self::assertSame( $expected, ( new FailedRunStore( 'poisoned', $this->rows ) )->all() );
+		$result = ( new FailedRunStore( 'poisoned', $this->rows ) )->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
+
+		self::assertSame( $expected, $result->value );
 		self::assertSame( 0, FailedRunStorePoison::$wakeups );
 	}
 
@@ -138,13 +163,23 @@ final class FailedRunStoreTest extends TestCase {
 			),
 		);
 
-		self::assertSame( $expected, $store->all() );
+		$all = $store->all();
+		if ( $all->is_failure() ) {
+			self::fail( $all->error->message );
+		}
+
+		self::assertSame( $expected, $all->value );
 		self::assertSame( $expected, $this->option( 'a8csp_bgte_failed_reports' ) );
 		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_failed_reports' ) );
 
 		$store->remove( 'run-a' );
 
-		self::assertSame( array( $expected[1] ), $store->all() );
+		$remaining = $store->all();
+		if ( $remaining->is_failure() ) {
+			self::fail( $remaining->error->message );
+		}
+
+		self::assertSame( array( $expected[1] ), $remaining->value );
 		$this->assert_all_option_writes_disable_autoload();
 	}
 
@@ -167,7 +202,12 @@ final class FailedRunStoreTest extends TestCase {
 			);
 		}
 
-		$entries = $store->all();
+		$result = $store->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
+
+		$entries = $result->value;
 
 		self::assertCount( 20, $entries );
 		self::assertSame(
@@ -196,6 +236,74 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertSame( $before_option, $this->option( 'a8csp_bgte_failed_imports' ) );
 		self::assertSame( $before_calls, $this->option_calls() );
+	}
+
+	/** Recording aborts without replacing retained entries when their authoritative read fails. */
+	public function test_record_does_not_write_when_the_store_read_fails(): void {
+		$persisted                          = array(
+			array(
+				'run_id'     => 'run-existing',
+				'failed_at'  => 100,
+				'start_args' => array(),
+				'attempts'   => 1,
+				'error'      => array(
+					'class'   => null,
+					'message' => 'Existing failure.',
+				),
+			),
+		);
+		$GLOBALS['a8csp_bgte_test_options'] = array( 'a8csp_bgte_failed_imports' => $persisted );
+		$read_failures                      = 0;
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$read_failures ): void {
+				++$read_failures;
+				$wpdb->last_error = 'scripted record read failure';
+			}
+		);
+
+		( new FailedRunStore( 'imports', $this->rows ) )->record(
+			'run-new',
+			200,
+			array(),
+			1,
+			new EngineError( 'New failure.' )
+		);
+
+		self::assertSame( 1, $read_failures );
+		self::assertSame( $persisted, $this->option( 'a8csp_bgte_failed_imports' ) );
+		self::assertSame( array(), $this->option_calls() );
+	}
+
+	/** Removal aborts without replacing retained entries when their authoritative read fails. */
+	public function test_remove_does_not_write_when_the_store_read_fails(): void {
+		$persisted                          = array(
+			array(
+				'run_id'     => 'run-existing',
+				'failed_at'  => 100,
+				'start_args' => array(),
+				'attempts'   => 1,
+				'error'      => array(
+					'class'   => null,
+					'message' => 'Existing failure.',
+				),
+			),
+		);
+		$GLOBALS['a8csp_bgte_test_options'] = array( 'a8csp_bgte_failed_imports' => $persisted );
+		$read_failures                      = 0;
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$read_failures ): void {
+				++$read_failures;
+				$wpdb->last_error = 'scripted remove read failure';
+			}
+		);
+
+		( new FailedRunStore( 'imports', $this->rows ) )->remove( 'run-existing' );
+
+		self::assertSame( 1, $read_failures );
+		self::assertSame( $persisted, $this->option( 'a8csp_bgte_failed_imports' ) );
+		self::assertSame( array(), $this->option_calls() );
 	}
 
 	/**
@@ -296,7 +404,12 @@ final class FailedRunStoreTest extends TestCase {
 		}
 
 		self::assertNull( $store->purge() );
-		self::assertCount( 4, $store->all() );
+		$result = $store->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
+
+		self::assertCount( 4, $result->value );
 	}
 
 	/**
@@ -311,7 +424,12 @@ final class FailedRunStoreTest extends TestCase {
 
 		$store = new FailedRunStore( 'malformed', $this->rows );
 
-		self::assertSame( array(), $store->all() );
+		$result = $store->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
+
+		self::assertSame( array(), $result->value );
 		self::assertSame( 0, $store->purge() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_malformed' ) );
 	}
@@ -357,13 +475,17 @@ final class FailedRunStoreTest extends TestCase {
 		$store = new FailedRunStore( 'oversized', $this->rows );
 
 		$store->remove( 'run-00' );
+		$result = $store->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
 
 		self::assertSame(
 			\array_map(
 				static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
 				\range( 2, 21 )
 			),
-			\array_column( $store->all(), 'run_id' )
+			\array_column( $result->value, 'run_id' )
 		);
 		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_failed_oversized' ) );
 	}

@@ -2,6 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use wpdb;
 
 \defined( 'ABSPATH' ) || exit;
@@ -81,7 +85,7 @@ final readonly class OptionRows {
 	}
 
 	/**
-	 * Selects the exact raw option value directly from the authoritative site table.
+	 * Reads the exact raw option value directly from the authoritative site table.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -90,9 +94,10 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  string|null
+	 * @return  AbstractResult<string|null, EngineError>
 	 */
-	public function select( string $key ): ?string {
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function read( string $key ): AbstractResult {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
@@ -104,11 +109,14 @@ final readonly class OptionRows {
 			),
 			\ARRAY_A
 		);
+		if ( $this->last_read_failed() ) {
+			return new Failure( new EngineError( 'Authoritative option-row read failed: ' . $wpdb->last_error ) );
+		}
 		if ( ! \is_array( $row ) || ! \is_string( $row['option_value'] ?? null ) ) {
-			return null;
+			return new Success( null );
 		}
 
-		return $row['option_value'];
+		return new Success( $row['option_value'] );
 	}
 
 	/**
@@ -121,9 +129,10 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  list<string>
+	 * @return  AbstractResult<list<string>, EngineError>
 	 */
-	public function option_names( string $prefix ): array {
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function option_names( string $prefix ): AbstractResult {
 		$this->assert_site();
 		$wpdb  = $this->wpdb;
 		$names = $wpdb->get_col(
@@ -133,6 +142,9 @@ final readonly class OptionRows {
 				$wpdb->esc_like( $prefix ) . '%'
 			)
 		);
+		if ( $this->last_read_failed() ) {
+			return new Failure( new EngineError( 'Authoritative option-name read failed: ' . $wpdb->last_error ) );
+		}
 
 		$typed = array();
 		foreach ( $names as $name ) {
@@ -141,7 +153,7 @@ final readonly class OptionRows {
 			}
 		}
 
-		return $typed;
+		return new Success( $typed );
 	}
 
 	/**
@@ -176,7 +188,7 @@ final readonly class OptionRows {
 			)
 		);
 		if (
-			$this->last_select_failed()
+			$this->last_read_failed()
 			|| ! \is_string( $count )
 			|| 1 !== \preg_match( '/\A\d+\z/', $count )
 		) {
@@ -192,7 +204,7 @@ final readonly class OptionRows {
 				$limit
 			)
 		);
-		if ( $this->last_select_failed() ) {
+		if ( $this->last_read_failed() ) {
 			return null;
 		}
 
@@ -211,20 +223,6 @@ final readonly class OptionRows {
 			'names' => $typed,
 			'total' => \max( (int) $count, \count( $typed ) ),
 		);
-	}
-
-	/**
-	 * Returns whether the immediately preceding authoritative select failed at the database boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 *
-	 * @phpstan-impure
-	 */
-	public function last_select_failed(): bool {
-		return '' !== $this->wpdb->last_error;
 	}
 
 	/**
@@ -262,10 +260,17 @@ final readonly class OptionRows {
 			return true;
 		}
 
+		if ( 0 !== $result || $expected_raw !== $replacement_raw ) {
+			return false;
+		}
+
 		// MySQL reports zero for an unchanged update, so the raw row distinguishes success from a lost CAS.
-		return 0 === $result
-			&& $expected_raw === $replacement_raw
-			&& $replacement_raw === $this->select( $key );
+		$selected = $this->read( $key );
+		if ( $selected->is_failure() ) {
+			return false;
+		}
+
+		return $replacement_raw === $selected->value;
 	}
 
 	/**
@@ -313,6 +318,20 @@ final readonly class OptionRows {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns whether the immediately preceding authoritative read failed at the database boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 *
+	 * @phpstan-impure
+	 */
+	private function last_read_failed(): bool {
+		return '' !== $this->wpdb->last_error;
+	}
 
 	/**
 	 * Throws when a blog switch makes the injected wpdb point at a different site's tables.

@@ -2,8 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -98,7 +101,12 @@ final readonly class OverlapGuard {
 			return ClaimResult::Claimed;
 		}
 
-		$raw = $this->rows->select( $key );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			return ClaimResult::Held;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
 			return ClaimResult::Held;
 		}
@@ -132,17 +140,23 @@ final readonly class OverlapGuard {
 	 * @param   string $name      Stable task or batch name.
 	 * @param   string $args_hash Stable identity of the start arguments.
 	 *
-	 * @return  string|null
+	 * @return  AbstractResult<string|null, EngineError>
 	 */
-	public function owner_run_id( string $name, string $args_hash ): ?string {
-		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
+	#[\NoDiscard( 'a lock-owner read outcome must be handled, not dropped' )]
+	public function owner_run_id( string $name, string $args_hash ): AbstractResult {
+		$selected = $this->rows->read( $this->option_name( $name, $args_hash ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
-			return null;
+			return new Success( null );
 		}
 
 		$lock = self::parse( $raw );
 
-		return $lock['run_id'] ?? null;
+		return new Success( $lock['run_id'] ?? null );
 	}
 
 	/**
@@ -158,8 +172,13 @@ final readonly class OverlapGuard {
 	 * @return  bool Whether ownership moved to the replacement run.
 	 */
 	public function replace( string $name, string $args_hash, string $replacement_run_id ): bool {
-		$key = $this->option_name( $name, $args_hash );
-		$raw = $this->rows->select( $key );
+		$key      = $this->option_name( $name, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			return false;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
 			return false;
 		}
@@ -184,23 +203,24 @@ final readonly class OverlapGuard {
 	 * @return  bool Whether execution may continue under the current fence.
 	 */
 	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null ): bool {
-		$key = $this->option_name( $name, $args_hash );
-		$raw = $this->rows->select( $key );
+		$key      = $this->option_name( $name, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			$this->logger->debug(
+				'Skipped execution-overlap lock heartbeat refresh after an authoritative read failure.',
+				array(
+					'key'       => $key,
+					'name'      => $name,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
+
+			return true;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
-			if ( $this->rows->last_select_failed() ) {
-				$this->logger->debug(
-					'Skipped execution-overlap lock heartbeat refresh after an authoritative read failure.',
-					array(
-						'key'       => $key,
-						'name'      => $name,
-						'args_hash' => $args_hash,
-						'run_id'    => $run_id,
-					)
-				);
-
-				return true;
-			}
-
 			return false;
 		}
 
@@ -228,21 +248,24 @@ final readonly class OverlapGuard {
 	 * @return  void
 	 */
 	public function release( string $name, string $args_hash, string $run_id ): void {
-		$key = $this->option_name( $name, $args_hash );
-		$raw = $this->rows->select( $key );
-		if ( null === $raw ) {
-			if ( $this->rows->last_select_failed() ) {
-				$this->logger->warning(
-					'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
-					array(
-						'key'       => $key,
-						'name'      => $name,
-						'args_hash' => $args_hash,
-						'run_id'    => $run_id,
-					)
-				);
-			}
+		$key      = $this->option_name( $name, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			$this->logger->warning(
+				'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
+				array(
+					'key'       => $key,
+					'name'      => $name,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
 
+			return;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
 			return;
 		}
 
@@ -271,9 +294,14 @@ final readonly class OverlapGuard {
 	 * @return  bool
 	 */
 	public function is_held( string $name, string $args_hash, int $staleness_window ): bool {
-		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
+		$selected = $this->rows->read( $this->option_name( $name, $args_hash ) );
+		if ( $selected->is_failure() ) {
+			return true;
+		}
+
+		$raw = $selected->value;
 		if ( null === $raw ) {
-			return $this->rows->last_select_failed();
+			return false;
 		}
 
 		$lock = self::parse( $raw );
@@ -296,32 +324,26 @@ final readonly class OverlapGuard {
 	 * @param   string $name      Stable task or batch name.
 	 * @param   string $args_hash Stable identity of the start arguments.
 	 *
-	 * @return  array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null
+	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null, EngineError>
 	 */
-	public function inspect_persisted_lock( string $name, string $args_hash ): ?array {
-		$raw = $this->rows->select( $this->option_name( $name, $args_hash ) );
-		if ( null === $raw ) {
-			return null;
+	#[\NoDiscard( 'a persisted-lock read outcome must be handled, not dropped' )]
+	public function inspect_persisted_lock( string $name, string $args_hash ): AbstractResult {
+		$selected = $this->rows->read( $this->option_name( $name, $args_hash ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
 		}
 
-		return array(
-			'raw'  => $raw,
-			'lock' => self::parse( $raw ),
-		);
-	}
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return new Success( null );
+		}
 
-	/**
-	 * Returns whether the immediately preceding authoritative lock inspection failed.
-	 *
-	 * @internal Read-only engine inspection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function last_inspect_failed(): bool {
-		return $this->rows->last_select_failed();
+		return new Success(
+			array(
+				'raw'  => $raw,
+				'lock' => self::parse( $raw ),
+			)
+		);
 	}
 
 	/**
@@ -358,7 +380,12 @@ final readonly class OverlapGuard {
 	 * @return  bool Whether the exact stale row was deleted.
 	 */
 	public function delete_stale_owned_lock( string $name, string $args_hash, string $run_id, int $staleness_window ): bool {
-		$snapshot = $this->inspect_persisted_lock( $name, $args_hash );
+		$inspected = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return false;
+		}
+
+		$snapshot = $inspected->value;
 		if ( null === $snapshot || null === $snapshot['lock'] ) {
 			return false;
 		}
@@ -390,11 +417,14 @@ final readonly class OverlapGuard {
 	 * @return  MaintenanceFenceOutcome Typed ownership classification.
 	 */
 	public function fence_abandoned_run( string $name, string $args_hash, string $run_id, int $staleness_window ): MaintenanceFenceOutcome {
-		$snapshot = $this->inspect_persisted_lock( $name, $args_hash );
+		$inspected = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			return $this->rows->last_select_failed()
-				? MaintenanceFenceOutcome::Indeterminate
-				: MaintenanceFenceOutcome::Abandoned;
+			return MaintenanceFenceOutcome::Abandoned;
 		}
 
 		$lock = $snapshot['lock'];

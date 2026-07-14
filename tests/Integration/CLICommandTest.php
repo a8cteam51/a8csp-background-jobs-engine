@@ -53,6 +53,10 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const INSPECTION_BOOTSTRAP = self::WP_PATH
 		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
 
+	/** Test-only WP-CLI bootstrap that fails the retained-run row read after name discovery. */
+	private const FAILED_READ_BOOTSTRAP = self::WP_PATH
+		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-failed-read.php';
+
 	/** Owner declared in every isolated inspection request. */
 	private const INSPECTION_OWNER = 'integration-cli-inspection-owner';
 
@@ -109,10 +113,18 @@ final class CLICommandTest extends IntegrationTestCase {
 			$result['stdout']
 		);
 		self::assertSame( '', $result['stderr'] );
-		self::assertNull( self::option_rows()->select( self::cancel_run_option_name() ) );
+		$run_read = self::option_rows()->read( self::cancel_run_option_name() );
+		if ( $run_read->is_failure() ) {
+			self::fail( 'The cancelled run option could not be read.' );
+		}
+		self::assertNull( $run_read->value );
 		\wp_cache_delete( self::cancel_run_option_name(), 'options' );
 
-		$history_raw = self::option_rows()->select( 'a8csp_bgte_history_' . self::CANCEL_NAME );
+		$history_read = self::option_rows()->read( 'a8csp_bgte_history_' . self::CANCEL_NAME );
+		if ( $history_read->is_failure() ) {
+			self::fail( 'The cancelled run history could not be read.' );
+		}
+		$history_raw = $history_read->value;
 		self::assertIsString( $history_raw );
 		$history = \maybe_unserialize( $history_raw );
 		self::assertIsArray( $history );
@@ -289,6 +301,30 @@ final class CLICommandTest extends IntegrationTestCase {
 			$result['stdout']
 		);
 		self::assertSame( '', $result['stderr'] );
+	}
+
+	/**
+	 * A failed retained-run read renders as unavailable instead of an empty failed-run list.
+	 *
+	 * @return  void
+	 */
+	public function test_failed_list_reports_an_authoritative_store_read_failure(): void {
+		$this->expect_option( self::option_name( self::LIST_STORE_NAME ) );
+		$this->seed_failed_run( self::LIST_STORE_NAME );
+
+		$result = self::run_command_with_globals(
+			'failed',
+			array( '--require=' . self::FAILED_READ_BOOTSTRAP ),
+			'list'
+		);
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			'Error: Failed runs for "integration-cli-command-list-store" are unavailable because the authoritative ' .
+			"database read failed; resolve the database error and try again.\n",
+			$result['stderr']
+		);
 	}
 
 	/**
@@ -470,6 +506,29 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * A failed schedule-registry read renders as unavailable instead of an empty registry.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_list_reports_an_authoritative_registry_read_failure(): void {
+		$result = self::run_command_with_globals(
+			'schedules',
+			array(
+				'--require=' . self::INSPECTION_BOOTSTRAP,
+				'--require=' . self::FAILED_READ_BOOTSTRAP,
+			),
+			'list'
+		);
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			"Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
 	 * A missing schedule action uses WP-CLI's native required-synopsis failure.
 	 *
 	 * @return  void
@@ -593,6 +652,30 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "No live runs or history are retained for \"unknown-stable-name\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
+	}
+
+	/**
+	 * A failed run-history read renders as unavailable instead of an empty history.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_list_reports_an_authoritative_history_read_failure(): void {
+		$result = self::run_command_with_globals(
+			'runs',
+			array(
+				'--require=' . self::INSPECTION_BOOTSTRAP,
+				'--require=' . self::FAILED_READ_BOOTSTRAP,
+			),
+			'list',
+			self::INSPECTION_TASK
+		);
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			"Warning: Recent run history is unavailable because an authoritative database read failed.\n",
+			$result['stderr']
+		);
 	}
 
 	/**
@@ -984,12 +1067,19 @@ final class CLICommandTest extends IntegrationTestCase {
 	private static function assert_store_absent( string $name, FailedRunStore $store, OptionRows $rows ): void {
 		$option_name = self::option_name( $name );
 
-		self::assertNull( $rows->select( $option_name ) );
-		self::assertFalse( $rows->last_select_failed() );
+		$read = $rows->read( $option_name );
+		if ( $read->is_failure() ) {
+			self::fail( 'The failed-run option could not be read.' );
+		}
+		self::assertNull( $read->value );
 
 		// The child process cannot clear this PHPUnit request's in-memory option cache.
 		\wp_cache_delete( $option_name, 'options' );
-		self::assertSame( array(), $store->all() );
+		$all = $store->all();
+		if ( $all->is_failure() ) {
+			self::fail( 'The failed-run store could not be read.' );
+		}
+		self::assertSame( array(), $all->value );
 	}
 
 	/**
