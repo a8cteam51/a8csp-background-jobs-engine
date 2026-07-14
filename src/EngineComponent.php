@@ -2,14 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
@@ -117,33 +118,42 @@ final class EngineComponent implements Component {
 			$terminal_transitions,
 			$failure_lifecycle
 		);
-		$orchestrator         = new Orchestrator(
+		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,
 			$scheduler,
 			$guard,
 			$stores,
-			$logger,
 			$clock,
+			$randomizer,
+			$logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
-		$tasks->register( new MaintenanceTask( $wpdb, $orchestrator, $guard, $logger ) );
+		$reconciliation       = new RunReconciliation(
+			$guard,
+			$stores,
+			$clock,
+			$logger,
+			$lock_windows,
+			$terminal_transitions,
+			$tasks,
+			$batches,
+		);
+		$tasks->register( new MaintenanceTask( $wpdb, $reconciliation, $guard, $logger ) );
 		$schedule_api = new Schedules(
 			$schedules,
 			$scheduler,
 			$clock,
-			$orchestrator,
+			$dispatcher,
 			new OccurrenceLease( $lock_rows, $clock, $randomizer ),
 			$logger
 		);
 		$engine       = new Engine(
-			new Tasks( $tasks, $orchestrator ),
+			new Tasks( $tasks, $dispatcher ),
 			$schedule_api,
-			new Batches( $batches, $orchestrator ),
-			$orchestrator,
+			new Batches( $batches, $dispatcher ),
+			$dispatcher,
 		);
 
 		$scheduler->register_hooks();

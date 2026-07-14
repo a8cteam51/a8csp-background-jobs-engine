@@ -2,13 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TaskDispatchSkipped;
@@ -35,13 +33,13 @@ use PHPUnit\Framework\TestCase;
  * Pins schedule-only overlap dispatch without changing the public task API.
  *
  */
-#[CoversClass( Orchestrator::class )]
+#[CoversClass( Dispatcher::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( BatchRegistry::class )]
-final class OrchestratorScheduleDispatchTest extends TestCase {
+final class DispatcherScheduleDispatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS      = array( 'site_id' => 7 );
@@ -51,7 +49,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 	private const RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private RecordingBackend $backend;
-	private Orchestrator $orchestrator;
+	private Dispatcher $dispatcher;
 	private WpdbLockSpy $wpdb;
 
 	// endregion.
@@ -108,38 +106,19 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$clock,
-			$randomizer,
-			$logger,
-			$terminal_transitions
-		);
 		$lock_windows         = new LockWindows( $clock );
-		$lifecycle_deliveries = new LifecycleDeliveries(
-			$tasks,
-			$batches,
-			$this->backend,
-			$stores,
-			$logger,
-			$clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle
-		);
 
-		$this->orchestrator = new Orchestrator(
+		$this->dispatcher = new Dispatcher(
 			$tasks,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$logger,
 			$clock,
+			$randomizer,
+			$logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
 	}
 
@@ -161,7 +140,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		bool $backend_unique
 	): void {
 		$policy = OverlapPolicy::from( $policy_value );
-		$result = $this->orchestrator->dispatch_scheduled_task( self::NAME, self::ARGS, $policy, 23 );
+		$result = $this->dispatcher->dispatch_scheduled_task( self::NAME, self::ARGS, $policy, 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -199,7 +178,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 	public function test_accepted_callback_runs_before_history_and_started_hooks(): void {
 		$called = false;
 
-		$result = $this->orchestrator->dispatch_scheduled_task(
+		$result = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Allow,
@@ -233,7 +212,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 	public function test_allow_dispatch_does_not_contend_with_a_held_shared_identity(): void {
 		$this->seed_held_lock();
 
-		$result = $this->orchestrator->dispatch_scheduled_task(
+		$result = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Allow,
@@ -260,7 +239,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_allow_dispatch_reports_a_forced_run_id_collision(): void {
-		$first = $this->orchestrator->dispatch_scheduled_task(
+		$first = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Allow,
@@ -281,7 +260,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		self::assertIsString( $raw );
 		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . $salted_hash, $raw );
 
-		$collision = $this->orchestrator->dispatch_scheduled_task(
+		$collision = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Allow,
@@ -308,7 +287,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
 		$accepted = false;
-		$result   = $this->orchestrator->dispatch_scheduled_task(
+		$result   = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Skip,
@@ -335,7 +314,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 	public function test_skip_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
 		$this->wpdb->script_result( 'insert', false );
 
-		$result = $this->orchestrator->dispatch_scheduled_task(
+		$result = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Skip,
@@ -357,7 +336,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 	public function test_replace_dispatch_takes_over_a_held_lock(): void {
 		$this->seed_held_lock();
 
-		$result = $this->orchestrator->dispatch_scheduled_task(
+		$result = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Replace,
@@ -392,7 +371,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->orchestrator->dispatch_scheduled_task(
+		$result = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Replace,
@@ -421,7 +400,7 @@ final class OrchestratorScheduleDispatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $failure;
 
 		$accepted = false;
-		$result   = $this->orchestrator->dispatch_scheduled_task(
+		$result   = $this->dispatcher->dispatch_scheduled_task(
 			self::NAME,
 			self::ARGS,
 			OverlapPolicy::Replace,

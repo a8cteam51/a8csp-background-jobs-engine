@@ -4,12 +4,10 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
@@ -965,37 +963,24 @@ final class SchedulesTest extends TestCase {
 		$batches              = new BatchRegistry();
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
-		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $logger, $terminal_transitions );
-		$lifecycle_deliveries = new LifecycleDeliveries(
-			$tasks,
-			$batches,
-			$backend,
-			$stores,
-			$logger,
-			$clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-		$orchestrator         = new Orchestrator(
+		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,
 			$backend,
 			$guard,
 			$stores,
-			$logger,
 			$clock,
+			$randomizer,
+			$logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
 
 		return new Schedules(
 			$registry,
 			$backend,
 			$clock,
-			$orchestrator,
+			$dispatcher,
 			new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
 			$logger
 		);

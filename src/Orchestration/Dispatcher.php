@@ -19,14 +19,12 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Coordinates registered tasks and batches from dispatch through terminal cleanup.
- *
- * Same-sequence redelivery remains at-least-once execution and relies on task and batch idempotency.
+ * Admits registered task and batch runs to the scheduling backend.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Orchestrator {
+final readonly class Dispatcher {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -74,12 +72,11 @@ final readonly class Orchestrator {
 	 * @param   BackendInterface    $scheduler     Scheduling facade boundary.
 	 * @param   OverlapGuard        $overlap_guard Execution-overlap guard.
 	 * @param   StoreFactory        $stores        Name-bound store factory.
-	 * @param   LoggerInterface     $logger        Log event sink.
 	 * @param   ClockInterface      $clock         Timestamp source.
+	 * @param   RandomizerInterface $randomizer    Run identifier randomness.
+	 * @param   LoggerInterface     $logger        Log event sink.
 	 * @param   LockWindows         $lock_windows  Filterable run-lock timing policy.
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   LifecycleDeliveries $lifecycle_deliveries Internal lifecycle delivery coordinator.
-	 * @param   RandomizerInterface $randomizer   Run identifier randomness.
 	 */
 	public function __construct(
 		private TaskRegistry $tasks,
@@ -87,12 +84,11 @@ final readonly class Orchestrator {
 		private BackendInterface $scheduler,
 		private OverlapGuard $overlap_guard,
 		private StoreFactory $stores,
-		private LoggerInterface $logger,
 		private ClockInterface $clock,
+		private RandomizerInterface $randomizer,
+		private LoggerInterface $logger,
 		private LockWindows $lock_windows,
 		private TerminalTransitions $terminal_transitions,
-		private LifecycleDeliveries $lifecycle_deliveries,
-		private RandomizerInterface $randomizer,
 	) {}
 
 	// endregion
@@ -380,288 +376,6 @@ final readonly class Orchestrator {
 		}
 
 		return $result;
-	}
-
-	/**
-	 * Handles queue generation for one scheduled batch run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
-	 *
-	 * @return  void
-	 */
-	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$this->lifecycle_deliveries->handle_start_action( $batch_name, $run_id, $action_seq );
-	}
-
-	/**
-	 * Handles one queue advancement for a scheduled batch run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
-	 *
-	 * @return  void
-	 */
-	public function handle_continue_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$this->lifecycle_deliveries->handle_continue_action( $batch_name, $run_id, $action_seq );
-	}
-
-	/**
-	 * Dispatches one scheduled run action to its registered task or batch.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                      $name                     Stable task or batch name.
-	 * @param   string                      $run_id                   Run identifier.
-	 * @param   array<array-key, mixed>|int $chunk_args_or_action_seq Batch chunk arguments or a task action sequence.
-	 * @param   int|null                    $action_seq               Batch action sequence, or null for a task action.
-	 *
-	 * @return  void
-	 */
-	public function handle_run_action(
-		string $name,
-		string $run_id,
-		array|int $chunk_args_or_action_seq,
-		?int $action_seq = null
-	): void {
-		$this->lifecycle_deliveries->handle_run_action( $name, $run_id, $chunk_args_or_action_seq, $action_seq );
-	}
-
-	/**
-	 * Handles terminal success for one drained batch run.
-	 *
-	 * Once success handling begins, every remaining write touches only this run's rows, and lock release
-	 * self-guards against a new owner. The outcome remains Completed regardless of current lock ownership;
-	 * recording another outcome would lie.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
-	 *
-	 * @return  void
-	 */
-	public function handle_cleanup_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$this->lifecycle_deliveries->handle_cleanup_action( $batch_name, $run_id, $action_seq );
-	}
-
-	/**
-	 * Reclaims a stale lock only after confirming its owning run option remains absent.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name      Stable task or batch name.
-	 * @param   string $args_hash Stable argument identity.
-	 * @param   string $run_id    Lock owner run identifier.
-	 *
-	 * @return  void
-	 */
-	public function reconcile_orphaned_lock( string $name, string $args_hash, string $run_id ): void {
-		$run_store = $this->stores->run_store( $name );
-		$snapshot  = $run_store->inspect( $run_id );
-		if ( null === $snapshot && $run_store->last_inspect_failed() ) {
-			return;
-		}
-
-		$state = $snapshot['state'] ?? null;
-		if ( null !== $state && $args_hash === $state->args_hash ) {
-			return;
-		}
-
-		if ( null !== $snapshot && null === $state ) {
-			if ( ! $run_store->delete_exact( $run_id, $snapshot['raw'] ) ) {
-				return;
-			}
-
-			$this->logger->warning(
-				'Deleted corrupt run option while reconciling its execution-overlap lock.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-				)
-			);
-		}
-
-		if ( ! $this->overlap_guard->delete_stale_owned_lock(
-			$name,
-			$args_hash,
-			$run_id,
-			$this->lock_windows->lock_staleness( $name, $run_id )
-		) ) {
-			return;
-		}
-
-		$this->logger->warning(
-			'Reclaimed stale execution-overlap lock without a valid matching run option.',
-			array(
-				'name'      => $name,
-				'args_hash' => $args_hash,
-				'run_id'    => $run_id,
-			)
-		);
-	}
-
-	/**
-	 * Reconciles one running crash orphan or old terminal run through terminal machinery.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name           Stable task or batch name.
-	 * @param   string $run_id         Run identifier.
-	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
-	 *
-	 * @return  string|null Transferred argument identity whose foreign lock must remain as fence evidence.
-	 */
-	public function reconcile_run( string $name, string $run_id, int $terminal_grace ): ?string {
-		$run_store = $this->stores->run_store( $name );
-		$snapshot  = $run_store->inspect( $run_id );
-		$state     = $snapshot['state'] ?? null;
-		if ( null === $snapshot ) {
-			return null;
-		}
-		if ( null === $state ) {
-			if ( $run_store->delete_exact( $run_id, $snapshot['raw'] ) ) {
-				$this->logger->warning(
-					'Deleted corrupt run option during maintenance sweep.',
-					array(
-						'name'   => $name,
-						'run_id' => $run_id,
-					)
-				);
-			}
-
-			return null;
-		}
-
-		if ( RunStatus::Running === $state->status ) {
-			$staleness = $this->lock_windows->lock_staleness( $name, $run_id );
-			$fence     = $this->overlap_guard->fence_abandoned_run(
-				$name,
-				$state->args_hash,
-				$run_id,
-				$staleness
-			);
-			if (
-				MaintenanceFenceOutcome::Owned === $fence
-				|| MaintenanceFenceOutcome::Indeterminate === $fence
-			) {
-				return null;
-			}
-
-			$batch     = $this->batches->get( $name );
-			$work_type = null !== $batch && null === $this->tasks->get( $name ) ? 'Batch' : 'Task';
-			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
-				// A transferred lock can appear while the incumbent is still inside its callback; a fresh run heartbeat leaves terminalization to that worker's next ownership fence.
-				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
-					return $state->args_hash;
-				}
-
-				$latest_run_id = $this->stores
-					->latest_run_pointer( $name )
-					->get_latest_for_hash( $state->args_hash );
-				$this->terminal_transitions->supersede_run(
-					$name,
-					$run_id,
-					$latest_run_id,
-					$state,
-					$run_store,
-					$work_type,
-					$snapshot['raw']
-				);
-
-				return null;
-			}
-
-			$error = new EngineError(
-				\sprintf(
-					'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.',
-					$run_id,
-					$name
-				)
-			);
-			$this->logger->warning(
-				'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-				)
-			);
-			$attempts = RunState::increment_attempts_safely( $state->chunk_retries );
-			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
-				$this->terminal_transitions->fail_batch(
-					$batch,
-					$name,
-					$run_id,
-					$state,
-					$run_store,
-					$error,
-					$attempts,
-					$snapshot['raw']
-				);
-			} else {
-				$this->terminal_transitions->fail_run(
-					$name,
-					$run_id,
-					$state,
-					$run_store,
-					$error,
-					$attempts,
-					$snapshot['raw']
-				);
-			}
-
-			return null;
-		}
-
-		$now = $this->clock->now()->getTimestamp();
-		if (
-			$state->heartbeat_at > \PHP_INT_MAX - $terminal_grace
-			|| $now <= $state->heartbeat_at + $terminal_grace
-		) {
-			return null;
-		}
-
-		if ( $this->terminal_transitions->finish_claimed_transition( $name, $run_id, $state, $snapshot['raw'], $run_store ) ) {
-			$this->logger->warning(
-				'Reclaimed old terminal run option left behind after transition cleanup.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-					'status' => $state->status->value,
-				)
-			);
-		}
-
-		return null;
-	}
-
-	/**
-	 * Registers the internal lifecycle action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function register_hooks(): void {
-		$this->lifecycle_deliveries->register_hooks();
 	}
 
 	// endregion

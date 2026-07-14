@@ -18,7 +18,7 @@ use Psr\Log\LoggerInterface;
  * fences. Consumers' idempotency contract covers both windows. Malformed rows are not held and follow
  * the same value-conditioned reclaim path.
  *
- * The orchestrator resolves the 15-minute default, lock-staleness filter, and
+ * LockWindows resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
  *
  * @since   1.0.0

@@ -7,7 +7,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Orchestration;
 /**
  * Typed held-lock outcome for an internal scheduled-task dispatch.
  *
- * @internal Orchestrator dispatch outcome consumed by public enqueue and schedule APIs.
+ * @internal Dispatcher outcome consumed by public enqueue and schedule APIs.
  *
  * @since   1.0.0
  * @version 1.0.0

@@ -3,13 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
@@ -45,9 +44,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
-#[UsesClass( LifecycleDeliveries::class )]
 #[UsesClass( LockRows::class )]
-#[UsesClass( Orchestrator::class )]
+#[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -75,14 +73,13 @@ final class FailureLifecycleTest extends TestCase {
 	private FixedClock $clock;
 	private RecordingBackend $backend;
 	private FailureLifecycle $failure_lifecycle;
-	private LifecycleDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private RecordingTask $task;
 	private TerminalTransitions $terminal_transitions;
 	private TaskRegistry $registry;
 	private WpdbLockSpy $wpdb;
-	private Orchestrator $orchestrator;
+	private Dispatcher $dispatcher;
 
 	// endregion.
 
@@ -150,30 +147,17 @@ final class FailureLifecycleTest extends TestCase {
 			$this->terminal_transitions
 		);
 
-		$this->lifecycle_deliveries = new LifecycleDeliveries(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$this->terminal_transitions,
-			$this->failure_lifecycle,
-		);
-
-		$this->orchestrator = new Orchestrator(
+		$this->dispatcher = new Dispatcher(
 			$this->registry,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$this->randomizer,
+			$this->logger,
 			$lock_windows,
 			$this->terminal_transitions,
-			$this->lifecycle_deliveries,
-			$this->randomizer,
 		);
 	}
 
@@ -755,7 +739,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	private function prepare_run_action(): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->clock->timestamp       = self::NOW + 90;

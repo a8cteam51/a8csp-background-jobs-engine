@@ -2,13 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
@@ -44,7 +42,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( OccurrenceLease::class )]
-#[UsesClass( Orchestrator::class )]
+#[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( StoreFactory::class )]
@@ -129,42 +127,23 @@ final class ScheduleExecutionTest extends TestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-		$lifecycle_deliveries = new LifecycleDeliveries(
-			$tasks,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-		$orchestrator         = new Orchestrator(
+		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$randomizer,
+			$this->logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
 		$this->api            = new Schedules(
 			$this->registry,
 			$this->backend,
 			$this->clock,
-			$orchestrator,
+			$dispatcher,
 			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
 			$this->logger
 		);
@@ -834,43 +813,24 @@ final class ScheduleExecutionTest extends TestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-		$lifecycle_deliveries = new LifecycleDeliveries(
-			$tasks,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-		$orchestrator         = new Orchestrator(
+		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$randomizer,
+			$this->logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
 
 		return new Schedules(
 			$registry,
 			$this->backend,
 			$this->clock,
-			$orchestrator,
+			$dispatcher,
 			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
 			$this->logger
 		);

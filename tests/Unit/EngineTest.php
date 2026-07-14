@@ -4,13 +4,11 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
@@ -46,7 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LockRows::class )]
-#[UsesClass( Orchestrator::class )]
+#[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
@@ -116,51 +114,32 @@ final class EngineTest extends TestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$clock,
-			$randomizer,
-			$logger,
-			$terminal_transitions
-		);
-		$lifecycle_deliveries = new LifecycleDeliveries(
-			$tasks,
-			$batches,
-			$this->backend,
-			$stores,
-			$logger,
-			$clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
 
-		$orchestrator = new Orchestrator(
+		$dispatcher = new Dispatcher(
 			$tasks,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$logger,
 			$clock,
+			$randomizer,
+			$logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
 
 		$this->engine = new Engine(
-			new Tasks( $tasks, $orchestrator ),
+			new Tasks( $tasks, $dispatcher ),
 			new Schedules(
 				new ScheduleRegistry( new OptionRows( $this->wpdb ) ),
 				$this->backend,
 				$clock,
-				$orchestrator,
+				$dispatcher,
 				new OccurrenceLease( new LockRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
 				$logger
 			),
-			new Batches( $batches, $orchestrator ),
-			$orchestrator,
+			new Batches( $batches, $dispatcher ),
+			$dispatcher,
 		);
 	}
 

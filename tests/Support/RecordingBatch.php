@@ -76,7 +76,7 @@ final class RecordingBatch implements BatchInterface {
 	 */
 	public ?\Closure $on_process = null;
 
-	/** Retry policy returned to the orchestrator. */
+	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
 	/**

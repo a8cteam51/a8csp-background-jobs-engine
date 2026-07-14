@@ -3,13 +3,11 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\BatchContext;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
@@ -44,13 +42,12 @@ use PHPUnit\Framework\TestCase;
  * Pins batch admission and manual retry across scheduling, storage, locks, and logs.
  *
  */
-#[CoversClass( Orchestrator::class )]
+#[CoversClass( Dispatcher::class )]
 #[UsesClass( BatchContext::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
-#[UsesClass( LifecycleDeliveries::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
@@ -61,7 +58,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
-final class OrchestratorBatchTest extends TestCase {
+final class DispatcherBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS = array(
@@ -77,13 +74,12 @@ final class OrchestratorBatchTest extends TestCase {
 	private FixedClock $clock;
 	private RecordingBackend $backend;
 	private RecordingBatch $batch;
-	private LifecycleDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private BatchRegistry $batches;
 	private TaskRegistry $tasks;
 	private WpdbLockSpy $wpdb;
-	private Orchestrator $orchestrator;
+	private Dispatcher $dispatcher;
 
 	// endregion.
 
@@ -142,39 +138,18 @@ final class OrchestratorBatchTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-
-		$this->lifecycle_deliveries = new LifecycleDeliveries(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-
 		$this->batches->register( $this->batch );
-		$this->orchestrator = new Orchestrator(
+		$this->dispatcher = new Dispatcher(
 			$this->tasks,
 			$this->batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$this->randomizer,
+			$this->logger,
 			$lock_windows,
 			$terminal_transitions,
-			$this->lifecycle_deliveries,
-			$this->randomizer,
 		);
 	}
 
@@ -190,7 +165,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_batch_creates_a_run_and_schedules_the_internal_start_action(): void {
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true, priority: 23 );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -233,7 +208,7 @@ final class OrchestratorBatchTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_priorities' )]
 	public function test_start_batch_rejects_priority_outside_the_engine_range( int $priority ): void {
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, priority: $priority );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, priority: $priority );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -279,7 +254,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$new_run_id              = '00000000001700000100-0000000000000000043';
 
-		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
@@ -316,7 +291,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$failure                                 = $this->scheduling_failure_result();
 		$this->backend->results['enqueue_async'] = $failure;
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		self::assertSame( $failure, $result );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -343,7 +318,7 @@ final class OrchestratorBatchTest extends TestCase {
 	public function test_start_batch_rejects_a_unique_held_overlap_without_stopping_the_previous_run(): void {
 		$this->seed_running_lock();
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -369,7 +344,7 @@ final class OrchestratorBatchTest extends TestCase {
 		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -397,7 +372,7 @@ final class OrchestratorBatchTest extends TestCase {
 		);
 		$GLOBALS['a8csp_bgte_test_options']           = $options;
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -418,7 +393,7 @@ final class OrchestratorBatchTest extends TestCase {
 	public function test_start_batch_replaces_a_held_incumbent(): void {
 		$this->seed_running_lock();
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -460,7 +435,7 @@ final class OrchestratorBatchTest extends TestCase {
 		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -486,7 +461,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $failure;
 		$this->seed_running_lock();
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		self::assertSame( $failure, $result );
 		self::assertNull( $this->lock() );
@@ -512,7 +487,7 @@ final class OrchestratorBatchTest extends TestCase {
 		$options[ $this->run_option_name() ] = array( 'collision' => true );
 		$GLOBALS['a8csp_bgte_test_options']  = $options;
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -558,7 +533,7 @@ final class OrchestratorBatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -579,7 +554,7 @@ final class OrchestratorBatchTest extends TestCase {
 	public function test_start_batch_rejects_a_name_resolvable_in_both_registries(): void {
 		$this->tasks->register( new RecordingTask( self::NAME ) );
 
-		$result = $this->orchestrator->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
 
 		$this->assert_ambiguous_name_failure( $result );
 		$this->assert_start_boundaries_untouched();
@@ -593,7 +568,7 @@ final class OrchestratorBatchTest extends TestCase {
 	public function test_enqueue_rejects_a_name_resolvable_in_both_registries(): void {
 		$this->tasks->register( new RecordingTask( self::NAME ) );
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 
 		$this->assert_ambiguous_name_failure( $result );
 		$this->assert_start_boundaries_untouched();
@@ -607,7 +582,7 @@ final class OrchestratorBatchTest extends TestCase {
 	public function test_retry_failed_rejects_a_name_resolvable_in_both_registries(): void {
 		$this->tasks->register( new RecordingTask( self::NAME ) );
 
-		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
 
 		$this->assert_ambiguous_name_failure( $result );
 		$this->assert_start_boundaries_untouched();

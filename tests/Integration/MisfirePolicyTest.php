@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
@@ -303,24 +303,23 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$terminal_transitions,
 			$failure_lifecycle
 		);
-		$orchestrator         = new Orchestrator(
+		$dispatcher           = new Dispatcher(
 			$tasks,
 			$batches,
 			$scheduler,
 			$guard,
 			$stores,
-			$logger,
 			$clock,
+			$randomizer,
+			$logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer
 		);
 		$schedules            = new Schedules(
 			new ScheduleRegistry( $rows ),
 			$scheduler,
 			$clock,
-			$orchestrator,
+			$dispatcher,
 			new OccurrenceLease( $locks, $clock, $randomizer ),
 			$logger
 		);
@@ -328,13 +327,13 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		\remove_all_actions( 'a8csp/background_tasks/schedule_due' );
 		\remove_all_actions( 'a8csp/background_tasks/run' );
 		\add_action( 'a8csp/background_tasks/schedule_due', array( $schedules, 'handle_schedule_due' ), 10, 2 );
-		\add_action( 'a8csp/background_tasks/run', array( $orchestrator, 'handle_run_action' ), 10, 4 );
+		\add_action( 'a8csp/background_tasks/run', array( $lifecycle_deliveries, 'handle_run_action' ), 10, 4 );
 
 		return new Engine(
-			new Tasks( $tasks, $orchestrator ),
+			new Tasks( $tasks, $dispatcher ),
 			$schedules,
-			new Batches( $batches, $orchestrator ),
-			$orchestrator
+			new Batches( $batches, $dispatcher ),
+			$dispatcher
 		);
 	}
 

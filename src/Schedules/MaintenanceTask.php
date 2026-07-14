@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\AbstractTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunReconciliation;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -70,14 +70,14 @@ final class MaintenanceTask extends AbstractTask {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \wpdb           $wpdb         Site-bound WordPress database connection.
-	 * @param   Orchestrator    $orchestrator Run-reconciliation boundary.
-	 * @param   OverlapGuard    $guard        Lock schema and exact-delete boundary.
-	 * @param   LoggerInterface $logger       Log event sink.
+	 * @param   \wpdb             $wpdb           Site-bound WordPress database connection.
+	 * @param   RunReconciliation $reconciliation Run-reconciliation boundary.
+	 * @param   OverlapGuard      $guard          Lock schema and exact-delete boundary.
+	 * @param   LoggerInterface   $logger         Log event sink.
 	 */
 	public function __construct(
 		private readonly \wpdb $wpdb,
-		private readonly Orchestrator $orchestrator,
+		private readonly RunReconciliation $reconciliation,
 		private readonly OverlapGuard $guard,
 		private readonly LoggerInterface $logger,
 	) {}
@@ -119,7 +119,7 @@ final class MaintenanceTask extends AbstractTask {
 				continue;
 			}
 
-			$transferred_hash = $this->orchestrator->reconcile_run(
+			$transferred_hash = $this->reconciliation->reconcile_run(
 				$identity[0],
 				$identity[1],
 				self::TERMINAL_GRACE
@@ -162,7 +162,7 @@ final class MaintenanceTask extends AbstractTask {
 				continue;
 			}
 
-			$this->orchestrator->reconcile_orphaned_lock(
+			$this->reconciliation->reconcile_orphaned_lock(
 				$name,
 				$args_hash,
 				$lock['run_id']

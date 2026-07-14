@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
@@ -28,12 +28,12 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchRegistry $registry     Registered batch instances.
-	 * @param   Orchestrator  $orchestrator Background-work coordinator.
+	 * @param   BatchRegistry $registry   Registered batch instances.
+	 * @param   Dispatcher    $dispatcher Background-work admission coordinator.
 	 */
 	public function __construct(
 		private BatchRegistry $registry,
-		private Orchestrator $orchestrator,
+		private Dispatcher $dispatcher,
 	) {}
 
 	// endregion
@@ -98,7 +98,7 @@ final readonly class Batches {
 			);
 		}
 
-		return $this->orchestrator->start_batch( $name, $start_args, $unique, $priority );
+		return $this->dispatcher->start_batch( $name, $start_args, $unique, $priority );
 	}
 
 	// endregion

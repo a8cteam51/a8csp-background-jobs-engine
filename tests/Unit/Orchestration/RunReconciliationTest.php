@@ -1,15 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Schedules;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
@@ -31,12 +32,13 @@ use PHPUnit\Framework\TestCase;
  * Pins periodic reconciliation of abandoned lock and run state.
  *
  */
-#[CoversClass( MaintenanceTask::class )]
-#[UsesClass( Orchestrator::class )]
+#[CoversClass( RunReconciliation::class )]
+#[UsesClass( Dispatcher::class )]
+#[UsesClass( MaintenanceTask::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( StoreFactory::class )]
-final class MaintenanceTaskTest extends TestCase {
+final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS      = array( 'site_id' => 7 );
@@ -47,9 +49,10 @@ final class MaintenanceTaskTest extends TestCase {
 
 	private FixedClock $clock;
 	private BatchRegistry $batches;
+	private Dispatcher $dispatcher;
+	private LifecycleDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
-	private Orchestrator $orchestrator;
 	private WpdbLockSpy $wpdb;
 
 	// endregion.
@@ -104,20 +107,20 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->wpdb    = new WpdbLockSpy();
 		$tasks         = new TaskRegistry();
 		$tasks->register( new RecordingTask( self::NAME ) );
-		$backend              = new RecordingBackend();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$randomizer           = new RecordingRandomizer( 42 );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
+		$backend                    = new RecordingBackend();
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
+		$stores                     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$randomizer                 = new RecordingRandomizer( 42 );
+		$terminal_transitions       = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
+		$failure_lifecycle          = new FailureLifecycle(
 			$backend,
 			$this->clock,
 			$randomizer,
 			$this->logger,
 			$terminal_transitions
 		);
-		$lock_windows         = new LockWindows( $this->clock );
-		$lifecycle_deliveries = new LifecycleDeliveries(
+		$lock_windows               = new LockWindows( $this->clock );
+		$this->lifecycle_deliveries = new LifecycleDeliveries(
 			$tasks,
 			$this->batches,
 			$backend,
@@ -128,22 +131,31 @@ final class MaintenanceTaskTest extends TestCase {
 			$terminal_transitions,
 			$failure_lifecycle
 		);
-		$this->orchestrator   = new Orchestrator(
+		$this->dispatcher           = new Dispatcher(
 			$tasks,
 			$this->batches,
 			$backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$randomizer,
+			$this->logger,
 			$lock_windows,
 			$terminal_transitions,
-			$lifecycle_deliveries,
-			$randomizer,
 		);
-		$this->maintenance    = new MaintenanceTask(
+		$reconciliation             = new RunReconciliation(
+			$guard,
+			$stores,
+			$this->clock,
+			$this->logger,
+			$lock_windows,
+			$terminal_transitions,
+			$tasks,
+			$this->batches,
+		);
+		$this->maintenance          = new MaintenanceTask(
 			$this->wpdb,
-			$this->orchestrator,
+			$reconciliation,
 			$guard,
 			$this->logger
 		);
@@ -410,7 +422,7 @@ final class MaintenanceTaskTest extends TestCase {
 		$name  = 'crashed-batch';
 		$batch = new RecordingBatch( $name );
 		$this->batches->register( $batch );
-		$result = $this->orchestrator->start_batch( $name, self::ARGS );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -544,7 +556,7 @@ final class MaintenanceTaskTest extends TestCase {
 	public function test_sweep_saturates_batch_failure_attempts_at_php_int_max(): void {
 		$name = 'crashed-batch';
 		$this->batches->register( new RecordingBatch( $name ) );
-		$result = $this->orchestrator->start_batch( $name, self::ARGS );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$run_name = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
 		$this->set_run_chunk_retries( $run_name, \PHP_INT_MAX );
@@ -576,7 +588,7 @@ final class MaintenanceTaskTest extends TestCase {
 			}
 		);
 
-		$this->orchestrator->handle_run_action( self::NAME, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, 1 );
 
 		self::assertSame(
 			array(
@@ -673,12 +685,12 @@ final class MaintenanceTaskTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Creates one ordinary running task through the orchestrator.
+	 * Creates one ordinary running task through the dispatcher.
 	 *
 	 * @return  void
 	 */
 	private function create_running_run(): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

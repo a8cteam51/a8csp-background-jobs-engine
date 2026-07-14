@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
@@ -42,7 +42,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
-#[UsesClass( Orchestrator::class )]
+#[UsesClass( Dispatcher::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
@@ -75,7 +75,7 @@ final class LifecycleDeliveriesTest extends TestCase {
 	private RecordingTask $task;
 	private TaskRegistry $registry;
 	private WpdbLockSpy $wpdb;
-	private Orchestrator $orchestrator;
+	private Dispatcher $dispatcher;
 
 	// endregion.
 
@@ -155,18 +155,17 @@ final class LifecycleDeliveriesTest extends TestCase {
 			$failure_lifecycle,
 		);
 
-		$this->orchestrator = new Orchestrator(
+		$this->dispatcher = new Dispatcher(
 			$this->registry,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$this->randomizer,
+			$this->logger,
 			$lock_windows,
 			$terminal_transitions,
-			$this->lifecycle_deliveries,
-			$this->randomizer,
 		);
 	}
 
@@ -401,7 +400,7 @@ final class LifecycleDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function prepare_run_action(): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->clock->timestamp       = self::NOW + 90;

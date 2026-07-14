@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
@@ -28,12 +28,12 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskRegistry $registry     Registered task instances.
-	 * @param   Orchestrator $orchestrator Background-work coordinator.
+	 * @param   TaskRegistry $registry   Registered task instances.
+	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
 	 */
 	public function __construct(
 		private TaskRegistry $registry,
-		private Orchestrator $orchestrator,
+		private Dispatcher $dispatcher,
 	) {}
 
 	// endregion
@@ -90,7 +90,7 @@ final readonly class Tasks {
 			);
 		}
 
-		return $this->orchestrator->enqueue( $name, $args, $delay, $unique, $priority );
+		return $this->dispatcher->enqueue( $name, $args, $delay, $unique, $priority );
 	}
 
 	// endregion

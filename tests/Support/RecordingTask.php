@@ -26,7 +26,7 @@ final class RecordingTask implements TaskInterface {
 	 */
 	public ?\Closure $on_handle = null;
 
-	/** Retry policy returned to the orchestrator. */
+	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
 	/**

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
 
@@ -24,16 +24,16 @@ final readonly class Engine {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Tasks        $tasks        Task API.
-	 * @param   Schedules    $schedules    Schedule API.
-	 * @param   Batches      $batches      Batch API.
-	 * @param   Orchestrator $orchestrator Background-work coordinator.
+	 * @param   Tasks      $tasks      Task API.
+	 * @param   Schedules  $schedules  Schedule API.
+	 * @param   Batches    $batches    Batch API.
+	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
 	 */
 	public function __construct(
 		private Tasks $tasks,
 		private Schedules $schedules,
 		private Batches $batches,
-		private Orchestrator $orchestrator,
+		private Dispatcher $dispatcher,
 	) {}
 
 	// endregion
@@ -53,7 +53,7 @@ final readonly class Engine {
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		return $this->orchestrator->retry_failed( $name, $run_id );
+		return $this->dispatcher->retry_failed( $name, $run_id );
 	}
 
 	// endregion

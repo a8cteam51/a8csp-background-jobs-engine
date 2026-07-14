@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TaskDispatchSkipped;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
@@ -42,7 +42,7 @@ final readonly class Schedules {
 	 * @param   ScheduleRegistry $registry     Owner-scoped schedule registry.
 	 * @param   BackendInterface $scheduler    Scheduling backend facade.
 	 * @param   ClockInterface   $clock        Current-time source.
-	 * @param   Orchestrator     $orchestrator Policy-aware target-task dispatcher.
+	 * @param   Dispatcher       $dispatcher   Policy-aware target-task dispatcher.
 	 * @param   OccurrenceLease  $lease        Per-registration occurrence decision lease.
 	 * @param   LoggerInterface  $logger       Log event sink.
 	 */
@@ -50,7 +50,7 @@ final readonly class Schedules {
 		private ScheduleRegistry $registry,
 		private BackendInterface $scheduler,
 		private ClockInterface $clock,
-		private Orchestrator $orchestrator,
+		private Dispatcher $dispatcher,
 		private OccurrenceLease $lease,
 		private LoggerInterface $logger,
 	) {}
@@ -587,7 +587,7 @@ final readonly class Schedules {
 		$accepted_registration               = $registration;
 		$accepted_registration['next_due']   = $next_due;
 		$accepted_registration['last_fired'] = $now;
-		$dispatched                          = $this->orchestrator->dispatch_scheduled_task(
+		$dispatched                          = $this->dispatcher->dispatch_scheduled_task(
 			$schedule->task,
 			$schedule->args,
 			$schedule->overlap,
@@ -723,7 +723,7 @@ final readonly class Schedules {
 
 		$accepted_registration               = $registration;
 		$accepted_registration['last_fired'] = $this->clock->now()->getTimestamp();
-		$dispatched                          = $this->orchestrator->dispatch_scheduled_task(
+		$dispatched                          = $this->dispatcher->dispatch_scheduled_task(
 			$schedule->task,
 			$schedule->args,
 			$schedule->overlap,

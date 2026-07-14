@@ -2,13 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Orchestration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LifecycleDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Orchestrator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
@@ -41,11 +39,10 @@ use PHPUnit\Framework\TestCase;
  * Pins single-task admission and manual retry across scheduling, storage, hooks, locks, and logs.
  *
  */
-#[CoversClass( Orchestrator::class )]
+#[CoversClass( Dispatcher::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
-#[UsesClass( LifecycleDeliveries::class )]
 #[UsesClass( LockRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
@@ -57,7 +54,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
-final class OrchestratorTest extends TestCase {
+final class DispatcherTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS = array(
@@ -72,13 +69,12 @@ final class OrchestratorTest extends TestCase {
 
 	private FixedClock $clock;
 	private RecordingBackend $backend;
-	private LifecycleDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private RecordingTask $task;
 	private TaskRegistry $registry;
 	private WpdbLockSpy $wpdb;
-	private Orchestrator $orchestrator;
+	private Dispatcher $dispatcher;
 
 	// endregion.
 
@@ -138,38 +134,17 @@ final class OrchestratorTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-
-		$this->lifecycle_deliveries = new LifecycleDeliveries(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-
-		$this->orchestrator = new Orchestrator(
+		$this->dispatcher     = new Dispatcher(
 			$this->registry,
 			$batches,
 			$this->backend,
 			$guard,
 			$stores,
-			$this->logger,
 			$this->clock,
+			$this->randomizer,
+			$this->logger,
 			$lock_windows,
 			$terminal_transitions,
-			$this->lifecycle_deliveries,
-			$this->randomizer,
 		);
 	}
 
@@ -184,7 +159,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_creates_and_dispatches_a_running_task(): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, priority: 23 );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -280,7 +255,7 @@ final class OrchestratorTest extends TestCase {
 			),
 		);
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -333,7 +308,7 @@ final class OrchestratorTest extends TestCase {
 
 		$this->seed_running_lock( $heartbeat_age );
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
 
 		if ( $is_reclaimed ) {
 			self::assertInstanceOf( Success::class, $result );
@@ -371,7 +346,7 @@ final class OrchestratorTest extends TestCase {
 			}
 		);
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -459,7 +434,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_with_delay_routes_to_single_scheduling(): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, delay: 120, unique: true, priority: 31 );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120, unique: true, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -491,7 +466,7 @@ final class OrchestratorTest extends TestCase {
 	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_fails(): void {
 		$this->wpdb->script_result( 'update', false );
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertNull( $this->lock() );
@@ -505,7 +480,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_passes_unique_to_async_scheduling(): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $this->backend->calls[0]['args']['unique'] );
@@ -517,7 +492,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_rejects_an_unknown_task_without_touching_boundaries(): void {
-		$result = $this->orchestrator->enqueue( 'unknown', self::ARGS );
+		$result = $this->dispatcher->enqueue( 'unknown', self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -535,7 +510,7 @@ final class OrchestratorTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_priorities' )]
 	public function test_enqueue_rejects_priority_outside_the_engine_range( int $priority ): void {
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, priority: $priority );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: $priority );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -576,7 +551,7 @@ final class OrchestratorTest extends TestCase {
 
 		$this->backend->results['enqueue_async'] = $failure;
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
 
 		self::assertSame( $failure, $result );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
@@ -598,7 +573,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_rejects_non_scalar_argument_trees_before_claiming_a_lock(): void {
-		$result = $this->orchestrator->enqueue(
+		$result = $this->dispatcher->enqueue(
 			self::NAME,
 			array(
 				'callback' => static function (): void {},
@@ -622,7 +597,7 @@ final class OrchestratorTest extends TestCase {
 	public function test_enqueue_rejects_a_delay_that_overflows_unix_seconds(): void {
 		$this->clock->timestamp = \PHP_INT_MAX - 5;
 
-		$result = $this->orchestrator->enqueue( self::NAME, self::ARGS, delay: 10 );
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 10 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -644,7 +619,7 @@ final class OrchestratorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_declares_no_discard_directly(): void {
-		$method = new \ReflectionMethod( Orchestrator::class, 'enqueue' );
+		$method = new \ReflectionMethod( Dispatcher::class, 'enqueue' );
 
 		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
 	}
@@ -669,7 +644,7 @@ final class OrchestratorTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$new_run_id              = '00000000001700000100-0000000000000000043';
 
-		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
@@ -722,7 +697,7 @@ final class OrchestratorTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$new_run_id              = '00000000001700000100-0000000000000000043';
 
-		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
@@ -748,7 +723,7 @@ final class OrchestratorTest extends TestCase {
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 
-		$result = $this->orchestrator->retry_failed( self::NAME, 'missing-run' );
+		$result = $this->dispatcher->retry_failed( self::NAME, 'missing-run' );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -788,7 +763,7 @@ final class OrchestratorTest extends TestCase {
 		$this->randomizer->value                 = 43;
 		$this->clock->timestamp                  = self::NOW + 100;
 
-		$result = $this->orchestrator->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
 
 		self::assertSame( $failure, $result );
 		self::assertSame( $expected_entries, $store->all() );
