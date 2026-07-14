@@ -3,16 +3,16 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  * Exercises the retained engine composition root through the real plugin boot path.
  *
  */
-#[CoversClass( EngineComponent::class )]
+#[CoversClass( Component::class )]
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
 final class EngineComponentTest extends TestCase {
@@ -46,7 +46,7 @@ final class EngineComponentTest extends TestCase {
 		require_once __DIR__ . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
@@ -99,7 +99,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_is_always_needed(): void {
-		self::assertTrue( ( new EngineComponent() )->is_needed() );
+		self::assertTrue( ( new Component() )->is_needed() );
 	}
 
 	/**
@@ -145,14 +145,14 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_initialization_is_idempotent(): void {
-		$component = new EngineComponent();
+		$component = new Component();
 		$component->initialize();
 
-		$engine = EngineComponent::get_engine();
+		$engine = Component::get_engine();
 		$component->initialize();
 
 		self::assertInstanceOf( Engine::class, $engine );
-		self::assertSame( $engine, EngineComponent::get_engine() );
+		self::assertSame( $engine, Component::get_engine() );
 		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
 		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
 	}

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\HookLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -53,7 +53,7 @@ function a8csp_bgte_engine(): ?Engine {
 		return null;
 	}
 
-	return EngineComponent::get_engine();
+	return Component::get_engine();
 }
 
 /**

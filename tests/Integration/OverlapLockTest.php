@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Log;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
@@ -171,7 +171,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$named_superseded   = array();
 		$generic_superseded = array();
 		$log_records        = array();
-		\remove_action( 'a8csp/background_tasks/log', array( Log::class, 'log' ), 10 );
+		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
 			'a8csp/background_tasks/superseded/' . self::RECLAIM_NAME,
 			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {

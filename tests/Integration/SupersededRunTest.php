@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Log;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
@@ -59,7 +59,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$generic_completed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp/background_tasks/log', array( Log::class, 'log' ), 10 );
+		\remove_action( 'a8csp/background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
 			'a8csp/background_tasks/superseded/' . self::NAME,
 			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {

@@ -2,10 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
 

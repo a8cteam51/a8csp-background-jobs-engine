@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 
 /**
  * Call-routing spy with scriptable outcomes.

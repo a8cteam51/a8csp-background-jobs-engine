@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
 
 /**
  * Demonstrates a consumer plugin entry point built entirely on the public engine facade.

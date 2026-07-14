@@ -2,27 +2,27 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Batches;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
@@ -79,7 +79,7 @@ final class EngineTest extends TestCase {
 		require_once __DIR__ . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
 	}
 
 	/**

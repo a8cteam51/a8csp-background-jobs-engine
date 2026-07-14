@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\CommentCountRecountBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\DemoConsumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\SiteHealthPingTask;

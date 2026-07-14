@@ -3,9 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -86,7 +86,7 @@ final class ApiTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
 
 		$engine          = ( new \ReflectionClass( Engine::class ) )->newInstanceWithoutConstructor();
-		$engine_property = new \ReflectionProperty( EngineComponent::class, 'engine' );
+		$engine_property = new \ReflectionProperty( Component::class, 'engine' );
 		$engine_property->setValue( null, $engine );
 
 		self::assertSame( $engine, \a8csp_bgte_engine() );

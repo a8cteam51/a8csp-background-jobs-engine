@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Contracts\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
 
 /**
  * Records batch lifecycle invocations with optional observation callbacks and failures.
