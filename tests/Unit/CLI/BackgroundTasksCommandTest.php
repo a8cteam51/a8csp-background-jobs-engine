@@ -8,8 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the WP-free failed-run command decisions and row formatting.
- *
+ * Pins the WP-free command decisions and failed-run row formatting.
  */
 #[CoversClass( BackgroundTasksCommand::class )]
 final class BackgroundTasksCommandTest extends TestCase {
@@ -30,6 +29,46 @@ final class BackgroundTasksCommandTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * The exact cancel identity maps to the execution decision without lexical reinterpretation.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_request_is_parsed(): void {
+		self::assertSame(
+			array(
+				'action' => 'cancel',
+				'name'   => 'email-digest',
+				'run_id' => 'run-1',
+			),
+			BackgroundTasksCommand::cancel_request_from_args(
+				array( 'email-digest', 'run-1' ),
+				array()
+			)
+		);
+	}
+
+	/**
+	 * Every malformed cancel form names the exact command usage.
+	 *
+	 * @phpstan-param list<string> $args
+	 *
+	 * @param   array                $args       Positional command arguments.
+	 * @param   array<string, mixed> $assoc_args Named command arguments.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_cancel_requests' )]
+	public function test_invalid_cancel_requests_name_the_usage( array $args, array $assoc_args ): void {
+		self::assertSame(
+			array(
+				'action'  => 'error',
+				'message' => 'Cancel requires exactly a name and run_id; use wp background-tasks cancel <name> <run_id>.',
+			),
+			BackgroundTasksCommand::cancel_request_from_args( $args, $assoc_args )
+		);
+	}
 
 	/**
 	 * Rows expose the exact fields in name, timestamp, and run-identifier order.
@@ -199,6 +238,39 @@ final class BackgroundTasksCommandTest extends TestCase {
 	// endregion.
 
 	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies malformed cancel identities, including WP-CLI's negated-flag value shape.
+	 *
+	 * @return  array<string, array{
+	 *     args: list<string>,
+	 *     assoc_args: array<string, mixed>
+	 * }>
+	 */
+	public static function invalid_cancel_requests(): array {
+		return array(
+			'missing identity' => array(
+				'args'       => array(),
+				'assoc_args' => array(),
+			),
+			'missing run_id'   => array(
+				'args'       => array( 'email-digest' ),
+				'assoc_args' => array(),
+			),
+			'extra positional' => array(
+				'args'       => array( 'email-digest', 'run-1', 'extra' ),
+				'assoc_args' => array(),
+			),
+			'stray flag'       => array(
+				'args'       => array( 'email-digest', 'run-1' ),
+				'assoc_args' => array( 'force' => true ),
+			),
+			'negated flag'     => array(
+				'args'       => array( 'email-digest', 'run-1' ),
+				'assoc_args' => array( 'force' => false ),
+			),
+		);
+	}
 
 	/**
 	 * Supplies every accepted failed-run action form.

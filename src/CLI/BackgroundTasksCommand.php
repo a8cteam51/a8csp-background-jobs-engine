@@ -74,6 +74,72 @@ final class BackgroundTasksCommand {
 	// region METHODS
 
 	/**
+	 * Cancels one retained logical engine run.
+	 *
+	 * Pending backend delivery is cleared on a best-effort basis after the engine terminalizes the
+	 * run. The arguments identify an engine background-work run, not an Action Scheduler action or
+	 * hook, and cancellation does not remove an originating recurring schedule.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <name>
+	 * : Stable task or batch name.
+	 *
+	 * <run_id>
+	 * : Retained engine-run identifier.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     $ wp background-tasks cancel email-digest 00000000000000000001-0000000000000000001
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<string>         $args       Positional command arguments.
+	 * @param   array<string, mixed> $assoc_args Named command arguments.
+	 *
+	 * @return  void
+	 */
+	public function cancel( array $args, array $assoc_args ): void {
+		$request = self::cancel_request_from_args( $args, $assoc_args );
+		if ( 'error' === $request['action'] ) {
+			\WP_CLI::error( $request['message'] );
+			return;
+		}
+
+		$this->cancel_run( $request['name'], $request['run_id'] );
+	}
+
+	/**
+	 * Validates cancel command arguments without requiring WordPress or WP-CLI state.
+	 *
+	 * @internal Command decision seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<string>         $args       Positional command arguments.
+	 * @param   array<string, mixed> $assoc_args Named command arguments.
+	 *
+	 * @return  array{action: 'error', message: string}
+	 *          |array{action: 'cancel', name: string, run_id: string}
+	 */
+	public static function cancel_request_from_args( array $args, array $assoc_args ): array {
+		if ( 2 !== \count( $args ) || array() !== $assoc_args ) {
+			return array(
+				'action'  => 'error',
+				'message' => 'Cancel requires exactly a name and run_id; use wp background-tasks cancel <name> <run_id>.',
+			);
+		}
+
+		return array(
+			'action' => 'cancel',
+			'name'   => $args[0],
+			'run_id' => $args[1],
+		);
+	}
+
+	/**
 	 * Lists, retries, or purges retained failed runs.
 	 *
 	 * ## OPTIONS
@@ -320,6 +386,39 @@ final class BackgroundTasksCommand {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Delegates cancellation to the public engine facade and reports its result.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Stable task or batch name.
+	 * @param   string $run_id Retained run identifier.
+	 *
+	 * @return  void
+	 */
+	private function cancel_run( string $name, string $run_id ): void {
+		$engine = \a8csp_bgte_engine();
+		if ( null === $engine ) {
+			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
+			return;
+		}
+
+		$result = $engine->cancel( $name, $run_id );
+		if ( $result->is_failure() ) {
+			\WP_CLI::error( $result->error->message );
+			return;
+		}
+
+		\WP_CLI::success(
+			\sprintf(
+				'Cancelled run %1$s of "%2$s".',
+				$run_id,
+				$name
+			)
+		);
+	}
 
 	/**
 	 * Lists every retained failed run through the requested WP-CLI formatter.

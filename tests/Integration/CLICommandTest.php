@@ -3,12 +3,15 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Clock\SystemClock;
 
 /**
- * Pins command registration, WP-CLI argument normalization, and failed-run output at the process boundary.
+ * Pins command registration, WP-CLI argument normalization, and output at the process boundary.
  */
 final class CLICommandTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -27,6 +30,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/** Background-work identity deliberately absent from the child request's registries. */
 	private const UNREGISTERED_NAME = 'integration-cli-command-unregistered';
+
+	/** Background-work identity registered by the engine in every WP-CLI child request. */
+	private const CANCEL_NAME = MaintenanceTask::NAME;
 
 	/** Run identity shared by deterministic retained-failure fixtures. */
 	private const RUN_ID = 'integration-cli-command-run-1';
@@ -55,6 +61,145 @@ final class CLICommandTest extends IntegrationTestCase {
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * A retained run is cancelled through the real command with declarative success output.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_terminalizes_a_retained_run(): void {
+		$this->seed_cancel_run();
+
+		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame(
+			"Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte-maintenance\".\n",
+			$result['stdout']
+		);
+		self::assertSame( '', $result['stderr'] );
+		self::assertNull( self::option_rows()->select( self::cancel_run_option_name() ) );
+		\wp_cache_delete( self::cancel_run_option_name(), 'options' );
+
+		$history_raw = self::option_rows()->select( 'a8csp_bgte_history_' . self::CANCEL_NAME );
+		self::assertIsString( $history_raw );
+		$history = \maybe_unserialize( $history_raw );
+		self::assertIsArray( $history );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'cancelled',
+				),
+			),
+			$history['completed'] ?? null
+		);
+	}
+
+	/**
+	 * The real command preserves the engine's executing-run refusal.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_surfaces_the_executing_refusal(): void {
+		$run_store = $this->seed_cancel_run( true );
+
+		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
+		self::assertTrue( $run_store->delete( self::RUN_ID ), 'The executing boundary fixture must be removable after refusal' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			"Error: Run \"integration-cli-command-run-1\" is executing; a run in flight completes or fails on its own.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
+	 * The real command preserves the engine's unregistered-name correction.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_surfaces_the_unregistered_engine_error(): void {
+		$result = self::run_cancel_command( self::UNREGISTERED_NAME, self::RUN_ID );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			'Error: Background-work "integration-cli-command-unregistered" is not registered; ' .
+			"register the matching task or batch before retrying its failed run.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
+	 * The real command preserves the engine's registered-but-unretained correction.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_surfaces_the_not_retained_engine_error(): void {
+		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			'Error: Run "integration-cli-command-run-1" for background-work ' .
+			"\"a8csp-bgte-maintenance\" is not retained; nothing remains to cancel.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
+	 * Missing required identities use WP-CLI's native required-synopsis failure.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_without_arguments_uses_the_native_synopsis(): void {
+		$result = self::run_cancel_command();
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( "usage: wp background-tasks cancel <name> <run_id>\n", $result['stdout'] );
+		self::assertSame( '', $result['stderr'] );
+	}
+
+	/**
+	 * An extra identity is rejected by WP-CLI before the command seam runs.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_an_extra_positional_argument(): void {
+		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID, 'extra' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame( "Error: Too many positional arguments: extra\n", $result['stderr'] );
+	}
+
+	/**
+	 * An undocumented flag is rejected by WP-CLI before the command seam runs.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_an_undocumented_flag(): void {
+		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID, '--force' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame( "Error: Parameter errors:\n unknown --force parameter\n", $result['stderr'] );
+	}
+
+	/**
+	 * A negated undocumented flag still carries a key and is rejected by WP-CLI.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_a_negated_undocumented_flag(): void {
+		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID, '--no-force' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame( "Error: Parameter errors:\n unknown --force parameter\n", $result['stderr'] );
+	}
 
 	/**
 	 * An empty store census exits successfully with an informative line.
@@ -198,6 +343,29 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
 	 */
 	private static function run_failed_command( string ...$arguments ): array {
+		return self::run_command( 'failed', ...$arguments );
+	}
+
+	/**
+	 * Runs the cancel command through wp-env's actual WP-CLI executable.
+	 *
+	 * @param   string ...$arguments Arguments following the cancel command.
+	 *
+	 * @return  array{stdout: string, stderr: string, exit_code: int}
+	 */
+	private static function run_cancel_command( string ...$arguments ): array {
+		return self::run_command( 'cancel', ...$arguments );
+	}
+
+	/**
+	 * Runs one registered subcommand through wp-env's actual WP-CLI executable.
+	 *
+	 * @param   string $subcommand  Background-tasks subcommand.
+	 * @param   string ...$arguments Arguments following the subcommand.
+	 *
+	 * @return  array{stdout: string, stderr: string, exit_code: int}
+	 */
+	private static function run_command( string $subcommand, string ...$arguments ): array {
 		$command = \array_values(
 			\array_merge(
 				array(
@@ -205,7 +373,7 @@ final class CLICommandTest extends IntegrationTestCase {
 					'--path=' . self::WP_PATH,
 					'--no-color',
 					'background-tasks',
-					'failed',
+					$subcommand,
 				),
 				$arguments
 			)
@@ -253,6 +421,29 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * Persists one deterministic run under the task registered in every child process.
+	 *
+	 * @param   bool $executing Whether the fixture carries an admitted-delivery marker.
+	 *
+	 * @return  RunStore
+	 */
+	private function seed_cancel_run( bool $executing = false ): RunStore {
+		$args      = array( 'source' => 'cli-boundary' );
+		$run_store = new RunStore( self::CANCEL_NAME, new SystemClock(), self::option_rows() );
+		$state     = $run_store->create( self::RUN_ID, $args, self::args_hash( $args ), array() );
+		self::assertNotNull( $state, 'The CLI cancel boundary requires one deterministic retained run' );
+
+		if ( $executing ) {
+			self::assertIsString(
+				$run_store->transition_state( self::RUN_ID, $state, $state->with_executing( true ) ),
+				'The executing-refusal fixture must persist its admitted-delivery marker'
+			);
+		}
+
+		return $run_store;
+	}
+
+	/**
 	 * Creates the site-bound row seam used by a failed-run store.
 	 *
 	 * @return  OptionRows
@@ -262,6 +453,15 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		/** @var \wpdb $wpdb */
 		return new OptionRows( $wpdb );
+	}
+
+	/**
+	 * Returns the deterministic cancel fixture's active-run option name.
+	 *
+	 * @return  string
+	 */
+	private static function cancel_run_option_name(): string {
+		return 'a8csp_bgte_run_' . self::CANCEL_NAME . '_' . self::RUN_ID;
 	}
 
 	/**
