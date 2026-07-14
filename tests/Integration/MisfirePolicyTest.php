@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
@@ -315,18 +316,25 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$lock_windows,
 			$terminal_transitions,
 		);
-		$schedules            = new Schedules(
-			new ScheduleRegistry( $rows ),
-			$scheduler,
-			$clock,
+		$schedule_registry    = new ScheduleRegistry( $rows );
+		$occurrence_delivery  = new OccurrenceDelivery(
+			$schedule_registry,
 			$dispatcher,
 			new OccurrenceLease( $locks, $clock, $randomizer ),
+			$scheduler,
+			$clock,
 			$logger
+		);
+		$schedules            = new Schedules(
+			$schedule_registry,
+			$scheduler,
+			$clock,
+			$occurrence_delivery
 		);
 
 		\remove_all_actions( 'a8csp/background_tasks/schedule_due' );
 		\remove_all_actions( 'a8csp/background_tasks/run' );
-		\add_action( 'a8csp/background_tasks/schedule_due', array( $schedules, 'handle_schedule_due' ), 10, 2 );
+		\add_action( 'a8csp/background_tasks/schedule_due', array( $occurrence_delivery, 'handle_schedule_due' ), 10, 2 );
 		\add_action( 'a8csp/background_tasks/run', array( $lifecycle_deliveries, 'handle_run_action' ), 10, 4 );
 
 		return new Engine(

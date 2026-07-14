@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tasks;
@@ -50,6 +51,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( ScheduleRegistry::class )]
+#[UsesClass( OccurrenceDelivery::class )]
 final class EngineTest extends TestCase {
 	private const ARGS   = array(
 		'site_id' => 7,
@@ -127,17 +129,20 @@ final class EngineTest extends TestCase {
 			$lock_windows,
 			$terminal_transitions,
 		);
+		$registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
+		$delivery   = new OccurrenceDelivery(
+			$registry,
+			$dispatcher,
+			new OccurrenceLease( new LockRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+			$this->backend,
+			$clock,
+			$logger
+		);
+		$schedules  = new Schedules( $registry, $this->backend, $clock, $delivery );
 
 		$this->engine = new Engine(
 			new Tasks( $tasks, $dispatcher ),
-			new Schedules(
-				new ScheduleRegistry( new OptionRows( $this->wpdb ) ),
-				$this->backend,
-				$clock,
-				$dispatcher,
-				new OccurrenceLease( new LockRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
-				$logger
-			),
+			$schedules,
 			new Batches( $batches, $dispatcher ),
 			$dispatcher,
 		);

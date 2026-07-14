@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
@@ -38,6 +39,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Schedules::class )]
+#[CoversClass( OccurrenceDelivery::class )]
 #[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
@@ -62,6 +64,7 @@ final class ScheduleExecutionTest extends TestCase {
 	private Schedules $api;
 	private RecordingBackend $backend;
 	private FixedClock $clock;
+	private OccurrenceDelivery $delivery;
 	private RecordingLogger $logger;
 	private ScheduleRegistry $registry;
 	private WpdbLockSpy $wpdb;
@@ -119,33 +122,12 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
-		$tasks          = new TaskRegistry();
-		$batches        = new BatchRegistry();
-		$tasks->register( new RecordingTask( self::TASK ) );
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$randomizer           = new RecordingRandomizer( 42 );
-		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $this->logger );
-		$dispatcher           = new Dispatcher(
-			$tasks,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
-		$this->api            = new Schedules(
+		$this->delivery = $this->new_delivery( $this->registry );
+		$this->api      = new Schedules(
 			$this->registry,
 			$this->backend,
 			$this->clock,
-			$dispatcher,
-			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
-			$this->logger
+			$this->delivery
 		);
 	}
 
@@ -162,7 +144,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule() );
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		$scheduled_args = $this->backend->calls[0]['args']['args'] ?? null;
@@ -201,11 +183,11 @@ final class ScheduleExecutionTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
 			'a8csp/background_tasks/started/' . self::TASK => function (): void {
 				$this->clock->timestamp += 61;
-				$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 			},
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -228,13 +210,13 @@ final class ScheduleExecutionTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
 			'a8csp/background_tasks/history_size' => function ( int $size ): int {
 				$this->clock->timestamp += 61;
-				$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 				return $size;
 			},
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -254,7 +236,7 @@ final class ScheduleExecutionTest extends TestCase {
 			'a8csp/background_tasks/started/' . self::TASK => new \RuntimeException( 'listener failed' ),
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -274,7 +256,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$this->clock->timestamp = self::NOW + 2 * self::INTERVAL - 1;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -290,7 +272,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$this->clock->timestamp = self::NOW + 2 * self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( 0, $this->registration()['misfires'] ?? null );
@@ -318,7 +300,7 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp                   = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame(
 			array(
@@ -338,7 +320,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::RunOnce ) );
 		$this->clock->timestamp = self::NOW + self::INTERVAL + 901;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -356,7 +338,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$fired_at               = self::NOW + self::INTERVAL + 901;
 		$this->clock->timestamp = $fired_at;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame(
@@ -390,7 +372,7 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp                       = self::NOW + self::INTERVAL + 901;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 1, $this->registration()['misfires'] ?? null );
@@ -410,7 +392,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_unknown_registration_schedules_a_distinct_cleanup_delivery(): void {
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'unschedule', 'schedule_single' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame(
@@ -431,7 +413,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cleanup_delivery_clears_the_recurring_identity_without_rescheduling(): void {
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY, 'cleanup' );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY, 'cleanup' );
 
 		self::assertSame( array( 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( array( self::REGISTRATION_KEY ), $this->backend->calls[0]['args']['args'] ?? null );
@@ -451,7 +433,7 @@ final class ScheduleExecutionTest extends TestCase {
 			)
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY, 'cleanup' );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY, 'cleanup' );
 
 		self::assertSame( array( 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
@@ -469,11 +451,11 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			function (): void {
-				$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 			}
 		);
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
@@ -491,11 +473,11 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	public function test_inactive_owner_skips_without_unscheduling(): void {
 		$this->sync_schedule( $this->schedule() );
-		$this->api             = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
+		$this->delivery        = $this->new_delivery( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
 		$this->backend->calls  = array();
 		$this->logger->records = array();
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
@@ -509,7 +491,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_advanced_next_due_drops_a_stale_redelivery(): void {
 		$this->sync_schedule( $this->schedule() );
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
@@ -539,7 +521,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->logger->records  = array();
 		$this->clock->timestamp = self::NOW + 600;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
@@ -556,7 +538,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->seed_held_lock();
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $this->registration()['skips'] ?? null );
@@ -575,7 +557,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb->script_result( 'update', false );
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
@@ -614,7 +596,7 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
@@ -641,7 +623,7 @@ final class ScheduleExecutionTest extends TestCase {
 		);
 		$this->clock->timestamp                  = self::NOW + self::INTERVAL;
 
-		$this->api->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
 		self::assertSame( $before, $this->registration() );
 		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
@@ -805,6 +787,24 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  Schedules
 	 */
 	private function new_api( ScheduleRegistry $registry ): Schedules {
+		$delivery = $this->new_delivery( $registry );
+
+		return new Schedules(
+			$registry,
+			$this->backend,
+			$this->clock,
+			$delivery
+		);
+	}
+
+	/**
+	 * Returns another occurrence delivery service over the same runtime seams.
+	 *
+	 * @param   ScheduleRegistry $registry Request-local schedule registry.
+	 *
+	 * @return  OccurrenceDelivery
+	 */
+	private function new_delivery( ScheduleRegistry $registry ): OccurrenceDelivery {
 		$tasks   = new TaskRegistry();
 		$batches = new BatchRegistry();
 		$tasks->register( new RecordingTask( self::TASK ) );
@@ -826,12 +826,12 @@ final class ScheduleExecutionTest extends TestCase {
 			$terminal_transitions,
 		);
 
-		return new Schedules(
+		return new OccurrenceDelivery(
 			$registry,
-			$this->backend,
-			$this->clock,
 			$dispatcher,
 			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
+			$this->backend,
+			$this->clock,
 			$this->logger
 		);
 	}

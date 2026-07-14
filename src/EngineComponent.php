@@ -16,7 +16,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Orchestration\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Scheduling\Backends\ActionSchedulerBackend;
@@ -141,15 +143,23 @@ final class EngineComponent implements Component {
 			$batches,
 		);
 		$tasks->register( new MaintenanceTask( $wpdb, $reconciliation, $guard, $logger ) );
-		$schedule_api = new Schedules(
+		$occurrence_lease     = new OccurrenceLease( $lock_rows, $clock, $randomizer );
+		$occurrence_delivery  = new OccurrenceDelivery(
+			$schedules,
+			$dispatcher,
+			$occurrence_lease,
+			$scheduler,
+			$clock,
+			$logger
+		);
+		$schedule_api         = new Schedules(
 			$schedules,
 			$scheduler,
 			$clock,
-			$dispatcher,
-			new OccurrenceLease( $lock_rows, $clock, $randomizer ),
-			$logger
+			$occurrence_delivery
 		);
-		$engine       = new Engine(
+		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
+		$engine               = new Engine(
 			new Tasks( $tasks, $dispatcher ),
 			$schedule_api,
 			new Batches( $batches, $dispatcher ),
@@ -158,7 +168,8 @@ final class EngineComponent implements Component {
 
 		$scheduler->register_hooks();
 		$lifecycle_deliveries->register_hooks();
-		$schedule_api->register_hooks();
+		$occurrence_delivery->register_hooks();
+		$maintenance_schedule->register_hooks();
 
 		self::$engine = $engine;
 	}

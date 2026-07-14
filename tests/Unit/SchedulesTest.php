@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Schedules\ScheduleRegistry;
@@ -37,6 +38,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
+#[UsesClass( OccurrenceDelivery::class )]
 #[UsesClass( Success::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
@@ -976,14 +978,16 @@ final class SchedulesTest extends TestCase {
 			$terminal_transitions,
 		);
 
-		return new Schedules(
+		$delivery = new OccurrenceDelivery(
 			$registry,
-			$backend,
-			$clock,
 			$dispatcher,
 			new OccurrenceLease( new LockRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
+			$backend,
+			$clock,
 			$logger
 		);
+
+		return new Schedules( $registry, $backend, $clock, $delivery );
 	}
 
 	/**
