@@ -50,8 +50,8 @@ final class WpdbLockSpy extends \wpdb {
 	/**
 	 * Runs a callback immediately before the next matching operation reaches storage.
 	 *
-	 * @param   'insert'|'select'|'update'|'delete' $operation Query operation.
-	 * @param   callable(self): void                $callback  Interleaving callback.
+	 * @param   'count'|'insert'|'scan'|'select'|'update'|'delete' $operation Query operation.
+	 * @param   callable(self): void                               $callback  Interleaving callback.
 	 *
 	 * @return  void
 	 */
@@ -90,7 +90,7 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		$arguments = \array_values( $args );
-		$parts     = \preg_split( '/(%[si])/', $query, -1, \PREG_SPLIT_DELIM_CAPTURE );
+		$parts     = \preg_split( '/(%[dis])/', $query, -1, \PREG_SPLIT_DELIM_CAPTURE );
 		if ( false === $parts ) {
 			throw new \UnexpectedValueException( 'WpdbLockSpy could not parse the prepared statement.' );
 		}
@@ -98,7 +98,7 @@ final class WpdbLockSpy extends \wpdb {
 		$prepared = '';
 		$index    = 0;
 		foreach ( $parts as $part ) {
-			if ( '%s' !== $part && '%i' !== $part ) {
+			if ( '%s' !== $part && '%d' !== $part && '%i' !== $part ) {
 				$prepared .= $part;
 				continue;
 			}
@@ -106,10 +106,15 @@ final class WpdbLockSpy extends \wpdb {
 			if ( ! \array_key_exists( $index, $arguments ) ) {
 				throw new \InvalidArgumentException( 'WpdbLockSpy requires one value for every placeholder.' );
 			}
+			if ( '%d' === $part && ! \is_int( $arguments[ $index ] ) ) {
+				throw new \InvalidArgumentException( 'WpdbLockSpy integer placeholders require integer values.' );
+			}
 
-			$prepared .= '%i' === $part
-				? self::quote_table( $arguments[ $index ] )
-				: self::quote( $arguments[ $index ] );
+			$prepared .= match ( $part ) {
+				'%i'    => self::quote_table( $arguments[ $index ] ),
+				'%d'    => (string) $arguments[ $index ],
+				default => self::quote( $arguments[ $index ] ),
+			};
 			++$index;
 		}
 
@@ -246,15 +251,28 @@ final class WpdbLockSpy extends \wpdb {
 			throw new \UnexpectedValueException( 'WpdbLockSpy get_col() accepts only option-name scans.' );
 		}
 
+		$this->last_error = '';
+		$this->run_before( 'scan' );
 		$this->recorded_queries[] = $query;
+		if ( '' !== $this->last_error ) {
+			return array();
+		}
 		if ( null !== $this->option_name_results ) {
 			return $this->option_name_results;
 		}
 
-		$args    = self::without_table( $statement['args'] );
-		$pattern = $args[0] ?? null;
+		$args         = self::without_table( $statement['args'] );
+		$pattern      = $args[0] ?? null;
+		$total_length = $args[1] ?? null;
+		$limit        = $args[2] ?? null;
 		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) ) {
 			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require one trailing-wildcard pattern.' );
+		}
+		if ( null !== $total_length && ! \is_int( $total_length ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy bounded option scans require an integer name length.' );
+		}
+		if ( null !== $limit && ! \is_int( $limit ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy bounded option scans require an integer limit.' );
 		}
 
 		$escaped_prefix = \substr( $pattern, 0, -1 );
@@ -272,12 +290,74 @@ final class WpdbLockSpy extends \wpdb {
 		$names = \array_values(
 			\array_filter(
 				$names,
-				static fn ( mixed $name ): bool => \is_string( $name ) && \str_starts_with( $name, $prefix )
+				static fn ( mixed $name ): bool => \is_string( $name )
+					&& \str_starts_with( $name, $prefix )
+					&& ( null === $total_length || \strlen( $name ) === $total_length )
 			)
 		);
 		\sort( $names );
 
-		return $names;
+		return null === $limit ? $names : \array_slice( $names, 0, $limit );
+	}
+
+	/**
+	 * Counts option names matching one prepared escaped-prefix and exact-length query.
+	 *
+	 * @param   mixed $query Prepared statement.
+	 * @param   mixed $x     Column offset.
+	 * @param   mixed $y     Row offset.
+	 *
+	 * @return  string|null
+	 */
+	public function get_var( $query = null, $x = 0, $y = 0 ): ?string {
+		if ( ! \is_string( $query ) ) {
+			throw new \InvalidArgumentException( 'WpdbLockSpy counts require a prepared query string.' );
+		}
+
+		$statement = $this->statement( $query );
+		if ( ! \str_starts_with( $statement['template'], 'SELECT COUNT(*) ' ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy get_var() accepts only option-name count statements.' );
+		}
+
+		$this->last_error = '';
+		$this->run_before( 'count' );
+		$this->recorded_queries[] = $query;
+		if ( '' !== $this->last_error ) {
+			return null;
+		}
+
+		$args         = self::without_table( $statement['args'] );
+		$pattern      = $args[0] ?? null;
+		$total_length = $args[1] ?? null;
+		if (
+			! \is_string( $pattern )
+			|| ! \str_ends_with( $pattern, '%' )
+			|| ! \is_int( $total_length )
+		) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy option counts require a trailing-wildcard pattern and integer name length.' );
+		}
+
+		$escaped_prefix = \substr( $pattern, 0, -1 );
+		$prefix         = \preg_replace( '/\\\\([\\\\_%])/', '$1', $escaped_prefix );
+		if ( ! \is_string( $prefix ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy could not decode the escaped option prefix.' );
+		}
+
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		if ( ! \is_array( $options ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
+		}
+
+		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
+
+		return (string) \count(
+			\array_filter(
+				$names,
+				static fn ( mixed $name ): bool => \is_string( $name )
+					&& \strlen( $name ) === $total_length
+					&& \str_starts_with( $name, $prefix )
+			)
+		);
 	}
 
 	/**

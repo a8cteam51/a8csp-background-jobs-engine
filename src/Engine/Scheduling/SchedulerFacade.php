@@ -127,6 +127,20 @@ final readonly class SchedulerFacade implements BackendInterface {
 		return $this->unschedule_snapshot( $this->ready_backends(), '', array(), $group );
 	}
 
+	/**
+	 * Returns whether any configured backend is present but unavailable for reads.
+	 *
+	 * @internal Read-only engine inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function has_dormant_candidate(): bool {
+		return ! $this->snapshot_is_authoritative( $this->ready_backends() );
+	}
+
 	// endregion
 
 	// region INHERITED METHODS

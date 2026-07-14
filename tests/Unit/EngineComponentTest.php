@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
@@ -110,13 +111,15 @@ final class EngineComponentTest extends TestCase {
 	public function test_plugin_boot_publishes_one_engine_and_registers_runtime_hooks(): void {
 		( new Plugin() )->boot();
 
-		$first   = \a8csp_bgte_engine();
-		$second  = \a8csp_bgte_engine();
-		$actions = $this->registrations( 'a8csp_bgte_test_action_registrations' );
-		$filters = $this->registrations( 'a8csp_bgte_test_filter_registrations' );
+		$first      = \a8csp_bgte_engine();
+		$second     = \a8csp_bgte_engine();
+		$inspection = Component::get_inspection();
+		$actions    = $this->registrations( 'a8csp_bgte_test_action_registrations' );
+		$filters    = $this->registrations( 'a8csp_bgte_test_filter_registrations' );
 
 		self::assertInstanceOf( Engine::class, $first );
 		self::assertSame( $first, $second );
+		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame(
 			array(
 				'a8csp/background_tasks/log',
@@ -148,11 +151,14 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 
-		$engine = Component::get_engine();
+		$engine     = Component::get_engine();
+		$inspection = Component::get_inspection();
 		$component->initialize();
 
 		self::assertInstanceOf( Engine::class, $engine );
+		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame( $engine, Component::get_engine() );
+		self::assertSame( $inspection, Component::get_inspection() );
 		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
 		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
 	}

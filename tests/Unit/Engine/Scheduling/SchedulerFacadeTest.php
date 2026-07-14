@@ -77,6 +77,57 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * A present backend excluded from the ready read union is reported as dormant.
+	 *
+	 * @return  void
+	 */
+	public function test_dormant_candidate_detects_a_present_but_unready_backend(): void {
+		$dormant        = new RecordingBackend();
+		$dormant->ready = false;
+		$ready          = new RecordingBackend();
+
+		$result = ( new SchedulerFacade( array( $dormant, $ready ) ) )->has_dormant_candidate();
+
+		self::assertTrue( $result );
+		self::assertSame( array( 'is_ready', 'is_absent' ), $this->call_verbs( $dormant ) );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $ready ) );
+	}
+
+	/**
+	 * An absent backend does not make currently ready union reads incomplete.
+	 *
+	 * @return  void
+	 */
+	public function test_dormant_candidate_ignores_an_absent_backend(): void {
+		$absent         = new RecordingBackend();
+		$absent->ready  = false;
+		$absent->absent = true;
+		$ready          = new RecordingBackend();
+
+		$result = ( new SchedulerFacade( array( $absent, $ready ) ) )->has_dormant_candidate();
+
+		self::assertFalse( $result );
+		self::assertSame( array( 'is_ready', 'is_absent' ), $this->call_verbs( $absent ) );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $ready ) );
+	}
+
+	/**
+	 * Fully ready backend candidates require no union-read caveat.
+	 *
+	 * @return  void
+	 */
+	public function test_dormant_candidate_is_false_when_every_backend_is_ready(): void {
+		$first  = new RecordingBackend();
+		$second = new RecordingBackend();
+
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->has_dormant_candidate();
+
+		self::assertFalse( $result );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $second ) );
+	}
+
+	/**
 	 * Cron capability requires one backend that is both ready and capable.
 	 *
 	 * @return  void

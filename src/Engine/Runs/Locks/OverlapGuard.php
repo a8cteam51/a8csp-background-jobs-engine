@@ -319,6 +319,20 @@ final readonly class OverlapGuard {
 	}
 
 	/**
+	 * Returns whether the immediately preceding authoritative lock inspection failed.
+	 *
+	 * @internal Read-only engine inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function last_inspect_failed(): bool {
+		return $this->rows->last_select_failed();
+	}
+
+	/**
 	 * Deletes one inspected lock only while its exact raw row is unchanged.
 	 *
 	 * @internal Engine maintenance only.

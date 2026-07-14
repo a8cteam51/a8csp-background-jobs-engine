@@ -76,7 +76,7 @@ final readonly class StoreFactory {
 	 * @return  RunHistory
 	 */
 	public function run_history( string $name ): RunHistory {
-		return new RunHistory( $name );
+		return new RunHistory( $name, $this->rows );
 	}
 
 	/**

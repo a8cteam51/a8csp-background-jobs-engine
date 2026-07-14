@@ -117,7 +117,9 @@ final readonly class FailedRunStore {
 	 * }>
 	 */
 	public function all(): array {
-		return self::entries_from_option( \get_option( $this->option_name(), null ) );
+		$raw = $this->rows->select( $this->option_name() );
+
+		return self::entries_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) );
 	}
 
 	/**

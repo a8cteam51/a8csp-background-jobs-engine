@@ -505,6 +505,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	public function test_unknown_delivery_records_intent_before_inline_convergence(): void {
 		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			function (): void {

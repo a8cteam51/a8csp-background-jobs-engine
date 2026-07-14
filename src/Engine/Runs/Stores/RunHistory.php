@@ -3,6 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -57,9 +59,13 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string          $name Stable task or batch name.
+	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, when inspection is required.
 	 */
-	public function __construct( private string $name ) {}
+	public function __construct(
+		private string $name,
+		private ?OptionRows $rows = null,
+	) {}
 
 	// endregion
 
@@ -96,6 +102,38 @@ final readonly class RunHistory {
 	 */
 	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): void {
 		$this->record( $run_id, $args_hash, $status );
+	}
+
+	/**
+	 * Returns validated run identifiers from the global started buffer, oldest first.
+	 *
+	 * @internal Read-only engine inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 *
+	 * @return  list<string>
+	 */
+	public function started_entries(): array {
+		return $this->history_from_raw_row()['started'];
+	}
+
+	/**
+	 * Returns validated global terminal entries, oldest first.
+	 *
+	 * @internal Read-only engine inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 *
+	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 */
+	public function terminal_entries(): array {
+		return $this->history_from_raw_row()['completed'];
 	}
 
 	// endregion
@@ -195,6 +233,39 @@ final readonly class RunHistory {
 	 */
 	private function option_name(): string {
 		return self::OPTION_PREFIX . $this->name;
+	}
+
+	/**
+	 * Returns validated history from the authoritative raw row without constructing serialized classes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 *
+	 * @return  array{
+	 *     started: list<string>,
+	 *     completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     by_hash: array<array-key, array{
+	 *         started: list<string>,
+	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 *     }>
+	 * }
+	 */
+	private function history_from_raw_row(): array {
+		$rows = $this->rows;
+		if ( null === $rows ) {
+			$wpdb = $GLOBALS['wpdb'] ?? null;
+			if ( ! $wpdb instanceof \wpdb ) {
+				throw new \LogicException( 'Run-history inspection requires authoritative option-row I/O.' );
+			}
+
+			$rows = new OptionRows( $wpdb );
+		}
+
+		$raw = $rows->select( $this->option_name() );
+
+		return self::history_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) );
 	}
 
 	/**

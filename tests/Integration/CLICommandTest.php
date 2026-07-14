@@ -3,12 +3,20 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Pins command registration, WP-CLI argument normalization, and output at the process boundary.
@@ -41,8 +49,24 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const CANCEL_BATCH_BOOTSTRAP = self::WP_PATH
 		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
 
+	/** Test-only WP-CLI bootstrap that declares the inspection task and schedule. */
+	private const INSPECTION_BOOTSTRAP = self::WP_PATH
+		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
+
+	/** Owner declared in every isolated inspection request. */
+	private const INSPECTION_OWNER = 'integration-cli-inspection-owner';
+
+	/** Schedule declared in every isolated inspection request. */
+	private const INSPECTION_SCHEDULE = 'inspection-schedule';
+
+	/** Task declared in every isolated inspection request. */
+	private const INSPECTION_TASK = 'integration-cli-inspection-task';
+
 	/** Run identity shared by deterministic retained-failure fixtures. */
 	private const RUN_ID = 'integration-cli-command-run-1';
+
+	/** Canonical-format run identifier for rows the live-run enumeration must parse. */
+	private const CANONICAL_RUN_ID = '00000000001784030000-0000000000000000001';
 
 	/** Deterministic failure time exposed by JSON output. */
 	private const FAILED_AT = 1_700_000_001;
@@ -363,6 +387,377 @@ final class CLICommandTest extends IntegrationTestCase {
 		);
 	}
 
+	/**
+	 * The real schedules command renders every public table column without a false dormant note.
+	 *
+	 * @return  void
+	 */
+	#[Group( 'degraded' )]
+	public function test_schedules_list_renders_the_table(): void {
+		$result = self::run_command_with_globals(
+			'schedules',
+			array( '--require=' . self::INSPECTION_BOOTSTRAP ),
+			'list'
+		);
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame( '', $result['stderr'] );
+		foreach ( array( 'owner', 'name', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ) as $field ) {
+			self::assertStringContainsString( $field, $result['stdout'] );
+		}
+		self::assertStringContainsString( self::INSPECTION_OWNER, $result['stdout'] );
+		self::assertStringContainsString( self::INSPECTION_SCHEDULE, $result['stdout'] );
+		self::assertStringContainsString( '300', $result['stdout'] );
+		self::assertStringContainsString( 'yes', $result['stdout'] );
+		self::assertStringContainsString( 'free', $result['stdout'] );
+		self::assertStringNotContainsString( 'dormant occurrences are not visible', $result['stdout'] );
+	}
+
+	/**
+	 * The real schedules command exposes the exact machine-readable owner-filtered row.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_list_json_exposes_the_registered_row(): void {
+		$result  = self::run_command_with_globals(
+			'schedules',
+			array( '--require=' . self::INSPECTION_BOOTSTRAP ),
+			'list',
+			'--owner=' . self::INSPECTION_OWNER,
+			'--format=json'
+		);
+		$decoded = \json_decode( $result['stdout'], true, 512, \JSON_THROW_ON_ERROR );
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame( '', $result['stderr'] );
+		self::assertIsArray( $decoded );
+		self::assertCount( 1, $decoded );
+		$row = $decoded[0] ?? null;
+		self::assertIsArray( $row );
+		self::assertSame(
+			array( 'owner', 'name', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ),
+			\array_keys( $row )
+		);
+		self::assertSame( self::INSPECTION_OWNER, $row['owner'] ?? null );
+		self::assertSame( self::INSPECTION_SCHEDULE, $row['name'] ?? null );
+		self::assertSame( 300, $row['recurrence'] ?? null );
+		$next_due = $row['next_due'] ?? null;
+		self::assertIsString( $next_due );
+		self::assertMatchesRegularExpression( '/\A\d{4}-\d{2}-\d{2}T.*\+00:00 \(in \d+[smhd]\)\z/', $next_due );
+		self::assertSame( 'never', $row['last_fired'] ?? null );
+		self::assertSame( 0, $row['misfires'] ?? null );
+		self::assertSame( 0, $row['skips'] ?? null );
+		self::assertSame( 'yes', $row['scheduled'] ?? null );
+		self::assertSame( 'free', $row['lock'] ?? null );
+	}
+
+	/**
+	 * An unknown schedule owner exits successfully with the exact filtered empty state.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_list_reports_the_filtered_empty_state(): void {
+		$result = self::run_command_with_globals(
+			'schedules',
+			array( '--require=' . self::INSPECTION_BOOTSTRAP ),
+			'list',
+			'--owner=missing-owner'
+		);
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame( "No schedule registrations are persisted for owner \"missing-owner\".\n", $result['stdout'] );
+		self::assertSame( '', $result['stderr'] );
+	}
+
+	/**
+	 * A missing schedule action uses WP-CLI's native required-synopsis failure.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_without_an_action_uses_the_native_synopsis(): void {
+		$result = self::run_command( 'schedules' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame(
+			"usage: wp background-tasks schedules <action> [--owner=<owner>] [--format=<format>]\n",
+			$result['stdout']
+		);
+		self::assertSame( '', $result['stderr'] );
+	}
+
+	/**
+	 * The schedules decision seam owns unsupported format correction at the binary boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_list_rejects_an_invalid_format(): void {
+		$result = self::run_command( 'schedules', 'list', '--format=ids' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
+	 * Negated schedule value parameters reach the command seam as false.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_list_rejects_negated_value_parameters(): void {
+		$owner = self::run_command( 'schedules', 'list', '--no-owner' );
+
+		self::assertSame( 1, $owner['exit_code'] );
+		self::assertSame( '', $owner['stdout'] );
+		self::assertSame(
+			"Error: Schedule list owner is invalid; pass a value with --owner=<owner>.\n",
+			$owner['stderr']
+		);
+
+		$format = self::run_command( 'schedules', 'list', '--no-format' );
+
+		self::assertSame( 1, $format['exit_code'] );
+		self::assertSame( '', $format['stdout'] );
+		self::assertSame(
+			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
+			$format['stderr']
+		);
+	}
+
+	/**
+	 * The real parser rejects an extra schedules-list positional before execution.
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_list_rejects_an_extra_positional_argument(): void {
+		$result = self::run_command( 'schedules', 'list', 'extra' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame( "Error: Too many positional arguments: extra\n", $result['stderr'] );
+	}
+
+	/**
+	 * The real runs command renders both live and recent-history table sections.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_list_renders_live_and_recent_history_sections(): void {
+		$rows       = self::option_rows();
+		$run_store  = new RunStore( self::CANCEL_NAME, new SystemClock(), $rows );
+		$live_state = $run_store->create( self::CANONICAL_RUN_ID, array(), self::args_hash( array() ), array( array() ) );
+		self::assertNotNull( $live_state );
+		self::assertIsString(
+			$run_store->transition_state( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) )
+		);
+		$history = new RunHistory( self::CANCEL_NAME );
+		$history->record_started( self::CANONICAL_RUN_ID, self::args_hash( array() ) );
+		$history->record_terminal( 'integration-cli-history-failed', 'history-hash', RunStatus::Failed );
+		$failed_store = new FailedRunStore( self::CANCEL_NAME, $rows );
+		$failed_store->record(
+			'integration-cli-history-failed',
+			self::FAILED_AT,
+			array(),
+			2,
+			new EngineError( 'CLI history failure.' )
+		);
+
+		try {
+			$result = self::run_runs_command( 'list', self::CANCEL_NAME );
+
+			self::assertSame( 0, $result['exit_code'] );
+			self::assertSame( '', $result['stderr'] );
+			self::assertStringContainsString( 'live runs', $result['stdout'] );
+			self::assertStringContainsString( 'recent history', $result['stdout'] );
+			self::assertStringContainsString( self::CANONICAL_RUN_ID, $result['stdout'] );
+			self::assertStringContainsString( 'executing', $result['stdout'] );
+			self::assertStringContainsString( 'integration-cli-history-failed', $result['stdout'] );
+			self::assertStringContainsString( 'failed store', $result['stdout'] );
+			self::assertStringContainsString( '—', $result['stdout'] );
+		} finally {
+			$run_store->delete( self::CANONICAL_RUN_ID );
+			$failed_store->purge();
+		}
+	}
+
+	/**
+	 * An unknown stable run name exits successfully with the exact empty state.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_list_reports_the_empty_state(): void {
+		$result = self::run_runs_command( 'list', 'unknown-stable-name' );
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame( "No live runs or history are retained for \"unknown-stable-name\".\n", $result['stdout'] );
+		self::assertSame( '', $result['stderr'] );
+	}
+
+	/**
+	 * Missing run positionals use WP-CLI's native required-synopsis failure.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_without_required_positionals_use_the_native_synopsis(): void {
+		$expected = "usage: wp background-tasks runs <action> <name> [--format=<format>]\n";
+
+		foreach ( array( array(), array( 'list' ) ) as $arguments ) {
+			$result = self::run_runs_command( ...$arguments );
+
+			self::assertSame( 1, $result['exit_code'] );
+			self::assertSame( $expected, $result['stdout'] );
+			self::assertSame( '', $result['stderr'] );
+		}
+	}
+
+	/**
+	 * The real parser rejects an extra runs-list positional before execution.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_list_rejects_an_extra_positional_argument(): void {
+		$result = self::run_runs_command( 'list', self::CANCEL_NAME, 'extra' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame( "Error: Too many positional arguments: extra\n", $result['stderr'] );
+	}
+
+	/**
+	 * A negated run format reaches the command seam as false.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_list_rejects_a_negated_format(): void {
+		$result = self::run_runs_command( 'list', self::CANCEL_NAME, '--no-format' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame(
+			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
+			$result['stderr']
+		);
+	}
+
+	/**
+	 * The runs decision seam rejects invalid names and formats at the binary boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_runs_list_rejects_invalid_name_and_format(): void {
+		$invalid_name = self::run_runs_command( 'list', 'Invalid Name' );
+
+		self::assertSame( 1, $invalid_name['exit_code'] );
+		self::assertSame( '', $invalid_name['stdout'] );
+		self::assertSame(
+			"Error: Run name is invalid; use lowercase letters, digits, underscores, and hyphens.\n",
+			$invalid_name['stderr']
+		);
+
+		$invalid_format = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=ids' );
+
+		self::assertSame( 1, $invalid_format['exit_code'] );
+		self::assertSame( '', $invalid_format['stdout'] );
+		self::assertSame(
+			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
+			$invalid_format['stderr']
+		);
+	}
+
+	/**
+	 * Schedule and run inspection survive one retryable failure on every supported backend set.
+	 *
+	 * @return  void
+	 */
+	#[Group( 'degraded' )]
+	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
+		$engine = \a8csp_bgte_engine();
+		self::assertNotNull( $engine );
+		$task            = new RecordingTask( self::INSPECTION_TASK );
+		$task->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
+		$engine->tasks()->register( $task );
+		$schedule = new Schedule(
+			self::INSPECTION_SCHEDULE,
+			Recurrence::every( 300 ),
+			self::INSPECTION_TASK,
+			array( 'source' => 'schedule' )
+		);
+		$synced   = $engine->schedules()->sync( self::INSPECTION_OWNER, array( $schedule ) );
+		self::assertInstanceOf( Success::class, $synced );
+		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
+		\add_filter(
+			'a8csp/background_tasks/retry_policy/' . self::INSPECTION_TASK,
+			static fn (): RetryPolicy => $retry_policy
+		);
+
+		$enqueued = $engine->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
+		self::assertInstanceOf( Success::class, $enqueued );
+		self::assertIsString( $enqueued->value );
+		$run_id = $enqueued->value;
+		$this->expect_option( 'a8csp_bgte_latest_' . self::INSPECTION_TASK );
+
+		try {
+			self::assertSame( 1, $this->run_next_engine_action() );
+
+			$schedules = self::run_command_with_globals(
+				'schedules',
+				array( '--require=' . self::INSPECTION_BOOTSTRAP ),
+				'list',
+				'--owner=' . self::INSPECTION_OWNER,
+				'--format=json'
+			);
+			$runs      = self::run_command_with_globals(
+				'runs',
+				array( '--require=' . self::INSPECTION_BOOTSTRAP ),
+				'list',
+				self::INSPECTION_TASK,
+				'--format=json'
+			);
+
+			self::assertSame( 0, $schedules['exit_code'] );
+			self::assertSame( '', $schedules['stderr'] );
+			self::assertStringNotContainsString( 'dormant occurrences are not visible', $schedules['stdout'] );
+			$schedule_rows = \json_decode( $schedules['stdout'], true, 512, \JSON_THROW_ON_ERROR );
+			self::assertIsArray( $schedule_rows );
+			$schedule_row = $schedule_rows[0] ?? null;
+			self::assertIsArray( $schedule_row );
+			self::assertSame( 'yes', $schedule_row['scheduled'] ?? null );
+			self::assertSame( 'free', $schedule_row['lock'] ?? null );
+
+			self::assertSame( 0, $runs['exit_code'] );
+			self::assertSame( '', $runs['stderr'] );
+			$run_rows = \json_decode( $runs['stdout'], true, 512, \JSON_THROW_ON_ERROR );
+			self::assertIsArray( $run_rows );
+			$live_rows    = array();
+			$history_rows = array();
+			foreach ( $run_rows as $run_row ) {
+				self::assertIsArray( $run_row );
+				if ( isset( $run_row['status'] ) ) {
+					$live_rows[] = $run_row;
+				}
+				if ( isset( $run_row['outcome'] ) ) {
+					$history_rows[] = $run_row;
+				}
+			}
+			self::assertCount( 1, $live_rows );
+			self::assertSame( $run_id, $live_rows[0]['run_id'] ?? null );
+			self::assertSame( 'waiting', $live_rows[0]['phase'] ?? null );
+			self::assertSame( 1, $live_rows[0]['attempts'] ?? null );
+			self::assertSame( '—', $live_rows[0]['queue'] ?? null );
+			$heartbeat = $live_rows[0]['heartbeat'] ?? null;
+			self::assertIsString( $heartbeat );
+			self::assertStringNotContainsString( '(stale)', $heartbeat );
+			self::assertNotSame( array(), $history_rows );
+			self::assertSame( $run_id, $history_rows[0]['run_id'] ?? null );
+			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
+		} finally {
+			$cancelled = $engine->cancel( self::INSPECTION_TASK, $run_id );
+			self::assertInstanceOf( Success::class, $cancelled );
+		}
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -387,6 +782,17 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private static function run_cancel_command( string ...$arguments ): array {
 		return self::run_command( 'cancel', ...$arguments );
+	}
+
+	/**
+	 * Runs the runs command through wp-env's actual WP-CLI executable.
+	 *
+	 * @param   string ...$arguments Arguments following the runs command.
+	 *
+	 * @return  array{stdout: string, stderr: string, exit_code: int}
+	 */
+	private static function run_runs_command( string ...$arguments ): array {
+		return self::run_command( 'runs', ...$arguments );
 	}
 
 	/**

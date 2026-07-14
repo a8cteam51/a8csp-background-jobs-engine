@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -80,34 +81,32 @@ final class ScheduleRegistry {
 			return array();
 		}
 
+		return self::registrations_from_rows( $rows );
+	}
+
+	/**
+	 * Returns every valid persisted registration keyed by its complete backend identity.
+	 *
+	 * @internal Read-only engine inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 */
+	public function all_registrations(): array {
 		$registrations = array();
-		foreach ( $rows as $name => $row ) {
-			if ( ! \is_array( $row ) ) {
+		foreach ( $this->stored_registry() as $owner => $rows ) {
+			if ( ! \is_array( $rows ) ) {
 				continue;
 			}
 
-			$misfires = $row['misfires'] ?? 0;
-			$skips    = $row['skips'] ?? 0;
-			if (
-				! \is_string( $row['fingerprint'] ?? null )
-				|| ! \is_int( $row['next_due'] ?? null )
-				|| 1 > $row['next_due']
-				|| ( null !== ( $row['last_fired'] ?? null ) && ! \is_int( $row['last_fired'] ?? null ) )
-				|| ! \is_int( $misfires )
-				|| 0 > $misfires
-				|| ! \is_int( $skips )
-				|| 0 > $skips
-			) {
-				continue;
+			foreach ( self::registrations_from_rows( $rows ) as $name => $registration ) {
+				$key = (string) $owner . ':' . (string) $name;
+				if ( null !== self::key_parts( $key ) ) {
+					$registrations[ $key ] = $registration;
+				}
 			}
-
-			$registrations[ $name ] = array(
-				'fingerprint' => $row['fingerprint'],
-				'next_due'    => $row['next_due'],
-				'last_fired'  => $row['last_fired'] ?? null,
-				'misfires'    => $misfires,
-				'skips'       => $skips,
-			);
 		}
 
 		return $registrations;
@@ -270,6 +269,50 @@ final class ScheduleRegistry {
 	// region HELPERS
 
 	/**
+	 * Returns valid registration rows from one persisted owner slice.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $rows Persisted rows for one owner.
+	 *
+	 * @return  array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 */
+	private static function registrations_from_rows( array $rows ): array {
+		$registrations = array();
+		foreach ( $rows as $name => $row ) {
+			if ( ! \is_array( $row ) ) {
+				continue;
+			}
+
+			$misfires = $row['misfires'] ?? 0;
+			$skips    = $row['skips'] ?? 0;
+			if (
+				! \is_string( $row['fingerprint'] ?? null )
+				|| ! \is_int( $row['next_due'] ?? null )
+				|| 1 > $row['next_due']
+				|| ( null !== ( $row['last_fired'] ?? null ) && ! \is_int( $row['last_fired'] ?? null ) )
+				|| ! \is_int( $misfires )
+				|| 0 > $misfires
+				|| ! \is_int( $skips )
+				|| 0 > $skips
+			) {
+				continue;
+			}
+
+			$registrations[ $name ] = array(
+				'fingerprint' => $row['fingerprint'],
+				'next_due'    => $row['next_due'],
+				'last_fired'  => $row['last_fired'] ?? null,
+				'misfires'    => $misfires,
+				'skips'       => $skips,
+			);
+		}
+
+		return $registrations;
+	}
+
+	/**
 	 * Returns the persisted top-level registry or an empty replacement for malformed data.
 	 *
 	 * @since   1.0.0
@@ -278,7 +321,12 @@ final class ScheduleRegistry {
 	 * @return  array<array-key, mixed>
 	 */
 	private function stored_registry(): array {
-		$stored = \get_option( self::OPTION_NAME, array() );
+		$raw = $this->rows->select( self::OPTION_NAME );
+		if ( null === $raw ) {
+			return array();
+		}
+
+		$stored = RawOptionDecoder::decode( $raw );
 
 		return \is_array( $stored ) ? $stored : array();
 	}

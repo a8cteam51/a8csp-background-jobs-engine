@@ -22,6 +22,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceSchedu
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
@@ -48,6 +49,16 @@ final class Component implements ComponentContract {
 	 * @var     EngineFacade|null
 	 */
 	private static ?EngineFacade $engine = null;
+
+	/**
+	 * Read-only inspection service published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     Inspection|null
+	 */
+	private static ?Inspection $inspection = null;
 
 	// endregion
 
@@ -177,13 +188,25 @@ final class Component implements ComponentContract {
 			new Batches( $batches, $dispatcher ),
 			$dispatcher
 		);
+		$inspection           = new Inspection(
+			$schedules,
+			$tasks,
+			$batches,
+			$scheduler,
+			$guard,
+			$stores,
+			$option_rows,
+			$lock_windows,
+			$clock
+		);
 
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
 		$maintenance_schedule->register_hooks();
 
-		self::$engine = $engine;
+		self::$engine     = $engine;
+		self::$inspection = $inspection;
 	}
 
 	// endregion
@@ -200,6 +223,20 @@ final class Component implements ComponentContract {
 	 */
 	public static function get_engine(): ?EngineFacade {
 		return self::$engine;
+	}
+
+	/**
+	 * Returns the initialized read-only inspection service, or null before component boot.
+	 *
+	 * @internal CLI inspection only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  Inspection|null
+	 */
+	public static function get_inspection(): ?Inspection {
+		return self::$inspection;
 	}
 
 	// endregion

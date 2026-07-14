@@ -67,6 +67,32 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Raw failed-run reads reject serialized classes without invoking their wakeup hooks.
+	 *
+	 * @return  void
+	 */
+	public function test_all_does_not_construct_serialized_classes(): void {
+		FailedRunStorePoison::$wakeups = 0;
+		$expected                      = array(
+			array(
+				'run_id'     => 'run-valid',
+				'failed_at'  => 1_700_000_001,
+				'start_args' => array( 'site_id' => 7 ),
+				'attempts'   => 2,
+				'error'      => array(
+					'class'   => null,
+					'message' => 'Expected failure.',
+				),
+			),
+		);
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture must model hostile raw option bytes.
+		$this->wpdb->put( 'a8csp_bgte_failed_poisoned', \serialize( array( $expected[0], new FailedRunStorePoison() ) ) );
+
+		self::assertSame( $expected, ( new FailedRunStore( 'poisoned', $this->rows ) )->all() );
+		self::assertSame( 0, FailedRunStorePoison::$wakeups );
+	}
+
+	/**
 	 * Record and remove preserve the exact manual-retry schema under the literal key.
 	 *
 	 * @return  void
@@ -395,5 +421,15 @@ final class FailedRunStoreTest extends TestCase {
 		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
 
 		return $calls;
+	}
+}
+
+/** Serialized poison probe for hardened failed-run option reads. */
+final class FailedRunStorePoison {
+	public static int $wakeups = 0;
+
+	/** Records unsafe native object construction. */
+	public function __wakeup(): void {
+		++self::$wakeups;
 	}
 }

@@ -4,16 +4,34 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Store
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
+
+/** Detects whether history decoding constructs a serialized class. */
+final class RunHistoryWakeupProbe {
+	public static bool $woke = false;
+
+	/** Records an unsafe object construction during unserialization. */
+	public function __wakeup(): void {
+		self::$woke = true;
+	}
+}
 
 /**
  * Pins global and per-hash run-history buffers.
  *
  */
 #[CoversClass( RunHistory::class )]
+#[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 final class RunHistoryTest extends TestCase {
+	private OptionRows $rows;
+	private WpdbLockSpy $wpdb;
 
 	/**
 	 * Loads guarded WordPress option and filter functions before the history is autoloaded.
@@ -28,6 +46,7 @@ final class RunHistoryTest extends TestCase {
 
 		require_once \dirname( __DIR__, 3 ) . '/wp-options-stubs.php';
 		require_once \dirname( __DIR__, 3 ) . '/wp-hook-stubs.php';
+		require_once \dirname( __DIR__, 3 ) . '/wp-lock-stubs.php';
 	}
 
 	/**
@@ -43,6 +62,11 @@ final class RunHistoryTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
 		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_values']   = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
+		$GLOBALS['a8csp_bgte_test_cache']           = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
+		$this->wpdb                                 = new WpdbLockSpy();
+		$this->rows                                 = new OptionRows( $this->wpdb );
 	}
 
 	/**
@@ -350,6 +374,109 @@ final class RunHistoryTest extends TestCase {
 		$this->expectExceptionMessageIs( 'Run history records only terminal outcomes.' );
 
 		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Running );
+	}
+
+	/**
+	 * Read-only exposures reuse the validated global decoders and perform no option writes.
+	 *
+	 * @return  void
+	 */
+	public function test_read_exposures_skip_malformed_rows_without_writing(): void {
+		$GLOBALS['a8csp_bgte_test_options'] = array(
+			'a8csp_bgte_history_inspection' => array(
+				'started'   => array( 'started-a', 42, 'started-b', false ),
+				'completed' => array(
+					array(
+						'run_id' => 'failed-a',
+						'status' => 'failed',
+					),
+					array(
+						'run_id' => 'running-a',
+						'status' => 'running',
+					),
+					array(
+						'run_id' => 42,
+						'status' => 'completed',
+					),
+					array( 'run_id' => 'missing-status' ),
+				),
+				'by_hash'   => array(),
+			),
+		);
+
+		$history = new RunHistory( 'inspection', $this->rows );
+
+		self::assertSame( array( 'started-a', 'started-b' ), $history->started_entries() );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => 'failed-a',
+					'status' => 'failed',
+				),
+			),
+			$history->terminal_entries()
+		);
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+	}
+
+	/**
+	 * Started-entry inspection decodes the raw row without constructing nested serialized classes.
+	 *
+	 * @return  void
+	 */
+	public function test_started_entries_reads_raw_rows_without_constructing_serialized_classes(): void {
+		RunHistoryWakeupProbe::$woke = false;
+		$raw                         = \maybe_serialize(
+			array(
+				'started'   => array( 'started-safe', new RunHistoryWakeupProbe() ),
+				'completed' => array(),
+				'by_hash'   => array(),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_history_started-raw', $raw );
+
+		$history = new RunHistory( 'started-raw', $this->rows );
+
+		self::assertSame( array( 'started-safe' ), $history->started_entries() );
+		self::assertFalse( RunHistoryWakeupProbe::$woke );
+	}
+
+	/**
+	 * Terminal-entry inspection decodes the raw row without constructing nested serialized classes.
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_entries_reads_raw_rows_without_constructing_serialized_classes(): void {
+		RunHistoryWakeupProbe::$woke = false;
+		$raw                         = \maybe_serialize(
+			array(
+				'started'   => array(),
+				'completed' => array(
+					array(
+						'run_id' => 'terminal-safe',
+						'status' => 'failed',
+					),
+					new RunHistoryWakeupProbe(),
+				),
+				'by_hash'   => array(),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_history_terminal-raw', $raw );
+
+		$history = new RunHistory( 'terminal-raw', $this->rows );
+
+		self::assertSame(
+			array(
+				array(
+					'run_id' => 'terminal-safe',
+					'status' => 'failed',
+				),
+			),
+			$history->terminal_entries()
+		);
+		self::assertFalse( RunHistoryWakeupProbe::$woke );
 	}
 
 	/**

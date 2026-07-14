@@ -143,12 +143,83 @@ final readonly class OptionRows {
 	}
 
 	/**
+	 * Returns one bounded page and the complete candidate count for an exact option-name length.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $prefix       Literal option-name prefix.
+	 * @param   int    $total_length Required complete option-name length.
+	 * @param   int    $limit        Positive maximum number of names returned.
+	 *
+	 * @throws  \InvalidArgumentException When the length or limit is invalid.
+	 * @throws  \LogicException           When the current site differs from the bound site.
+	 *
+	 * @return  array{names: list<string>, total: int}|null Null when either authoritative read fails.
+	 */
+	public function option_names_page( string $prefix, int $total_length, int $limit ): ?array {
+		if ( \strlen( $prefix ) > $total_length || 1 > $limit ) {
+			throw new \InvalidArgumentException( 'An option-name page requires a complete length at least as long as its prefix and a positive limit.' );
+		}
+
+		$this->assert_site();
+		$wpdb    = $this->wpdb;
+		$pattern = $wpdb->esc_like( $prefix ) . '%';
+		$count   = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM %i WHERE `option_name` LIKE %s AND CHAR_LENGTH(`option_name`) = %d',
+				$wpdb->options,
+				$pattern,
+				$total_length
+			)
+		);
+		if (
+			$this->last_select_failed()
+			|| ! \is_string( $count )
+			|| 1 !== \preg_match( '/\A\d+\z/', $count )
+		) {
+			return null;
+		}
+
+		$names = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND CHAR_LENGTH(`option_name`) = %d ORDER BY `option_name` ASC LIMIT %d',
+				$wpdb->options,
+				$pattern,
+				$total_length,
+				$limit
+			)
+		);
+		if ( $this->last_select_failed() ) {
+			return null;
+		}
+
+		$typed = array();
+		foreach ( $names as $name ) {
+			if (
+				\is_string( $name )
+				&& \strlen( $name ) === $total_length
+				&& \str_starts_with( $name, $prefix )
+			) {
+				$typed[] = $name;
+			}
+		}
+
+		return array(
+			'names' => $typed,
+			'total' => \max( (int) $count, \count( $typed ) ),
+		);
+	}
+
+	/**
 	 * Returns whether the immediately preceding authoritative select failed at the database boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  bool
+	 *
+	 * @phpstan-impure
 	 */
 	public function last_select_failed(): bool {
 		return '' !== $this->wpdb->last_error;

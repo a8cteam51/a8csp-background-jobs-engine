@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
@@ -12,6 +13,16 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
+/** Detects whether registry-row decoding constructs a serialized class. */
+final class ScheduleRegistryWakeupProbe {
+	public static bool $woke = false;
+
+	/** Records an unsafe object construction during unserialization. */
+	public function __wakeup(): void {
+		self::$woke = true;
+	}
+}
+
 /**
  * Pins owner-sliced schedule persistence and request-local definition lookup.
  *
@@ -20,6 +31,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
 #[UsesClass( RegistrationUpdateOutcome::class )]
+#[UsesClass( RawOptionDecoder::class )]
 final class ScheduleRegistryTest extends TestCase {
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
@@ -121,6 +133,84 @@ final class ScheduleRegistryTest extends TestCase {
 				),
 			),
 			( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' )
+		);
+	}
+
+	/**
+	 * A serialized object is malformed without constructing its class during registry reads.
+	 *
+	 * @return  void
+	 */
+	public function test_registrations_for_rejects_an_object_row_without_class_construction(): void {
+		ScheduleRegistryWakeupProbe::$woke = false;
+
+		$raw = \maybe_serialize(
+			array(
+				'owner-a'      => array(
+					'nightly' => array(
+						'fingerprint' => 'fingerprint-a',
+						'next_due'    => 1_700_000_300,
+						'last_fired'  => null,
+					),
+				),
+				'poison-owner' => new ScheduleRegistryWakeupProbe(),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
+
+		self::assertSame(
+			array(
+				'nightly' => array(
+					'fingerprint' => 'fingerprint-a',
+					'next_due'    => 1_700_000_300,
+					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
+				),
+			),
+			( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' )
+		);
+		self::assertFalse( ScheduleRegistryWakeupProbe::$woke );
+	}
+
+	/**
+	 * The all-owner read flattens the same validated owner slices under complete identities.
+	 *
+	 * @return  void
+	 */
+	public function test_all_registrations_flattens_valid_owner_slices_without_new_decoding(): void {
+		$GLOBALS['a8csp_bgte_test_options'] = array(
+			'a8csp_bgte_schedules' => array(
+				'owner-b'      => array(
+					'hourly' => array(
+						'fingerprint' => 'fingerprint-b',
+						'next_due'    => 1_700_003_600,
+						'last_fired'  => 1_700_000_000,
+						'misfires'    => 2,
+						'skips'       => 3,
+					),
+				),
+				'owner-a'      => array(
+					'nightly' => array(
+						'fingerprint' => 'fingerprint-a',
+						'next_due'    => 1_700_000_300,
+						'last_fired'  => null,
+					),
+					'broken'  => array( 'fingerprint' => false ),
+				),
+				'broken-owner' => 'not-an-owner-slice',
+			),
+		);
+
+		$registry = new ScheduleRegistry( $this->rows );
+
+		self::assertSame(
+			array(
+				'owner-b:hourly'  => $registry->registrations_for( 'owner-b' )['hourly'],
+				'owner-a:nightly' => $registry->registrations_for( 'owner-a' )['nightly'],
+			),
+			$registry->all_registrations()
 		);
 	}
 
