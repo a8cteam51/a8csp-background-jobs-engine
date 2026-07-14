@@ -37,7 +37,9 @@ final readonly class LockWindows {
 	 *
 	 * @param   ClockInterface $clock Timestamp source.
 	 */
-	public function __construct( private ClockInterface $clock ) {}
+	public function __construct(
+		private ClockInterface $clock
+	) {}
 
 	// endregion
 

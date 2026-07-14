@@ -31,7 +31,10 @@ final readonly class Batches {
 	 * @param   BatchRegistry $registry   Registered batch instances.
 	 * @param   Dispatcher    $dispatcher Background-work admission coordinator.
 	 */
-	public function __construct( private BatchRegistry $registry, private Dispatcher $dispatcher ) {}
+	public function __construct(
+		private BatchRegistry $registry,
+		private Dispatcher $dispatcher,
+	) {}
 
 	// endregion
 

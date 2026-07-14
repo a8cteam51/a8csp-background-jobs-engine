@@ -70,17 +70,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	public function handle_failed_attempt(
-		string $work_type,
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		\Throwable $throwable,
-		\Closure $policy_provider,
-		\Closure $terminal_failure,
-		?array $chunk_args = null
-	): void {
+	public function handle_failed_attempt( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, \Closure $policy_provider, \Closure $terminal_failure, ?array $chunk_args = null ): void {
 		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}

@@ -27,7 +27,10 @@ final readonly class MaintenanceSchedule {
 	 * @param   Schedules       $schedules Consumer schedule API with the reserved-owner service entry.
 	 * @param   LoggerInterface $logger    Log event sink.
 	 */
-	public function __construct( private Schedules $schedules, private LoggerInterface $logger ) {}
+	public function __construct(
+		private Schedules $schedules,
+		private LoggerInterface $logger,
+	) {}
 
 	// endregion
 

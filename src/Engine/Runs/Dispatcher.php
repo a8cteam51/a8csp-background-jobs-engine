@@ -736,16 +736,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held(
-		string $work_type,
-		string $name,
-		string $run_id,
-		array $args,
-		string $args_hash,
-		array $queue,
-		ClaimResult $claim,
-		RunStore $run_store
-	): RunState|Failure {
+	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, ClaimResult $claim, RunStore $run_store ): RunState|Failure {
 		$state = $run_store->create( $run_id, $args, $args_hash, $queue );
 		if ( null === $state ) {
 			if ( ClaimResult::Held !== $claim ) {

@@ -48,7 +48,9 @@ final readonly class LatestRunPointer {
 	 *
 	 * @param   string $name Stable task or batch name.
 	 */
-	public function __construct( private string $name ) {}
+	public function __construct(
+		private string $name
+	) {}
 
 	// endregion
 

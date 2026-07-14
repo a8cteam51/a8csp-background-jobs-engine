@@ -58,7 +58,9 @@ final class ScheduleRegistry {
 	 *
 	 * @param   OptionRows $rows Authoritative raw registry-row I/O.
 	 */
-	public function __construct( private readonly OptionRows $rows ) {}
+	public function __construct(
+		private readonly OptionRows $rows
+	) {}
 
 	// endregion
 

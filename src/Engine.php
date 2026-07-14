@@ -32,7 +32,12 @@ final readonly class Engine {
 	 * @param   Batches    $batches    Batch API.
 	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
 	 */
-	public function __construct( private Tasks $tasks, private Schedules $schedules, private Batches $batches, private Dispatcher $dispatcher ) {}
+	public function __construct(
+		private Tasks $tasks,
+		private Schedules $schedules,
+		private Batches $batches,
+		private Dispatcher $dispatcher,
+	) {}
 
 	// endregion
 

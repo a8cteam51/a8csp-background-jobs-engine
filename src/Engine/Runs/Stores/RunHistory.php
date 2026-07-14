@@ -62,7 +62,10 @@ final readonly class RunHistory {
 	 * @param   string          $name Stable task or batch name.
 	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, when inspection is required.
 	 */
-	public function __construct( private string $name, private ?OptionRows $rows = null ) {}
+	public function __construct(
+		private string $name,
+		private ?OptionRows $rows = null,
+	) {}
 
 	// endregion
 

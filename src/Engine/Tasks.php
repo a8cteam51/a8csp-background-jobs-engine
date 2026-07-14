@@ -31,7 +31,10 @@ final readonly class Tasks {
 	 * @param   TaskRegistry $registry   Registered task instances.
 	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
 	 */
-	public function __construct( private TaskRegistry $registry, private Dispatcher $dispatcher ) {}
+	public function __construct(
+		private TaskRegistry $registry,
+		private Dispatcher $dispatcher,
+	) {}
 
 	// endregion
 

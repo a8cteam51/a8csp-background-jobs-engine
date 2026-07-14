@@ -28,7 +28,10 @@ final readonly class EngineError implements ErrorInterface {
 	 * @param   string      $message         Human-readable failure detail.
 	 * @param   string|null $exception_class Exception class associated with the failure.
 	 */
-	public function __construct( public string $message, public ?string $exception_class = null ) {}
+	public function __construct(
+		public string $message,
+		public ?string $exception_class = null,
+	) {}
 
 	// endregion
 

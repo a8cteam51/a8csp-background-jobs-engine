@@ -28,7 +28,12 @@ final readonly class RetryPolicy {
 	 *
 	 * @throws  \InvalidArgumentException When an invariant does not hold.
 	 */
-	public function __construct( public int $max_attempts = 3, public int $base_delay = \MINUTE_IN_SECONDS, public int $multiplier = 2, public int $max_delay = \HOUR_IN_SECONDS ) {
+	public function __construct(
+		public int $max_attempts = 3,
+		public int $base_delay = \MINUTE_IN_SECONDS,
+		public int $multiplier = 2,
+		public int $max_delay = \HOUR_IN_SECONDS,
+	) {
 		if ( 1 > $this->max_attempts || 1 > $this->base_delay ) {
 			throw new \InvalidArgumentException( 'Retry policy requires at least one attempt and a positive base delay.' );
 		}

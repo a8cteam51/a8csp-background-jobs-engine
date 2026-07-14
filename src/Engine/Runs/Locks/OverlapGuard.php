@@ -62,7 +62,11 @@ final readonly class OverlapGuard {
 	 * @param   LoggerInterface $logger Log event sink.
 	 * @param   LockRows        $rows   Authoritative lock-row I/O.
 	 */
-	public function __construct( private ClockInterface $clock, private LoggerInterface $logger, private LockRows $rows ) {}
+	public function __construct(
+		private ClockInterface $clock,
+		private LoggerInterface $logger,
+		private LockRows $rows,
+	) {}
 
 	// endregion
 

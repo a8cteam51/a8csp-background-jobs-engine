@@ -255,18 +255,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	public function execute_terminal_transition(
-		string $name,
-		string $run_id,
-		RunState $state,
-		RunState $terminal_state,
-		RunStore $run_store,
-		\Closure $pre_hook_effects,
-		bool $finish_despite_effect_failure,
-		string $event,
-		?string $expected_raw = null,
-		mixed ...$hook_extras
-	): bool {
+	public function execute_terminal_transition( string $name, string $run_id, RunState $state, RunState $terminal_state, RunStore $run_store, \Closure $pre_hook_effects, bool $finish_despite_effect_failure, string $event, ?string $expected_raw = null, mixed ...$hook_extras ): bool {
 		$terminal_raw = $this->claim_terminal_transition(
 			$run_id,
 			$state,
@@ -320,16 +309,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	public function fail_batch(
-		BatchInterface $batch,
-		string $batch_name,
-		string $run_id,
-		RunState $state,
-		RunStore $run_store,
-		EngineError $error,
-		?int $attempts = null,
-		?string $expected_raw = null
-	): void {
+	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() );

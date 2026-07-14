@@ -38,7 +38,12 @@ final readonly class Schedules {
 	 * @param   ClockInterface     $clock               Current-time source.
 	 * @param   OccurrenceDelivery $occurrence_delivery Schedule occurrence delivery service.
 	 */
-	public function __construct( private ScheduleRegistry $registry, private BackendInterface $scheduler, private ClockInterface $clock, private OccurrenceDelivery $occurrence_delivery ) {}
+	public function __construct(
+		private ScheduleRegistry $registry,
+		private BackendInterface $scheduler,
+		private ClockInterface $clock,
+		private OccurrenceDelivery $occurrence_delivery,
+	) {}
 
 	// endregion
 
