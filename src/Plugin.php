@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Component as CLIComponent;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component as EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 
 \defined( 'ABSPATH' ) || exit;
 

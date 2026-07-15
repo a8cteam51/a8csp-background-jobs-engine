@@ -13,6 +13,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
  * Execution-overlap lock ownership fences active work. These bounded pointers provide discovery
  * metadata and are repaired by an owner when eviction or a concurrent start commit makes them lag.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
 /**
  * Registers the background-task commands only inside WP-CLI.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

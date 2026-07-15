@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;

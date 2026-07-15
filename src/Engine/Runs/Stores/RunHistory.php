@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 /**
  * Persists bounded started and terminal run histories.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

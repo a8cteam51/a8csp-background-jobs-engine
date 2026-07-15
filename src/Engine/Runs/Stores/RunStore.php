@@ -3,12 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -20,6 +20,8 @@ use Psr\Clock\ClockInterface;
  *
  * Live mutations use complete-state compare-and-swap transitions. A concurrent processor that
  * observes an older state loses its transition instead of overwriting or recreating the run.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

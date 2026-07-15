@@ -3,20 +3,20 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -70,7 +70,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Scheduling/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 
 	/**

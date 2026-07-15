@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
 
 \defined( 'ABSPATH' ) || exit;
 

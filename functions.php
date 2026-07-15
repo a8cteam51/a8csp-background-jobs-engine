@@ -2,7 +2,7 @@
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 

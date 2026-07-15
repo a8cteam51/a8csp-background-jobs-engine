@@ -3,17 +3,19 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Consumer facade for task, schedule, and batch background work.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

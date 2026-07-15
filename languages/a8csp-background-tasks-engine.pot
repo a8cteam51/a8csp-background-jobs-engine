@@ -62,7 +62,7 @@ msgid "The autoloader file is missing. Please run <code>composer install</code> 
 msgstr ""
 
 #. translators: %d: interval in seconds.
-#: src/Engine/Scheduling/Backends/WPCronBackend.php:311
+#: src/Engine/Backends/WPCronBackend.php:311
 #, php-format
 msgid "Every %d seconds"
 msgstr ""

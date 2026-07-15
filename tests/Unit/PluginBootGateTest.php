@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -39,7 +39,7 @@ final class PluginBootGateTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-options-stubs.php';
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Engine/Scheduling/wp-json-encode-stub.php';
+		require_once __DIR__ . '/Engine/Backends/wp-json-encode-stub.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 	}
 

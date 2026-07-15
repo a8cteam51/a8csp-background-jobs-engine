@@ -6,10 +6,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;
@@ -19,6 +19,8 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Coordinates fenced terminal writes and active-run admission.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

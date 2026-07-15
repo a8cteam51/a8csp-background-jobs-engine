@@ -4,16 +4,16 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\MaintenanceFenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\RedriveFenceOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceFenceOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedriveFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -23,6 +23,8 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Repairs stale locks, crashed runs, and incomplete terminal cleanup.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

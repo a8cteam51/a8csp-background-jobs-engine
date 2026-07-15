@@ -13,6 +13,8 @@ use Psr\Clock\ClockInterface;
  * A single factory keeps name binding at the orchestration boundary without exposing four
  * untyped closure dependencies.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;

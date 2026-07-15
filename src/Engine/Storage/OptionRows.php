@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -15,6 +15,8 @@ use wpdb;
  *
  * Each instance is bound to the current site because WordPress rebinds wpdb's per-site table
  * properties during a blog switch.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

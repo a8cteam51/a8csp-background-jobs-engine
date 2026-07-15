@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use PHPUnit\Framework\TestCase;
 
 /**

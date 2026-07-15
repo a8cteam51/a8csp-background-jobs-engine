@@ -4,17 +4,19 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Consumer API for registering and dispatching tasks.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

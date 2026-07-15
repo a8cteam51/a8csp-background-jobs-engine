@@ -10,6 +10,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
  * Implementations are constructed with no arguments. `initialize()` is called at most once,
  * only when `is_needed()` returns true, during `plugins_loaded`.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

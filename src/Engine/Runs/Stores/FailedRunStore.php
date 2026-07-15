@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -19,6 +19,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
  * The nested error class preserves `EngineError::$exception_class` exactly; null records that the
  * failure carries no throwable class. Consumer failure metadata is stored with every entry, and a
  * null failed chunk remains absent from serialized entries.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

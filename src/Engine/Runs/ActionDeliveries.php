@@ -2,20 +2,20 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -26,6 +26,8 @@ use Psr\Log\LoggerInterface;
  *
  * Fresh execution markers exclude same-sequence redelivery; stale crash recovery remains at-least-once
  * and relies on task and batch idempotency.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

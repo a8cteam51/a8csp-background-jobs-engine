@@ -4,21 +4,21 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;
@@ -28,6 +28,8 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Admits registered task and batch runs to the scheduling backend.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

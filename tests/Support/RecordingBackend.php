@@ -5,9 +5,9 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
 
 /**
  * Call-routing spy with scriptable outcomes.

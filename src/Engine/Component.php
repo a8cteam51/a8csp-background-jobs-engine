@@ -6,32 +6,35 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine as EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceSchedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\HookLogger;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Assembles and retains the engine's request-local object graph.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

@@ -239,10 +239,10 @@ Consumers do not hook the engine's internal delivery actions: `a8csp_background_
 
 ## Bring your own PSR-3 logger
 
-The default `Utilities\Logging\ErrorLogSink` listener writes `a8csp_background_tasks/log` events to PHP's configured error log. Given your own `Psr\Log\LoggerInterface` instance in `$logger`, remove that listener after the engine boots and attach a three-argument listener:
+The default `Engine\Support\Logging\ErrorLogSink` listener writes `a8csp_background_tasks/log` events to PHP's configured error log. Given your own `Psr\Log\LoggerInterface` instance in `$logger`, remove that listener after the engine boots and attach a three-argument listener:
 
 ```php
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 use Psr\Log\LoggerInterface;
 
 /** @var LoggerInterface $logger */

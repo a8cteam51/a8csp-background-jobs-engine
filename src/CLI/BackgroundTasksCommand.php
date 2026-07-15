@@ -5,12 +5,14 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component as EngineComponent;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Inspects and manages the engine's background work from the command line.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

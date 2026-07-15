@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
@@ -12,11 +12,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 

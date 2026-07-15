@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 /**
  * Typed state persisted for one active run.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
