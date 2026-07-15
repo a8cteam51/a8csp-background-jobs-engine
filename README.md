@@ -110,11 +110,13 @@ Scheduling, retry, and cancellation methods return `Success` or `Failure`. A suc
 
 ### Task
 
-`TaskInterface` defines a stable name, a handler, and a retry policy. A normal handler return succeeds; a thrown exception fails the attempt.
+`TaskInterface` defines a stable name, a per-invocation runtime ceiling, a handler, and a retry policy. A normal handler return succeeds; a thrown exception fails the attempt.
 
 ```php
-interface TaskInterface {
+interface TaskInterface extends WorkInterface {
 	public function get_name(): string;
+
+	public function max_runtime(): int;
 
 	public function handle( array $args ): void;
 
@@ -122,13 +124,17 @@ interface TaskInterface {
 }
 ```
 
+`WorkInterface` owns the shared 300-second default, which `AbstractTask` supplies automatically. Invalid or non-positive declarations use that default, and the engine caps the credited window at six hours. The engine credits liveness for the bounded window before each `handle()` call; a handler that exceeds it becomes eligible for crash reclamation after the lock-staleness window.
+
 ### Batch and batch context
 
-`BatchInterface` generates initial chunks, processes one chunk at a time, receives one terminal callback after success or failure, and supplies the retry policy used independently for each failed chunk. Cancellation and supersession invoke neither callback.
+`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives one terminal callback after success or failure, and supplies the retry policy used independently for each failed chunk. Cancellation and supersession invoke neither callback.
 
 ```php
-interface BatchInterface {
+interface BatchInterface extends WorkInterface {
 	public function get_name(): string;
+
+	public function max_runtime(): int;
 
 	public function generate_queue( array $start_args ): iterable;
 
@@ -148,6 +154,8 @@ interface BatchInterface {
 	public function get_retry_policy(): RetryPolicy;
 }
 ```
+
+The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. Direct batch implementations must declare it; invalid values use the shared 300-second default, and the engine caps the credited window at six hours.
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
 

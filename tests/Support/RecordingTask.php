@@ -29,6 +29,12 @@ final class RecordingTask implements TaskInterface {
 	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
+	/** Declared ceiling for one handler invocation. */
+	public int $max_runtime = self::DEFAULT_MAX_RUNTIME;
+
+	/** Throwable raised by max_runtime(), or null to return the configured ceiling. */
+	public ?\Throwable $max_runtime_throwable = null;
+
 	/**
 	 * Constructor.
 	 *
@@ -42,6 +48,16 @@ final class RecordingTask implements TaskInterface {
 	#[\Override]
 	public function get_name(): string {
 		return $this->name;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function max_runtime(): int {
+		if ( null !== $this->max_runtime_throwable ) {
+			throw $this->max_runtime_throwable;
+		}
+
+		return $this->max_runtime;
 	}
 
 	/**

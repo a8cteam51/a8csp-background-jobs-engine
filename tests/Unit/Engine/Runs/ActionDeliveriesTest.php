@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
@@ -32,6 +33,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -225,6 +227,8 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	public function test_handle_run_action_executes_and_completes_the_task(): void {
 		$this->prepare_run_action();
+		$this->task->max_runtime = 1_200;
+
 		$observed_lock = null;
 		$observed_run  = null;
 
@@ -238,11 +242,11 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertIsArray( $observed_lock );
-		self::assertSame( self::NOW + 90, $observed_lock['heartbeat_at'] );
+		self::assertSame( self::NOW + 90 + 1_200, $observed_lock['heartbeat_at'] );
 		self::assertIsArray( $observed_run );
 		self::assertSame( 'running', $observed_run['status'] );
 		self::assertTrue( $observed_run['executing'] );
-		self::assertSame( self::NOW + 90, $observed_run['heartbeat_at'] );
+		self::assertSame( self::NOW + 90 + 1_200, $observed_run['heartbeat_at'] );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
@@ -275,6 +279,73 @@ final class ActionDeliveriesTest extends TestCase {
 			$this->lifecycle_labels()
 		);
 		$this->assert_terminal_history( RunStatus::Completed );
+	}
+
+	/**
+	 * A task without an override receives the shared callback liveness credit.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_credits_the_default_runtime_before_task_execution(): void {
+		$this->prepare_run_action();
+		$observed_lock = null;
+		$observed_run  = null;
+
+		$this->task->on_handle = function ( array $args ) use ( &$observed_lock, &$observed_run ): void {
+			$observed_lock = $this->lock();
+			$observed_run  = $this->option( $this->run_option_name() );
+		};
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertIsArray( $observed_lock );
+		self::assertSame( self::NOW + 90 + 300, $observed_lock['heartbeat_at'] );
+		self::assertIsArray( $observed_run );
+		self::assertSame( self::NOW + 90 + 300, $observed_run['heartbeat_at'] ?? null );
+	}
+
+	/**
+	 * Delivery clamps invalid and runaway declarations before crediting callback liveness.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_runtime_values' )]
+	public function test_handle_run_action_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
+		$this->prepare_run_action();
+		$this->task->max_runtime = $declared;
+		$observed_lock           = null;
+		$observed_run            = null;
+		$this->task->on_handle   = function ( array $args ) use ( &$observed_lock, &$observed_run ): void {
+			$observed_lock = $this->lock();
+			$observed_run  = $this->option( $this->run_option_name() );
+		};
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertIsArray( $observed_lock );
+		self::assertSame( self::NOW + 90 + $expected_lease, $observed_lock['heartbeat_at'] );
+		self::assertIsArray( $observed_run );
+		self::assertSame( self::NOW + 90 + $expected_lease, $observed_run['heartbeat_at'] ?? null );
+	}
+
+	/**
+	 * A throwing runtime declaration falls back to the default lease instead of escaping the delivery.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_defaults_the_lease_when_the_declared_runtime_throws(): void {
+		$this->prepare_run_action();
+		$this->task->max_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
+		$observed_lock                     = null;
+		$this->task->on_handle             = function ( array $args ) use ( &$observed_lock ): void {
+			$observed_lock = $this->lock();
+		};
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertIsArray( $observed_lock );
+		self::assertSame( self::NOW + 90 + 300, $observed_lock['heartbeat_at'] );
+		self::assertCount( 1, $this->task->calls );
 	}
 
 	/**
@@ -394,6 +465,75 @@ final class ActionDeliveriesTest extends TestCase {
 			$this->logger->records
 		);
 		$this->assert_terminal_history( RunStatus::Completed );
+	}
+
+	/**
+	 * An expired delivery cannot shorten the execution lease credited to its replacement.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_preserves_a_replacement_delivery_execution_lease(): void {
+		$this->prepare_run_action();
+		$action_seq         = $this->action_seq();
+		$replacement_credit = null;
+
+		$this->task->on_handle = function ( array $args ) use ( $action_seq, &$replacement_credit ): void {
+			self::assertSame( self::ARGS, $args );
+			$replacement_credit = $this->admit_replacement_delivery( $action_seq );
+		};
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		self::assertIsInt( $replacement_credit );
+		$this->assert_replacement_delivery_preserved( $replacement_credit );
+	}
+
+	/**
+	 * An expired throwing delivery cannot shorten the execution lease credited to its replacement.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_failure_preserves_a_replacement_delivery_execution_lease(): void {
+		$this->prepare_run_action();
+		$action_seq         = $this->action_seq();
+		$replacement_credit = null;
+
+		$this->task->on_handle = function ( array $args ) use ( $action_seq, &$replacement_credit ): void {
+			self::assertSame( self::ARGS, $args );
+			$replacement_credit = $this->admit_replacement_delivery( $action_seq );
+
+			throw new \RuntimeException( 'Expired attempt failed after its replacement began.' );
+		};
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		self::assertIsInt( $replacement_credit );
+		$this->assert_replacement_delivery_preserved( $replacement_credit );
+	}
+
+	/**
+	 * Expired failure adjudication cannot shorten a replacement admitted during policy resolution.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_retry_policy_preserves_a_replacement_delivery_execution_lease(): void {
+		$this->prepare_run_action();
+		$action_seq            = $this->action_seq();
+		$replacement_credit    = null;
+		$this->task->throwable = new \RuntimeException( 'Attempt failed before retry-policy resolution.' );
+		$this->set_filter_value(
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
+			function ( RetryPolicy $policy ) use ( $action_seq, &$replacement_credit ): RetryPolicy {
+				$replacement_credit = $this->admit_replacement_delivery( $action_seq );
+
+				return $policy;
+			}
+		);
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+
+		self::assertIsInt( $replacement_credit );
+		$this->assert_replacement_delivery_preserved( $replacement_credit );
 	}
 
 	/**
@@ -530,7 +670,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertIsArray( $observed_state );
 		self::assertSame( 'running', $observed_state['status'] ?? null );
 		self::assertTrue( $observed_state['executing'] ?? null );
-		self::assertSame( self::NOW + 90, $observed_state['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 90 + 300, $observed_state['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_post_callback_superseded_task();
 	}
@@ -582,6 +722,89 @@ final class ActionDeliveriesTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+	}
+
+	/**
+	 * Supplies invalid and runaway runtime declarations at the delivery boundary.
+	 *
+	 * @return  array<string, array{declared: int, expected_lease: int}>
+	 */
+	public static function bounded_runtime_values(): array {
+		return array(
+			'zero uses default'      => array(
+				'declared'       => 0,
+				'expected_lease' => 300,
+			),
+			'negative uses default'  => array(
+				'declared'       => -1,
+				'expected_lease' => 300,
+			),
+			'twenty-four hours caps' => array(
+				'declared'       => 24 * 60 * 60,
+				'expected_lease' => 6 * 60 * 60,
+			),
+		);
+	}
+
+	/**
+	 * Admits a same-run replacement after the current callback credit becomes stale.
+	 *
+	 * @param   int $action_seq Current lifecycle action sequence.
+	 *
+	 * @return  int Replacement liveness timestamp.
+	 */
+	private function admit_replacement_delivery( int $action_seq ): int {
+		$guard                  = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$stores                 = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$lock_windows           = new LockWindows( $this->clock );
+		$terminal_transitions   = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$this->clock->timestamp = self::NOW + 90 + WorkInterface::DEFAULT_MAX_RUNTIME + 901;
+		$credit                 = $this->clock->timestamp + WorkInterface::DEFAULT_MAX_RUNTIME;
+		$replacement_state      = $terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$action_seq,
+			$stores->run_store( self::NAME ),
+			static fn (): int => $credit
+		);
+		self::assertInstanceOf( RunState::class, $replacement_state );
+
+		return $credit;
+	}
+
+	/**
+	 * Asserts that one admitted replacement retains both future heartbeat rows.
+	 *
+	 * @param   int $replacement_credit Expected replacement liveness timestamp.
+	 *
+	 * @return  void
+	 */
+	private function assert_replacement_delivery_preserved( int $replacement_credit ): void {
+		$lock = $this->lock();
+		self::assertIsArray( $lock );
+		self::assertSame( $replacement_credit, $lock['heartbeat_at'] );
+		$state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $state );
+		self::assertSame( 'running', $state['status'] ?? null );
+		self::assertTrue( $state['executing'] ?? null );
+		self::assertSame( $replacement_credit, $state['heartbeat_at'] ?? null );
+	}
+
+	/**
+	 * Scripts one value through the unit filter boundary.
+	 *
+	 * @param   string $hook_name Filter hook name.
+	 * @param   mixed  $value     Scripted return value or callable.
+	 *
+	 * @return  void
+	 */
+	private function set_filter_value( string $hook_name, mixed $value ): void {
+		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
+		self::assertIsArray( $filters );
+		$filters[ $hook_name ] = $value;
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = $filters;
 	}
 
 	/**

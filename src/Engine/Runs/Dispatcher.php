@@ -722,7 +722,7 @@ final readonly class Dispatcher {
 			$fire_at         = $now + $delay;
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $fire_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost => new EngineError(
+				HeartbeatOutcome::Lost, HeartbeatOutcome::Stale => new EngineError(
 					\sprintf(
 						'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
 						$task_name

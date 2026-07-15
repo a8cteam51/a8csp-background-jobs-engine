@@ -137,6 +137,12 @@ final class BatchRegistryTest extends TestCase {
 				return $this->name;
 			}
 
+			/** {@inheritDoc} */
+			#[\Override]
+			public function max_runtime(): int {
+				return self::DEFAULT_MAX_RUNTIME;
+			}
+
 			/**
 			 * Returns no chunks because registry coverage exercises identity only.
 			 *

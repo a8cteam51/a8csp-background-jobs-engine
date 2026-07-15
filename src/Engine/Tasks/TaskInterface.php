@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableExceptionInterface;
 
@@ -16,7 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryab
  * @since   1.0.0
  * @version 1.0.0
  */
-interface TaskInterface {
+interface TaskInterface extends WorkInterface {
 	// region METHODS
 
 	/**
@@ -28,6 +29,20 @@ interface TaskInterface {
 	 * @return  string
 	 */
 	public function get_name(): string;
+
+	/**
+	 * Returns the declared ceiling in seconds for one handler invocation.
+	 *
+	 * The engine credits run liveness for this window immediately before invoking `handle()`.
+	 * Exceeding the ceiling makes the still-executing run reclaimable as crashed after its lock
+	 * staleness window elapses.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int
+	 */
+	public function max_runtime(): int;
 
 	/**
 	 * Handles one invocation of the task.

@@ -15,6 +15,31 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( AbstractTask::class )]
 #[UsesClass( RetryPolicy::class )]
 final class AbstractTaskTest extends TestCase {
+	/**
+	 * A task inherits the shared five-minute ceiling for one handler invocation.
+	 *
+	 * @return  void
+	 */
+	public function test_default_max_runtime_is_five_minutes(): void {
+		$task = new class() extends AbstractTask {
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'refresh-index';
+			}
+
+			/**
+			 * {@inheritDoc}
+			 *
+			 * @param   array<array-key, mixed> $args Invocation arguments.
+			 */
+			#[\Override]
+			public function handle( array $args ): void {}
+		};
+
+		self::assertSame( 300, $task->max_runtime() );
+	}
 
 	/**
 	 * Loads WordPress constants before the default retry policy is first instantiated.

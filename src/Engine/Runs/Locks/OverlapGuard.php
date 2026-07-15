@@ -20,8 +20,9 @@ use Psr\Log\LoggerInterface;
  * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire when
  * a crashed process revives after its lock has been reclaimed. Replace takeover has the same residual
  * while an incumbent is inside a callback: PHP cannot abort it, so it finishes that callback and then
- * fences. Consumers' idempotency contract covers both windows. Malformed rows are not held and follow
- * the same value-conditioned reclaim path.
+ * fences. Consumers' idempotency contract covers both windows. A leaked lock carrying a pre-credited
+ * execution lease reclaims only after the credited runtime plus the staleness window elapses.
+ * Malformed rows are not held and follow the same value-conditioned reclaim path.
  *
  * LockWindows resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -194,16 +195,17 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name      Stable task or batch name.
-	 * @param   string   $args_hash Stable identity of the start arguments.
-	 * @param   string   $run_id    Owning run identifier.
-	 * @param   int|null $at        Liveness timestamp, or null to use the current clock time. A future value marks
-	 *                              the next expected retry fire as the run's legitimate sign of life.
+	 * @param   string   $name                  Stable task or batch name.
+	 * @param   string   $args_hash             Stable identity of the start arguments.
+	 * @param   string   $run_id                Owning run identifier.
+	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time. A future value marks
+	 *                                          expected callback work or retry fire as the run's legitimate sign of life.
+	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
 	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
 	 */
 	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
-	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null ): HeartbeatOutcome {
+	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null, ?int $expected_heartbeat_at = null ): HeartbeatOutcome {
 		$key      = $this->option_name( $name, $args_hash );
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
@@ -229,13 +231,18 @@ final readonly class OverlapGuard {
 		if ( null === $lock || $run_id !== $lock['run_id'] ) {
 			return HeartbeatOutcome::Lost;
 		}
+		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
+			return HeartbeatOutcome::Stale;
+		}
 
 		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
 
 		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
-		return $this->rows->replace( $key, $raw, self::serialize( $lock ) )
-			? HeartbeatOutcome::Owned
-			: HeartbeatOutcome::Lost;
+		if ( $this->rows->replace( $key, $raw, self::serialize( $lock ) ) ) {
+			return HeartbeatOutcome::Owned;
+		}
+
+		return null !== $expected_heartbeat_at ? HeartbeatOutcome::Stale : HeartbeatOutcome::Lost;
 	}
 
 	/**

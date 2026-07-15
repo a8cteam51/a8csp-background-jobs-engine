@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableExceptionInterface;
@@ -21,7 +22,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryab
  * @since   1.0.0
  * @version 1.0.0
  */
-interface BatchInterface {
+interface BatchInterface extends WorkInterface {
 	// region METHODS
 
 	/**
@@ -33,6 +34,21 @@ interface BatchInterface {
 	 * @return  string
 	 */
 	public function get_name(): string;
+
+	/**
+	 * Returns the declared ceiling in seconds for one queue-generation or chunk invocation.
+	 *
+	 * The ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to
+	 * the whole batch run. The engine credits run liveness for this window immediately before either
+	 * callback; exceeding it makes the still-executing run reclaimable as crashed after its lock
+	 * staleness window elapses.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int
+	 */
+	public function max_runtime(): int;
 
 	/**
 	 * Generates one argument array for each initial chunk.

@@ -155,6 +155,19 @@ final class LockWindowsTest extends TestCase {
 	}
 
 	/**
+	 * Declared callback ceilings resolve through the shared default and runaway cap.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'execution_lease_values' )]
+	public function test_execution_lease_resolves_declared_runtime( ?int $declared, int $expected_lease ): void {
+		self::assertSame(
+			$expected_lease,
+			$this->lock_windows->execution_lease( $declared )
+		);
+	}
+
+	/**
 	 * Heartbeat staleness uses a strict boundary without overflowing minimum Unix seconds.
 	 *
 	 * @return  void
@@ -238,6 +251,36 @@ final class LockWindowsTest extends TestCase {
 	}
 
 	/**
+	 * Supplies accepted, invalid, and capped callback runtime declarations.
+	 *
+	 * @return  array<string, array{declared: int|null, expected_lease: int}>
+	 */
+	public static function execution_lease_values(): array {
+		return array(
+			'declared runtime'               => array(
+				'declared'       => 1_200,
+				'expected_lease' => 1_200,
+			),
+			'zero falls back to default'     => array(
+				'declared'       => 0,
+				'expected_lease' => 300,
+			),
+			'negative falls back to default' => array(
+				'declared'       => -1,
+				'expected_lease' => 300,
+			),
+			'absent falls back to default'   => array(
+				'declared'       => null,
+				'expected_lease' => 300,
+			),
+			'runaway runtime is capped'      => array(
+				'declared'       => 86_400,
+				'expected_lease' => 21_600,
+			),
+		);
+	}
+
+	/**
 	 * Supplies strict fresh, stale, and minimum-integer heartbeat boundaries.
 	 *
 	 * @return  array<string, array{now: int, heartbeat_at: int, staleness: int, expected_stale: bool}>
@@ -255,6 +298,12 @@ final class LockWindowsTest extends TestCase {
 				'heartbeat_at'   => self::NOW - 901,
 				'staleness'      => 900,
 				'expected_stale' => true,
+			),
+			'future heartbeat is fresh'    => array(
+				'now'            => self::NOW,
+				'heartbeat_at'   => self::NOW + 21_600,
+				'staleness'      => 900,
+				'expected_stale' => false,
 			),
 			'minimum integer remains safe' => array(
 				'now'            => -1,

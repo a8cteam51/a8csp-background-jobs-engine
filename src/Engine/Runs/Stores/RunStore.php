@@ -219,12 +219,13 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $run_id  Run identifier.
+	 * @param   string        $run_id   Run identifier.
 	 * @param   RunState|null $expected Complete state already observed by the caller, or null to inspect it here.
+	 * @param   int|null      $at       Liveness timestamp, or null to use the current clock time.
 	 *
 	 * @return  RunState|null Null when the run is absent, invalid, or changed concurrently.
 	 */
-	public function refresh_heartbeat( string $run_id, ?RunState $expected = null ): ?RunState {
+	public function refresh_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): ?RunState {
 		$raw = null;
 		if ( null === $expected ) {
 			$inspected = $this->inspect( $run_id );
@@ -242,7 +243,7 @@ final readonly class RunStore {
 		}
 
 		$replacement     = $expected
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_heartbeat_at( $at ?? $this->clock->now()->getTimestamp() )
 			->with_executing( true );
 		$replacement_raw = null === $raw
 			? $this->transition_state( $run_id, $expected, $replacement )

@@ -330,6 +330,62 @@ final class TerminalTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A stale admission cannot orphan its lock credit after the incumbent advances the run row.
+	 *
+	 * @return  void
+	 */
+	public function test_active_run_state_drops_a_stale_sequence_after_the_incumbent_advances(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$credit_at = self::NOW + 390;
+		$incumbent = $this->terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$this->action_seq(),
+			$run_store,
+			static fn (): int => $credit_at
+		);
+		self::assertInstanceOf( RunState::class, $incumbent );
+
+		$reset_at               = $credit_at + 901;
+		$advanced               = $incumbent
+			->with_heartbeat_at( $reset_at )
+			->with_action_seq( $incumbent->action_seq + 1 );
+		$this->clock->timestamp = $reset_at;
+		$this->wpdb->before_next(
+			'select',
+			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
+				self::assertFalse(
+					$this->terminal_transitions->abort_unless_fence_owned(
+						'Task',
+						self::NAME,
+						self::RUN_ID,
+						$incumbent,
+						$run_store,
+						$reset_at,
+						$incumbent->heartbeat_at
+					)
+				);
+				self::assertIsString( $run_store->transition_state( self::RUN_ID, $incumbent, $advanced ) );
+			}
+		);
+
+		$reclaimed = $this->terminal_transitions->active_run_state(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$incumbent->action_seq,
+			$run_store,
+			static fn (): int => $reset_at + 300
+		);
+
+		self::assertNull( $reclaimed );
+		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
+		self::assertEquals( $advanced, $run_store->get( self::RUN_ID ) );
+	}
+
+	/**
 	 * An indeterminate ownership fence aborts without claiming a terminal transition.
 	 *
 	 * @return  void

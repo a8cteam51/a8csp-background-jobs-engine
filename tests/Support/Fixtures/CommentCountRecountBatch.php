@@ -78,6 +78,19 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
+	 * Returns the shared ceiling for one queue-generation or recount invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int
+	 */
+	#[\Override]
+	public function max_runtime(): int {
+		return self::DEFAULT_MAX_RUNTIME;
+	}
+
+	/**
 	 * Loads post IDs by the small `post_type` key carried on the start action.
 	 *
 	 * @since   1.0.0

@@ -231,14 +231,19 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_start_action_persists_the_filtered_queue_and_schedules_continue(): void {
+		$this->batch->max_runtime = 1_200;
 		$this->batch->queue       = array(
 			'first-key'  => array( 'chunk' => 'first' ),
 			'second-key' => array( 'chunk' => 'second' ),
 		);
 		$filter_call              = null;
 		$generate_executing       = null;
-		$this->batch->on_generate = function ( array $start_args ) use ( &$generate_executing ): void {
+		$observed_lock            = null;
+		$observed_run             = null;
+		$this->batch->on_generate = function ( array $start_args ) use ( &$generate_executing, &$observed_lock, &$observed_run ): void {
 			$generate_executing = $this->run_state()['executing'];
+			$observed_lock      = $this->lock();
+			$observed_run       = $this->run_state();
 		};
 		$this->set_filter_value(
 			'a8csp_background_tasks/queue/' . self::NAME,
@@ -263,6 +268,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertTrue( $generate_executing );
+		self::assertIsArray( $observed_lock );
+		self::assertSame( self::NOW + 30 + 1_200, $observed_lock['heartbeat_at'] );
+		self::assertIsArray( $observed_run );
+		self::assertSame( self::NOW + 30 + 1_200, $observed_run['heartbeat_at'] );
 		self::assertSame(
 			array(
 				'arity' => 3,
@@ -420,7 +429,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertIsArray( $observed_state );
 		self::assertSame( array(), $observed_state['queue'] ?? null );
 		self::assertSame( 1, $observed_state['action_seq'] ?? null );
-		self::assertSame( self::NOW + 30, $observed_state['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 30 + 300, $observed_state['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_quiet_superseded_run();
 	}
@@ -627,7 +636,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$chunk_args = array( 'chunk' => 'current' );
 		$remaining  = array( 'chunk' => 'remaining' );
 		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
-		$filter_call = null;
+		$this->batch->max_runtime = 1_200;
+
+		$filter_call   = null;
+		$observed_lock = null;
+		$observed_run  = null;
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
 			static function ( int $default_delay, string $name, string $run_id ) use ( &$filter_call ): int {
@@ -642,11 +655,17 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batch->on_process = function (
 			array $processed_args,
 			BatchContextInterface $context
-		) use ( $chunk_args ): void {
+		) use (
+			$chunk_args,
+			&$observed_lock,
+			&$observed_run
+		): void {
 			self::assertSame( $chunk_args, $processed_args );
 			self::assertSame( self::RUN_ID, $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
 			self::assertTrue( $this->run_state()['executing'] );
+			$observed_lock = $this->lock();
+			$observed_run  = $this->run_state();
 			$context->enqueue( array( 'chunk' => 'appended' ) );
 			$context->prepend( array( 'chunk' => 'prepended-1' ) );
 			$context->prepend( array( 'chunk' => 'prepended-2' ) );
@@ -658,6 +677,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
 		self::assertInstanceOf( BatchContext::class, $this->batch->process_calls[0]['context'] );
+		self::assertIsArray( $observed_lock );
+		self::assertSame( self::NOW + 120 + 1_200, $observed_lock['heartbeat_at'] );
+		self::assertIsArray( $observed_run );
+		self::assertSame( self::NOW + 120 + 1_200, $observed_run['heartbeat_at'] );
 		$state = $this->run_state();
 		self::assertSame(
 			array(
@@ -672,6 +695,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 0, $state['chunk_retries'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
+		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array( true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
@@ -837,7 +861,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array( $chunk_args, $remaining ), $observed_state['queue'] ?? null );
 		self::assertTrue( $observed_state['executing'] ?? null );
 		self::assertSame( 3, $observed_state['action_seq'] ?? null );
-		self::assertSame( self::NOW + 120, $observed_state['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 120 + 300, $observed_state['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_quiet_superseded_run();
 	}
@@ -1036,7 +1060,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 131, $state['heartbeat_at'] );
 		self::assertSame(
-			array( true, false ),
+			array( true, true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
 		);
 		self::assertSame( self::NOW + 131, $this->lock()['heartbeat_at'] ?? null );

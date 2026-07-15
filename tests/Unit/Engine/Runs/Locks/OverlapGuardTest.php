@@ -75,14 +75,14 @@ final class OverlapGuardTest extends TestCase {
 		);
 	}
 
-	/** Heartbeat outcomes expose only the three lowercase-backed ownership states. */
+	/** Heartbeat outcomes expose only the four lowercase-backed ownership states. */
 	public function test_heartbeat_outcome_pins_cases_and_backing_values(): void {
 		self::assertSame(
-			array( HeartbeatOutcome::Owned, HeartbeatOutcome::Lost, HeartbeatOutcome::Indeterminate ),
+			array( HeartbeatOutcome::Owned, HeartbeatOutcome::Lost, HeartbeatOutcome::Stale, HeartbeatOutcome::Indeterminate ),
 			HeartbeatOutcome::cases()
 		);
 		self::assertSame(
-			array( 'owned', 'lost', 'indeterminate' ),
+			array( 'owned', 'lost', 'stale', 'indeterminate' ),
 			\array_column( HeartbeatOutcome::cases(), 'value' )
 		);
 	}
@@ -476,6 +476,23 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
+	/** An expected heartbeat refuses to shorten a newer generation owned by the same run. */
+	public function test_heartbeat_rejects_a_newer_same_run_generation(): void {
+		$newer_raw = self::raw( self::row( 'run-owner', 100, 300 ) );
+		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $database ) use ( $newer_raw ): void {
+				$database->put( self::KEY, $newer_raw );
+			}
+		);
+
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', null, 120 );
+
+		self::assertSame( HeartbeatOutcome::Stale, $outcome );
+		self::assertSame( $newer_raw, $this->wpdb->rows[ self::KEY ] );
+	}
+
 	/** Release deletes a lock owned by the terminating run. */
 	public function test_release_deletes_an_owned_lock(): void {
 		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
@@ -615,6 +632,28 @@ final class OverlapGuardTest extends TestCase {
 			MaintenanceFenceOutcome::Abandoned,
 			$guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 )
 		);
+	}
+
+	/** A callback credit remains owned through its strict credit-plus-staleness boundary. */
+	public function test_maintenance_fence_preserves_a_credited_callback_until_the_full_window_elapses(): void {
+		$credited = self::row( 'run-owner', 1_000, 1_300 );
+		$this->store_lock( $credited );
+
+		self::assertSame(
+			MaintenanceFenceOutcome::Owned,
+			$this->guard_at( 1_901 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 900 )
+		);
+		self::assertSame( $credited, $this->lock() );
+		self::assertSame(
+			MaintenanceFenceOutcome::Owned,
+			$this->guard_at( 2_200 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 900 )
+		);
+		self::assertSame( $credited, $this->lock() );
+		self::assertSame(
+			MaintenanceFenceOutcome::Abandoned,
+			$this->guard_at( 2_201 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 900 )
+		);
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 	}
 
 	/** A stale owned lock is abandoned only after its exact deletion wins. */

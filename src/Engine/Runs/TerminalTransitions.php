@@ -75,15 +75,18 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   int|null       $action_seq Received lifecycle action sequence.
-	 * @param   RunStore       $run_store Active-run store.
+	 * @phpstan-param (\Closure(): int)|null $liveness_at
+	 *
+	 * @param   'Task'|'Batch' $work_type   Work contract type.
+	 * @param   string         $name        Stable task or batch name.
+	 * @param   string         $run_id      Run identifier.
+	 * @param   int|null       $action_seq  Received lifecycle action sequence.
+	 * @param   RunStore       $run_store   Active-run store.
+	 * @param   \Closure|null  $liveness_at Lazy liveness timestamp, or null to use the current clock time.
 	 *
 	 * @return  RunState|null
 	 */
-	public function active_run_state( string $work_type, string $name, string $run_id, ?int $action_seq, RunStore $run_store ): ?RunState {
+	public function active_run_state( string $work_type, string $name, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
 		$state        = $run_store->get( $run_id );
 		$context_name = \strtolower( $work_type ) . '_name';
 		if ( null === $state ) {
@@ -143,12 +146,14 @@ final readonly class TerminalTransitions {
 			return null;
 		}
 
+		$at = null !== $liveness_at ? $liveness_at() : $this->clock->now()->getTimestamp();
+
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store ) ) {
+		if ( $this->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
-		$state = $run_store->refresh_heartbeat( $run_id, $state );
+		$state = $run_store->refresh_heartbeat( $run_id, $state, $at );
 		if ( null === $state ) {
 			return null;
 		}
@@ -447,29 +452,34 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Aborts a delivery when its owner-scoped heartbeat is lost or indeterminate.
+	 * Aborts a delivery when its owner-scoped heartbeat is lost, stale, or indeterminate.
 	 *
-	 * Confirmed loss claims a Superseded transition. An indeterminate authoritative read leaves the
-	 * running state untouched for a later delivery or the staleness sweep to resolve.
+	 * Confirmed loss claims a Superseded transition. A stale delivery generation or indeterminate
+	 * authoritative read leaves the running state untouched for a later delivery or the staleness
+	 * sweep to resolve.
 	 *
 	 * @internal Engine product service.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     Running state observed before the fence.
-	 * @param   RunStore       $run_store Active-run store.
-	 * @param   int|null       $at        Liveness timestamp, or null to use the current clock time.
+	 * @param   'Task'|'Batch' $work_type            Work contract type.
+	 * @param   string         $name                 Stable task or batch name.
+	 * @param   string         $run_id               Run identifier.
+	 * @param   RunState       $state                Running state observed before the fence.
+	 * @param   RunStore       $run_store            Active-run store.
+	 * @param   int|null       $at                   Liveness timestamp, or null to use the current clock time.
+	 * @param   int|null       $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	public function abort_unless_fence_owned( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null ): bool {
-		$outcome = $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at );
+	public function abort_unless_fence_owned( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
+		$outcome = $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
+		}
+		if ( HeartbeatOutcome::Stale === $outcome ) {
+			return true;
 		}
 
 		if ( HeartbeatOutcome::Indeterminate === $outcome ) {

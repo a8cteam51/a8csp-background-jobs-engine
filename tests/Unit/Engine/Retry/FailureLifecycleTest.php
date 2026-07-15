@@ -420,6 +420,37 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * Failure adjudication resets both credited heartbeats before resolving retry policy.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_resets_callback_credit_before_retry_policy_resolution(): void {
+		$this->task->max_runtime  = 1_200;
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$observed_lock            = null;
+		$observed_run             = null;
+		$this->set_filter_value(
+			'a8csp_background_tasks/retry_policy/' . self::NAME,
+			function ( RetryPolicy $policy ) use ( &$observed_lock, &$observed_run ): RetryPolicy {
+				$observed_lock = $this->lock();
+				$observed_run  = $this->option( $this->run_option_name() );
+
+				return $policy;
+			}
+		);
+		$this->prepare_run_action();
+
+		$this->handle_failed_task_attempt();
+
+		self::assertIsArray( $observed_lock );
+		self::assertSame( self::NOW + 90, $observed_lock['heartbeat_at'] );
+		self::assertIsArray( $observed_run );
+		self::assertSame( self::NOW + 90, $observed_run['heartbeat_at'] ?? null );
+		self::assertTrue( $observed_run['executing'] ?? null );
+	}
+
+	/**
 	 * A foreign policy-filter return falls back to the contract policy and names the correction.
 	 *
 	 * @return  void
@@ -768,7 +799,8 @@ final class FailureLifecycleTest extends TestCase {
 			self::NAME,
 			self::RUN_ID,
 			$this->action_seq(),
-			$run_store
+			$run_store,
+			fn (): int => $this->clock->timestamp + $this->task->max_runtime()
 		);
 		if ( null === $state ) {
 			return;
@@ -853,6 +885,7 @@ final class FailureLifecycleTest extends TestCase {
 				'run:running',
 				'task:handle',
 				'lock:update',
+				'run:running',
 				...( $throwable instanceof NonRetryableTaskException ? array() : array( 'lock:update' ) ),
 				'run:failed',
 				'failed-store',

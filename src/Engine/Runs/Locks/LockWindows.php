@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkInterface;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -24,6 +25,18 @@ final readonly class LockWindows {
 	 * @var     int
 	 */
 	private const CONTINUE_DELAY = 60;
+
+	/**
+	 * Maximum credited callback window before crash reclamation can resume.
+	 *
+	 * A bounded ceiling prevents an accidental declaration from deferring recovery indefinitely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_EXECUTION_LEASE = 6 * \HOUR_IN_SECONDS;
 
 	// endregion
 
@@ -95,6 +108,24 @@ final readonly class LockWindows {
 			: 2 * $continue_delay;
 
 		return \max( $staleness, $floor );
+	}
+
+	/**
+	 * Resolves the bounded liveness credit for one consumer callback invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $declared Declared callback ceiling in seconds, or null when no usable declaration exists.
+	 *
+	 * @return  int
+	 */
+	public function execution_lease( ?int $declared ): int {
+		if ( null === $declared || 1 > $declared ) {
+			return WorkInterface::DEFAULT_MAX_RUNTIME;
+		}
+
+		return \min( $declared, self::MAX_EXECUTION_LEASE );
 	}
 
 	/**

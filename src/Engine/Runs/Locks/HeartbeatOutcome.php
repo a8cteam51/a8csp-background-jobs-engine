@@ -15,6 +15,7 @@ enum HeartbeatOutcome: string {
 
 	case Owned         = 'owned';
 	case Lost          = 'lost';
+	case Stale         = 'stale';
 	case Indeterminate = 'indeterminate';
 
 	// endregion

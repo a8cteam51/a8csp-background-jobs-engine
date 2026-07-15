@@ -56,6 +56,19 @@ final class SiteHealthPingTask implements TaskInterface {
 	}
 
 	/**
+	 * Returns the shared ceiling for one site-health snapshot invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int
+	 */
+	#[\Override]
+	public function max_runtime(): int {
+		return self::DEFAULT_MAX_RUNTIME;
+	}
+
+	/**
 	 * Overwrites one consumer-owned transient with the current site-health snapshot.
 	 *
 	 * @since   1.0.0

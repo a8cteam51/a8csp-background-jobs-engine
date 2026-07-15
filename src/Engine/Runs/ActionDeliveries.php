@@ -120,8 +120,13 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$registered_batch = $this->batches->get( $batch_name );
+		$registered_task  = $this->tasks->get( $batch_name );
+		$liveness_at      = null !== $registered_batch && null === $registered_task
+			? fn (): int => $this->execution_lease_at( $registered_batch )
+			: null;
+		$run_store        = $this->stores->run_store( $batch_name );
+		$state            = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
@@ -144,7 +149,12 @@ final readonly class ActionDeliveries {
 				)
 			);
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			$reset_at = $this->clock->now()->getTimestamp();
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+				return;
+			}
+			$state = $run_store->refresh_heartbeat( $run_id, $state, $reset_at );
+			if ( null === $state ) {
 				return;
 			}
 
@@ -160,12 +170,14 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		$reset_at = $this->clock->now()->getTimestamp();
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		$replacement = $state
 			->with_queue( $queue )
+			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
@@ -174,7 +186,7 @@ final readonly class ActionDeliveries {
 		try {
 			$this->terminal_transitions->fire_started( $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
@@ -190,7 +202,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -313,14 +325,20 @@ final readonly class ActionDeliveries {
 		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
 		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
 		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
-		$run_store    = $this->stores->run_store( $name );
-		$state        = $this->terminal_transitions->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store );
+		$task         = $this->tasks->get( $name );
+		$batch        = $this->batches->get( $name );
+		$liveness_at  = null;
+		if ( null === $chunk_args && null !== $task && null === $batch ) {
+			$liveness_at = fn (): int => $this->execution_lease_at( $task );
+		} elseif ( null !== $chunk_args && null !== $batch && null === $task ) {
+			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
+		}
+		$run_store = $this->stores->run_store( $name );
+		$state     = $this->terminal_transitions->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
 
-		$task  = $this->tasks->get( $name );
-		$batch = $this->batches->get( $name );
 		if ( null !== $task && null !== $batch ) {
 			$this->logger->warning(
 				'Run action name is registered as both a task and a batch; rename one registration before dispatching the action.',
@@ -523,7 +541,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', $task_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', $task_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -575,13 +593,15 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		$reset_at = $this->clock->now()->getTimestamp();
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		$replacement = $state
 			->with_queue( $context->get_queue() )
 			->with_chunk_retries( 0 )
+			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 )
 			->with_executing( false );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
@@ -592,7 +612,7 @@ final readonly class ActionDeliveries {
 		try {
 			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
@@ -608,7 +628,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -648,6 +668,33 @@ final readonly class ActionDeliveries {
 				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 		}
+	}
+
+	/**
+	 * Resolves the bounded future liveness timestamp for one contract callback.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   TaskInterface|BatchInterface $contract Registered work contract.
+	 *
+	 * @return  int
+	 */
+	private function execution_lease_at( TaskInterface|BatchInterface $contract ): int {
+		try {
+			$declared = $contract->max_runtime();
+		} catch ( \Throwable ) {
+			// An unusable declaration falls back to the default lease instead of escaping the delivery unfenced.
+			$declared = null;
+		}
+
+		$lease = $this->lock_windows->execution_lease( $declared );
+		$now   = $this->clock->now()->getTimestamp();
+		if ( $now > \PHP_INT_MAX - $lease ) {
+			return \PHP_INT_MAX;
+		}
+
+		return $now + $lease;
 	}
 
 	/**

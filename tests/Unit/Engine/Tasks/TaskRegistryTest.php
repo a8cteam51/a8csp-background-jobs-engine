@@ -135,6 +135,12 @@ final class TaskRegistryTest extends TestCase {
 				return $this->name;
 			}
 
+			/** {@inheritDoc} */
+			#[\Override]
+			public function max_runtime(): int {
+				return self::DEFAULT_MAX_RUNTIME;
+			}
+
 			/**
 			 * Handles one unused registry-test invocation.
 			 *
