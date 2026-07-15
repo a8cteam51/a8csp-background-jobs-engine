@@ -162,12 +162,12 @@ final class AdmissionErrorMapperTest extends TestCase {
 				'reason'        => 'unsupported_recurrence',
 				'expected_code' => 'unsupported_operation',
 			),
-			'invalid interval'       => array(
-				'reason'        => 'invalid_interval',
+			'invalid time input'     => array(
+				'reason'        => 'invalid_time_input',
 				'expected_code' => 'payload_rejected',
 			),
-			'payload too large'      => array(
-				'reason'        => 'payload_too_large',
+			'invalid payload'        => array(
+				'reason'        => 'invalid_payload',
 				'expected_code' => 'payload_rejected',
 			),
 			'schedule failed'        => array(

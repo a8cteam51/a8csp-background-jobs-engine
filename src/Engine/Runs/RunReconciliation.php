@@ -415,7 +415,6 @@ final readonly class RunReconciliation {
 				$hook,
 				$args,
 				$group,
-				$pending['unique'],
 				$pending['priority']
 			);
 		}

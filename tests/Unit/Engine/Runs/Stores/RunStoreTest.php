@@ -164,7 +164,6 @@ final class RunStoreTest extends TestCase {
 			'stage'    => 'run',
 			'mode'     => 'single',
 			'fire_at'  => 1_700_000_220,
-			'unique'   => true,
 			'priority' => 31,
 		);
 		$state   = $store->create( 'run-pending', array( 'site_id' => 7 ), 'hash-a', array( array( 'site_id' => 7 ) ), $pending );
@@ -449,7 +448,6 @@ final class RunStoreTest extends TestCase {
 			'stage'    => 'continue',
 			'mode'     => 'async',
 			'fire_at'  => null,
-			'unique'   => false,
 			'priority' => 10,
 		);
 		$replacement = $state->with_pending( $pending );
@@ -863,7 +861,6 @@ final class RunStoreTest extends TestCase {
 				'pending'       => array(
 					'stage'    => 'run',
 					'mode'     => 'single',
-					'unique'   => false,
 					'priority' => 10,
 				),
 			),
@@ -881,7 +878,6 @@ final class RunStoreTest extends TestCase {
 					'stage'    => 'unknown',
 					'mode'     => 'async',
 					'fire_at'  => null,
-					'unique'   => false,
 					'priority' => 10,
 				),
 			),
@@ -918,42 +914,30 @@ final class RunStoreTest extends TestCase {
 				'stage'    => 'run',
 				'mode'     => 'later',
 				'fire_at'  => 2,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			array(
 				'stage'    => 'run',
 				'mode'     => 'async',
 				'fire_at'  => 2,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			array(
 				'stage'    => 'run',
 				'mode'     => 'single',
 				'fire_at'  => null,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			array(
 				'stage'    => 'run',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => 1,
-				'priority' => 10,
-			),
-			array(
-				'stage'    => 'run',
-				'mode'     => 'async',
-				'fire_at'  => null,
-				'unique'   => false,
 				'priority' => '10',
 			),
 			array(
 				'stage'    => 'run',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => false,
 				'priority' => 10,
 				'extra'    => true,
 			),

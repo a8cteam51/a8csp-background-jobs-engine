@@ -37,7 +37,7 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null $pending
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 * @phpstan-param list<string> $effects
 	 *
@@ -51,7 +51,7 @@ final readonly class RunState {
 	 * @param   int                           $action_seq      Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at      Creation timestamp.
 	 * @param   int                           $heartbeat_at    Latest liveness timestamp.
-	 * @param   array|null                    $pending         Durable successor delivery, or null when none exists. Its unique flag applies to async scheduling only; single-mode scheduling has no uniqueness parameter.
+	 * @param   array|null                    $pending         Durable successor delivery, or null when none exists.
 	 * @param   array|null                    $error           Durable terminal failure detail, or null for non-failed runs.
 	 * @param   array                         $effects         Completed terminal effect keys in execution order.
 	 */
@@ -234,7 +234,7 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null $pending
 	 *
 	 * @param   array|null $pending Durable successor delivery, or null when none exists.
 	 *

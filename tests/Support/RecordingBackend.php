@@ -83,14 +83,13 @@ final class RecordingBackend implements BackendInterface {
 	 * @param   array    $args                Hook arguments.
 	 * @param   int|null $first_run_timestamp First-run timestamp.
 	 * @param   string   $group               Group name.
-	 * @param   bool     $unique              Whether the request is unique.
 	 * @param   int      $priority            Advisory priority.
 	 *
 	 * @return  AbstractResult
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
 		$this->calls[] = array(
 			'verb' => 'schedule_recurring',
 			'args' => array(
@@ -99,7 +98,6 @@ final class RecordingBackend implements BackendInterface {
 				'args'                => $args,
 				'first_run_timestamp' => $first_run_timestamp,
 				'group'               => $group,
-				'unique'              => $unique,
 				'priority'            => $priority,
 			),
 		);
@@ -149,21 +147,19 @@ final class RecordingBackend implements BackendInterface {
 	 * @param   string $hook     Hook to run.
 	 * @param   array  $args     Hook arguments.
 	 * @param   string $group    Group name.
-	 * @param   bool   $unique   Whether the request is unique.
 	 * @param   int    $priority Advisory priority.
 	 *
 	 * @return  AbstractResult
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
 		$this->calls[] = array(
 			'verb' => 'enqueue_async',
 			'args' => array(
 				'hook'     => $hook,
 				'args'     => $args,
 				'group'    => $group,
-				'unique'   => $unique,
 				'priority' => $priority,
 			),
 		);

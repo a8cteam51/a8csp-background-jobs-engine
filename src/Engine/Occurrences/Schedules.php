@@ -151,7 +151,7 @@ final readonly class Schedules {
 
 		$registrations = $this->registry->registrations_for( $owner );
 		if ( $registrations->is_failure() ) {
-			return $this->registry_failure( $owner );
+			return $this->registry_read_failure( $owner );
 		}
 
 		$existing             = $registrations->value;
@@ -175,7 +175,7 @@ final readonly class Schedules {
 			if ( null === $next_due || 1 > $next_due ) {
 				return new Failure(
 					new SchedulingError(
-						SchedulingErrorReason::InvalidInterval,
+						SchedulingErrorReason::InvalidTimeInput,
 						\sprintf(
 							'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every() value.',
 							$schedule->name
@@ -210,7 +210,6 @@ final readonly class Schedules {
 					array( $registration_key ),
 					$current['next_due'],
 					$registration_key,
-					unique: true,
 					priority: $schedule->priority
 				);
 				if ( $recreated->is_failure() ) {
@@ -246,7 +245,7 @@ final readonly class Schedules {
 				'skips'       => 0,
 			);
 			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-				return $this->registry_failure( $owner );
+				return $this->registry_persist_failure( $owner );
 			}
 
 			$scheduled = $this->scheduler->schedule_recurring(
@@ -255,7 +254,6 @@ final readonly class Schedules {
 				array( $registration_key ),
 				$next_due,
 				$registration_key,
-				unique: true,
 				priority: $schedule->priority
 			);
 			if ( $scheduled->is_failure() ) {
@@ -278,12 +276,12 @@ final readonly class Schedules {
 
 			unset( $next[ $registration_key ] );
 			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-				return $this->registry_failure( $owner );
+				return $this->registry_persist_failure( $owner );
 			}
 		}
 
 		if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-			return $this->registry_failure( $owner );
+			return $this->registry_persist_failure( $owner );
 		}
 
 		return new Success( true );
@@ -377,7 +375,7 @@ final readonly class Schedules {
 	}
 
 	/**
-	 * Returns the failed registry-postcondition result for one owner.
+	 * Returns a failed registry-read result for one owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -386,9 +384,25 @@ final readonly class Schedules {
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
-	private function registry_failure( string $owner ): Failure {
+	private function registry_read_failure( string $owner ): Failure {
 		return new Failure(
-			SchedulingError::registry_read( $owner )
+			SchedulingError::registry_read_failure( $owner )
+		);
+	}
+
+	/**
+	 * Returns a failed registry-persist result for one owner.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Stable consumer identifier.
+	 *
+	 * @return  Failure<SchedulingError>
+	 */
+	private function registry_persist_failure( string $owner ): Failure {
+		return new Failure(
+			SchedulingError::registry_persist_failure( $owner )
 		);
 	}
 

@@ -62,6 +62,38 @@ final class SchedulingErrorTest extends TestCase {
 	}
 
 	/**
+	 * Registry read failures describe an authoritative storage read.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_read_failure_names_the_failed_read(): void {
+		$error = SchedulingError::registry_read_failure( 'owner-a' );
+
+		self::assertSame( SchedulingErrorReason::StorageFailure, $error->reason );
+		self::assertSame(
+			'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.',
+			$error->message
+		);
+		self::assertSame( array( 'owner' => 'owner-a' ), $error->context );
+	}
+
+	/**
+	 * Registry persist failures describe the failed durable write.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_persist_failure_names_the_failed_write(): void {
+		$error = SchedulingError::registry_persist_failure( 'owner-a' );
+
+		self::assertSame( SchedulingErrorReason::StorageFailure, $error->reason );
+		self::assertSame(
+			'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
+			$error->message
+		);
+		self::assertSame( array( 'owner' => 'owner-a' ), $error->context );
+	}
+
+	/**
 	 * The reason set and its log-facing values remain an explicit closed contract.
 	 *
 	 * @return  void
@@ -74,8 +106,8 @@ final class SchedulingErrorTest extends TestCase {
 				SchedulingErrorReason::BackendNotReady,
 				SchedulingErrorReason::UnsupportedGroup,
 				SchedulingErrorReason::UnsupportedRecurrence,
-				SchedulingErrorReason::InvalidInterval,
-				SchedulingErrorReason::PayloadTooLarge,
+				SchedulingErrorReason::InvalidTimeInput,
+				SchedulingErrorReason::InvalidPayload,
 				SchedulingErrorReason::ScheduleFailed,
 				SchedulingErrorReason::StorageFailure,
 			),
@@ -86,8 +118,8 @@ final class SchedulingErrorTest extends TestCase {
 				'backend_not_ready',
 				'unsupported_group',
 				'unsupported_recurrence',
-				'invalid_interval',
-				'payload_too_large',
+				'invalid_time_input',
+				'invalid_payload',
 				'schedule_failed',
 				'storage_failure',
 			),

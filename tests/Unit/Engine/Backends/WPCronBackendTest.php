@@ -70,18 +70,17 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * A recurring write accepts uniqueness while retaining WP-Cron's hook-and-args identity.
+	 * A recurring write is idempotent against WP-Cron's hook-and-args identity.
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_recurring_accepts_uniqueness_with_a_non_empty_group(): void {
+	public function test_schedule_recurring_is_idempotent_with_a_non_empty_group(): void {
 		$result = ( new WPCronBackend() )->schedule_recurring(
 			self::HOOK,
 			300,
 			array( 'run-17' ),
 			1_700_000_000,
-			'reports|run-17',
-			true
+			'reports|run-17'
 		);
 
 		self::assertInstanceOf( Success::class, $result );
@@ -123,8 +122,7 @@ final class WPCronBackendTest extends TestCase {
 		$result = ( new WPCronBackend() )->enqueue_async(
 			self::HOOK,
 			array( 'run-19' ),
-			'reports|run-19',
-			true
+			'reports|run-19'
 		);
 		$after  = \time();
 
@@ -227,7 +225,7 @@ final class WPCronBackendTest extends TestCase {
 		foreach ( array( 0, -1 ) as $interval ) {
 			$error = $this->assert_failure_reason(
 				$backend->schedule_recurring( self::HOOK, $interval ),
-				SchedulingErrorReason::InvalidInterval
+				SchedulingErrorReason::InvalidTimeInput
 			);
 
 			self::assertStringContainsString( 'greater than zero', $error->message );
@@ -576,15 +574,15 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Unique async enqueue retains an existing event with identical hook arguments.
+	 * Async enqueue retains an existing event with identical hook arguments.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_async_enqueue_skips_an_identical_event(): void {
+	public function test_async_enqueue_skips_an_identical_event(): void {
 		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'a' ), true ) );
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
-		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'a' ), unique: true );
+		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'a' ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
@@ -592,17 +590,17 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Unique async enqueue schedules when the existing event has different arguments.
+	 * Async enqueue schedules when the existing event has different arguments.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_async_enqueue_schedules_when_arguments_differ(): void {
+	public function test_async_enqueue_schedules_when_arguments_differ(): void {
 		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'a' ), true ) );
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
 		$before = \time();
 
-		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'b' ), unique: true );
+		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'b' ) );
 		$after  = \time();
 		$calls  = $this->cron_calls( 'wp_schedule_single_event' );
 
@@ -614,26 +612,11 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * Non-unique async enqueue delegates even when an identical event already exists.
+	 * A scripted Core duplicate accepts the identical pending event after the identity precheck.
 	 *
 	 * @return  void
 	 */
-	public function test_non_unique_async_enqueue_does_not_preemptively_deduplicate(): void {
-		self::assertTrue( \wp_schedule_single_event( \time() + 1_200, self::HOOK, array( 'a' ), true ) );
-		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
-
-		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'a' ) );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertCount( 1, $this->cron_calls( 'wp_schedule_single_event' ) );
-	}
-
-	/**
-	 * A scripted Core duplicate accepts the identical pending event for a non-unique request.
-	 *
-	 * @return  void
-	 */
-	public function test_non_unique_async_enqueue_accepts_a_scripted_duplicate_event(): void {
+	public function test_async_enqueue_accepts_a_scripted_duplicate_event(): void {
 		$GLOBALS['a8csp_bgte_test_cron_results'] = array(
 			'wp_schedule_single_event' => array(
 				new \WP_Error( 'duplicate_event', 'A duplicate event already exists.' ),

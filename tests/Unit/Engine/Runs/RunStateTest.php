@@ -28,7 +28,6 @@ final class RunStateTest extends TestCase {
 		'stage'    => 'continue',
 		'mode'     => 'single',
 		'fire_at'  => 175,
-		'unique'   => false,
 		'priority' => 10,
 	);
 
@@ -241,7 +240,6 @@ final class RunStateTest extends TestCase {
 			'stage'    => 'run',
 			'mode'     => 'async',
 			'fire_at'  => null,
-			'unique'   => true,
 			'priority' => 23,
 		);
 		$copy     = $original->with_pending( $pending );
@@ -361,7 +359,7 @@ final class RunStateTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null,
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null,
 	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null,
 	 *     effects: list<string>
 	 * }

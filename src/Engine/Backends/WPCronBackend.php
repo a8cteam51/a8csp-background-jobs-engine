@@ -95,11 +95,11 @@ final class WPCronBackend implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
 		if ( 1 > $interval ) {
 			return new Failure(
 				new SchedulingError(
-					SchedulingErrorReason::InvalidInterval,
+					SchedulingErrorReason::InvalidTimeInput,
 					'WP-Cron requires recurring intervals greater than zero; use at least one second.',
 					array( 'interval' => $interval ),
 				)
@@ -142,7 +142,7 @@ final class WPCronBackend implements BackendInterface {
 	 * {@inheritDoc}
 	 *
 	 * WP-Cron suppresses identical single events inside its ten-minute window, so a duplicate error
-	 * accepts the pending event for a non-unique request.
+	 * accepts the pending event when another writer wins after the identity precheck.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -151,13 +151,13 @@ final class WPCronBackend implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
-		if ( $unique && false !== \wp_next_scheduled( $hook, $args ) ) {
+	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
+		if ( false !== \wp_next_scheduled( $hook, $args ) ) {
 			return new Success( true );
 		}
 
 		$result = \wp_schedule_single_event( \time(), $hook, $args, true );
-		if ( ! $unique && $result instanceof \WP_Error && 'duplicate_event' === $result->get_error_code() ) {
+		if ( $result instanceof \WP_Error && 'duplicate_event' === $result->get_error_code() ) {
 			return new Success( true );
 		}
 
@@ -566,7 +566,7 @@ final class WPCronBackend implements BackendInterface {
 	private function failure_for_wp_error( \WP_Error $result, string $hook, string $operation ): Failure {
 		$message = match ( $result->get_error_code() ) {
 			'duplicate_event' => \sprintf(
-				'WP-Cron could not %1$s hook "%2$s": an identical hook+args event exists within WP-Cron\'s ten-minute duplicate window; make the args unique or use unique: true to accept deduplication.',
+				'WP-Cron could not %1$s hook "%2$s": an identical hook+args event exists within WP-Cron\'s ten-minute duplicate window; use arguments that identify a distinct event or retry after the existing event clears.',
 				$operation,
 				$hook
 			),

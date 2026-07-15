@@ -155,8 +155,8 @@ final class AdmissionErrorMapper {
 			SchedulingErrorReason::BackendNotReady       => ApiErrorCode::BackendUnavailable,
 			SchedulingErrorReason::UnsupportedGroup,
 			SchedulingErrorReason::UnsupportedRecurrence => ApiErrorCode::UnsupportedOperation,
-			SchedulingErrorReason::InvalidInterval,
-			SchedulingErrorReason::PayloadTooLarge       => ApiErrorCode::PayloadRejected,
+			SchedulingErrorReason::InvalidTimeInput,
+			SchedulingErrorReason::InvalidPayload        => ApiErrorCode::PayloadRejected,
 			SchedulingErrorReason::ScheduleFailed        => ApiErrorCode::BackendRejected,
 			SchedulingErrorReason::StorageFailure        => ApiErrorCode::StorageFailure,
 		};

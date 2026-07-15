@@ -23,6 +23,9 @@ interface BackendInterface {
 	/**
 	 * Schedules a recurring hook.
 	 *
+	 * Identity is the hook plus serialized arguments, plus the group where the backend supports
+	 * groups. Scheduling is idempotent: an existing recurring chain with that identity is retained.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -31,13 +34,12 @@ interface BackendInterface {
 	 * @param   list<mixed> $args                Arguments passed to the hook.
 	 * @param   int|null    $first_run_timestamp Unix timestamp of the first run, or null for now.
 	 * @param   string      $group               Backend grouping label.
-	 * @param   bool        $unique              Whether an identical recurring chain is retained instead of duplicated.
 	 * @param   int         $priority            Advisory execution priority.
 	 *
 	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the hook identity is present or queued on that backend, including a pre-existing occurrence; it does not identify occurrence kind or prove a fresh enqueue.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult;
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult;
 
 	/**
 	 * Schedules a hook for one run.
@@ -60,7 +62,8 @@ interface BackendInterface {
 	 * Enqueues a hook to run asynchronously.
 	 *
 	 * Identity is the hook plus serialized arguments, plus the group where the backend supports
-	 * groups. Backends that distinguish pending from running actions block duplicates in both states.
+	 * groups. Enqueueing is idempotent; backends that distinguish pending from running actions block
+	 * duplicates in both states.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -68,13 +71,12 @@ interface BackendInterface {
 	 * @param   string      $hook     Hook to run.
 	 * @param   list<mixed> $args     Arguments passed to the hook.
 	 * @param   string      $group    Backend grouping label.
-	 * @param   bool        $unique   Whether an identical queued or running hook is retained instead of duplicated.
 	 * @param   int         $priority Advisory execution priority.
 	 *
 	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the hook identity is present or queued on that backend, including a pre-existing occurrence; it does not identify occurrence kind or prove a fresh enqueue.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult;
+	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult;
 
 	/**
 	 * Unschedules every hook matching the supplied identity.

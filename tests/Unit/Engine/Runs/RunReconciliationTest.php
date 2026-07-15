@@ -327,7 +327,6 @@ final class RunReconciliationTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/continue',
 						'args'     => array( $name, self::RUN_ID, 2 ),
 						'group'    => $name . '|' . self::RUN_ID,
-						'unique'   => false,
 						'priority' => 10,
 					),
 				),
@@ -353,12 +352,11 @@ final class RunReconciliationTest extends TestCase {
 	 * A pending batch-start descriptor preserves the scheduler request derived from either policy.
 	 *
 	 * @param   string $existing_value Existing-run policy value used for admission.
-	 * @param   bool   $backend_unique Expected scheduler uniqueness on redrive.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'batch_start_redrive_policies' )]
-	public function test_sweep_redrives_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value, bool $backend_unique ): void {
+	public function test_sweep_redrives_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value ): void {
 		$name  = self::identity( 'redriven-start-batch' );
 		$batch = new RecordingBatch( 'redriven-start-batch' );
 		$this->batches->register( $name, $batch );
@@ -370,7 +368,6 @@ final class RunReconciliationTest extends TestCase {
 				'stage'    => 'start',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => $backend_unique,
 				'priority' => 23,
 			),
 			$this->run_state( $name )['pending'] ?? null
@@ -388,7 +385,6 @@ final class RunReconciliationTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/start',
 						'args'     => array( $name, self::RUN_ID, 1 ),
 						'group'    => $name . '|' . self::RUN_ID,
-						'unique'   => $backend_unique,
 						'priority' => 23,
 					),
 				),
@@ -400,25 +396,23 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Supplies the complete existing-run policy to backend-uniqueness mapping.
+	 * Supplies every existing-run policy that can schedule a batch start.
 	 *
-	 * @return  array<string, array{existing_value: string, backend_unique: bool}>
+	 * @return  array<string, array{existing_value: string}>
 	 */
 	public static function batch_start_redrive_policies(): array {
 		return array(
 			'reject'  => array(
 				'existing_value' => 'reject',
-				'backend_unique' => true,
 			),
 			'replace' => array(
 				'existing_value' => 'replace',
-				'backend_unique' => false,
 			),
 		);
 	}
 
 	/**
-	 * A stale schedule-driven task descriptor preserves internal backend uniqueness and priority.
+	 * A stale schedule-driven task descriptor preserves its priority.
 	 *
 	 * @return  void
 	 */
@@ -438,7 +432,6 @@ final class RunReconciliationTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
-						'unique'   => true,
 						'priority' => 23,
 					),
 				),
@@ -584,7 +577,6 @@ final class RunReconciliationTest extends TestCase {
 					'stage'    => 'run',
 					'mode'     => 'single',
 					'fire_at'  => $fire_at,
-					'unique'   => false,
 					'priority' => 17,
 				),
 			)

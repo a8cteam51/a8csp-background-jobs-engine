@@ -79,7 +79,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null $pending
 	 *
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
@@ -411,7 +411,7 @@ final readonly class RunStore {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int},
+	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
 	 *     effects?: non-empty-list<string>
 	 * }
@@ -522,7 +522,7 @@ final readonly class RunStore {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int},
+	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
 	 *     effects?: non-empty-list<string>
 	 * } $value
@@ -567,7 +567,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-assert-if-true array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int} $value
+	 * @phpstan-assert-if-true array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int} $value
 	 *
 	 * @param   mixed $value Persisted pending-action descriptor.
 	 *
@@ -576,14 +576,13 @@ final readonly class RunStore {
 	private static function is_stored_pending( mixed $value ): bool {
 		if (
 			! \is_array( $value )
-			|| 5 !== \count( $value )
+			|| 4 !== \count( $value )
 			|| ! \is_string( $value['stage'] ?? null )
 			|| ! \in_array( $value['stage'], array( 'start', 'run', 'continue', 'cleanup' ), true )
 			|| ! \is_string( $value['mode'] ?? null )
 			|| ! \in_array( $value['mode'], array( 'async', 'single' ), true )
 			|| ! \array_key_exists( 'fire_at', $value )
 			|| ( null !== $value['fire_at'] && ! \is_int( $value['fire_at'] ) )
-			|| ! \is_bool( $value['unique'] ?? null )
 			|| ! \is_int( $value['priority'] ?? null )
 		) {
 			return false;

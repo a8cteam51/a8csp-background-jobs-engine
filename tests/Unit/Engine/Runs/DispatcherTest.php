@@ -200,7 +200,6 @@ final class DispatcherTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
-						'unique'   => false,
 						'priority' => 23,
 					),
 				),
@@ -222,7 +221,6 @@ final class DispatcherTest extends TestCase {
 					'stage'    => 'run',
 					'mode'     => 'async',
 					'fire_at'  => null,
-					'unique'   => false,
 					'priority' => 23,
 				),
 			),
@@ -375,7 +373,7 @@ final class DispatcherTest extends TestCase {
 		if ( $is_reclaimed ) {
 			self::assertInstanceOf( Success::class, $result );
 			self::assertSame( self::RUN_ID, $result->value );
-			self::assertSame( false, $this->backend->calls[0]['args']['unique'] );
+			self::assertArrayNotHasKey( 'unique', $this->backend->calls[0]['args'] );
 			return;
 		}
 
@@ -555,7 +553,6 @@ final class DispatcherTest extends TestCase {
 				'stage'    => 'run',
 				'mode'     => 'single',
 				'fire_at'  => self::NOW + 120,
-				'unique'   => false,
 				'priority' => 31,
 			),
 			$state['pending'] ?? null
@@ -659,7 +656,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A deduplication key replaces the argument identity without requesting backend uniqueness.
+	 * A deduplication key replaces the argument identity without changing scheduler arguments.
 	 *
 	 * @return  void
 	 */
@@ -673,17 +670,13 @@ final class DispatcherTest extends TestCase {
 		self::assertIsArray( $call );
 		$backend_args = $call['args'] ?? null;
 		self::assertIsArray( $backend_args );
-		$backend_unique = $backend_args['unique'] ?? null;
-		self::assertIsBool( $backend_unique );
-		self::assertFalse( $backend_unique );
+		self::assertArrayNotHasKey( 'unique', $backend_args );
 		$state = $this->option( $this->run_option_name() );
 		self::assertIsArray( $state );
 		self::assertSame( $dedup_hash, $state['args_hash'] ?? null );
 		$pending = $state['pending'] ?? null;
 		self::assertIsArray( $pending );
-		$persisted_unique = $pending['unique'] ?? null;
-		self::assertIsBool( $persisted_unique );
-		self::assertFalse( $persisted_unique );
+		self::assertArrayNotHasKey( 'unique', $pending );
 		self::assertArrayHasKey( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $dedup_hash, $this->wpdb->rows );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 	}
@@ -869,7 +862,6 @@ final class DispatcherTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( self::IDENTITY, $new_run_id, 1 ),
 						'group'    => self::IDENTITY . '|' . $new_run_id,
-						'unique'   => false,
 						'priority' => 10,
 					),
 				),

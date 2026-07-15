@@ -196,7 +196,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
 		if ( null !== $first_run_timestamp && 1 > $first_run_timestamp ) {
 			return $this->timestamp_failure( $hook, 'first_run_timestamp', $first_run_timestamp );
 		}
@@ -213,7 +213,6 @@ final readonly class SchedulerFacade implements BackendInterface {
 				$args,
 				$first_run_timestamp,
 				$group,
-				$unique,
 				$priority
 			)
 		);
@@ -260,7 +259,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
 		$payload_failure = $this->payload_failure( $hook, $args );
 		if ( null !== $payload_failure ) {
 			return $payload_failure;
@@ -271,7 +270,6 @@ final readonly class SchedulerFacade implements BackendInterface {
 				$hook,
 				$args,
 				$group,
-				$unique,
 				$priority
 			)
 		);
@@ -522,7 +520,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	private function timestamp_failure( string $hook, string $field, int $timestamp ): Failure {
 		return new Failure(
 			new SchedulingError(
-				SchedulingErrorReason::InvalidInterval,
+				SchedulingErrorReason::InvalidTimeInput,
 				\sprintf(
 					'Scheduling hook "%1$s" requires %2$s in positive UNIX seconds; pass a timestamp of at least 1.',
 					$hook,
@@ -548,7 +546,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 		if ( ! PortableArguments::is_valid( $args, self::MAX_ARGUMENTS_JSON_DEPTH ) ) {
 			return new Failure(
 				new SchedulingError(
-					SchedulingErrorReason::PayloadTooLarge,
+					SchedulingErrorReason::InvalidPayload,
 					\sprintf(
 						'Scheduling hook "%1$s" arguments must be a tree of scalars and arrays; store objects by identifier and keep nesting within %2$d levels.',
 						$hook,
@@ -569,7 +567,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 
 		return new Failure(
 			new SchedulingError(
-				SchedulingErrorReason::PayloadTooLarge,
+				SchedulingErrorReason::InvalidPayload,
 				\sprintf(
 					'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-byte limit; pass identifying keys and load bulk data from storage inside the handler.',
 					$hook,

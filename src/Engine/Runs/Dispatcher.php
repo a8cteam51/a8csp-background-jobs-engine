@@ -133,8 +133,7 @@ final readonly class Dispatcher {
 			$delay,
 			$dedup_key,
 			$priority,
-			OverlapPolicy::Skip,
-			false
+			OverlapPolicy::Skip
 		);
 		if ( $result->is_failure() ) {
 			return $result;
@@ -177,8 +176,6 @@ final readonly class Dispatcher {
 			null,
 			priority: $priority,
 			overlap: $overlap,
-			// Only Skip has a stable single-flight identity worth backend-deduplicating.
-			backend_unique: OverlapPolicy::Skip === $overlap,
 			on_accepted: $on_accepted
 		);
 	}
@@ -290,9 +287,8 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$backend_unique = ExistingRunPolicy::Reject === $existing;
-		$run_store      = $this->stores->run_store( $batch_name );
-		$state          = $this->create_run_state_and_replace_if_held(
+		$run_store = $this->stores->run_store( $batch_name );
+		$state     = $this->create_run_state_and_replace_if_held(
 			'Batch',
 			$batch_name,
 			$run_id,
@@ -305,7 +301,6 @@ final readonly class Dispatcher {
 				'stage'    => 'start',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => $backend_unique,
 				'priority' => $priority,
 			)
 		);
@@ -326,7 +321,6 @@ final readonly class Dispatcher {
 			'a8csp_background_tasks/start',
 			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id,
-			$backend_unique,
 			$priority
 		);
 		if ( $scheduled->is_failure() ) {
@@ -646,12 +640,11 @@ final readonly class Dispatcher {
 	 * @param   string|null             $dedup_key     Consumer deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority      Advisory priority from 0 through 255.
 	 * @param   OverlapPolicy           $overlap       Execution-overlap policy.
-	 * @param   bool                    $backend_unique Whether backend uniqueness is requested.
 	 * @param   \Closure|null           $on_accepted   Internal callback after backend acceptance and before started hooks.
 	 *
 	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
 	 */
-	private function dispatch_task( string $task_name, array $args, int $delay, ?string $dedup_key, int $priority, OverlapPolicy $overlap, bool $backend_unique, ?\Closure $on_accepted = null ): AbstractResult {
+	private function dispatch_task( string $task_name, array $args, int $delay, ?string $dedup_key, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
 		$task = 'task' === $this->tasks->kind( $task_name )
 			? $this->tasks->get( $task_name )
 			: null;
@@ -792,7 +785,6 @@ final readonly class Dispatcher {
 				'stage'    => 'run',
 				'mode'     => 0 === $delay ? 'async' : 'single',
 				'fire_at'  => 0 === $delay ? null : $scheduled_at,
-				'unique'   => $backend_unique,
 				'priority' => $priority,
 			)
 		);
@@ -861,7 +853,7 @@ final readonly class Dispatcher {
 		$action_args = array( $task_name, $run_id, $state->action_seq );
 		$group       = $task_name . '|' . $run_id;
 		$scheduled   = 0 === $delay
-			? $this->scheduler->enqueue_async( 'a8csp_background_tasks/run', $action_args, $group, $backend_unique, $priority )
+			? $this->scheduler->enqueue_async( 'a8csp_background_tasks/run', $action_args, $group, $priority )
 			: $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $scheduled_at, $action_args, $group, $priority );
 
 		if ( $scheduled->is_failure() ) {
@@ -921,7 +913,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int} $pending
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int} $pending
 	 *
 	 * @param   'Task'|'Batch'                $work_type Work contract type.
 	 * @param   string                        $name      Complete owner-qualified task or batch identity.

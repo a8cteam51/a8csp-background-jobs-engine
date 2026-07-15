@@ -229,7 +229,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		foreach ( array( 0, -1 ) as $interval ) {
 			$error = $this->assert_failure_reason(
 				$backend->schedule_recurring( self::HOOK, $interval ),
-				SchedulingErrorReason::InvalidInterval
+				SchedulingErrorReason::InvalidTimeInput
 			);
 
 			self::assertSame( array( 'interval' => $interval ), $error->context );
@@ -251,7 +251,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$backend = $this->backend( self::READY_FACTS );
 
-		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', false, 247 );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
 		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
 
 		self::assertInstanceOf( Success::class, $recurring );
@@ -285,7 +285,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$backend = $this->backend( self::READY_FACTS );
 
-		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', false, 247 );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
 		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
 
 		self::assertInstanceOf( Success::class, $recurring );
@@ -296,20 +296,20 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * Scheduling writes preserve every positional group, uniqueness, and priority parameter.
+	 * Recurring and async scheduling use unique vendor inserts while preserving group and priority.
 	 *
 	 * @return  void
 	 */
-	public function test_scheduling_calls_pass_groups_uniqueness_and_priorities_in_the_action_scheduler_shape(): void {
+	public function test_scheduling_calls_use_unique_vendor_inserts_and_preserve_groups_and_priorities(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
 			'as_next_scheduled_action' => array( false, false ),
 		);
 
 		$backend = $this->backend( self::READY_FACTS );
 
-		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', true, 247 );
+		$recurring = $backend->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
 		$single    = $backend->schedule_single( self::HOOK, 1_700_000_100, array( 'b' ), 'imports', 246 );
-		$async     = $backend->enqueue_async( self::HOOK, array( 'c' ), 'exports', false, 245 );
+		$async     = $backend->enqueue_async( self::HOOK, array( 'c' ), 'exports', 245 );
 
 		self::assertInstanceOf( Success::class, $recurring );
 		self::assertInstanceOf( Success::class, $single );
@@ -323,17 +323,17 @@ final class ActionSchedulerBackendTest extends TestCase {
 			$this->as_calls( 'as_schedule_single_action' )[0]['args']
 		);
 		self::assertSame(
-			array( self::HOOK, array( 'c' ), 'exports', false, 245 ),
+			array( self::HOOK, array( 'c' ), 'exports', true, 245 ),
 			$this->as_calls( 'as_enqueue_async_action' )[0]['args']
 		);
 	}
 
 	/**
-	 * A unique recurring insert accepts Action Scheduler's confirmed duplicate sentinel.
+	 * A recurring insert accepts Action Scheduler's confirmed duplicate sentinel.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_recurring_schedule_accepts_a_confirmed_duplicate(): void {
+	public function test_recurring_schedule_accepts_a_confirmed_duplicate(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
 			'as_next_scheduled_action'     => array( false ),
 			'as_schedule_recurring_action' => array( 0 ),
@@ -346,7 +346,6 @@ final class ActionSchedulerBackendTest extends TestCase {
 			array( 'a' ),
 			1_700_000_000,
 			'reports',
-			true,
 			247
 		);
 
@@ -385,9 +384,9 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 */
 	public function test_every_id_returning_write_maps_zero_to_schedule_failed(): void {
 		$writes = array(
-			'as_schedule_recurring_action' => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_recurring( self::HOOK, 300 ),
+			'as_schedule_recurring_action' => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_recurring( self::HOOK, 300, group: 'reports' ),
 			'as_schedule_single_action'    => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_single( self::HOOK, 1_700_000_000 ),
-			'as_enqueue_async_action'      => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->enqueue_async( self::HOOK ),
+			'as_enqueue_async_action'      => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->enqueue_async( self::HOOK, group: 'reports' ),
 		);
 
 		foreach ( $writes as $function_name => $write ) {
@@ -525,7 +524,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		$backend = $this->backend_with_diagnostic_facts( $after_enqueue );
 
 		$error = $this->assert_failure_reason(
-			$backend->enqueue_async( self::HOOK ),
+			$backend->enqueue_async( self::HOOK, group: 'reports' ),
 			SchedulingErrorReason::ScheduleFailed
 		);
 
@@ -534,11 +533,11 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * A unique enqueue passes the flag and accepts a confirmed zero-ID duplicate.
+	 * An async enqueue passes the unique vendor flag and accepts a confirmed zero-ID duplicate.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_enqueue_passes_the_flag_and_accepts_a_confirmed_duplicate(): void {
+	public function test_async_enqueue_passes_the_unique_vendor_flag_and_accepts_a_confirmed_duplicate(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
 			'as_enqueue_async_action' => array( 0 ),
 			'as_has_scheduled_action' => array( true ),
@@ -548,7 +547,6 @@ final class ActionSchedulerBackendTest extends TestCase {
 			self::HOOK,
 			array( 'a' ),
 			'reports',
-			true,
 			247
 		);
 
@@ -565,18 +563,18 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * The empty group cannot disambiguate Action Scheduler's zero sentinel after a unique enqueue.
+	 * The empty group cannot disambiguate Action Scheduler's zero sentinel after an async enqueue.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_enqueue_rejects_an_empty_group_zero_without_ambiguous_confirmation(): void {
+	public function test_async_enqueue_rejects_an_empty_group_zero_without_ambiguous_confirmation(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
 			'as_enqueue_async_action' => array( 0 ),
 			'as_has_scheduled_action' => array( true ),
 		);
 
 		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, unique: true ),
+			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK ),
 			SchedulingErrorReason::ScheduleFailed
 		);
 
@@ -586,18 +584,18 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * A unique zero without a matching queued action remains a scheduling failure.
+	 * A zero without a matching queued action remains a scheduling failure.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_enqueue_rejects_an_unconfirmed_zero(): void {
+	public function test_async_enqueue_rejects_an_unconfirmed_zero(): void {
 		$GLOBALS['a8csp_bgte_test_as_results'] = array(
 			'as_enqueue_async_action' => array( 0 ),
 			'as_has_scheduled_action' => array( false ),
 		);
 
 		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, group: 'reports', unique: true ),
+			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, group: 'reports' ),
 			SchedulingErrorReason::ScheduleFailed
 		);
 

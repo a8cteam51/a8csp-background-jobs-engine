@@ -318,7 +318,6 @@ final class FailureLifecycleTest extends TestCase {
 				'stage'    => 'run',
 				'mode'     => 'single',
 				'fire_at'  => self::NOW + 107,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			$state['pending'] ?? null

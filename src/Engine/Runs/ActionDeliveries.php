@@ -207,7 +207,6 @@ final readonly class ActionDeliveries {
 					'stage'    => 'continue',
 					'mode'     => 'async',
 					'fire_at'  => null,
-					'unique'   => false,
 					'priority' => 10,
 				)
 			);
@@ -296,7 +295,6 @@ final readonly class ActionDeliveries {
 						'stage'    => 'cleanup',
 						'mode'     => 'async',
 						'fire_at'  => null,
-						'unique'   => false,
 						'priority' => 10,
 					)
 				);
@@ -334,7 +332,6 @@ final readonly class ActionDeliveries {
 					'stage'    => 'run',
 					'mode'     => 'async',
 					'fire_at'  => null,
-					'unique'   => false,
 					'priority' => 10,
 				)
 			);
@@ -720,7 +717,6 @@ final readonly class ActionDeliveries {
 					'stage'    => 'continue',
 					'mode'     => 'single',
 					'fire_at'  => $fire_at,
-					'unique'   => false,
 					'priority' => 10,
 				)
 			);

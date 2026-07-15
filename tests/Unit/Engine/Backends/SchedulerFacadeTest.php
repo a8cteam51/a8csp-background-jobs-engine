@@ -220,7 +220,6 @@ final class SchedulerFacadeTest extends TestCase {
 			array( 'run-17' ),
 			1_700_000_000,
 			'reports',
-			true,
 			20
 		);
 
@@ -239,7 +238,6 @@ final class SchedulerFacadeTest extends TestCase {
 						'args'                => array( 'run-17' ),
 						'first_run_timestamp' => 1_700_000_000,
 						'group'               => 'reports',
-						'unique'              => true,
 						'priority'            => 20,
 					),
 				),
@@ -300,7 +298,6 @@ final class SchedulerFacadeTest extends TestCase {
 			self::HOOK,
 			$args,
 			'reports|run-19',
-			true,
 			40
 		);
 
@@ -334,7 +331,6 @@ final class SchedulerFacadeTest extends TestCase {
 			self::HOOK,
 			array( 'run-19' ),
 			'exports',
-			true,
 			40
 		);
 
@@ -346,7 +342,6 @@ final class SchedulerFacadeTest extends TestCase {
 				'hook'     => self::HOOK,
 				'args'     => array( 'run-19' ),
 				'group'    => 'exports',
-				'unique'   => true,
 				'priority' => 40,
 			),
 			$last->calls[1]['args']
@@ -370,7 +365,6 @@ final class SchedulerFacadeTest extends TestCase {
 			self::HOOK,
 			array( 'run-20' ),
 			'exports',
-			true,
 			40
 		);
 
@@ -382,7 +376,6 @@ final class SchedulerFacadeTest extends TestCase {
 				'hook'     => self::HOOK,
 				'args'     => array( 'run-20' ),
 				'group'    => 'exports',
-				'unique'   => true,
 				'priority' => 40,
 			),
 			$second->calls[1]['args']
@@ -823,7 +816,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$backend = new RecordingBackend();
 		$facade  = new SchedulerFacade( array( $backend ) );
 		$result  = $this->invoke_guarded_write( $facade, $verb, $this->args_with_json_length( 8_001 ) );
-		$error   = $this->assert_payload_too_large( $result );
+		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertSame(
 			'Scheduling hook "a8csp_bgte_test_hook" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.',
@@ -847,7 +840,7 @@ final class SchedulerFacadeTest extends TestCase {
 				),
 			)
 		);
-		$error   = $this->assert_payload_too_large( $result );
+		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
 		self::assertStringContainsString( 'store objects by identifier', $error->message );
@@ -865,7 +858,7 @@ final class SchedulerFacadeTest extends TestCase {
 			self::HOOK,
 			array( array( static fn (): string => 'not portable' ) )
 		);
-		$error   = $this->assert_payload_too_large( $result );
+		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
 		self::assertStringContainsString( 'store objects by identifier', $error->message );
@@ -885,7 +878,7 @@ final class SchedulerFacadeTest extends TestCase {
 			self::HOOK,
 			array( array( $resource ) )
 		);
-		$error   = $this->assert_payload_too_large( $result );
+		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
 		self::assertSame( array(), $backend->calls );
@@ -904,7 +897,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		$backend = new RecordingBackend();
 		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, $args );
-		$error   = $this->assert_payload_too_large( $result );
+		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertStringContainsString( 'keep nesting within 512 levels', $error->message );
 		self::assertSame( array(), $backend->calls );
@@ -925,7 +918,7 @@ final class SchedulerFacadeTest extends TestCase {
 				self::HOOK,
 				array( $recursive )
 			);
-			$error   = $this->assert_payload_too_large( $result );
+			$error   = $this->assert_invalid_payload( $result );
 
 			self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
 			self::assertSame( array(), $backend->calls );
@@ -974,7 +967,7 @@ final class SchedulerFacadeTest extends TestCase {
 			300,
 			first_run_timestamp: $timestamp
 		);
-		$error   = $this->assert_invalid_interval( $result );
+		$error   = $this->assert_invalid_time_input( $result );
 
 		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
 		self::assertSame( array( 'first_run_timestamp' => $timestamp ), $error->context );
@@ -992,7 +985,7 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_schedule_single_rejects_a_non_positive_timestamp( int $timestamp ): void {
 		$backend = new RecordingBackend();
 		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_single( self::HOOK, $timestamp );
-		$error   = $this->assert_invalid_interval( $result );
+		$error   = $this->assert_invalid_time_input( $result );
 
 		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
 		self::assertSame( array( 'timestamp' => $timestamp ), $error->context );
@@ -1027,7 +1020,7 @@ final class SchedulerFacadeTest extends TestCase {
 			array( \INF )
 		);
 
-		$this->assert_payload_too_large( $result );
+		$this->assert_invalid_payload( $result );
 		self::assertSame( array(), $backend->calls );
 	}
 
@@ -1086,8 +1079,8 @@ final class SchedulerFacadeTest extends TestCase {
 		return array(
 			'unsupported group'      => array( 'unsupported_group' ),
 			'unsupported recurrence' => array( 'unsupported_recurrence' ),
-			'invalid interval'       => array( 'invalid_interval' ),
-			'payload too large'      => array( 'payload_too_large' ),
+			'invalid time input'     => array( 'invalid_time_input' ),
+			'invalid payload'        => array( 'invalid_payload' ),
 			'schedule failed'        => array( 'schedule_failed' ),
 		);
 	}
@@ -1151,10 +1144,10 @@ final class SchedulerFacadeTest extends TestCase {
 	 *
 	 * @return  SchedulingError
 	 */
-	private function assert_payload_too_large( AbstractResult $result ): SchedulingError {
+	private function assert_invalid_payload( AbstractResult $result ): SchedulingError {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::PayloadTooLarge, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::InvalidPayload, $result->error->reason );
 
 		return $result->error;
 	}
@@ -1168,10 +1161,10 @@ final class SchedulerFacadeTest extends TestCase {
 	 *
 	 * @return  SchedulingError
 	 */
-	private function assert_invalid_interval( AbstractResult $result ): SchedulingError {
+	private function assert_invalid_time_input( AbstractResult $result ): SchedulingError {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::InvalidInterval, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::InvalidTimeInput, $result->error->reason );
 
 		return $result->error;
 	}

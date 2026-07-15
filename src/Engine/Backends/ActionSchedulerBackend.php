@@ -121,7 +121,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
 		if ( ! $this->is_ready() ) {
 			return $this->backend_not_ready( $this->readiness_facts() );
 		}
@@ -129,7 +129,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		if ( 1 > $interval ) {
 			return new Failure(
 				new SchedulingError(
-					SchedulingErrorReason::InvalidInterval,
+					SchedulingErrorReason::InvalidTimeInput,
 					'Action Scheduler requires recurring intervals of at least one second.',
 					array( 'interval' => $interval ),
 				)
@@ -158,16 +158,15 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			$hook,
 			$args,
 			$group,
-			$unique,
+			true,
 			$priority
 		);
 
-		return $this->result_for_potentially_unique_action_id(
+		return $this->result_for_unique_action_id(
 			$action_id,
 			$hook,
 			$args,
 			$group,
-			$unique,
 			'as_schedule_recurring_action'
 		);
 	}
@@ -221,7 +220,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
 		if ( ! $this->is_ready() ) {
 			return $this->backend_not_ready( $this->readiness_facts() );
 		}
@@ -231,14 +230,13 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			return $function_failure;
 		}
 
-		$action_id = \as_enqueue_async_action( $hook, $args, $group, $unique, $priority );
+		$action_id = \as_enqueue_async_action( $hook, $args, $group, true, $priority );
 
-		return $this->result_for_potentially_unique_action_id(
+		return $this->result_for_unique_action_id(
 			$action_id,
 			$hook,
 			$args,
 			$group,
-			$unique,
 			'as_enqueue_async_action'
 		);
 	}
@@ -552,15 +550,14 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @param   string           $hook         Hook being scheduled.
 	 * @param   list<mixed>      $args         Hook arguments.
 	 * @param   string           $group        Action group.
-	 * @param   bool             $unique       Whether the action is unique.
 	 * @param   non-empty-string $function_name Procedural function called.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function result_for_potentially_unique_action_id( int $action_id, string $hook, array $args, string $group, bool $unique, string $function_name ): AbstractResult {
+	private function result_for_unique_action_id( int $action_id, string $hook, array $args, string $group, string $function_name ): AbstractResult {
 		$diagnostic_facts = null;
 		$failure_cause    = null;
-		if ( 0 === $action_id && $unique ) {
+		if ( 0 === $action_id ) {
 			if ( '' === $group ) {
 				$failure_cause = 'a unique scheduling write in the empty group returned zero, which is ambiguous between a duplicate and a store failure; use a non-empty group for verifiable uniqueness.';
 			} elseif ( ! ( $this->function_exists_probe )( 'as_has_scheduled_action' ) ) {

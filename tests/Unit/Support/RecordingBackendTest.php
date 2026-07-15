@@ -40,9 +40,9 @@ final class RecordingBackendTest extends TestCase {
 	public function test_write_verbs_record_calls_and_default_to_success(): void {
 		$backend = new RecordingBackend();
 		$results = array(
-			$backend->schedule_recurring( 'recurring', 300, array( 'a' ), 1_700_000_000, 'reports', true, 20 ),
+			$backend->schedule_recurring( 'recurring', 300, array( 'a' ), 1_700_000_000, 'reports', 20 ),
 			$backend->schedule_single( 'single', 1_700_000_100, array( 'b' ), 'imports', 30 ),
-			$backend->enqueue_async( 'async', array( 'c' ), 'exports', true, 40 ),
+			$backend->enqueue_async( 'async', array( 'c' ), 'exports', 40 ),
 			$backend->unschedule( 'clear', array( 'd' ), 'cleanup' ),
 		);
 
@@ -61,7 +61,6 @@ final class RecordingBackendTest extends TestCase {
 						'args'                => array( 'a' ),
 						'first_run_timestamp' => 1_700_000_000,
 						'group'               => 'reports',
-						'unique'              => true,
 						'priority'            => 20,
 					),
 				),
@@ -81,7 +80,6 @@ final class RecordingBackendTest extends TestCase {
 						'hook'     => 'async',
 						'args'     => array( 'c' ),
 						'group'    => 'exports',
-						'unique'   => true,
 						'priority' => 40,
 					),
 				),
@@ -106,7 +104,7 @@ final class RecordingBackendTest extends TestCase {
 	public function test_write_results_are_scripted_independently(): void {
 		$backend   = new RecordingBackend();
 		$recurring = new Failure(
-			new SchedulingError( SchedulingErrorReason::InvalidInterval, 'Use a positive interval.' )
+			new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use a positive interval.' )
 		);
 		$single    = new Failure(
 			new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' )

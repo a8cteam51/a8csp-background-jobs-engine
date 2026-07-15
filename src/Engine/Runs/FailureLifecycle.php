@@ -242,7 +242,6 @@ final readonly class FailureLifecycle {
 						'stage'    => 'run',
 						'mode'     => 'single',
 						'fire_at'  => $fire_at,
-						'unique'   => false,
 						'priority' => 10,
 					)
 				);

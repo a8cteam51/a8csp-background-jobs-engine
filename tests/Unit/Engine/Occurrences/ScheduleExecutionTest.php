@@ -912,6 +912,10 @@ final class ScheduleExecutionTest extends TestCase {
 			'Schedule occurrence state could not be persisted: {error}',
 			$this->logger->records[0]['message'] ?? null
 		);
+		self::assertSame(
+			'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
+			$this->logger->records[0]['context']['error'] ?? null
+		);
 	}
 
 	/**

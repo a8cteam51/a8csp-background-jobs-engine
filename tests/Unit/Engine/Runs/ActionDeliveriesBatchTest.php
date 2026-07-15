@@ -323,7 +323,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'stage'    => 'continue',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			$state['pending']
@@ -348,7 +347,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/continue',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 2 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
-						'unique'   => false,
 						'priority' => 10,
 					),
 				),
@@ -828,7 +826,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'stage'    => 'run',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			$state['pending']
@@ -847,7 +844,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/run',
 						'args'     => array( self::IDENTITY, self::RUN_ID, $first, 3 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
-						'unique'   => false,
 						'priority' => 10,
 					),
 				),
@@ -884,7 +880,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'stage'    => 'cleanup',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			$state['pending']
@@ -902,7 +897,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 						'hook'     => 'a8csp_background_tasks/cleanup',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 3 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
-						'unique'   => false,
 						'priority' => 10,
 					),
 				),
@@ -991,7 +985,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'stage'    => 'continue',
 				'mode'     => 'single',
 				'fire_at'  => self::NOW + 195,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			$state['pending']
@@ -1443,7 +1436,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'stage'    => 'run',
 				'mode'     => 'single',
 				'fire_at'  => self::NOW + 131,
-				'unique'   => false,
 				'priority' => 10,
 			),
 			$state['pending']
@@ -2066,7 +2058,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'hook'     => 'a8csp_background_tasks/continue',
 					'args'     => array( self::IDENTITY, self::RUN_ID, 2 ),
 					'group'    => self::IDENTITY . '|' . self::RUN_ID,
-					'unique'   => false,
 					'priority' => 10,
 				),
 			)
@@ -2094,7 +2085,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'hook'     => 'a8csp_background_tasks/run',
 					'args'     => array( self::IDENTITY, self::RUN_ID, array( 'chunk' => 'first' ), 3 ),
 					'group'    => self::IDENTITY . '|' . self::RUN_ID,
-					'unique'   => false,
 					'priority' => 10,
 				),
 			)
@@ -2122,7 +2112,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'hook'     => 'a8csp_background_tasks/cleanup',
 					'args'     => array( self::IDENTITY, self::RUN_ID, 3 ),
 					'group'    => self::IDENTITY . '|' . self::RUN_ID,
-					'unique'   => false,
 					'priority' => 10,
 				),
 			)
@@ -2214,7 +2203,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null
 	 * }
 	 */
 	private function failed_run_state(): array {
@@ -2613,7 +2602,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null
 	 * }
 	 */
 	private function run_state(): array {
@@ -2635,7 +2624,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null
 	 * }
 	 */
 	private function typed_run_state( mixed $state ): array {
@@ -2665,7 +2654,6 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$stage    = $pending['stage'] ?? null;
 			$mode     = $pending['mode'] ?? null;
 			$fire_at  = $pending['fire_at'] ?? null;
-			$unique   = $pending['unique'] ?? null;
 			$priority = $pending['priority'] ?? null;
 			self::assertIsString( $stage );
 			self::assertIsString( $mode );
@@ -2673,13 +2661,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				throw new \LogicException( 'Expected a supported pending-action mode.' );
 			}
 			self::assertTrue( null === $fire_at || \is_int( $fire_at ) );
-			self::assertIsBool( $unique );
 			self::assertIsInt( $priority );
 			$typed_pending = array(
 				'stage'    => $stage,
 				'mode'     => $mode,
 				'fire_at'  => $fire_at,
-				'unique'   => $unique,
 				'priority' => $priority,
 			);
 		}
@@ -2717,7 +2703,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null
 	 * }>
 	 */
 	private function recorded_run_states(): array {

@@ -482,7 +482,7 @@ final class EngineComponentTest extends TestCase {
 						'a8csp_background_tasks/run',
 						array( 'consumer-plugin:preferred-backend', $result->value, 1 ),
 						'consumer-plugin:preferred-backend|' . $result->value,
-						false,
+						true,
 						10,
 					),
 				),

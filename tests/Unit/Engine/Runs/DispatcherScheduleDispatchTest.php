@@ -131,45 +131,38 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Every policy dispatches against an open lock with its required backend uniqueness.
+	 * Every policy dispatches idempotently against an open lock.
 	 *
-	 * @param   string $policy_value   Schedule overlap-policy value.
-	 * @param   bool   $backend_unique Whether backend uniqueness is required.
+	 * @param   string $policy_value Schedule overlap-policy value.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'open_lock_policies' )]
-	public function test_policy_dispatch_enqueues_against_an_open_lock(
-		string $policy_value,
-		bool $backend_unique
-	): void {
+	public function test_policy_dispatch_enqueues_against_an_open_lock( string $policy_value ): void {
 		$policy = OverlapPolicy::from( $policy_value );
 		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, $policy, 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
-		self::assertSame( $backend_unique, $this->backend->calls[0]['args']['unique'] ?? null );
+		self::assertArrayNotHasKey( 'unique', $this->backend->calls[0]['args'] );
 		self::assertSame( 23, $this->backend->calls[0]['args']['priority'] ?? null );
 	}
 
 	/**
-	 * Supplies every policy's backend-uniqueness mapping.
+	 * Supplies every schedule overlap policy.
 	 *
-	 * @return  array<string, array{policy_value: string, backend_unique: bool}>
+	 * @return  array<string, array{policy_value: string}>
 	 */
 	public static function open_lock_policies(): array {
 		return array(
 			'allow'   => array(
-				'policy_value'   => 'allow',
-				'backend_unique' => false,
+				'policy_value' => 'allow',
 			),
 			'skip'    => array(
-				'policy_value'   => 'skip',
-				'backend_unique' => true,
+				'policy_value' => 'skip',
 			),
 			'replace' => array(
-				'policy_value'   => 'replace',
-				'backend_unique' => false,
+				'policy_value' => 'replace',
 			),
 		);
 	}

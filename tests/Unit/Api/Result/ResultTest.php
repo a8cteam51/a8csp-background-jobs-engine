@@ -93,7 +93,7 @@ final class ResultTest extends TestCase {
 	 */
 	public function test_failure_carries_its_exact_error(): void {
 		$error  = new SchedulingError(
-			SchedulingErrorReason::InvalidInterval,
+			SchedulingErrorReason::InvalidTimeInput,
 			'Use an interval greater than zero.'
 		);
 		$result = new Failure( $error );

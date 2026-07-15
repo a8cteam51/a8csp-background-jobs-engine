@@ -8,10 +8,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends;
  * Machine-readable reason a scheduling request could not be accepted.
  *
  * Carried by {@see SchedulingError} so callers can branch on the cause without parsing
- * prose; the backing values remain stable when included in log context.
- *
- * InvalidInterval covers invalid time inputs, including intervals and timestamps.
- * PayloadTooLarge covers payloads unfit for portable storage because of size or shape.
+ * prose; the backing values remain stable once released, so they are safe in log context.
  *
  * @internal
  *
@@ -22,8 +19,23 @@ enum SchedulingErrorReason: string {
 	case BackendNotReady       = 'backend_not_ready';
 	case UnsupportedGroup      = 'unsupported_group';
 	case UnsupportedRecurrence = 'unsupported_recurrence';
-	case InvalidInterval       = 'invalid_interval';
-	case PayloadTooLarge       = 'payload_too_large';
-	case ScheduleFailed        = 'schedule_failed';
-	case StorageFailure        = 'storage_failure';
+
+	/**
+	 * A scheduling interval or timestamp is outside the supported positive range.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	case InvalidTimeInput = 'invalid_time_input';
+
+	/**
+	 * A scheduling payload has an unsupported size, shape, value, or nesting depth.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	case InvalidPayload = 'invalid_payload';
+
+	case ScheduleFailed = 'schedule_failed';
+	case StorageFailure = 'storage_failure';
 }

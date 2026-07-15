@@ -145,7 +145,6 @@ final class SchedulesTest extends TestCase {
 						'args'                => array( 'owner-a:nightly' ),
 						'first_run_timestamp' => self::NOW + 300,
 						'group'               => 'owner-a:nightly',
-						'unique'              => true,
 						'priority'            => 10,
 					),
 				),
@@ -225,7 +224,7 @@ final class SchedulesTest extends TestCase {
 			$calls[0]['args']
 		);
 		self::assertSame( self::NOW + 600, $calls[1]['args']['first_run_timestamp'] );
-		self::assertTrue( $calls[1]['args']['unique'] );
+		self::assertArrayNotHasKey( 'unique', $calls[1]['args'] );
 		self::assertSame( 20, $calls[1]['args']['priority'] );
 		self::assertSame(
 			array(
@@ -306,7 +305,6 @@ final class SchedulesTest extends TestCase {
 						'args'                => array( 'owner-a:nightly' ),
 						'first_run_timestamp' => self::NOW - 60,
 						'group'               => 'owner-a:nightly',
-						'unique'              => true,
 						'priority'            => 10,
 					),
 				),
@@ -362,7 +360,6 @@ final class SchedulesTest extends TestCase {
 						'args'                => array( 'owner-a:nightly' ),
 						'first_run_timestamp' => self::NOW + 300,
 						'group'               => 'owner-a:nightly',
-						'unique'              => true,
 						'priority'            => 10,
 					),
 				),
@@ -422,7 +419,7 @@ final class SchedulesTest extends TestCase {
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame(
-			'Schedule registry for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
+			'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
 			$result->error->message
 		);
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
@@ -475,6 +472,10 @@ final class SchedulesTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame(
+			'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.',
+			$result->error->message
+		);
 		self::assertSame( array(), $backend->calls );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame( $persisted, $this->options() );
@@ -742,7 +743,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::InvalidInterval, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::InvalidTimeInput, $result->error->reason );
 		self::assertSame( array(), $backend->calls );
 		self::assertSame( $stored_before, $this->options() );
 	}
@@ -770,7 +771,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::InvalidInterval, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::InvalidTimeInput, $result->error->reason );
 		self::assertSame( array(), $backend->calls );
 		self::assertSame( $stored_before, $this->options() );
 	}
