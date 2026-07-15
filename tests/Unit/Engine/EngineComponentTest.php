@@ -3,10 +3,11 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
@@ -430,7 +431,9 @@ final class EngineComponentTest extends TestCase {
 		$retry_result = $consumer->runs()->retry_failed( 'unknown', 'missing-run' );
 
 		self::assertInstanceOf( Failure::class, $retry_result );
-		self::assertInstanceOf( EngineError::class, $retry_result->error );
+		self::assertInstanceOf( ApiError::class, $retry_result->error );
+		self::assertSame( ApiErrorCode::UnknownWork, $retry_result->error->code );
+		self::assertSame( array( 'name' => 'consumer-plugin:unknown' ), $retry_result->error->context );
 		self::assertSame(
 			'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.',
 			$retry_result->error->message

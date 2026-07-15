@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -112,7 +113,16 @@ final readonly class OptionRows {
 			\ARRAY_A
 		);
 		if ( $this->last_read_failed() ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed: ' . $wpdb->last_error ) );
+			return new Failure(
+				new EngineError(
+					'Authoritative option-row read failed; repair WordPress option reads and retry.',
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'option_name'   => $key,
+						'storage_error' => $wpdb->last_error,
+					),
+				)
+			);
 		}
 		if ( ! \is_array( $row ) || ! \is_string( $row['option_value'] ?? null ) ) {
 			return new Success( null );
@@ -145,7 +155,13 @@ final readonly class OptionRows {
 			)
 		);
 		if ( $this->last_read_failed() ) {
-			return new Failure( new EngineError( 'Authoritative option-name read failed: ' . $wpdb->last_error ) );
+			return new Failure(
+				new EngineError(
+					'Authoritative option-name read failed; repair WordPress option reads and retry.',
+					reason: EngineErrorReason::StorageFailure,
+					context: array( 'storage_error' => $wpdb->last_error ),
+				)
+			);
 		}
 
 		$typed = array();

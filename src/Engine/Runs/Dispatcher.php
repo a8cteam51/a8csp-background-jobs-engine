@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
@@ -206,7 +207,9 @@ final readonly class Dispatcher {
 					\sprintf(
 						'Batch "%s" is not registered; register it before starting it.',
 						$batch_name
-					)
+					),
+					reason: EngineErrorReason::UnknownWork,
+					context: array( 'name' => $batch_name ),
 				)
 			);
 		}
@@ -219,7 +222,12 @@ final readonly class Dispatcher {
 						$batch_name,
 						$priority,
 						self::MAX_PRIORITY
-					)
+					),
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'name'     => $batch_name,
+						'priority' => $priority,
+					),
 				)
 			);
 		}
@@ -246,23 +254,32 @@ final readonly class Dispatcher {
 						\sprintf(
 							'Batch "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
 							$batch_name
-						)
+						),
+						reason: EngineErrorReason::StorageFailure,
+						context: array( 'name' => $batch_name ),
 					)
 				);
 			}
 
+			$message = null === $owner->value
+				? \sprintf(
+					'Batch "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
+					$batch_name
+				)
+				: \sprintf(
+					'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',
+					$batch_name,
+					$owner->value
+				);
+			$context = null === $owner->value
+				? array( 'name' => $batch_name )
+				: array( 'run_id' => $owner->value );
+
 			return new Failure(
 				new EngineError(
-					null === $owner->value
-						? \sprintf(
-							'Batch "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
-							$batch_name
-						)
-						: \sprintf(
-							'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',
-							$batch_name,
-							$owner->value
-						)
+					$message,
+					reason: EngineErrorReason::OverlapHeld,
+					context: $context,
 				)
 			);
 		}
@@ -349,7 +366,9 @@ final readonly class Dispatcher {
 					\sprintf(
 						'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.',
 						$name
-					)
+					),
+					reason: EngineErrorReason::UnknownWork,
+					context: array( 'name' => $name ),
 				)
 			);
 		}
@@ -385,7 +404,12 @@ final readonly class Dispatcher {
 						$run_id,
 						$name,
 						$correction
-					)
+					),
+					reason: EngineErrorReason::RunNotRetained,
+					context: array(
+						'name'   => $name,
+						'run_id' => $run_id,
+					),
 				)
 			);
 		}
@@ -429,7 +453,9 @@ final readonly class Dispatcher {
 					\sprintf(
 						'Background-work "%s" is not registered; register the matching task or batch before cancelling its run.',
 						$name
-					)
+					),
+					reason: EngineErrorReason::UnknownWork,
+					context: array( 'name' => $name ),
 				)
 			);
 		}
@@ -443,7 +469,12 @@ final readonly class Dispatcher {
 						'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.',
 						$run_id,
 						$name
-					)
+					),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'name'   => $name,
+						'run_id' => $run_id,
+					),
 				)
 			);
 		}
@@ -461,7 +492,12 @@ final readonly class Dispatcher {
 						'Run "%1$s" is already terminal (%2$s); a finished run cannot be cancelled.',
 						$run_id,
 						$state->status->value
-					)
+					),
+					reason: EngineErrorReason::RunNotCancellable,
+					context: array(
+						'run_id' => $run_id,
+						'status' => $state->status->value,
+					),
 				)
 			);
 		}
@@ -476,7 +512,9 @@ final readonly class Dispatcher {
 					\sprintf(
 						'Run "%s" has no chunks left to process; the pending cleanup completes it.',
 						$run_id
-					)
+					),
+					reason: EngineErrorReason::RunNotCancellable,
+					context: array( 'run_id' => $run_id ),
 				)
 			);
 		}
@@ -505,7 +543,9 @@ final readonly class Dispatcher {
 				\sprintf(
 					'Run "%s" changed state while the cancel was in flight; re-inspect the run before retrying.',
 					$run_id
-				)
+				),
+				reason: EngineErrorReason::RunNotCancellable,
+				context: array( 'run_id' => $run_id ),
 			)
 		);
 	}
@@ -532,7 +572,12 @@ final readonly class Dispatcher {
 					'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.',
 					$run_id,
 					$name
-				)
+				),
+				reason: EngineErrorReason::RunNotRetained,
+				context: array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				),
 			)
 		);
 	}
@@ -553,7 +598,9 @@ final readonly class Dispatcher {
 				\sprintf(
 					'Run "%s" is executing; a run in flight completes or fails on its own.',
 					$run_id
-				)
+				),
+				reason: EngineErrorReason::RunNotCancellable,
+				context: array( 'run_id' => $run_id ),
 			)
 		);
 	}
@@ -603,7 +650,9 @@ final readonly class Dispatcher {
 					\sprintf(
 						'Task "%s" is not registered; register it before enqueueing.',
 						$task_name
-					)
+					),
+					reason: EngineErrorReason::UnknownWork,
+					context: array( 'name' => $task_name ),
 				)
 			);
 		}
@@ -616,7 +665,12 @@ final readonly class Dispatcher {
 						$task_name,
 						$priority,
 						self::MAX_PRIORITY
-					)
+					),
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'name'     => $task_name,
+						'priority' => $priority,
+					),
 				)
 			);
 		}
@@ -634,7 +688,12 @@ final readonly class Dispatcher {
 						'Task "%1$s" delay %2$d exceeds supported Unix seconds; pass a smaller delay.',
 						$task_name,
 						$delay
-					)
+					),
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'delay' => $delay,
+						'name'  => $task_name,
+					),
 				)
 			);
 		}
@@ -661,7 +720,9 @@ final readonly class Dispatcher {
 						\sprintf(
 							'Task "%s" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
 							$task_name
-						)
+						),
+						reason: EngineErrorReason::StorageFailure,
+						context: array( 'name' => $task_name ),
 					)
 				);
 			}
@@ -673,7 +734,9 @@ final readonly class Dispatcher {
 						\sprintf(
 							'Task "%s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.',
 							$task_name
-						)
+						),
+						reason: EngineErrorReason::OverlapHeld,
+						context: array( 'name' => $task_name ),
 					)
 				);
 			}
@@ -693,7 +756,9 @@ final readonly class Dispatcher {
 						'Task "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.',
 						$task_name,
 						$run_id
-					)
+					),
+					reason: EngineErrorReason::OverlapHeld,
+					context: array( 'name' => $task_name ),
 				)
 			);
 		}
@@ -727,13 +792,17 @@ final readonly class Dispatcher {
 					\sprintf(
 						'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
 						$task_name
-					)
+					),
+					reason: EngineErrorReason::OverlapHeld,
+					context: array( 'name' => $task_name ),
 				),
 				HeartbeatOutcome::Indeterminate => new EngineError(
 					\sprintf(
 						'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.',
 						$task_name
-					)
+					),
+					reason: EngineErrorReason::StorageFailure,
+					context: array( 'name' => $task_name ),
 				),
 			};
 			if ( null !== $heartbeat_error ) {
@@ -750,7 +819,12 @@ final readonly class Dispatcher {
 						\sprintf(
 							'Task "%s" lost its live run state while preparing its delayed action; retry the enqueue against the current run state.',
 							$task_name
-						)
+						),
+						reason: EngineErrorReason::StorageFailure,
+						context: array(
+							'name'   => $task_name,
+							'run_id' => $run_id,
+						),
 					)
 				);
 			}
@@ -799,7 +873,12 @@ final readonly class Dispatcher {
 					$task_name,
 					$exception_type
 				),
-				$exception_type
+				$exception_type,
+				reason: EngineErrorReason::ExecutionFailed,
+				context: array(
+					'name'   => $task_name,
+					'run_id' => $run_id,
+				),
 			);
 			$this->terminal_transitions->fail_run(
 				$task_name,
@@ -852,7 +931,13 @@ final readonly class Dispatcher {
 						$run_id,
 						\strtolower( $work_type ),
 						$name
-					)
+					),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'name'      => $name,
+						'run_id'    => $run_id,
+						'work_type' => \strtolower( $work_type ),
+					),
 				)
 			);
 		}
@@ -874,7 +959,12 @@ final readonly class Dispatcher {
 					$work_type,
 					$name,
 					'Task' === $work_type ? 'dispatch' : 'start'
-				)
+				),
+				reason: EngineErrorReason::OverlapHeld,
+				context: array(
+					'name'      => $name,
+					'work_type' => \strtolower( $work_type ),
+				),
 			)
 		);
 	}
@@ -909,7 +999,12 @@ final readonly class Dispatcher {
 						$work_type,
 						$name
 					),
-					$exception_class
+					$exception_class,
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'name'      => $name,
+						'work_type' => \strtolower( $work_type ),
+					),
 				)
 			);
 		}

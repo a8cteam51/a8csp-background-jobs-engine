@@ -13,6 +13,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 /**
  * Owner-bound entry point for supported background-work operations.
  *
+ * Deterministic contract violations detectable before side effects, including invalid or reserved
+ * identities, priority or delay bounds, non-portable arguments, and cross-kind registration, throw
+ * {@see \InvalidArgumentException}. A valid command refused by current registration, lock, backend,
+ * storage, or run state returns `Failure<ApiError>`.
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

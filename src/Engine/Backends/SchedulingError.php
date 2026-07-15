@@ -53,7 +53,7 @@ final readonly class SchedulingError implements ErrorInterface {
 	 */
 	public static function registry_read( string $owner ): self {
 		return new self(
-			SchedulingErrorReason::ScheduleFailed,
+			SchedulingErrorReason::StorageFailure,
 			\sprintf(
 				'Schedule registry for owner "%s" could not be persisted; repair WordPress option writes and retry synchronization.',
 				$owner

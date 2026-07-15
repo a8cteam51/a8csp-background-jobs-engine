@@ -3,7 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
@@ -70,7 +71,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$result              = \a8csp_bgte( self::OWNER )->batches()->start( self::SKIP_NAME, $start_args, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result, 'A second unique start must be refused under the fresh lock' );
-		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::OverlapHeld, $result->error->code );
+		self::assertSame( array( 'run_id' => $run_a ), $result->error->context );
 		self::assertSame(
 			\sprintf(
 				'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',

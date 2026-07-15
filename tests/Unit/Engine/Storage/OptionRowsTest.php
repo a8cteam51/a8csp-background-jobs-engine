@@ -146,7 +146,14 @@ final class OptionRowsTest extends TestCase {
 		$failed = $rows->read( self::KEY );
 		self::assertTrue( $failed->is_failure() );
 		self::assertInstanceOf( EngineError::class, $failed->error );
-		self::assertStringContainsString( 'scripted row read failure', $failed->error->message );
+		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $failed->error->message );
+		self::assertSame(
+			array(
+				'option_name'   => self::KEY,
+				'storage_error' => 'scripted row read failure',
+			),
+			$failed->error->context
+		);
 	}
 
 	/** Option-name enumeration returns a failed outcome when its query fails. */
@@ -163,7 +170,8 @@ final class OptionRowsTest extends TestCase {
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertStringContainsString( 'scripted option-name read failure', $result->error->message );
+		self::assertSame( 'Authoritative option-name read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
 	}
 
 	/**

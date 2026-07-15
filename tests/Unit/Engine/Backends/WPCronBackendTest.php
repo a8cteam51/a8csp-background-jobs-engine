@@ -720,8 +720,17 @@ final class WPCronBackendTest extends TestCase {
 			SchedulingErrorReason::ScheduleFailed
 		);
 
-		self::assertStringContainsString( self::HOOK, $error->message );
-		self::assertStringContainsString( 'Cron storage refused the clear.', $error->message );
+		self::assertSame(
+			'WP-Cron could not unschedule hook "a8csp_bgte_test_hook"; inspect the WordPress cron error, correct the rejected event, and retry.',
+			$error->message
+		);
+		self::assertSame(
+			array(
+				'hook'     => self::HOOK,
+				'wp_error' => 'Cron storage refused the clear.',
+			),
+			$error->context
+		);
 		self::assertSame(
 			array(
 				array( $first_timestamp, self::HOOK, array( 'a' ), true ),
@@ -814,7 +823,7 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
-	 * A single-event WordPress error preserves the backend message and failure reason.
+	 * A single-event WordPress error keeps external detail out of its engine-authored message.
 	 *
 	 * @return  void
 	 */
@@ -829,8 +838,15 @@ final class WPCronBackendTest extends TestCase {
 		);
 
 		self::assertSame(
-			'WP-Cron could not schedule hook "a8csp_bgte_test_hook"; fix the WordPress cron error and retry: The single event was rejected.',
+			'WP-Cron could not schedule hook "a8csp_bgte_test_hook"; inspect the WordPress cron error, correct the rejected event, and retry.',
 			$error->message
+		);
+		self::assertSame(
+			array(
+				'hook'     => self::HOOK,
+				'wp_error' => 'The single event was rejected.',
+			),
+			$error->context
 		);
 		self::assertSame(
 			array( 1_700_000_000, self::HOOK, array(), true ),

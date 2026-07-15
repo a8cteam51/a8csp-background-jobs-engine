@@ -3,6 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -220,6 +226,79 @@ final class ApiTest extends TestCase {
 		);
 	}
 
+	/** Task enqueue maps an unknown registration to the public admission error. */
+	public function test_task_enqueue_maps_its_internal_failure_at_the_facade_boundary(): void {
+		$result = $this->consumer()->tasks()->enqueue( 'missing-task' );
+
+		self::assert_api_failure( $result, ApiErrorCode::UnknownWork, array( 'name' ) );
+	}
+
+	/** Batch start maps an unknown registration to the public admission error. */
+	public function test_batch_start_maps_its_internal_failure_at_the_facade_boundary(): void {
+		$result = $this->consumer()->batches()->start( 'missing-batch' );
+
+		self::assert_api_failure( $result, ApiErrorCode::UnknownWork, array( 'name' ) );
+	}
+
+	/** Schedule sync maps an unsupported backend capability to the public admission error. */
+	public function test_schedule_sync_maps_its_internal_failure_at_the_facade_boundary(): void {
+		$result = $this->consumer()->schedules()->sync(
+			array( new Schedule( 'calendar', Recurrence::cron( '0 0 * * *' ), 'task' ) )
+		);
+
+		self::assert_api_failure( $result, ApiErrorCode::UnsupportedOperation, array( 'schedule' ) );
+	}
+
+	/** Run-now maps an absent declaration to the public admission error. */
+	public function test_schedule_run_now_maps_its_internal_failure_at_the_facade_boundary(): void {
+		$result = $this->consumer()->schedules()->run_now( 'missing-schedule' );
+
+		self::assert_api_failure( $result, ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
+	}
+
+	/** Failed-run retry maps an absent retained run to the public admission error. */
+	public function test_run_retry_maps_its_internal_failure_at_the_facade_boundary(): void {
+		$consumer = $this->consumer();
+		$consumer->tasks()->register( new RecordingTask( 'sync' ) );
+
+		$result = $consumer->runs()->retry_failed( 'sync', 'missing-run' );
+
+		self::assert_api_failure( $result, ApiErrorCode::RunNotRetained, array( 'name', 'run_id' ) );
+	}
+
+	/** Failed-run retry redacts raw storage detail while retaining safe structured context. */
+	public function test_run_retry_maps_a_storage_read_failure_without_exposing_database_text(): void {
+		$consumer = $this->consumer();
+		$consumer->tasks()->register( new RecordingTask( 'sync' ) );
+		$wpdb = $GLOBALS['wpdb'];
+		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
+		$wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'consumer-controlled database detail';
+			}
+		);
+
+		$result = $consumer->runs()->retry_failed( 'sync', 'missing-run' );
+
+		self::assert_api_failure( $result, ApiErrorCode::StorageFailure, array( 'option_name' ) );
+		if ( ! $result->is_failure() ) {
+			self::fail( 'The storage read failure must remain result data.' );
+		}
+		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'option_name' => 'a8csp_bgte_failed_consumer-plugin:sync' ), $result->error->context );
+	}
+
+	/** Run cancellation maps an absent retained run to the public admission error. */
+	public function test_run_cancel_maps_its_internal_failure_at_the_facade_boundary(): void {
+		$consumer = $this->consumer();
+		$consumer->tasks()->register( new RecordingTask( 'sync' ) );
+
+		$result = $consumer->runs()->cancel( 'sync', 'missing-run' );
+
+		self::assert_api_failure( $result, ApiErrorCode::RunNotRetained, array( 'name', 'run_id' ) );
+	}
+
 	/**
 	 * The public surface contains only the owner-bound consumer front door.
 	 *
@@ -257,6 +336,40 @@ final class ApiTest extends TestCase {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Returns a consumer after the public lifecycle boundary is available.
+	 *
+	 * @return  Consumer
+	 */
+	private function consumer(): Consumer {
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+
+		return \a8csp_bgte( 'consumer-plugin' );
+	}
+
+	/**
+	 * Asserts one public failure code and its complete structured context shape.
+	 *
+	 * @phpstan-param AbstractResult<mixed, ApiError> $result
+	 * @phpstan-param list<string>                    $context_keys
+	 *
+	 * @param   AbstractResult $result       Public admission result.
+	 * @param   ApiErrorCode   $code         Expected stable code.
+	 * @param   array          $context_keys Expected context keys in order.
+	 *
+	 * @return  void
+	 */
+	private static function assert_api_failure( AbstractResult $result, ApiErrorCode $code, array $context_keys ): void {
+		self::assertInstanceOf( Failure::class, $result );
+		if ( ! $result->is_failure() ) {
+			self::fail( 'The public command must return a failed result.' );
+		}
+
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( $code, $result->error->code );
+		self::assertSame( $context_keys, \array_keys( $result->error->context ) );
 	}
 
 	// endregion.

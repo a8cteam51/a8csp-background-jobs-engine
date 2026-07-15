@@ -945,7 +945,14 @@ final class DispatcherTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertStringContainsString( 'scripted retry store read failure', $result->error->message );
+		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame(
+			array(
+				'option_name'   => $failed_key,
+				'storage_error' => 'scripted retry store read failure',
+			),
+			$result->error->context
+		);
 		self::assertSame( $persisted, $this->wpdb->rows[ $failed_key ] ?? null );
 		self::assertIsArray( RawOptionDecoder::decode( $persisted ) );
 		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );

@@ -388,6 +388,7 @@ final class DispatcherBatchTest extends TestCase {
 			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
 			$result->error->message
 		);
+		self::assertSame( array( 'run_id' => 'run-running' ), $result->error->context );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );

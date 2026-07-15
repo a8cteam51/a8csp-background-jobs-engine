@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine as EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
@@ -69,24 +70,34 @@ final class Container {
 				static function ( string $name, TaskInterface $task ) use ( $engine ): void {
 					$engine->tasks()->register( $name, $task );
 				},
-				static fn ( string $name, array $args, int $delay, bool $unique, int $priority ) => $engine->tasks()->enqueue( $name, $args, $delay, $unique, $priority )
+				static fn ( string $name, array $args, int $delay, bool $unique, int $priority ) => AdmissionErrorMapper::map(
+					$engine->tasks()->enqueue( $name, $args, $delay, $unique, $priority )
+				)
 			),
 			new ApiBatches(
 				$identity,
 				static function ( string $name, BatchInterface $batch ) use ( $engine ): void {
 					$engine->batches()->register( $name, $batch );
 				},
-				static fn ( string $name, array $args, bool $unique, int $priority ) => $engine->batches()->start( $name, $args, $unique, $priority )
+				static fn ( string $name, array $args, bool $unique, int $priority ) => AdmissionErrorMapper::map(
+					$engine->batches()->start( $name, $args, $unique, $priority )
+				)
 			),
 			new ApiSchedules(
 				$identity,
-				static fn ( array $declarations ) => $engine->schedules()->sync( $owner, $declarations ),
-				static fn ( string $name ) => $engine->schedules()->run_now( $name )
+				static fn ( array $declarations ) => AdmissionErrorMapper::map(
+					$engine->schedules()->sync( $owner, $declarations )
+				),
+				static fn ( string $name ) => AdmissionErrorMapper::map( $engine->schedules()->run_now( $name ) )
 			),
 			new ApiRuns(
 				$identity,
-				static fn ( string $name, string $run_id ) => $engine->retry_failed( $name, $run_id ),
-				static fn ( string $name, string $run_id ) => $engine->cancel( $name, $run_id )
+				static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map(
+					$engine->retry_failed( $name, $run_id )
+				),
+				static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map(
+					$engine->cancel( $name, $run_id )
+				)
 			)
 		);
 	}

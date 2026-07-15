@@ -2,8 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -14,6 +15,20 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
  * @version 1.0.0
  */
 final readonly class Batches {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Highest scheduler priority accepted by the public command contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_PRIORITY = 255;
+
+	// endregion
+
 	// region MAGIC METHODS
 
 	/**
@@ -22,9 +37,9 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                     $identity Owner-qualified identity composer.
-	 * @param   \Closure(string, BatchInterface): void                                                       $register Batch registration delegate.
-	 * @param   \Closure(string, array<array-key, mixed>, bool, int): AbstractResult<string, ErrorInterface> $start    Batch admission delegate.
+	 * @param   \Closure(string): string                                                               $identity Owner-qualified identity composer.
+	 * @param   \Closure(string, BatchInterface): void                                                 $register Batch registration delegate.
+	 * @param   \Closure(string, array<array-key, mixed>, bool, int): AbstractResult<string, ApiError> $start    Batch admission delegate.
 	 */
 	public function __construct(
 		private \Closure $identity,
@@ -68,13 +83,50 @@ final readonly class Batches {
 	 *                                               backend uniqueness is requested.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the local name, priority, or arguments violate the command contract.
 	 *
-	 * @return  AbstractResult<string, ErrorInterface>
+	 * @return  AbstractResult<string, ApiError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	public function start( string $name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
-		return ( $this->start )( $this->identity( $name ), $start_args, $unique, $priority );
+		$identity = $this->identity( $name );
+
+		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
+			// Exception values are diagnostic data, not rendered output.
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException(
+				\sprintf(
+					'Batch "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.',
+					$name,
+					$priority,
+					self::MAX_PRIORITY
+				)
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		try {
+			$encoded_args = \wp_json_encode(
+				$start_args,
+				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
+			);
+		} catch ( \JsonException ) {
+			$encoded_args = false;
+		}
+
+		if ( ! \is_string( $encoded_args ) || ! PortableArguments::is_valid( $start_args ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException(
+				\sprintf(
+					'Batch "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
+					$name
+				)
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		return ( $this->start )( $identity, $start_args, $unique, $priority );
 	}
 
 	// endregion

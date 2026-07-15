@@ -77,6 +77,7 @@ final class SchedulingErrorTest extends TestCase {
 				SchedulingErrorReason::InvalidInterval,
 				SchedulingErrorReason::PayloadTooLarge,
 				SchedulingErrorReason::ScheduleFailed,
+				SchedulingErrorReason::StorageFailure,
 			),
 			$reasons
 		);
@@ -88,6 +89,7 @@ final class SchedulingErrorTest extends TestCase {
 				'invalid_interval',
 				'payload_too_large',
 				'schedule_failed',
+				'storage_failure',
 			),
 			\array_map( static fn ( SchedulingErrorReason $reason ): string => $reason->value, $reasons )
 		);

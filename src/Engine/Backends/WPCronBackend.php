@@ -498,10 +498,9 @@ final class WPCronBackend implements BackendInterface {
 				$hook
 			),
 			default => \sprintf(
-				'WP-Cron could not %1$s hook "%2$s"; fix the WordPress cron error and retry: %3$s',
+				'WP-Cron could not %1$s hook "%2$s"; inspect the WordPress cron error, correct the rejected event, and retry.',
 				$operation,
-				$hook,
-				$result->get_error_message()
+				$hook
 			),
 		};
 

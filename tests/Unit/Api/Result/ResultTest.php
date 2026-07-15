@@ -102,6 +102,18 @@ final class ResultTest extends TestCase {
 	}
 
 	/**
+	 * Runtime callers cannot construct a failed result with a value outside the error contract.
+	 *
+	 * @return  void
+	 */
+	public function test_failure_rejects_a_non_error_value_at_runtime(): void {
+		$this->expectException( \LogicException::class );
+		$this->expectExceptionMessageIs( 'A failed result requires an error implementing ErrorInterface.' );
+
+		( new \ReflectionClass( Failure::class ) )->newInstanceArgs( array( 'not-an-error' ) );
+	}
+
+	/**
 	 * Predicate checks expose each variant's payload without a second type check.
 	 *
 	 * @return  void

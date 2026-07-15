@@ -4,6 +4,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs;
@@ -11,11 +13,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -71,7 +73,7 @@ final class ConsumerTest extends TestCase {
 	 */
 	public function test_tasks_register_and_enqueue_owner_qualified_work(): void {
 		$calls   = array();
-		$failure = new Failure( new EngineError( 'scripted' ) );
+		$failure = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
 		$task    = new RecordingTask( 'sync' );
 		$tasks   = new Tasks(
 			self::identity( 'consumer-plugin' ),
@@ -218,12 +220,12 @@ final class ConsumerTest extends TestCase {
 	}
 
 	/**
-	 * Every operation preserves the exact delegated failure object and its established error shape.
+	 * Every operation preserves the exact delegated public failure object.
 	 *
 	 * @return  void
 	 */
 	public function test_result_methods_preserve_the_delegated_failure_instance(): void {
-		$failure   = new Failure( new EngineError( 'scripted failure' ) );
+		$failure   = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
 		$identity  = self::identity( 'consumer-plugin' );
 		$tasks     = new Tasks( $identity, static function (): void {}, static fn () => $failure );
 		$batches   = new Batches( $identity, static function (): void {}, static fn () => $failure );
@@ -236,6 +238,139 @@ final class ConsumerTest extends TestCase {
 		self::assertSame( $failure, $schedules->run_now( 'nightly' ) );
 		self::assertSame( $failure, $runs->retry_failed( 'sync', 'failed-run' ) );
 		self::assertSame( $failure, $runs->cancel( 'sync', 'live-run' ) );
+	}
+
+	/**
+	 * Task commands reject deterministic violations before invoking the admission delegate.
+	 *
+	 * @param   array<array-key, mixed> $args     Task arguments.
+	 * @param   int                     $delay    Scheduling delay.
+	 * @param   int                     $priority Advisory priority.
+	 * @param   string                  $message  Exact corrective exception message.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_task_commands' )]
+	public function test_tasks_throw_for_deterministic_contract_violations( array $args, int $delay, int $priority, string $message ): void {
+		$delegated = false;
+		$tasks     = new Tasks(
+			self::identity( 'consumer-plugin' ),
+			static function (): void {},
+			static function () use ( &$delegated ): Success {
+				$delegated = true;
+
+				return new Success( 'unexpected-run' );
+			}
+		);
+
+		self::assert_invalid_argument(
+			static fn () => $tasks->enqueue( 'sync', $args, $delay, priority: $priority ),
+			$message
+		);
+		self::assertFalse( $delegated );
+	}
+
+	/**
+	 * Supplies every task-command violation reclassified at the public facade.
+	 *
+	 * @return  array<string, array{args: array<array-key, mixed>, delay: int, priority: int, message: string}>
+	 */
+	public static function invalid_task_commands(): array {
+		$argument_message = 'Task "sync" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.';
+
+		return array(
+			'negative priority'      => array(
+				'args'     => array(),
+				'delay'    => 0,
+				'priority' => -1,
+				'message'  => 'Task "sync" priority -1 is invalid; pass a value from 0 through 255.',
+			),
+			'priority above maximum' => array(
+				'args'     => array(),
+				'delay'    => 0,
+				'priority' => 256,
+				'message'  => 'Task "sync" priority 256 is invalid; pass a value from 0 through 255.',
+			),
+			'negative delay'         => array(
+				'args'     => array(),
+				'delay'    => -1,
+				'priority' => 10,
+				'message'  => 'Task "sync" delay -1 is invalid; pass a non-negative number of seconds.',
+			),
+			'non-portable arguments' => array(
+				'args'     => array( new \stdClass() ),
+				'delay'    => 0,
+				'priority' => 10,
+				'message'  => $argument_message,
+			),
+			'non-finite arguments'   => array(
+				'args'     => array( \INF ),
+				'delay'    => 0,
+				'priority' => 10,
+				'message'  => $argument_message,
+			),
+		);
+	}
+
+	/**
+	 * Batch commands reject deterministic violations before invoking the admission delegate.
+	 *
+	 * @param   array<array-key, mixed> $args     Batch start arguments.
+	 * @param   int                     $priority Advisory priority.
+	 * @param   string                  $message  Exact corrective exception message.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_batch_commands' )]
+	public function test_batches_throw_for_deterministic_contract_violations( array $args, int $priority, string $message ): void {
+		$delegated = false;
+		$batches   = new Batches(
+			self::identity( 'consumer-plugin' ),
+			static function (): void {},
+			static function () use ( &$delegated ): Success {
+				$delegated = true;
+
+				return new Success( 'unexpected-run' );
+			}
+		);
+
+		self::assert_invalid_argument(
+			static fn () => $batches->start( 'sync', $args, priority: $priority ),
+			$message
+		);
+		self::assertFalse( $delegated );
+	}
+
+	/**
+	 * Supplies every batch-command violation reclassified at the public facade.
+	 *
+	 * @return  array<string, array{args: array<array-key, mixed>, priority: int, message: string}>
+	 */
+	public static function invalid_batch_commands(): array {
+		$argument_message = 'Batch "sync" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.';
+
+		return array(
+			'negative priority'      => array(
+				'args'     => array(),
+				'priority' => -1,
+				'message'  => 'Batch "sync" priority -1 is invalid; pass a value from 0 through 255.',
+			),
+			'priority above maximum' => array(
+				'args'     => array(),
+				'priority' => 256,
+				'message'  => 'Batch "sync" priority 256 is invalid; pass a value from 0 through 255.',
+			),
+			'non-portable arguments' => array(
+				'args'     => array( new \stdClass() ),
+				'priority' => 10,
+				'message'  => $argument_message,
+			),
+			'non-finite arguments'   => array(
+				'args'     => array( \INF ),
+				'priority' => 10,
+				'message'  => $argument_message,
+			),
+		);
 	}
 
 	/**
@@ -319,5 +454,24 @@ final class ConsumerTest extends TestCase {
 			static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(),
 			( new \ReflectionMethod( $class_name, $method ) )->getParameters()
 		);
+	}
+
+	/**
+	 * Asserts one deterministic public contract violation.
+	 *
+	 * @phpstan-param \Closure(): mixed $operation
+	 *
+	 * @param   \Closure $operation Invalid operation.
+	 * @param   string   $message   Exact corrective exception message.
+	 *
+	 * @return  void
+	 */
+	private static function assert_invalid_argument( \Closure $operation, string $message ): void {
+		try {
+			$operation();
+			self::fail( 'The deterministic contract violation must throw InvalidArgumentException.' );
+		} catch ( \InvalidArgumentException $exception ) {
+			self::assertSame( $message, $exception->getMessage() );
+		}
 	}
 }

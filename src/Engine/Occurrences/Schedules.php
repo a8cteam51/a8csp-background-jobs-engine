@@ -63,14 +63,15 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-param  array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
 	 * @param   string $owner        Stable consumer identifier captured by the owner-bound facade.
 	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *
 	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
 	 *
-	 * @return  AbstractResult<true, SchedulingError>
+	 * @return  AbstractResult
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	public function sync( string $owner, array $declarations ): AbstractResult {
@@ -87,14 +88,15 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-param  array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
 	 * @param   string $owner        Stable consumer or engine identifier.
 	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *
 	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
 	 *
-	 * @return  AbstractResult<true, SchedulingError>
+	 * @return  AbstractResult
 	 */
 	public function sync_owner( string $owner, array $declarations ): AbstractResult {
 		WorkIdentity::validate_owner( $owner, true );

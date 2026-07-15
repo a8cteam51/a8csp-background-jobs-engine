@@ -45,6 +45,7 @@ In a consumer plugin under its own namespace, register the Task and Batch implem
 ```php
 namespace Acme\BackgroundTasks;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -103,6 +104,15 @@ $task_result = $consumer->tasks()->enqueue(
 	SiteHealthPingTask::NAME,
 	array( 'transient' => 'acme_site_health_snapshot' )
 );
+if ( $task_result->is_failure() ) {
+	switch ( $task_result->error->code ) {
+		case ApiErrorCode::OverlapHeld:
+			$incumbent_run_id = $task_result->error->context['run_id'] ?? null;
+			break;
+		default:
+			\error_log( $task_result->error->message );
+	}
+}
 
 $batch_result = $consumer->batches()->start(
 	CommentCountRecountBatch::NAME,
@@ -110,7 +120,9 @@ $batch_result = $consumer->batches()->start(
 );
 ```
 
-Scheduling, retry, and cancellation methods return `Success` or `Failure`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property.
+Scheduling, retry, and cancellation methods return `Success` or `Failure<ApiError>`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property. Failed results expose a stable `ApiErrorCode` through `$result->error->code`; `context` contains redaction-safe structured details such as the incumbent `run_id` for `OverlapHeld`.
+
+Deterministic contract violations detected before engine side effects throw `InvalidArgumentException`: invalid or reserved identities, priorities outside 0–255, negative task delays, non-portable task or batch arguments, and cross-kind registration. Valid commands rejected by registration or runtime state—including unknown work, held locks, backend refusal, and storage failure—return `Failure<ApiError>`.
 
 The supported facade methods are:
 

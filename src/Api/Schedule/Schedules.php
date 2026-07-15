@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,9 +22,9 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                               $identity Owner-qualified identity composer.
-	 * @param   \Closure(array<string, array{schedule: Schedule, task: string}>): AbstractResult<true, ErrorInterface> $sync     Schedule synchronization delegate.
-	 * @param   \Closure(string): AbstractResult<string, ErrorInterface>                                               $run_now  Immediate schedule delegate.
+	 * @param   \Closure(string): string                                                                         $identity Owner-qualified identity composer.
+	 * @param   \Closure(array<string, array{schedule: Schedule, task: string}>): AbstractResult<true, ApiError> $sync     Schedule synchronization delegate.
+	 * @param   \Closure(string): AbstractResult<string, ApiError>                                               $run_now  Immediate schedule delegate.
 	 */
 	public function __construct(
 		private \Closure $identity,
@@ -46,7 +46,7 @@ final readonly class Schedules {
 	 *
 	 * @throws  \InvalidArgumentException When an entry, name, target, or declaration uniqueness is invalid.
 	 *
-	 * @return  AbstractResult<true, ErrorInterface>
+	 * @return  AbstractResult<true, ApiError>
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	public function sync( array $schedules ): AbstractResult {
@@ -84,7 +84,7 @@ final readonly class Schedules {
 	 *
 	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
 	 *
-	 * @return  AbstractResult<string, ErrorInterface>
+	 * @return  AbstractResult<string, ApiError>
 	 */
 	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
 	public function run_now( string $name ): AbstractResult {

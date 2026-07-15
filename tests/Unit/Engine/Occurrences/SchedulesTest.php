@@ -420,7 +420,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame(
 			'Schedule registry for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
 			$result->error->message
@@ -474,7 +474,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame( array(), $backend->calls );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame( $persisted, $this->options() );
@@ -1108,7 +1108,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertSame( SchedulingErrorReason::StorageFailure, $result->error->reason );
 		$expected_clear = array(
 			array(
 				'verb' => 'unschedule',

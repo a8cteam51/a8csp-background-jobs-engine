@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
@@ -179,7 +180,8 @@ final readonly class OccurrenceDelivery {
 		if ( null === $parts ) {
 			return new Failure(
 				new EngineError(
-					'Schedule identity is invalid; pass one canonical {owner}:{name} identity.'
+					'Schedule identity is invalid; pass one canonical {owner}:{name} identity.',
+					reason: EngineErrorReason::PayloadRejected,
 				)
 			);
 		}
@@ -193,7 +195,12 @@ final readonly class OccurrenceDelivery {
 						'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.',
 						$name,
 						$owner
-					)
+					),
+					reason: EngineErrorReason::OverlapHeld,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
 				)
 			);
 		}
@@ -482,7 +489,12 @@ final readonly class OccurrenceDelivery {
 						'Schedule "%1$s" for owner "%2$s" is not synchronized; declare it with sync() before running it now.',
 						$name,
 						$owner
-					)
+					),
+					reason: EngineErrorReason::UnknownSchedule,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
 				)
 			);
 		}
@@ -495,7 +507,12 @@ final readonly class OccurrenceDelivery {
 						'Schedule "%1$s" for owner "%2$s" is inactive in this request; synchronize its declaration before running it now.',
 						$name,
 						$owner
-					)
+					),
+					reason: EngineErrorReason::UnknownSchedule,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
 				)
 			);
 		}
@@ -509,7 +526,12 @@ final readonly class OccurrenceDelivery {
 						'Schedule "%1$s" for owner "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.',
 						$name,
 						$owner
-					)
+					),
+					reason: EngineErrorReason::UnknownSchedule,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
 				)
 			);
 		}

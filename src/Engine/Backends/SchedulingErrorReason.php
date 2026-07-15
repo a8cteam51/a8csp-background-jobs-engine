@@ -7,7 +7,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends;
 /**
  * Machine-readable reason a scheduling request could not be accepted.
  *
- * Carried by {@see Errors\SchedulingError} so callers can branch on the cause without parsing
+ * Carried by {@see SchedulingError} so callers can branch on the cause without parsing
  * prose; the backing values remain stable when included in log context.
  *
  * InvalidInterval covers invalid time inputs, including intervals and timestamps.
@@ -25,4 +25,5 @@ enum SchedulingErrorReason: string {
 	case InvalidInterval       = 'invalid_interval';
 	case PayloadTooLarge       = 'payload_too_large';
 	case ScheduleFailed        = 'schedule_failed';
+	case StorageFailure        = 'storage_failure';
 }

@@ -29,12 +29,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $message         Human-readable failure detail.
-	 * @param   string|null $exception_class Exception class associated with the failure.
+	 * @param   string                 $message         Human-readable failure detail.
+	 * @param   string|null            $exception_class Exception class associated with the failure.
+	 * @param   EngineErrorReason|null $reason          Machine-readable admission cause, or null for terminal-only detail.
+	 * @param   array<string, mixed>   $context         Structured internal diagnostic detail.
 	 */
 	public function __construct(
 		public string $message,
 		public ?string $exception_class = null,
+		public ?EngineErrorReason $reason = null,
+		public array $context = array(),
 	) {}
 
 	// endregion
@@ -58,7 +62,9 @@ final readonly class EngineError implements ErrorInterface {
 				'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments.',
 				$task_name,
 				$running_run_id
-			)
+			),
+			reason: EngineErrorReason::OverlapHeld,
+			context: array( 'run_id' => $running_run_id ),
 		);
 	}
 
@@ -99,9 +105,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  ApiErrorCode
 	 */
 	public static function api_code_for_scheduling( SchedulingError $error ): ApiErrorCode {
-		return SchedulingErrorReason::BackendNotReady === $error->reason
-			? ApiErrorCode::BackendUnavailable
-			: ApiErrorCode::BackendRejected;
+		if ( SchedulingErrorReason::BackendNotReady === $error->reason ) {
+			return ApiErrorCode::BackendUnavailable;
+		}
+
+		// Registry persistence failures classify as storage regardless of which path surfaces them.
+		if ( SchedulingErrorReason::StorageFailure === $error->reason ) {
+			return ApiErrorCode::StorageFailure;
+		}
+
+		return ApiErrorCode::BackendRejected;
 	}
 
 	/**

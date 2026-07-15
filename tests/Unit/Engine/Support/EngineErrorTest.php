@@ -44,7 +44,8 @@ final class EngineErrorTest extends TestCase {
 
 		self::assertSame( 'Index refresh failed.', $error->message );
 		self::assertSame( \RuntimeException::class, $error->exception_class );
-		self::assertObjectNotHasProperty( 'context', $error );
+		self::assertNull( $error->reason );
+		self::assertSame( array(), $error->context );
 	}
 
 	/**
@@ -57,7 +58,8 @@ final class EngineErrorTest extends TestCase {
 
 		self::assertSame( 'Work failed.', $error->message );
 		self::assertNull( $error->exception_class );
-		self::assertObjectNotHasProperty( 'context', $error );
+		self::assertNull( $error->reason );
+		self::assertSame( array(), $error->context );
 	}
 
 	/**
@@ -177,6 +179,10 @@ final class EngineErrorTest extends TestCase {
 			'schedule failed'        => array(
 				'reason'        => 'schedule_failed',
 				'expected_code' => 'backend_rejected',
+			),
+			'storage failure'        => array(
+				'reason'        => 'storage_failure',
+				'expected_code' => 'storage_failure',
 			),
 		);
 	}
