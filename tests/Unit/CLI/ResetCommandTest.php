@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
@@ -110,7 +111,7 @@ final class ResetCommandTest extends TestCase {
 				LatestRunPointer::OPTION_PREFIX,
 				OverlapGuard::OPTION_PREFIX,
 				OccurrenceLease::OPTION_PREFIX,
-				OccurrenceDelivery::INTENT_PREFIX,
+				CleanupIntents::INTENT_PREFIX,
 			),
 			ResetCommand::option_prefixes()
 		);

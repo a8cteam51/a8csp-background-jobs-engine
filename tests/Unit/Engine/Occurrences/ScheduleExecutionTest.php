@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
@@ -424,366 +425,6 @@ final class ScheduleExecutionTest extends TestCase {
 			),
 			$this->logger->records[0] ?? null
 		);
-	}
-
-	/**
-	 * A missing registry row records durable intent before attempting inline convergence.
-	 *
-	 * @return  void
-	 */
-	public function test_unknown_registration_records_intent_and_attempts_inline_convergence(): void {
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( array( self::REGISTRATION_KEY ), $this->backend->calls[1]['args']['args'] ?? null );
-		self::assertCount(
-			1,
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				fn ( string $query ): bool => \str_starts_with( $query, 'INSERT IGNORE ' )
-					&& \str_contains( $query, $this->intent_option_name() )
-			)
-		);
-		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
-		self::assertSame(
-			'Unknown schedule registration "owner-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
-			$this->logger->records[0]['message'] ?? null
-		);
-	}
-
-	/**
-	 * A later readiness transition cannot grant authority to an earlier partial clear.
-	 *
-	 * @return  void
-	 */
-	public function test_inline_convergence_uses_authority_from_the_clearing_snapshot(): void {
-		$dormant                    = new RecordingBackend();
-		$dormant->readiness_results = array( false, true );
-		$this->delivery             = $this->new_delivery(
-			$this->registry,
-			new SchedulerFacade( array( $dormant, $this->backend ) )
-		);
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertSame( array( 'is_ready', 'is_absent' ), \array_column( $dormant->calls, 'verb' ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertFalse( $this->logger->records[1]['context']['converged'] ?? null );
-		self::assertTrue( $dormant->is_ready() );
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertTrue( $this->logger->records[2]['context']['converged'] ?? null );
-	}
-
-	/**
-	 * A failed intent CAS and verification read cannot report inline convergence.
-	 *
-	 * @return  void
-	 */
-	public function test_inline_convergence_rejects_a_failed_post_cas_read(): void {
-		$verification_reads = 0;
-		$this->wpdb->script_result( 'delete', 0 );
-		$this->wpdb->before_next(
-			'delete',
-			static function ( WpdbLockSpy $wpdb ) use ( &$verification_reads ): void {
-				$wpdb->before_next(
-					'select',
-					static function ( WpdbLockSpy $wpdb ) use ( &$verification_reads ): void {
-						++$verification_reads;
-						$wpdb->last_error = 'scripted intent verification failure';
-					}
-				);
-			}
-		);
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertSame( 1, $verification_reads );
-		self::assertFalse( $this->logger->records[0]['context']['converged'] ?? null );
-	}
-
-	/**
-	 * A failed maintenance convergence retains its intent and emits a debug diagnostic.
-	 *
-	 * @return  void
-	 */
-	public function test_pending_intent_sweep_logs_and_retains_a_failed_clear(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the backend before retrying convergence.'
-			)
-		);
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-		$this->backend->calls  = array();
-		$this->logger->records = array();
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame(
-			'Unknown schedule cleanup intent remains pending because verified clearance failed.',
-			$this->logger->records[0]['message'] ?? null
-		);
-	}
-
-	/**
-	 * A failed authoritative intent-name scan skips the sweep without scheduler or row mutation.
-	 *
-	 * @return  void
-	 */
-	public function test_pending_intent_sweep_skips_a_failed_name_scan(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the intent pending until the maintenance sweep.'
-			)
-		);
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-		unset( $this->backend->results['unschedule'] );
-		$this->backend->calls         = array();
-		$this->wpdb->recorded_queries = array();
-		$scan_failures                = 0;
-		$this->wpdb->before_next(
-			'scan',
-			static function ( WpdbLockSpy $wpdb ) use ( &$scan_failures ): void {
-				++$scan_failures;
-				$wpdb->last_error = 'scripted intent-name scan failure';
-			}
-		);
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( 1, $scan_failures );
-		self::assertCount( 1, $this->wpdb->recorded_queries );
-	}
-
-	/**
-	 * A throwable during intent enumeration is retained as structured log context.
-	 *
-	 * @return  void
-	 */
-	public function test_pending_intent_sweep_logs_an_enumeration_throwable_as_exception_context(): void {
-		$throwable = new \RuntimeException( 'Intent enumeration secret.' );
-		$this->wpdb->before_next(
-			'scan',
-			static function () use ( $throwable ): void {
-				throw $throwable;
-			}
-		);
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertSame(
-			array(
-				'level'   => 'debug',
-				'message' => 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
-				'context' => array( 'exception' => $throwable ),
-			),
-			$this->logger->records[0] ?? null
-		);
-	}
-
-	/**
-	 * A throwable during one intent convergence is retained with its schedule identity.
-	 *
-	 * @return  void
-	 */
-	public function test_pending_intent_sweep_logs_a_convergence_throwable_as_exception_context(): void {
-		$raw = \maybe_serialize(
-			array(
-				'key'        => self::REGISTRATION_KEY,
-				'created_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( $this->intent_option_name(), $raw );
-		$throwable = new \RuntimeException( 'Intent convergence secret.' );
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next(
-			'select',
-			static function () use ( $throwable ): void {
-				throw $throwable;
-			}
-		);
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertSame(
-			array(
-				'level'   => 'debug',
-				'message' => 'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
-				'context' => array(
-					'registration_key' => self::REGISTRATION_KEY,
-					'exception'        => $throwable,
-				),
-			),
-			$this->logger->records[0] ?? null
-		);
-	}
-
-	/**
-	 * An unreadable intent row is retained and skipped without consulting the scheduler.
-	 *
-	 * @return  void
-	 */
-	public function test_pending_intent_sweep_skips_a_failed_row_read(): void {
-		$raw = \maybe_serialize(
-			array(
-				'key'        => self::REGISTRATION_KEY,
-				'created_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( $this->intent_option_name(), $raw );
-		$row_read_failures = 0;
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ) use ( &$row_read_failures ): void {
-				++$row_read_failures;
-				$wpdb->last_error = 'scripted intent-row read failure';
-			}
-		);
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertSame( $raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( 1, $row_read_failures );
-	}
-
-	/**
-	 * The inline scheduler clear cannot begin before durable intent is visible.
-	 *
-	 * @return  void
-	 */
-	public function test_unknown_delivery_records_intent_before_inline_convergence(): void {
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next(
-			'select',
-			function (): void {
-				self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
-				self::assertSame( array(), $this->backend->calls );
-			}
-		);
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-	}
-
-	/**
-	 * Repeated unknown deliveries preserve the first unresolved intent generation.
-	 *
-	 * @return  void
-	 */
-	public function test_unknown_delivery_keeps_an_existing_intent_unchanged(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the intent pending across deliveries.'
-			)
-		);
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-		$original_raw = $this->wpdb->rows[ $this->intent_option_name() ] ?? null;
-		self::assertIsString( $original_raw );
-		$this->clock->timestamp = self::NOW + 1;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( $original_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
-	}
-
-	/**
-	 * A current registration resolves its intent without consulting scheduler readiness.
-	 *
-	 * @return  void
-	 */
-	public function test_registered_chain_clears_intent_without_scheduler_access(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the intent pending until registration.'
-			)
-		);
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-		unset( $this->backend->results['unschedule'] );
-		$this->sync_schedule( $this->schedule() );
-		$this->backend->ready = false;
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Exact-value deletion loses to an intent generation reinserted after the read.
-	 *
-	 * @return  void
-	 */
-	public function test_intent_cas_delete_loses_to_a_delete_reinsert(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the first intent pending.'
-			)
-		);
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-		unset( $this->backend->results['unschedule'] );
-		$this->clock->timestamp = self::NOW + 1;
-		$replacement_raw        = \maybe_serialize(
-			array(
-				'key'        => self::REGISTRATION_KEY,
-				'created_at' => $this->clock->timestamp,
-			)
-		);
-		self::assertIsString( $replacement_raw );
-		$this->wpdb->before_next(
-			'delete',
-			function ( WpdbLockSpy $wpdb ) use ( $replacement_raw ): void {
-				unset( $wpdb->rows[ $this->intent_option_name() ] );
-				$wpdb->put( $this->intent_option_name(), $replacement_raw );
-			}
-		);
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertSame( $replacement_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
-	}
-
-	/**
-	 * A malformed intent row is skipped without aborting valid pending convergence.
-	 *
-	 * @return  void
-	 */
-	public function test_pending_intent_convergence_never_throws_on_a_poisoned_row(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the valid intent pending.'
-			)
-		);
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-		unset( $this->backend->results['unschedule'] );
-		$poisoned_name = 'a8csp_bgte_cleanup_' . \str_repeat( '0', 64 );
-		$this->wpdb->put( $poisoned_name, 'O:8:"stdClass":0:{}' );
-
-		$this->delivery->converge_pending_intents();
-
-		self::assertArrayHasKey( $poisoned_name, $this->wpdb->rows );
-		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 	}
 
 	/**
@@ -1285,12 +926,20 @@ final class ScheduleExecutionTest extends TestCase {
 			$terminal_transitions,
 		);
 
+		$scheduler     ??= new SchedulerFacade( array( $this->backend ) );
+		$cleanup_intents = new CleanupIntents(
+			$registry,
+			$scheduler,
+			new OptionRows( $this->wpdb ),
+			$this->clock,
+			$this->logger
+		);
+
 		return new OccurrenceDelivery(
 			$registry,
 			$dispatcher,
 			new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
-			$scheduler ?? new SchedulerFacade( array( $this->backend ) ),
-			new OptionRows( $this->wpdb ),
+			$cleanup_intents,
 			$this->clock,
 			$this->logger
 		);
@@ -1302,7 +951,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  string
 	 */
 	private function intent_option_name(): string {
-		return 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::REGISTRATION_KEY );
+		return CleanupIntents::INTENT_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
 	}
 
 	/**

@@ -4,7 +4,14 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
@@ -248,7 +255,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			'The live Action Scheduler occurrence must use the redeclared registration next-due token'
 		);
 
-		$this->occurrence_delivery()->converge_pending_intents();
+		$this->cleanup_intents()->converge_pending_intents();
 
 		$missing_intent = new \stdClass();
 		self::assertSame(
@@ -364,7 +371,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$this->expect_option( $intent_option );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
-		$delivery = $this->occurrence_delivery();
+		$cleanup_intents = $this->cleanup_intents();
 
 		$action_id = \as_schedule_recurring_action(
 			\time() - 1,
@@ -387,7 +394,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$gap_pending_ids               = null;
 		$completed_hook                = static function ( int $completed_action_id ) use (
 			$action_id,
-			$delivery,
+			$cleanup_intents,
 			$intent_option,
 			$missing_intent,
 			$store,
@@ -410,7 +417,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 				array( self::KEY ),
 				self::KEY
 			);
-			$delivery->converge_pending_intents();
+			$cleanup_intents->converge_pending_intents();
 			$gap_intent_after_convergence = \get_option( $intent_option, $missing_intent );
 			$gap_pending_ids              = $store->query_actions(
 				array(
@@ -478,43 +485,31 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns the live occurrence-delivery callback registered on the shared schedule hook.
+	 * Returns a cleanup-intent convergence seam over the live durable state.
 	 *
-	 * @return  OccurrenceDelivery
+	 * Convergence state is durable option rows rather than object state, so a fresh
+	 * instance wired like the production graph converges the same pending intents.
+	 *
+	 * @return  CleanupIntents
 	 */
-	private function occurrence_delivery(): OccurrenceDelivery {
-		$wp_filter = $GLOBALS['wp_filter'] ?? null;
-		if ( ! \is_array( $wp_filter ) ) {
-			throw new \LogicException( 'The WordPress hook registry is unavailable.' );
-		}
+	private function cleanup_intents(): CleanupIntents {
+		global $wpdb;
+		self::assertInstanceOf( \wpdb::class, $wpdb );
 
-		$hook = $wp_filter[ self::HOOK ] ?? null;
-		self::assertInstanceOf( \WP_Hook::class, $hook, 'The live schedule hook must be registered' );
+		$rows = new OptionRows( $wpdb );
 
-		foreach ( $hook->callbacks as $callbacks ) {
-			if ( ! \is_array( $callbacks ) ) {
-				continue;
-			}
-
-			foreach ( $callbacks as $callback ) {
-				if ( ! \is_array( $callback ) ) {
-					continue;
-				}
-
-				$function = $callback['function'] ?? null;
-				if ( ! \is_array( $function ) ) {
-					continue;
-				}
-
-				$object = $function[0] ?? null;
-				$method = $function[1] ?? null;
-				if ( $object instanceof OccurrenceDelivery && 'handle_schedule_due' === $method ) {
-					return $object;
-				}
-			}
-		}
-
-		throw new \LogicException( 'The live occurrence-delivery callback is unavailable.' );
+		return new CleanupIntents(
+			new ScheduleRegistry( $rows ),
+			new SchedulerFacade(
+				array(
+					new ActionSchedulerBackend(),
+					new WPCronBackend(),
+				)
+			),
+			$rows,
+			new SystemClock(),
+			new HookLogger()
+		);
 	}
 
 	/**

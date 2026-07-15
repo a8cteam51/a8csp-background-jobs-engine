@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
@@ -1187,8 +1188,13 @@ final class SchedulesTest extends TestCase {
 			$registry,
 			$dispatcher,
 			new OccurrenceLease( new OptionRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ),
-			new SchedulerFacade( array( $backend ) ),
-			new OptionRows( $wpdb ),
+			new CleanupIntents(
+				$registry,
+				new SchedulerFacade( array( $backend ) ),
+				new OptionRows( $wpdb ),
+				$clock,
+				$logger
+			),
 			$clock,
 			$logger
 		);

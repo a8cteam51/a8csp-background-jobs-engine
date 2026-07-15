@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -380,12 +381,18 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$scheduler
 		);
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
+		$cleanup_intents      = new CleanupIntents(
+			$schedule_registry,
+			$scheduler,
+			$rows,
+			$clock,
+			$logger
+		);
 		$occurrence_delivery  = new OccurrenceDelivery(
 			$schedule_registry,
 			$dispatcher,
 			$occurrence_lease,
-			$scheduler,
-			$rows,
+			$cleanup_intents,
 			$clock,
 			$logger
 		);

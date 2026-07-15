@@ -52,17 +52,17 @@ final class MaintenanceTask extends AbstractTask {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OptionRows         $rows                Authoritative option-name enumeration.
-	 * @param   RunReconciliation  $reconciliation      Run-reconciliation boundary.
-	 * @param   OverlapGuard       $guard               Lock schema and exact-delete boundary.
-	 * @param   OccurrenceDelivery $occurrence_delivery Unknown-chain convergence boundary.
-	 * @param   LoggerInterface    $logger              Log event sink.
+	 * @param   OptionRows        $rows            Authoritative option-name enumeration.
+	 * @param   RunReconciliation $reconciliation  Run-reconciliation boundary.
+	 * @param   OverlapGuard      $guard           Lock schema and exact-delete boundary.
+	 * @param   CleanupIntents    $cleanup_intents Unknown-chain convergence boundary.
+	 * @param   LoggerInterface   $logger          Log event sink.
 	 */
 	public function __construct(
 		private readonly OptionRows $rows,
 		private readonly RunReconciliation $reconciliation,
 		private readonly OverlapGuard $guard,
-		private readonly OccurrenceDelivery $occurrence_delivery,
+		private readonly CleanupIntents $cleanup_intents,
 		private readonly LoggerInterface $logger,
 	) {}
 
@@ -210,7 +210,7 @@ final class MaintenanceTask extends AbstractTask {
 			}
 		}
 
-		$this->occurrence_delivery->converge_pending_intents();
+		$this->cleanup_intents->converge_pending_intents();
 	}
 
 	// endregion

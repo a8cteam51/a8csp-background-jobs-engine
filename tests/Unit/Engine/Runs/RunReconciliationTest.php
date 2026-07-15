@@ -23,8 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
@@ -178,10 +177,8 @@ final class RunReconciliationTest extends TestCase {
 			$this->batches,
 			$this->backend,
 		);
-		$occurrence_delivery        = new OccurrenceDelivery(
+		$cleanup_intents            = new CleanupIntents(
 			new ScheduleRegistry( $option_rows ),
-			$this->dispatcher,
-			new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, $randomizer ),
 			new SchedulerFacade( array( $this->backend ) ),
 			$option_rows,
 			$this->clock,
@@ -191,7 +188,7 @@ final class RunReconciliationTest extends TestCase {
 			$option_rows,
 			$reconciliation,
 			$guard,
-			$occurrence_delivery,
+			$cleanup_intents,
 			$this->logger
 		);
 	}

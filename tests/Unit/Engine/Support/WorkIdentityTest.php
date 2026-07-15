@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
@@ -184,7 +184,7 @@ final class WorkIdentityTest extends TestCase {
 			'history'        => self::private_string( new RunHistory( $identity, $rows ), 'option_name' ),
 			'latest'         => self::private_string( new LatestRunPointer( $identity, $rows ), 'option_name' ),
 			'lease'          => self::private_string( OccurrenceLease::class, 'option_name', $identity ),
-			'cleanup intent' => self::private_string( OccurrenceDelivery::class, 'intent_option_name', $identity ),
+			'cleanup intent' => self::private_string( CleanupIntents::class, 'intent_option_name', $identity ),
 		);
 
 		self::assertSame( 97, \strlen( $identity ) );

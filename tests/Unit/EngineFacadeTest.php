@@ -23,6 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
@@ -145,8 +146,13 @@ final class EngineFacadeTest extends TestCase {
 			$registry,
 			$dispatcher,
 			new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
-			new SchedulerFacade( array( $this->backend ) ),
-			new OptionRows( $this->wpdb ),
+			new CleanupIntents(
+				$registry,
+				new SchedulerFacade( array( $this->backend ) ),
+				new OptionRows( $this->wpdb ),
+				$clock,
+				$logger
+			),
 			$clock,
 			$logger
 		);

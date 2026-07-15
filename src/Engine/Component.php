@@ -29,6 +29,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
@@ -197,12 +198,12 @@ final class Component implements ComponentContract {
 				$scheduler
 			);
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
+			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery(
 				$schedules,
 				$dispatcher,
 				$occurrence_lease,
-				$scheduler,
-				$option_rows,
+				$cleanup_intents,
 				$clock,
 				$logger
 			);
@@ -212,7 +213,7 @@ final class Component implements ComponentContract {
 					$option_rows,
 					$reconciliation,
 					$guard,
-					$occurrence_delivery,
+					$cleanup_intents,
 					$logger
 				)
 			);
