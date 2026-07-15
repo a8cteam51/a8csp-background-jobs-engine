@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 

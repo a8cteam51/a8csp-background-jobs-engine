@@ -6,8 +6,8 @@
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 \WP_CLI::add_hook(

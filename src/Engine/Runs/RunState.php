@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -34,7 +36,7 @@ final readonly class RunState {
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
-	 * @phpstan-param array{class: string|null, message: string}|null $error
+	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 * @phpstan-param list<string> $effects
 	 *
 	 * @param   RunStatus                     $status          Lifecycle state.
@@ -259,7 +261,7 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{class: string|null, message: string}|null $error
+	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 *
 	 * @param   array|null $error Durable terminal failure detail, or null for non-failed runs.
 	 *

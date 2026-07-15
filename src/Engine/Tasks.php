@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 

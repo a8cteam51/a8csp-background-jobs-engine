@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
@@ -10,9 +12,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
@@ -21,8 +23,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
@@ -774,7 +776,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 1,
 				self::ARGS,
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'failed-run', 2 )
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
@@ -824,7 +827,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 1,
 				self::ARGS,
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'failed-run', 2 )
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
@@ -871,7 +875,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 2,
 				array( 'ordinal' => 'first' ),
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'failed-run', 2 )
 			)
 		);
 		self::assertTrue(
@@ -880,7 +885,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 1,
 				array( 'ordinal' => 'second' ),
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'failed-run', 2 )
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
@@ -912,7 +918,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 1,
 				self::ARGS,
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'failed-run', 2 )
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
@@ -955,7 +962,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 1,
 				self::ARGS,
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'retained-run', 2 )
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
@@ -993,7 +1001,8 @@ final class DispatcherTest extends TestCase {
 				self::NOW - 1,
 				self::ARGS,
 				2,
-				new EngineError( 'Database unavailable.', \RuntimeException::class )
+				new EngineError( 'Database unavailable.', \RuntimeException::class ),
+				self::retained_failure( 'failed-run', 2 )
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
@@ -1121,6 +1130,26 @@ final class DispatcherTest extends TestCase {
 		$this->assert_no_failed_run_option_function_writes();
 
 		return $value;
+	}
+
+	/**
+	 * Returns complete consumer failure metadata for one retained task run.
+	 *
+	 * @param   string $run_id   Run identifier.
+	 * @param   int    $attempts Consumed attempts.
+	 *
+	 * @return  RunFailure
+	 */
+	private static function retained_failure( string $run_id, int $attempts ): RunFailure {
+		return new RunFailure(
+			name: self::NAME,
+			run_id: $run_id,
+			attempts: $attempts,
+			stage: 'execution',
+			code: ApiErrorCode::ExecutionFailed,
+			summary: 'Database unavailable.',
+			failed_chunk: null,
+		);
 	}
 
 	/** Asserts that failed-run persistence uses only the authoritative raw-storage seam. */

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;

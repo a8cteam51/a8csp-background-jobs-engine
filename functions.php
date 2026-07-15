@@ -4,7 +4,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 
 \defined( 'ABSPATH' ) || exit;
 

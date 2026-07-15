@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**

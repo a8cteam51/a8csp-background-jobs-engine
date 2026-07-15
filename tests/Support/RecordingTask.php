@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
 /**
  * Records task invocations with an optional observation callback and failure.

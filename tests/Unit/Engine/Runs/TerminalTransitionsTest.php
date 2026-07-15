@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
@@ -11,9 +12,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
@@ -22,8 +23,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -742,7 +743,16 @@ final class TerminalTransitionsTest extends TestCase {
 		}
 		$error = new EngineError( 'Terminal failure.' );
 
-		$this->terminal_transitions->fail_run( self::NAME, self::RUN_ID, $state, $run_store, $error, 1 );
+		$this->terminal_transitions->fail_run(
+			self::NAME,
+			self::RUN_ID,
+			$state,
+			$run_store,
+			$error,
+			1,
+			'execution',
+			ApiErrorCode::ExecutionFailed
+		);
 
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		self::assertSame(
@@ -1232,14 +1242,17 @@ final class TerminalTransitionsTest extends TestCase {
 				$run_store,
 				$throwable,
 				fn (): RetryPolicy => $this->task->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $run_id, $run_store ): void {
+				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $run_id, $run_store ): void {
 					$this->terminal_transitions->fail_run(
 						self::NAME,
 						$run_id,
 						$failure_state,
 						$run_store,
 						$error,
-						$attempts_used
+						$attempts_used,
+						$stage,
+						$code,
+						$failed_chunk
 					);
 				}
 			);

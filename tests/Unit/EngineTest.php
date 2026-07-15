@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -15,8 +17,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
@@ -403,7 +405,16 @@ final class EngineTest extends TestCase {
 				self::NOW - 1,
 				array(),
 				1,
-				new EngineError( 'Maintenance failed.' )
+				new EngineError( 'Maintenance failed.' ),
+				new RunFailure(
+					name: MaintenanceTask::NAME,
+					run_id: 'failed-maintenance-run',
+					attempts: 1,
+					stage: 'execution',
+					code: ApiErrorCode::ExecutionFailed,
+					summary: 'Maintenance failed.',
+					failed_chunk: null,
+				)
 			)
 		);
 		$failed_key = 'a8csp_bgte_failed_' . MaintenanceTask::NAME;

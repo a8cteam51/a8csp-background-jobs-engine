@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\AbstractTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\AbstractTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;

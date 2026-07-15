@@ -2,16 +2,20 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Failure detail passed to a run's failure callback.
+ * Internal failure detail retained while the engine terminalizes a run.
  *
  * The message describes the failure, and the optional exception class preserves the throwable
  * category without retaining the throwable.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -85,6 +89,22 @@ final readonly class EngineError implements ErrorInterface {
 	}
 
 	/**
+	 * Maps a scheduling failure to its consumer-visible availability classification.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   SchedulingError $error Scheduling failure.
+	 *
+	 * @return  ApiErrorCode
+	 */
+	public static function api_code_for_scheduling( SchedulingError $error ): ApiErrorCode {
+		return SchedulingErrorReason::BackendNotReady === $error->reason
+			? ApiErrorCode::BackendUnavailable
+			: ApiErrorCode::BackendRejected;
+	}
+
+	/**
 	 * Converts one callback throwable into engine failure detail.
 	 *
 	 * @since   1.0.0
@@ -143,6 +163,32 @@ final readonly class EngineError implements ErrorInterface {
 		return new self(
 			\sprintf(
 				'%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.',
+				$work_type,
+				$name,
+				$exception_type
+			),
+			$exception_type
+		);
+	}
+
+	/**
+	 * Converts one retry-state construction throwable into terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string         $name      Stable task or batch name.
+	 * @param   \Throwable     $throwable Retry-state construction failure.
+	 *
+	 * @return  self
+	 */
+	public static function retry_state( string $work_type, string $name, \Throwable $throwable ): self {
+		$exception_type = \get_debug_type( $throwable );
+
+		return new self(
+			\sprintf(
+				'%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.',
 				$work_type,
 				$name,
 				$exception_type

@@ -2,16 +2,18 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Schedules;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
@@ -394,7 +396,16 @@ final class InspectionTest extends TestCase {
 				self::NOW - 1,
 				array(),
 				2,
-				new EngineError( 'Retained failure.' )
+				new EngineError( 'Retained failure.' ),
+				new RunFailure(
+					name: 'catalog-sync',
+					run_id: 'run-failed',
+					attempts: 2,
+					stage: 'execution',
+					code: ApiErrorCode::ExecutionFailed,
+					summary: 'Retained failure.',
+					failed_chunk: null,
+				)
 			)
 		);
 

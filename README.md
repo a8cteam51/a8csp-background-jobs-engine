@@ -45,10 +45,10 @@ In a consumer plugin under its own namespace, register the Task and Batch implem
 ```php
 namespace Acme\BackgroundTasks;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 
 final class BackgroundTasksRegistration {
 	private const OWNER = 'acme-background-work';
@@ -148,7 +148,7 @@ interface BatchInterface extends WorkInterface {
 	public function on_failure(
 		string $run_id,
 		array $start_args,
-		EngineError $error
+		RunFailure $failure
 	): void;
 
 	public function get_retry_policy(): RetryPolicy;
@@ -156,6 +156,8 @@ interface BatchInterface extends WorkInterface {
 ```
 
 The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. Direct batch implementations must declare it; invalid values use the shared 300-second default, and the engine caps the credited window at six hours.
+
+`RunFailure` carries the work name, run ID, consumed attempt count, terminalization stage, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
 
@@ -215,14 +217,14 @@ For each lifecycle pair, the name-specific hook fires first and the generic comp
 | --- | --- | --- |
 | Started | `a8csp_background_tasks/started/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/started`: `($name, $run_id, $start_args)` |
 | Completed | `a8csp_background_tasks/completed/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/completed`: `($name, $run_id, $start_args)` |
-| Failed | `a8csp_background_tasks/failed/{name}`: `($run_id, $start_args, EngineError $error)` | `a8csp_background_tasks/failed`: `($name, $run_id, $start_args, EngineError $error)` |
+| Failed | `a8csp_background_tasks/failed/{name}`: `($run_id, $start_args, RunFailure $failure)` | `a8csp_background_tasks/failed`: `($name, $run_id, $start_args, RunFailure $failure)` |
 | Cancelled | `a8csp_background_tasks/cancelled/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/cancelled`: `($name, $run_id, $start_args)` |
 | Retrying | `a8csp_background_tasks/retrying/{name}`: `($run_id, $start_args, $attempt, $delay)` | `a8csp_background_tasks/retrying`: `($name, $run_id, $start_args, $attempt, $delay)` |
 | Superseded | `a8csp_background_tasks/superseded/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/superseded`: `($name, $run_id, $start_args)` |
 | Misfired | `a8csp_background_tasks/misfired/{schedule}`: `($owner, $due_at, $observed_at)` | `a8csp_background_tasks/misfired`: `($schedule, $owner, $due_at, $observed_at)` |
 | Log | `a8csp_background_tasks/log`: `($level, $message, $context)` | No generic companion. |
 
-Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `EngineError` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
+Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
 Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start`, `a8csp_background_tasks/continue`, `a8csp_background_tasks/run`, `a8csp_background_tasks/cleanup`, or `a8csp_background_tasks/schedule_due`.
 

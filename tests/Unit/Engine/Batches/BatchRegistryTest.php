@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Batches;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -182,12 +182,12 @@ final class BatchRegistryTest extends TestCase {
 			 *
 			 * @param   string                  $run_id     Unused run identifier.
 			 * @param   array<array-key, mixed> $start_args Unused start arguments.
-			 * @param   EngineError             $error      Unused failure detail.
+			 * @param   RunFailure              $failure    Unused terminal-failure value.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function on_failure( string $run_id, array $start_args, EngineError $error ): void {}
+			public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void {}
 
 			/** {@inheritDoc} */
 			#[\Override]

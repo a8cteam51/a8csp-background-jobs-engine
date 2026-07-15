@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
 /**
  * Demonstrates a batch that recounts comments one post per independently retried chunk.
@@ -230,12 +230,12 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   EngineError             $error      Persisted failure detail.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_failure( string $run_id, array $start_args, EngineError $error ): void {
+	public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void {
 		/**
 		 * Fires after the demo batch reaches terminal failure.
 		 *
@@ -244,9 +244,9 @@ final class CommentCountRecountBatch implements BatchInterface {
 		 *
 		 * @param   string                  $run_id     Engine-assigned batch run identifier.
 		 * @param   array<array-key, mixed> $start_args Original batch start arguments.
-		 * @param   EngineError             $error      Persisted failure detail.
+		 * @param   RunFailure              $failure    Persisted terminal-failure value.
 		 */
-		\do_action( self::FAILED_HOOK, $run_id, $start_args, $error );
+		\do_action( self::FAILED_HOOK, $run_id, $start_args, $failure );
 	}
 
 	/**

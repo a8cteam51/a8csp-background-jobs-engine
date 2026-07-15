@@ -6,8 +6,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 

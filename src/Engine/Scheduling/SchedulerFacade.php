@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 

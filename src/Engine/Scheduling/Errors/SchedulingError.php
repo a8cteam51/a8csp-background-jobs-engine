@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,6 +12,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Error\ErrorInterface;
  *
  * The reason is the machine-readable branch key; the message names the corrective action, and the
  * context carries structured detail for diagnostics without making callers parse prose.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

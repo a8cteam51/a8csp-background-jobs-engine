@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
@@ -9,10 +11,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
@@ -815,7 +817,16 @@ final readonly class Dispatcher {
 				),
 				$exception_type
 			);
-			$this->terminal_transitions->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
+			$this->terminal_transitions->fail_run(
+				$task_name,
+				$run_id,
+				$state,
+				$run_store,
+				$error,
+				1,
+				'execution',
+				ApiErrorCode::ExecutionFailed
+			);
 
 			return new Failure( $error );
 		}

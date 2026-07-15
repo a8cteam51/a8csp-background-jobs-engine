@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\Exceptions\InvalidBatchChunkException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 

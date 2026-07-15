@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;

@@ -2,9 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -15,9 +17,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
@@ -26,8 +28,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -50,6 +52,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( BatchContext::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( EngineError::class )]
+#[UsesClass( RunFailure::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( Dispatcher::class )]
@@ -436,9 +439,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $error->message );
-		self::assertSame( \RuntimeException::class, $error->exception_class );
+		$failure = $this->batch->failure_calls[0]['error'];
+		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
+		self::assertNull( $failure->failed_chunk );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/started/' . self::NAME,
@@ -466,7 +474,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->assert_terminal_start_error(
 			'Background-work execution failed because RuntimeException was thrown.',
-			\RuntimeException::class
+			\RuntimeException::class,
+			ApiErrorCode::ExecutionFailed
 		);
 	}
 
@@ -491,9 +500,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->assert_terminal_start_error(
 			'Background-work execution failed because RuntimeException was thrown.',
-			\RuntimeException::class
+			\RuntimeException::class,
+			ApiErrorCode::ExecutionFailed
 		);
-		self::assertStringNotContainsString( 'token secret', $this->batch->failure_calls[0]['error']->message );
+		self::assertStringNotContainsString( 'token secret', $this->batch->failure_calls[0]['error']->summary );
 	}
 
 	/**
@@ -518,8 +528,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$message = 'Batch queue chunk at index 1 must contain only null, scalar, or nested array values.';
 		self::assertCount( 1, $this->batch->failure_calls );
-		self::assertStringNotContainsString( $private_marker, $this->batch->failure_calls[0]['error']->message );
-		$this->assert_terminal_start_error( $message, \UnexpectedValueException::class );
+		self::assertStringNotContainsString( $private_marker, $this->batch->failure_calls[0]['error']->summary );
+		$this->assert_terminal_start_error( $message, \UnexpectedValueException::class, ApiErrorCode::PayloadRejected );
 	}
 
 	/**
@@ -579,7 +589,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->assert_terminal_start_error(
 			'Batch queue filter returned a non-array value; return one argument array per chunk.',
-			\UnexpectedValueException::class
+			\UnexpectedValueException::class,
+			ApiErrorCode::PayloadRejected
 		);
 	}
 
@@ -605,9 +616,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->assert_terminal_start_error(
 			'Background-work execution failed because DomainException was thrown.',
-			\DomainException::class
+			\DomainException::class,
+			ApiErrorCode::ExecutionFailed
 		);
-		self::assertStringNotContainsString( 'credential secret', $this->batch->failure_calls[0]['error']->message );
+		self::assertStringNotContainsString( 'credential secret', $this->batch->failure_calls[0]['error']->summary );
 	}
 
 	/**
@@ -633,8 +645,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$message = 'Batch queue chunk at index 1 must contain only null, scalar, or nested array values.';
 		self::assertCount( 1, $this->batch->failure_calls );
-		self::assertStringNotContainsString( $private_marker, $this->batch->failure_calls[0]['error']->message );
-		$this->assert_terminal_start_error( $message, \UnexpectedValueException::class );
+		self::assertStringNotContainsString( $private_marker, $this->batch->failure_calls[0]['error']->summary );
+		$this->assert_terminal_start_error( $message, \UnexpectedValueException::class, ApiErrorCode::PayloadRejected );
 	}
 
 	/**
@@ -1053,13 +1065,18 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( \InvalidArgumentException::class, $error->exception_class );
+		$failure = $this->batch->failure_calls[0]['error'];
+		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame(
 			'Batch chunk arguments must contain only null, scalar, or nested array values.',
-			$error->message
+			$failure->summary
 		);
-		self::assertStringNotContainsString( $marker, $error->message );
+		self::assertStringNotContainsString( $marker, $failure->summary );
+		self::assertSame( $chunk_args, $failure->failed_chunk );
 	}
 
 	/**
@@ -1322,9 +1339,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( 'Background-work execution failed because DomainException was thrown.', $error->message );
-		self::assertSame( \DomainException::class, $error->exception_class );
+		$failure = $this->batch->failure_calls[0]['error'];
+		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( 'Background-work execution failed because DomainException was thrown.', $failure->summary );
+		self::assertNull( $failure->failed_chunk );
 		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
@@ -1619,8 +1638,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertCount( 1, $this->batch->failure_calls );
 		self::assertSame(
 			'Batch "catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.',
-			$this->batch->failure_calls[0]['error']->message
+			$this->batch->failure_calls[0]['error']->summary
 		);
+		self::assertSame( 'scheduling', $this->batch->failure_calls[0]['error']->stage );
+		self::assertSame( ApiErrorCode::BackendRejected, $this->batch->failure_calls[0]['error']->code );
+		self::assertSame( $chunk_args, $this->batch->failure_calls[0]['error']->failed_chunk );
 		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
 		self::assertIsArray( $failed_runs );
 		$failed_run = $failed_runs[0] ?? null;
@@ -1711,8 +1733,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'created_at'    => self::NOW,
 				'heartbeat_at'  => self::NOW + 120,
 				'error'         => array(
-					'class'   => \DomainException::class,
-					'message' => 'Background-work execution failed because DomainException was thrown.',
+					'class'        => \DomainException::class,
+					'message'      => 'Background-work execution failed because DomainException was thrown.',
+					'stage'        => 'execution',
+					'code'         => ApiErrorCode::ExecutionFailed->value,
+					'failed_chunk' => $chunk_args,
 				),
 				'effects'       => array( 'retention', 'callbacks', 'history' ),
 			),
@@ -2373,21 +2398,38 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @phpstan-param class-string $exception_class
 	 *
-	 * @param   string $message         Expected failure message.
-	 * @param   string $exception_class Expected throwable class.
+	 * @param   string       $message         Expected failure message.
+	 * @param   string       $exception_class Expected throwable class.
+	 * @param   ApiErrorCode $code            Expected public error code.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_start_error( string $message, string $exception_class ): void {
+	private function assert_terminal_start_error( string $message, string $exception_class, ApiErrorCode $code ): void {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( array(), $this->failed_run_state()['queue'] );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( $message, $error->message );
-		self::assertSame( $exception_class, $error->exception_class );
+		$failure = $this->batch->failure_calls[0]['error'];
+		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( 'queue-generation', $failure->stage );
+		self::assertSame( $code, $failure->code );
+		self::assertSame( $message, $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		self::assertIsArray( $failed_runs );
+		$failed_run = $failed_runs[0] ?? null;
+		self::assertIsArray( $failed_run );
+		$stored_error = $failed_run['error'] ?? null;
+		self::assertIsArray( $stored_error );
+		self::assertSame( $exception_class, $stored_error['class'] ?? null );
+		self::assertSame( $message, $stored_error['message'] ?? null );
+		self::assertSame( 'queue-generation', $stored_error['stage'] ?? null );
+		self::assertSame( $code->value, $stored_error['code'] ?? null );
+		self::assertArrayNotHasKey( 'failed_chunk', $stored_error );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . self::NAME,
@@ -2412,22 +2454,32 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
+		$failure = $this->batch->failure_calls[0]['error'];
 		self::assertSame(
 			\sprintf(
 				'Batch "catalog-sync" could not schedule the %s action: Restore the scheduler before retrying this batch.',
 				$stage
 			),
-			$error->message
+			$failure->summary
 		);
-		self::assertSame( SchedulingError::class, $error->exception_class );
+		self::assertSame( 'scheduling', $failure->stage );
+		self::assertSame( ApiErrorCode::BackendRejected, $failure->code );
+		self::assertSame( 'run' === $stage ? array( 'chunk' => 'first' ) : null, $failure->failed_chunk );
 		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
 		self::assertIsArray( $failed_runs );
 		$failed_run = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
 		$stored_error = $failed_run['error'] ?? null;
 		self::assertIsArray( $stored_error );
-		self::assertSame( $error->message, $stored_error['message'] ?? null );
+		self::assertSame( SchedulingError::class, $stored_error['class'] ?? null );
+		self::assertSame( $failure->summary, $stored_error['message'] ?? null );
+		self::assertSame( 'scheduling', $stored_error['stage'] ?? null );
+		self::assertSame( ApiErrorCode::BackendRejected->value, $stored_error['code'] ?? null );
+		if ( 'run' === $stage ) {
+			self::assertSame( array( 'chunk' => 'first' ), $stored_error['failed_chunk'] ?? null );
+		} else {
+			self::assertArrayNotHasKey( 'failed_chunk', $stored_error );
+		}
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . self::NAME,

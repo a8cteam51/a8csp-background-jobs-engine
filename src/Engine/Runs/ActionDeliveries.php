@@ -3,12 +3,13 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
@@ -148,13 +149,14 @@ final readonly class ActionDeliveries {
 				$run_id,
 				$state,
 				$run_store,
-				EngineError::from_throwable( $throwable )
+				EngineError::from_throwable( $throwable ),
+				ApiErrorCode::ExecutionFailed
 			);
 
 			return;
 		}
 		if ( $queue instanceof EngineError ) {
-			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue );
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
 
 			return;
 		}
@@ -175,13 +177,14 @@ final readonly class ActionDeliveries {
 				$run_id,
 				$state,
 				$run_store,
-				EngineError::from_throwable( $throwable )
+				EngineError::from_throwable( $throwable ),
+				ApiErrorCode::ExecutionFailed
 			);
 
 			return;
 		}
 		if ( $queue instanceof EngineError ) {
-			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue );
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
 
 			return;
 		}
@@ -222,7 +225,9 @@ final readonly class ActionDeliveries {
 				$run_id,
 				$state,
 				$run_store,
-				EngineError::from_throwable( $throwable )
+				EngineError::from_throwable( $throwable ),
+				'execution',
+				ApiErrorCode::ExecutionFailed
 			);
 
 			return;
@@ -244,7 +249,9 @@ final readonly class ActionDeliveries {
 				$run_id,
 				$state,
 				$run_store,
-				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
+				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ),
+				'scheduling',
+				EngineError::api_code_for_scheduling( $scheduled->error )
 			);
 
 			return;
@@ -306,7 +313,9 @@ final readonly class ActionDeliveries {
 					$run_id,
 					$state,
 					$run_store,
-					EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error )
+					EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error ),
+					'scheduling',
+					EngineError::api_code_for_scheduling( $scheduled->error )
 				);
 			}
 
@@ -342,7 +351,10 @@ final readonly class ActionDeliveries {
 				$run_id,
 				$state,
 				$run_store,
-				EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error )
+				EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error ),
+				'scheduling',
+				EngineError::api_code_for_scheduling( $scheduled->error ),
+				$chunk_args
 			);
 		}
 	}
@@ -483,7 +495,9 @@ final readonly class ActionDeliveries {
 						'Batch "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.',
 						$batch_name
 					)
-				)
+				),
+				'execution',
+				ApiErrorCode::UnsupportedOperation
 			);
 
 			return;
@@ -523,10 +537,11 @@ final readonly class ActionDeliveries {
 	 * @param   RunState       $state      Fenced running state.
 	 * @param   RunStore       $run_store  Active-run store.
 	 * @param   EngineError    $error      Terminal failure detail.
+	 * @param   ApiErrorCode   $code       Machine-readable cause classification.
 	 *
 	 * @return  void
 	 */
-	private function fail_batch_start_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+	private function fail_batch_start_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -542,7 +557,9 @@ final readonly class ActionDeliveries {
 			$run_id,
 			$state,
 			$run_store,
-			$error
+			$error,
+			'queue-generation',
+			$code
 		);
 	}
 
@@ -572,14 +589,17 @@ final readonly class ActionDeliveries {
 				$run_store,
 				$throwable,
 				static fn (): RetryPolicy => $task->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $task_name, $run_id, $run_store ): void {
+				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $task_name, $run_id, $run_store ): void {
 					$this->terminal_transitions->fail_run(
 						$task_name,
 						$run_id,
 						$failure_state,
 						$run_store,
 						$error,
-						$attempts_used
+						$attempts_used,
+						$stage,
+						$code,
+						$failed_chunk
 					);
 				}
 			);
@@ -622,7 +642,7 @@ final readonly class ActionDeliveries {
 				$run_store,
 				$throwable,
 				static fn (): RetryPolicy => $batch->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $batch, $batch_name, $run_id, $run_store ): void {
+				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $batch, $batch_name, $run_id, $run_store ): void {
 					$this->terminal_transitions->fail_batch(
 						$batch,
 						$batch_name,
@@ -630,6 +650,9 @@ final readonly class ActionDeliveries {
 						$failure_state,
 						$run_store,
 						$error,
+						$stage,
+						$code,
+						$failed_chunk,
 						$attempts_used
 					);
 				},
@@ -659,7 +682,9 @@ final readonly class ActionDeliveries {
 				$run_store,
 				$context->get_queue(),
 				$reset_at,
-				EngineError::from_throwable( $throwable )
+				EngineError::from_throwable( $throwable ),
+				'execution',
+				ApiErrorCode::ExecutionFailed
 			);
 
 			return;
@@ -684,7 +709,9 @@ final readonly class ActionDeliveries {
 						'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.',
 						$batch_name
 					)
-				)
+				),
+				'scheduling',
+				ApiErrorCode::BackendRejected
 			);
 
 			return;
@@ -724,7 +751,9 @@ final readonly class ActionDeliveries {
 				$run_id,
 				$state,
 				$run_store,
-				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
+				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ),
+				'scheduling',
+				EngineError::api_code_for_scheduling( $scheduled->error )
 			);
 		}
 	}
@@ -743,10 +772,12 @@ final readonly class ActionDeliveries {
 	 * @param   list<array<array-key, mixed>> $queue      Committed queue after the processed chunk.
 	 * @param   int                           $reset_at   Post-callback liveness timestamp.
 	 * @param   EngineError                   $error      Terminal failure detail.
+	 * @param   string                        $stage      Terminalization stage.
+	 * @param   ApiErrorCode                  $code       Machine-readable cause classification.
 	 *
 	 * @return  void
 	 */
-	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error ): void {
+	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, string $stage, ApiErrorCode $code ): void {
 		$replacement = $state
 			->with_queue( $queue )
 			->with_chunk_retries( 0 )
@@ -764,7 +795,9 @@ final readonly class ActionDeliveries {
 			$run_id,
 			$replacement,
 			$run_store,
-			$error
+			$error,
+			$stage,
+			$code
 		);
 	}
 

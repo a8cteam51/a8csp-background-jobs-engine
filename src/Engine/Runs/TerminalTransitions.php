@@ -2,7 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
@@ -343,7 +346,14 @@ final readonly class TerminalTransitions {
 			->with_chunk_retries( $attempts )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null )
-			->with_error( self::error_detail( $error ) );
+			->with_error(
+				self::error_detail(
+					$error,
+					'execution',
+					ApiErrorCode::UnknownWork,
+					self::failed_chunk_for_state( $work_type, $state )
+				)
+			);
 
 		$this->claim_and_execute_terminal_transition( $name, $run_id, $state, $terminal_state, $run_store, $work_type );
 	}
@@ -356,25 +366,30 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
+	 *
 	 * @param   BatchInterface $batch      Failed batch.
 	 * @param   string         $batch_name Stable batch name.
 	 * @param   string         $run_id     Run identifier.
 	 * @param   RunState       $state      Running state.
 	 * @param   RunStore       $run_store  Active-run store.
 	 * @param   EngineError    $error      Failure detail.
+	 * @param   string         $stage      Terminalization stage.
+	 * @param   ApiErrorCode   $code       Machine-readable cause classification.
+	 * @param   array|null     $failed_chunk Batch chunk arguments for the failing chunk, or null.
 	 * @param   int|null       $attempts   Attempts consumed before failure, or null to derive the count.
 	 * @param   string|null    $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?int $attempts = null, ?string $expected_raw = null ): void {
+	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->chunk_retries );
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
 			->with_chunk_retries( $attempts )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null )
-			->with_error( self::error_detail( $error ) );
+			->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
 		$this->claim_and_execute_terminal_transition( $batch_name, $run_id, $state, $terminal_state, $run_store, 'Batch', $batch, $expected_raw );
 	}
@@ -385,23 +400,28 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $task_name    Stable task name.
-	 * @param   string      $run_id       Run identifier.
-	 * @param   RunState    $state        Running state.
-	 * @param   RunStore    $run_store    Active-run store.
-	 * @param   EngineError $error         Task failure detail.
-	 * @param   int         $attempts_used Attempts consumed by the invocation.
-	 * @param   string|null $expected_raw  Exact maintenance snapshot, or null for a live transition.
+	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
+	 *
+	 * @param   string       $task_name    Stable task name.
+	 * @param   string       $run_id       Run identifier.
+	 * @param   RunState     $state        Running state.
+	 * @param   RunStore     $run_store    Active-run store.
+	 * @param   EngineError  $error         Task failure detail.
+	 * @param   int          $attempts_used Attempts consumed by the invocation.
+	 * @param   string       $stage         Terminalization stage.
+	 * @param   ApiErrorCode $code         Machine-readable cause classification.
+	 * @param   array|null   $failed_chunk  Batch chunk arguments for the failing chunk, or null for a task.
+	 * @param   string|null  $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, ?string $expected_raw = null ): void {
+	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
 			->with_chunk_retries( $attempts_used )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null )
-			->with_error( self::error_detail( $error ) );
+			->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
 		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task', null, $expected_raw );
 	}
@@ -637,8 +657,8 @@ final readonly class TerminalTransitions {
 	private function execute_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
 		$expected       = self::expected_effects( $state->status, $work_type );
 		$missing        = \array_values( \array_diff( $expected, $state->effects ) );
-		$error          = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'callbacks', 'hooks' ), $missing )
-			? $this->failure_error( $name, $run_id, $state )
+		$failure_detail = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'callbacks', 'hooks' ), $missing )
+			? $this->failure_detail( $name, $run_id, $state, $work_type )
 			: null;
 		$snapshot       = array(
 			'raw'   => $terminal_raw,
@@ -653,7 +673,7 @@ final readonly class TerminalTransitions {
 			}
 
 			try {
-				$landed = $this->execute_terminal_effect( $effect, $name, $run_id, $current, $work_type, $batch, $error );
+				$landed = $this->execute_terminal_effect( $effect, $name, $run_id, $current, $work_type, $batch, $failure_detail );
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
@@ -746,24 +766,26 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
+	 *
 	 * @param   string              $effect    Terminal effect key.
 	 * @param   string              $name      Stable task or batch name.
 	 * @param   string              $run_id    Run identifier.
 	 * @param   RunState            $state     Current terminal state.
 	 * @param   'Task'|'Batch'      $work_type Work contract type.
 	 * @param   BatchInterface|null $batch     Batch callback target, or null for a task or unresolved batch.
-	 * @param   EngineError|null    $error     Reconstructed failure detail.
+	 * @param   array|null          $failure_detail Reconstructed internal and consumer failure detail.
 	 *
 	 * @throws  \LogicException When the effect table contains an unsupported key.
 	 * @throws  \Throwable      When an effect cannot complete.
 	 *
 	 * @return  bool Whether the effect landed and may be marked complete.
 	 */
-	private function execute_terminal_effect( string $effect, string $name, string $run_id, RunState $state, string $work_type, ?BatchInterface $batch, ?EngineError $error ): bool {
+	private function execute_terminal_effect( string $effect, string $name, string $run_id, RunState $state, string $work_type, ?BatchInterface $batch, ?array $failure_detail ): bool {
 		return match ( $effect ) {
-			'retention' => $this->record_failed_run( $name, $run_id, $state, $work_type, $error ),
-			'callbacks' => $this->fire_batch_callback( $name, $run_id, $state, $batch, $error ),
-			'hooks'     => $this->fire_terminal_hooks( $name, $run_id, $state, $error ),
+			'retention' => $this->record_failed_run( $name, $run_id, $state, $work_type, $failure_detail ),
+			'callbacks' => $this->fire_batch_callback( $name, $run_id, $state, $batch, $failure_detail['failure'] ?? null ),
+			'hooks'     => $this->fire_terminal_hooks( $name, $run_id, $state, $failure_detail['failure'] ?? null ),
 			'history'   => $this->record_terminal_history( $name, $run_id, $state ),
 			default     => throw new \LogicException( 'The terminal effect table contains an unsupported effect key.' ),
 		};
@@ -775,31 +797,30 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string           $name      Stable task or batch name.
-	 * @param   string           $run_id    Run identifier.
-	 * @param   RunState         $state     Failed terminal state.
-	 * @param   'Task'|'Batch'   $work_type Work contract type.
-	 * @param   EngineError|null $error     Reconstructed failure detail.
+	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
+	 *
+	 * @param   string         $name           Stable task or batch name.
+	 * @param   string         $run_id         Run identifier.
+	 * @param   RunState       $state          Failed terminal state.
+	 * @param   'Task'|'Batch' $work_type      Work contract type.
+	 * @param   array|null     $failure_detail Reconstructed internal and consumer failure detail.
 	 *
 	 * @throws  \LogicException When failure detail is absent.
 	 *
 	 * @return  bool Whether the failed-run entry is confirmed persisted.
 	 */
-	private function record_failed_run( string $name, string $run_id, RunState $state, string $work_type, ?EngineError $error ): bool {
-		if ( null === $error ) {
+	private function record_failed_run( string $name, string $run_id, RunState $state, string $work_type, ?array $failure_detail ): bool {
+		if ( null === $failure_detail ) {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
 
-		// A failure claim overwrites chunk_retries with the consumed-attempt count, which every live path floors at one.
-		$attempts = null === $state->error
-			? RunState::increment_attempts_safely( $state->chunk_retries )
-			: \max( 1, $state->chunk_retries );
 		$retained = $this->stores->failed_run_store( $name )->record(
 			$run_id,
 			$state->heartbeat_at,
 			$state->start_args,
-			$attempts,
-			$error
+			$failure_detail['failure']->attempts,
+			$failure_detail['error'],
+			$failure_detail['failure']
 		);
 		if ( $retained ) {
 			return true;
@@ -827,14 +848,14 @@ final readonly class TerminalTransitions {
 	 * @param   string              $run_id Run identifier.
 	 * @param   RunState            $state  Terminal batch state.
 	 * @param   BatchInterface|null $batch  Registered batch, or null when the callback must be skipped.
-	 * @param   EngineError|null    $error  Reconstructed failure detail.
+	 * @param   RunFailure|null     $failure Reconstructed consumer failure value.
 	 *
 	 * @throws  \LogicException When the state cannot support a batch callback.
 	 * @throws  \Throwable      When a failed callback fails.
 	 *
 	 * @return  true
 	 */
-	private function fire_batch_callback( string $name, string $run_id, RunState $state, ?BatchInterface $batch, ?EngineError $error ): bool {
+	private function fire_batch_callback( string $name, string $run_id, RunState $state, ?BatchInterface $batch, ?RunFailure $failure ): bool {
 		if ( null === $batch ) {
 			$this->logger->warning(
 				'Terminal batch callback was skipped because the batch is no longer registered unambiguously.',
@@ -865,11 +886,11 @@ final readonly class TerminalTransitions {
 			return true;
 		}
 
-		if ( RunStatus::Failed !== $state->status || null === $error ) {
+		if ( RunStatus::Failed !== $state->status || null === $failure ) {
 			throw new \LogicException( 'Batch failure callbacks require a failed terminal state and failure detail.' );
 		}
 
-		$batch->on_failure( $run_id, $state->start_args, $error );
+		$batch->on_failure( $run_id, $state->start_args, $failure );
 
 		return true;
 	}
@@ -880,17 +901,17 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string           $name   Stable task or batch name.
-	 * @param   string           $run_id Run identifier.
-	 * @param   RunState         $state  Terminal run state.
-	 * @param   EngineError|null $error  Reconstructed failure detail.
+	 * @param   string          $name    Stable task or batch name.
+	 * @param   string          $run_id  Run identifier.
+	 * @param   RunState        $state   Terminal run state.
+	 * @param   RunFailure|null $failure Reconstructed consumer failure value.
 	 *
 	 * @throws  \LogicException When the state is not terminal.
 	 * @throws  \Throwable      When a lifecycle hook fails.
 	 *
 	 * @return  true
 	 */
-	private function fire_terminal_hooks( string $name, string $run_id, RunState $state, ?EngineError $error ): bool {
+	private function fire_terminal_hooks( string $name, string $run_id, RunState $state, ?RunFailure $failure ): bool {
 		$event = match ( $state->status ) {
 			RunStatus::Completed  => 'completed',
 			RunStatus::Failed     => 'failed',
@@ -898,7 +919,7 @@ final readonly class TerminalTransitions {
 			RunStatus::Superseded => 'superseded',
 			RunStatus::Running    => throw new \LogicException( 'Terminal hooks require a terminal run state.' ),
 		};
-		$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, $error );
+		$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, $failure );
 
 		return true;
 	}
@@ -932,20 +953,35 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Reconstructs persisted terminal failure detail.
+	 * Reconstructs persisted internal and consumer terminal failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name   Stable task or batch name.
-	 * @param   string   $run_id Run identifier.
-	 * @param   RunState $state  Failed terminal state.
+	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $run_id    Run identifier.
+	 * @param   RunState       $state     Failed terminal state.
+	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 *
-	 * @return  EngineError
+	 * @return  array{error: EngineError, failure: RunFailure}
 	 */
-	private function failure_error( string $name, string $run_id, RunState $state ): EngineError {
+	private function failure_detail( string $name, string $run_id, RunState $state, string $work_type ): array {
 		if ( null !== $state->error ) {
-			return new EngineError( $state->error['message'], $state->error['class'] );
+			$error = new EngineError( $state->error['message'], $state->error['class'] );
+
+			return array(
+				'error'   => $error,
+				'failure' => new RunFailure(
+					name: $name,
+					run_id: $run_id,
+					attempts: \max( 1, $state->chunk_retries ),
+					stage: $state->error['stage'],
+					// Store read-validation guarantees the persisted code backs a known case, so from() cannot throw here.
+					code: ApiErrorCode::from( $state->error['code'] ),
+					summary: $error->message,
+					failed_chunk: $state->error['failed_chunk'] ?? null,
+				),
+			);
 		}
 
 		$this->logger->warning(
@@ -956,12 +992,25 @@ final readonly class TerminalTransitions {
 			)
 		);
 
-		return new EngineError(
+		$error = new EngineError(
 			\sprintf(
 				'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.',
 				$run_id,
 				$name
 			)
+		);
+
+		return array(
+			'error'   => $error,
+			'failure' => new RunFailure(
+				name: $name,
+				run_id: $run_id,
+				attempts: RunState::increment_attempts_safely( $state->chunk_retries ),
+				stage: 'crash-reclaim',
+				code: ApiErrorCode::StorageFailure,
+				summary: $error->message,
+				failed_chunk: self::failed_chunk_for_state( $work_type, $state ),
+			),
 		);
 	}
 
@@ -971,15 +1020,46 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   EngineError $error Failure detail.
+	 * @param   EngineError                  $error        Failure detail.
+	 * @param   string                       $stage        Terminalization stage.
+	 * @param   ApiErrorCode                 $code         Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null $failed_chunk Batch chunk arguments for the failing chunk, or null.
 	 *
-	 * @return  array{class: string|null, message: string}
+	 * @return  array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
 	 */
-	private static function error_detail( EngineError $error ): array {
-		return array(
+	private static function error_detail( EngineError $error, string $stage, ApiErrorCode $code, ?array $failed_chunk ): array {
+		$detail = array(
 			'class'   => $error->exception_class,
 			'message' => $error->message,
+			'stage'   => $stage,
+			'code'    => $code->value,
 		);
+		if ( null !== $failed_chunk ) {
+			$detail['failed_chunk'] = $failed_chunk;
+		}
+
+		return $detail;
+	}
+
+	/**
+	 * Returns the queued chunk associated with a batch run action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   RunState       $state     Run state at terminalization.
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private static function failed_chunk_for_state( string $work_type, RunState $state ): ?array {
+		if ( 'Batch' !== $work_type || 'run' !== ( $state->pending['stage'] ?? null ) ) {
+			return null;
+		}
+
+		$chunk = $state->queue[0] ?? null;
+
+		return \is_array( $chunk ) ? $chunk : null;
 	}
 
 	/**
@@ -1042,15 +1122,15 @@ final readonly class TerminalTransitions {
 	 * @param   string                  $name       Stable task or batch name.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   EngineError|null        $error      Failure detail for a failed event.
+	 * @param   RunFailure|null         $failure    Failure detail for a failed event.
 	 *
 	 * @return  void
 	 */
-	private function fire_lifecycle_hooks( string $event, string $name, string $run_id, array $start_args, ?EngineError $error = null ): void {
+	private function fire_lifecycle_hooks( string $event, string $name, string $run_id, array $start_args, ?RunFailure $failure = null ): void {
 		$hook = self::LIFECYCLE_HOOKS[ $event ];
 
 		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
-		if ( null === $error ) {
+		if ( null === $failure ) {
 			try {
 				\do_action( $hook . '/' . $name, $run_id, $start_args );
 			} finally {
@@ -1061,9 +1141,9 @@ final readonly class TerminalTransitions {
 		}
 
 		try {
-			\do_action( $hook . '/' . $name, $run_id, $start_args, $error );
+			\do_action( $hook . '/' . $name, $run_id, $start_args, $failure );
 		} finally {
-			\do_action( $hook, $name, $run_id, $start_args, $error );
+			\do_action( $hook, $name, $run_id, $start_args, $failure );
 		}
 		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
 	}

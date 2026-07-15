@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;

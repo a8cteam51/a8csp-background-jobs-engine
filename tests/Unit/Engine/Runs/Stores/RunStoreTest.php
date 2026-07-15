@@ -2,9 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -191,6 +192,8 @@ final class RunStoreTest extends TestCase {
 		$error    = array(
 			'class'   => \RuntimeException::class,
 			'message' => 'Database unavailable.',
+			'stage'   => 'execution',
+			'code'    => ApiErrorCode::ExecutionFailed->value,
 		);
 		$terminal = $state
 			->with_status( RunStatus::Failed )
@@ -234,6 +237,8 @@ final class RunStoreTest extends TestCase {
 				array(
 					'class'   => null,
 					'message' => 'Failed.',
+					'stage'   => 'crash-reclaim',
+					'code'    => ApiErrorCode::EngineUnavailable->value,
 				)
 			);
 		$raw      = $store->transition_state( 'run-effect', $state, $terminal );

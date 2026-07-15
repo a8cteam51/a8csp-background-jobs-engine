@@ -2,11 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -14,7 +17,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
  * Persists the bounded failed-run data required by manual retry.
  *
  * The nested error class preserves `EngineError::$exception_class` exactly; null records that the
- * failure carries no throwable class.
+ * failure carries no throwable class. Consumer failure metadata is stored with every entry, and a
+ * null failed chunk remains absent from serialized entries.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -95,11 +99,12 @@ final readonly class FailedRunStore {
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempts   Attempts consumed before failure.
 	 * @param   EngineError             $error      Persisted failure detail.
+	 * @param   RunFailure              $failure    Consumer terminal-failure value.
 	 *
 	 * @return  bool True when the failed-run entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
-	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error ): bool {
+	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error, RunFailure $failure ): bool {
 		$key = $this->option_name();
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $key );
@@ -114,15 +119,22 @@ final readonly class FailedRunStore {
 				return true;
 			}
 
+			$error_detail = array(
+				'class'   => $error->exception_class,
+				'message' => $error->message,
+				'stage'   => $failure->stage,
+				'code'    => $failure->code->value,
+			);
+			if ( null !== $failure->failed_chunk ) {
+				$error_detail['failed_chunk'] = $failure->failed_chunk;
+			}
+
 			$entries[]       = array(
 				'run_id'     => $run_id,
 				'failed_at'  => $failed_at,
 				'start_args' => $start_args,
 				'attempts'   => $attempts,
-				'error'      => array(
-					'class'   => $error->exception_class,
-					'message' => $error->message,
-				),
+				'error'      => $error_detail,
 			);
 			$replacement_raw = self::serialize_entries( \array_slice( $entries, -self::ENTRY_LIMIT ) );
 
@@ -161,7 +173,7 @@ final readonly class FailedRunStore {
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
-	 *     error: array{class: string|null, message: string}
+	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
 	 * }>, EngineError>
 	 */
 	#[\NoDiscard( 'a failed-run read outcome must be handled, not dropped' )]
@@ -336,7 +348,7 @@ final readonly class FailedRunStore {
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
-	 *     error: array{class: string|null, message: string}
+	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
 	 * }>
 	 */
 	private static function entries_from_option( mixed $value ): array {
@@ -368,7 +380,7 @@ final readonly class FailedRunStore {
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
-	 *     error: array{class: string|null, message: string}
+	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
 	 * }|null
 	 */
 	private static function entry_from_option( mixed $value ): ?array {
@@ -385,16 +397,41 @@ final readonly class FailedRunStore {
 		) {
 			return null;
 		}
+		$error            = $value['error'];
+		$has_failed_chunk = \array_key_exists( 'failed_chunk', $error );
+		if (
+			! \in_array( \count( $error ), array( 4, 5 ), true )
+			|| ! \is_string( $error['stage'] ?? null )
+			|| ! \in_array( $error['stage'], array( 'execution', 'queue-generation', 'crash-reclaim', 'scheduling' ), true )
+			|| ! \is_string( $error['code'] ?? null )
+			|| null === ApiErrorCode::tryFrom( $error['code'] )
+		) {
+			return null;
+		}
+		$failed_chunk = null;
+		if ( $has_failed_chunk ) {
+			$failed_chunk = $error['failed_chunk'] ?? null;
+			if ( ! \is_array( $failed_chunk ) || ! ScalarTree::is_valid( $failed_chunk ) ) {
+				return null;
+			}
+		}
+
+		$error_detail = array(
+			'class'   => $error['class'],
+			'message' => $error['message'],
+			'stage'   => $error['stage'],
+			'code'    => $error['code'],
+		);
+		if ( $has_failed_chunk ) {
+			$error_detail['failed_chunk'] = $failed_chunk;
+		}
 
 		return array(
 			'run_id'     => $value['run_id'],
 			'failed_at'  => $value['failed_at'],
 			'start_args' => $value['start_args'],
 			'attempts'   => $value['attempts'],
-			'error'      => array(
-				'class'   => $value['error']['class'],
-				'message' => $value['error']['message'],
-			),
+			'error'      => $error_detail,
 		);
 	}
 

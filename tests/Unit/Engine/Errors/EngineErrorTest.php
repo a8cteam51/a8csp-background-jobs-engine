@@ -2,8 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Errors;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -11,6 +16,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( EngineError::class )]
+#[UsesClass( SchedulingError::class )]
 final class EngineErrorTest extends TestCase {
 
 	/**
@@ -124,5 +130,54 @@ final class EngineErrorTest extends TestCase {
 		);
 		self::assertSame( \UnexpectedValueException::class, $error->exception_class );
 		self::assertStringNotContainsString( 'password=hunter2', $error->message );
+	}
+
+	/**
+	 * Scheduling reasons map to the public availability classification without message inspection.
+	 *
+	 * @param   string $reason        Internal scheduling-reason backing value.
+	 * @param   string $expected_code Consumer-visible classification backing value.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'scheduling_code_mappings' )]
+	public function test_maps_scheduling_reasons_to_api_codes( string $reason, string $expected_code ): void {
+		$error = new SchedulingError( SchedulingErrorReason::from( $reason ), 'Corrective engine prose.' );
+
+		self::assertSame( ApiErrorCode::from( $expected_code ), EngineError::api_code_for_scheduling( $error ) );
+	}
+
+	/**
+	 * Supplies every scheduling reason and its consumer-visible classification.
+	 *
+	 * @return  array<string, array{reason: string, expected_code: string}>
+	 */
+	public static function scheduling_code_mappings(): array {
+		return array(
+			'backend not ready'      => array(
+				'reason'        => 'backend_not_ready',
+				'expected_code' => 'backend_unavailable',
+			),
+			'unsupported group'      => array(
+				'reason'        => 'unsupported_group',
+				'expected_code' => 'backend_rejected',
+			),
+			'unsupported recurrence' => array(
+				'reason'        => 'unsupported_recurrence',
+				'expected_code' => 'backend_rejected',
+			),
+			'invalid interval'       => array(
+				'reason'        => 'invalid_interval',
+				'expected_code' => 'backend_rejected',
+			),
+			'payload too large'      => array(
+				'reason'        => 'payload_too_large',
+				'expected_code' => 'backend_rejected',
+			),
+			'schedule failed'        => array(
+				'reason'        => 'schedule_failed',
+				'expected_code' => 'backend_rejected',
+			),
+		);
 	}
 }

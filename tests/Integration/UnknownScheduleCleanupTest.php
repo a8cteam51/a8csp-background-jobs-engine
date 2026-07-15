@@ -2,17 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**

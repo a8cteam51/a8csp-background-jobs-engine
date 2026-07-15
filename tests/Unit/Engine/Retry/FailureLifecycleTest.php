@@ -2,8 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Retry;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\Exceptions\InvalidBatchChunkException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
@@ -12,9 +14,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
@@ -23,8 +26,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -34,6 +37,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -44,6 +48,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( FailureLifecycle::class )]
 #[UsesClass( InvalidBatchChunkException::class )]
 #[UsesClass( EngineError::class )]
+#[UsesClass( RunFailure::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
@@ -353,6 +358,87 @@ final class FailureLifecycleTest extends TestCase {
 			$this->fired_actions()
 		);
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+	}
+
+	/**
+	 * Seeded full jitter reproduces the exact delays of a [0, base_delay] draw.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'seeded_jitter_delays' )]
+	public function test_retry_call_site_preserves_seeded_full_jitter_distribution( int $seed, int $expected_delay ): void {
+		$this->task->retry_policy = new RetryPolicy(
+			max_attempts: 2,
+			base_delay: 30,
+			max_delay: 120
+		);
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->prepare_run_action();
+
+		$randomizer = new class( $seed ) implements RandomizerInterface {
+			private \Random\Randomizer $randomizer;
+
+			/**
+			 * Seeds one deterministic random source.
+			 *
+			 * @param   int $seed MT19937 seed.
+			 */
+			public function __construct( int $seed ) {
+				$this->randomizer = new \Random\Randomizer( new \Random\Engine\Mt19937( $seed ) );
+			}
+
+			/**
+			 * Draws one integer from the seeded source.
+			 *
+			 * @param   int $min Inclusive lower boundary.
+			 * @param   int $max Inclusive upper boundary.
+			 *
+			 * @return  int
+			 */
+			#[\Override]
+			public function int( int $min, int $max ): int {
+				return $this->randomizer->getInt( $min, $max );
+			}
+		};
+
+		$this->failure_lifecycle = new FailureLifecycle(
+			$this->backend,
+			$this->clock,
+			$randomizer,
+			$this->logger,
+			$this->terminal_transitions
+		);
+
+		$this->handle_failed_task_attempt();
+
+		self::assertSame( self::NOW + 90 + $expected_delay, $this->backend->calls[0]['args']['timestamp'] ?? null );
+		self::assertSame( $expected_delay, $this->fired_actions()[0]['args'][3] ?? null );
+	}
+
+	/**
+	 * Supplies byte-pinned MT19937 draws from the former in-policy jitter call.
+	 *
+	 * @return  array<string, array{seed: int, expected_delay: int}>
+	 */
+	public static function seeded_jitter_delays(): array {
+		return array(
+			'seed zero'      => array(
+				'seed'           => 0,
+				'expected_delay' => 18,
+			),
+			'seed one'       => array(
+				'seed'           => 1,
+				'expected_delay' => 10,
+			),
+			'seed forty-two' => array(
+				'seed'           => 42,
+				'expected_delay' => 19,
+			),
+			'seed phrase'    => array(
+				'seed'           => 8_675_309,
+				'expected_delay' => 11,
+			),
+		);
 	}
 
 	/**
@@ -848,14 +934,17 @@ final class FailureLifecycleTest extends TestCase {
 				$run_store,
 				$throwable,
 				fn (): RetryPolicy => $this->task->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $run_store ): void {
+				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $run_store ): void {
 					$this->terminal_transitions->fail_run(
 						self::NAME,
 						self::RUN_ID,
 						$failure_state,
 						$run_store,
 						$error,
-						$attempts_used
+						$attempts_used,
+						$stage,
+						$code,
+						$failed_chunk
 					);
 				}
 			);
@@ -895,6 +984,8 @@ final class FailureLifecycleTest extends TestCase {
 					'error'      => array(
 						'class'   => $throwable::class,
 						'message' => $expected_message,
+						'stage'   => 'execution',
+						'code'    => ApiErrorCode::ExecutionFailed->value,
 					),
 				),
 			),
@@ -906,9 +997,14 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( 'a8csp_background_tasks/failed/' . self::NAME, $actions[0]['hook_name'] );
 		self::assertSame( self::RUN_ID, $actions[0]['args'][0] );
 		self::assertSame( self::ARGS, $actions[0]['args'][1] );
-		self::assertInstanceOf( EngineError::class, $actions[0]['args'][2] );
-		self::assertSame( $expected_message, $actions[0]['args'][2]->message );
-		self::assertSame( $throwable::class, $actions[0]['args'][2]->exception_class );
+		self::assertInstanceOf( RunFailure::class, $actions[0]['args'][2] );
+		self::assertSame( self::NAME, $actions[0]['args'][2]->name );
+		self::assertSame( self::RUN_ID, $actions[0]['args'][2]->run_id );
+		self::assertSame( 1, $actions[0]['args'][2]->attempts );
+		self::assertSame( 'execution', $actions[0]['args'][2]->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $actions[0]['args'][2]->code );
+		self::assertSame( $expected_message, $actions[0]['args'][2]->summary );
+		self::assertNull( $actions[0]['args'][2]->failed_chunk );
 		self::assertSame( 'a8csp_background_tasks/failed', $actions[1]['hook_name'] );
 		self::assertSame(
 			array( self::NAME, self::RUN_ID, self::ARGS, $actions[0]['args'][2] ),

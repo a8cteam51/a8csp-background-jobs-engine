@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
@@ -15,8 +17,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
@@ -46,6 +48,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( RunFailure::class )]
 #[UsesClass( StoreFactory::class )]
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -1189,10 +1192,18 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 1, $batch->failure_calls );
 		self::assertSame( self::RUN_ID, $batch->failure_calls[0]['run_id'] ?? null );
 		self::assertSame( self::ARGS, $batch->failure_calls[0]['start_args'] ?? null );
+		$failure = $batch->failure_calls[0]['error'];
+		self::assertSame( $name, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( 'crash-reclaim', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertStringContainsString(
 			'maintenance crash-reclaim path',
-			$batch->failure_calls[0]['error']->message
+			$failure->summary
 		);
+		self::assertNull( $failure->failed_chunk );
+		$actions = $this->fired_actions();
 		$options = $this->options();
 		self::assertArrayNotHasKey( 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID, $options );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_' . $name, $options );
@@ -1201,8 +1212,10 @@ final class RunReconciliationTest extends TestCase {
 				'a8csp_background_tasks/failed/' . $name,
 				'a8csp_background_tasks/failed',
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			\array_column( $actions, 'hook_name' )
 		);
+		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
+		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
 	}
 
 	/**
@@ -1481,6 +1494,8 @@ final class RunReconciliationTest extends TestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Persisted batch failure.',
+				'stage'   => 'execution',
+				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			3
 		);
@@ -1501,6 +1516,8 @@ final class RunReconciliationTest extends TestCase {
 					'error'      => array(
 						'class'   => \RuntimeException::class,
 						'message' => 'Persisted batch failure.',
+						'stage'   => 'execution',
+						'code'    => ApiErrorCode::ExecutionFailed->value,
 					),
 				),
 			),
@@ -1509,16 +1526,77 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 1, $batch->failure_calls );
 		self::assertSame( self::RUN_ID, $batch->failure_calls[0]['run_id'] ?? null );
 		self::assertSame( self::ARGS, $batch->failure_calls[0]['start_args'] ?? null );
-		self::assertSame( 'Persisted batch failure.', $batch->failure_calls[0]['error']->message );
-		self::assertSame( \RuntimeException::class, $batch->failure_calls[0]['error']->exception_class );
+		$failure = $batch->failure_calls[0]['error'];
+		self::assertSame( $name, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 3, $failure->attempts );
+		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( 'Persisted batch failure.', $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . $name,
 				'a8csp_background_tasks/failed',
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			\array_column( $actions, 'hook_name' )
 		);
+		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
+		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
 		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * Missing persisted failure detail is replayed as a storage failure.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_classifies_missing_persisted_failure_detail_as_storage_failure(): void {
+		$name  = 'failed-without-detail';
+		$batch = new RecordingBatch( $name );
+		$this->batches->register( $batch );
+		$this->store_terminal_run( $name, 'failed', array(), null, 2 );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		$failed  = $options[ 'a8csp_bgte_failed_' . $name ] ?? null;
+		self::assertIsArray( $failed );
+		$expected_summary = \sprintf(
+			'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.',
+			self::RUN_ID,
+			$name
+		);
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => self::RUN_ID,
+					'failed_at'  => self::NOW - 3_601,
+					'start_args' => self::ARGS,
+					'attempts'   => 3,
+					'error'      => array(
+						'class'   => null,
+						'message' => $expected_summary,
+						'stage'   => 'crash-reclaim',
+						'code'    => ApiErrorCode::StorageFailure->value,
+					),
+				),
+			),
+			$failed
+		);
+		self::assertCount( 1, $batch->failure_calls );
+		$failure = $batch->failure_calls[0]['error'];
+		self::assertSame( $name, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 3, $failure->attempts );
+		self::assertSame( 'crash-reclaim', $failure->stage );
+		self::assertSame( ApiErrorCode::StorageFailure, $failure->code );
+		self::assertSame( $expected_summary, $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		$actions = $this->fired_actions();
+		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
+		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
 	}
 
 	/**
@@ -1536,7 +1614,16 @@ final class RunReconciliationTest extends TestCase {
 				self::NOW - 3_601,
 				self::ARGS,
 				2,
-				new EngineError( 'Persisted batch failure.', \RuntimeException::class )
+				new EngineError( 'Persisted batch failure.', \RuntimeException::class ),
+				new RunFailure(
+					name: $name,
+					run_id: self::RUN_ID,
+					attempts: 2,
+					stage: 'execution',
+					code: ApiErrorCode::ExecutionFailed,
+					summary: 'Persisted batch failure.',
+					failed_chunk: null,
+				)
 			)
 		);
 		$failed_option = 'a8csp_bgte_failed_' . $name;
@@ -1549,6 +1636,8 @@ final class RunReconciliationTest extends TestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Persisted batch failure.',
+				'stage'   => 'execution',
+				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			2
 		);
@@ -1578,6 +1667,8 @@ final class RunReconciliationTest extends TestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Persisted batch failure.',
+				'stage'   => 'execution',
+				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			2
 		);
@@ -1880,7 +1971,7 @@ final class RunReconciliationTest extends TestCase {
 	 * Stores one old terminal state whose omitted optional fields exercise decoder defaults.
 	 *
 	 * @phpstan-param list<string> $effects
-	 * @phpstan-param array{class: string|null, message: string}|null $error
+	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 *
 	 * @param   string     $name          Stable task or batch name.
 	 * @param   string     $status        Terminal status value.
@@ -1938,6 +2029,9 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsString( $message );
 		self::assertStringContainsString( 'maintenance crash-reclaim path', $message );
 		self::assertNull( $error['class'] ?? null );
+		self::assertSame( 'crash-reclaim', $error['stage'] ?? null );
+		self::assertSame( ApiErrorCode::ExecutionFailed->value, $error['code'] ?? null );
+		self::assertArrayNotHasKey( 'failed_chunk', $error );
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
@@ -1948,7 +2042,15 @@ final class RunReconciliationTest extends TestCase {
 		);
 		self::assertSame( self::RUN_ID, $actions[0]['args'][0] ?? null );
 		self::assertSame( self::ARGS, $actions[0]['args'][1] ?? null );
-		self::assertInstanceOf( EngineError::class, $actions[0]['args'][2] ?? null );
+		$failure = $actions[0]['args'][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( 'crash-reclaim', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( $message, $failure->summary );
+		self::assertNull( $failure->failed_chunk );
 		self::assertSame(
 			array( self::NAME, ...( $actions[0]['args'] ?? array() ) ),
 			$actions[1]['args'] ?? null

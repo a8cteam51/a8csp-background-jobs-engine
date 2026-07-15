@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\MaintenanceFenceOutcome;
@@ -12,8 +14,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -299,7 +301,10 @@ final readonly class RunReconciliation {
 				}
 			}
 
-			$attempts = RunState::increment_attempts_safely( $state->chunk_retries );
+			$attempts     = RunState::increment_attempts_safely( $state->chunk_retries );
+			$failed_chunk = 'Batch' === $work_type && 'run' === ( $state->pending['stage'] ?? null )
+				? ( $state->queue[0] ?? null )
+				: null;
 			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
 				$this->terminal_transitions->fail_batch(
 					$batch,
@@ -308,6 +313,9 @@ final readonly class RunReconciliation {
 					$state,
 					$run_store,
 					$error,
+					'crash-reclaim',
+					ApiErrorCode::ExecutionFailed,
+					$failed_chunk,
 					$attempts,
 					$snapshot['raw']
 				);
@@ -319,6 +327,9 @@ final readonly class RunReconciliation {
 					$run_store,
 					$error,
 					$attempts,
+					'crash-reclaim',
+					ApiErrorCode::ExecutionFailed,
+					null,
 					$snapshot['raw']
 				);
 			}

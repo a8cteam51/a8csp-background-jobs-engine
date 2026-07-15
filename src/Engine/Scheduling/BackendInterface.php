@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;

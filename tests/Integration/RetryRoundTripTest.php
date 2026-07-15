@@ -2,9 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
@@ -67,9 +68,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$named_retrying = array();
 		/** @var list<array{string, string, array<array-key, mixed>, int, int}> $generic_retrying */
 		$generic_retrying = array();
-		/** @var list<array{string, array<array-key, mixed>, EngineError}> $named_failed */
+		/** @var list<array{string, array<array-key, mixed>, RunFailure}> $named_failed */
 		$named_failed = array();
-		/** @var list<array{string, string, array<array-key, mixed>, EngineError}> $generic_failed */
+		/** @var list<array{string, string, array<array-key, mixed>, RunFailure}> $generic_failed */
 		$generic_failed = array();
 		/** @var list<array{string, array<array-key, mixed>}> $named_completed */
 		$named_completed = array();
@@ -99,8 +100,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/failed/' . self::NAME,
-			static function ( string $run_id, array $start_args, EngineError $error ) use ( &$named_failed ): void {
-				$named_failed[] = array( $run_id, $start_args, $error );
+			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
+				$named_failed[] = array( $run_id, $start_args, $failure );
 			},
 			10,
 			3
@@ -111,9 +112,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 				string $name,
 				string $run_id,
 				array $start_args,
-				EngineError $error
+				RunFailure $failure
 			) use ( &$generic_failed ): void {
-				$generic_failed[] = array( $name, $run_id, $start_args, $error );
+				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
 			},
 			10,
 			4
@@ -220,24 +221,29 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		self::assertCount( 1, $named_retrying, 'Retry exhaustion must not announce a nonexistent third attempt' );
 		self::assertCount( 1, $generic_retrying, 'Retry exhaustion must not fire the generic retrying hook again' );
-		/** @var list<array{string, array<array-key, mixed>, EngineError}> $recorded_named_failed */
+		/** @var list<array{string, array<array-key, mixed>, RunFailure}> $recorded_named_failed */
 		$recorded_named_failed = $named_failed;
-		/** @var list<array{string, string, array<array-key, mixed>, EngineError}> $recorded_generic_failed */
+		/** @var list<array{string, string, array<array-key, mixed>, RunFailure}> $recorded_generic_failed */
 		$recorded_generic_failed = $generic_failed;
 		self::assertCount( 1, $recorded_named_failed, 'Retry exhaustion must fire the name-specific failed hook once' );
 		self::assertCount( 1, $recorded_generic_failed, 'Retry exhaustion must fire the generic failed hook once' );
 
-		$error = $recorded_named_failed[0][2] ?? null;
-		self::assertInstanceOf( EngineError::class, $error );
-		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $error->message );
-		self::assertSame( \RuntimeException::class, $error->exception_class );
+		$failure = $recorded_named_failed[0][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( $failed_run_id, $failure->run_id );
+		self::assertSame( 2, $failure->attempts );
+		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
+		self::assertNull( $failure->failed_chunk );
 		self::assertSame(
-			array( array( $failed_run_id, $args, $error ) ),
+			array( array( $failed_run_id, $args, $failure ) ),
 			$recorded_named_failed,
 			'The name-specific failed hook must receive run ID, start arguments, and terminal error'
 		);
 		self::assertSame(
-			array( array( self::NAME, $failed_run_id, $args, $error ) ),
+			array( array( self::NAME, $failed_run_id, $args, $failure ) ),
 			$recorded_generic_failed,
 			'The generic failed hook must prepend the task name to the same terminal payload'
 		);

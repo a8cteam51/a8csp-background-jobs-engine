@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -20,6 +20,8 @@ final class RunStateTest extends TestCase {
 	private const ERROR = array(
 		'class'   => \RuntimeException::class,
 		'message' => 'Database unavailable.',
+		'stage'   => 'execution',
+		'code'    => 'execution_failed',
 	);
 
 	private const PENDING = array(
@@ -268,8 +270,11 @@ final class RunStateTest extends TestCase {
 	public function test_with_error_preserves_every_other_field(): void {
 		$original = self::state();
 		$error    = array(
-			'class'   => null,
-			'message' => 'Task returned an invalid result.',
+			'class'        => null,
+			'message'      => 'Task returned an invalid result.',
+			'stage'        => 'execution',
+			'code'         => 'execution_failed',
+			'failed_chunk' => array( 'page' => 7 ),
 		);
 		$copy     = $original->with_error( $error );
 
@@ -357,7 +362,7 @@ final class RunStateTest extends TestCase {
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null,
-	 *     error: array{class: string|null, message: string}|null,
+	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null,
 	 *     effects: list<string>
 	 * }
 	 */

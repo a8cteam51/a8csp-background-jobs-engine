@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
 /**
  * Records batch lifecycle invocations with optional observation callbacks and failures.
@@ -42,7 +42,7 @@ final class RecordingBatch implements BatchInterface {
 	/**
 	 * Failed-run callback payloads in call order.
 	 *
-	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: EngineError}>
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: RunFailure}>
 	 */
 	public array $failure_calls = array();
 
@@ -71,7 +71,7 @@ final class RecordingBatch implements BatchInterface {
 	/**
 	 * Observation run after recording failed-run handling and before an optional failure.
 	 *
-	 * @var (\Closure(string, array<array-key, mixed>, EngineError): void)|null
+	 * @var (\Closure(string, array<array-key, mixed>, RunFailure): void)|null
 	 */
 	public ?\Closure $on_failure = null;
 
@@ -197,21 +197,21 @@ final class RecordingBatch implements BatchInterface {
 	 *
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   EngineError             $error      Persisted failure detail.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_failure( string $run_id, array $start_args, EngineError $error ): void {
+	public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void {
 		$this->failure_calls[] = array(
 			'run_id'     => $run_id,
 			'start_args' => $start_args,
-			'error'      => $error,
+			'error'      => $failure,
 		);
 		$this->record_lifecycle_event( 'failure' );
 
 		if ( null !== $this->on_failure ) {
-			( $this->on_failure )( $run_id, $start_args, $error );
+			( $this->on_failure )( $run_id, $start_args, $failure );
 		}
 
 		if ( null !== $this->failure_throwable ) {

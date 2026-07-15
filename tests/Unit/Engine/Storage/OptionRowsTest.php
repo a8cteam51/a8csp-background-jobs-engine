@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Storage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;

@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**

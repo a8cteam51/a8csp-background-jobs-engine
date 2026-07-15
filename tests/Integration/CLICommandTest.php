@@ -2,20 +2,22 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Clock\SystemClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -621,7 +623,16 @@ final class CLICommandTest extends IntegrationTestCase {
 				self::FAILED_AT,
 				array(),
 				2,
-				new EngineError( 'CLI history failure.' )
+				new EngineError( 'CLI history failure.' ),
+				new RunFailure(
+					name: self::CANCEL_NAME,
+					run_id: 'integration-cli-history-failed',
+					attempts: 2,
+					stage: 'execution',
+					code: ApiErrorCode::ExecutionFailed,
+					summary: 'CLI history failure.',
+					failed_chunk: null,
+				)
 			)
 		);
 
@@ -1052,7 +1063,16 @@ final class CLICommandTest extends IntegrationTestCase {
 				self::FAILED_AT,
 				array( 'account_id' => 42 ),
 				3,
-				new EngineError( 'CLI boundary failure.', \RuntimeException::class )
+				new EngineError( 'CLI boundary failure.', \RuntimeException::class ),
+				new RunFailure(
+					name: $name,
+					run_id: self::RUN_ID,
+					attempts: 3,
+					stage: 'execution',
+					code: ApiErrorCode::ExecutionFailed,
+					summary: 'CLI boundary failure.',
+					failed_chunk: null,
+				)
 			)
 		);
 

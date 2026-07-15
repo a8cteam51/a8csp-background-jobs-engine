@@ -2,14 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -401,7 +402,7 @@ final readonly class RunStore {
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int},
-	 *     error?: array{class: string|null, message: string},
+	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
 	 *     effects?: non-empty-list<string>
 	 * }
 	 */
@@ -512,7 +513,7 @@ final readonly class RunStore {
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int},
-	 *     error?: array{class: string|null, message: string},
+	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
 	 *     effects?: non-empty-list<string>
 	 * } $value
 	 *
@@ -589,18 +590,29 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-assert-if-true array{class: string|null, message: string} $value
+	 * @phpstan-assert-if-true array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>} $value
 	 *
 	 * @param   mixed $value Persisted terminal failure detail.
 	 *
 	 * @return  bool
 	 */
 	private static function is_stored_error( mixed $value ): bool {
-		return \is_array( $value )
-			&& 2 === \count( $value )
-			&& \array_key_exists( 'class', $value )
-			&& ( null === $value['class'] || \is_string( $value['class'] ) )
-			&& \is_string( $value['message'] ?? null );
+		if (
+			! \is_array( $value )
+			|| ( 4 !== \count( $value ) && 5 !== \count( $value ) )
+			|| ! \array_key_exists( 'class', $value )
+			|| ( null !== $value['class'] && ! \is_string( $value['class'] ) )
+			|| ! \is_string( $value['message'] ?? null )
+			|| ! \is_string( $value['stage'] ?? null )
+			|| ! \in_array( $value['stage'], array( 'execution', 'queue-generation', 'crash-reclaim', 'scheduling' ), true )
+			|| ! \is_string( $value['code'] ?? null )
+			|| null === ApiErrorCode::tryFrom( $value['code'] )
+		) {
+			return false;
+		}
+
+		return ! \array_key_exists( 'failed_chunk', $value )
+			|| ( \is_array( $value['failed_chunk'] ) && ScalarTree::is_valid( $value['failed_chunk'] ) );
 	}
 
 	/**

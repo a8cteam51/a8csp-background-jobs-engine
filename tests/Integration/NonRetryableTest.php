@@ -2,9 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
@@ -69,8 +70,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/failed/' . self::NAME,
-			static function ( string $run_id, array $start_args, EngineError $error ) use ( &$named_failed ): void {
-				$named_failed[] = array( $run_id, $start_args, $error );
+			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
+				$named_failed[] = array( $run_id, $start_args, $failure );
 			},
 			10,
 			3
@@ -81,9 +82,9 @@ final class NonRetryableTest extends IntegrationTestCase {
 				string $name,
 				string $run_id,
 				array $start_args,
-				EngineError $error
+				RunFailure $failure
 			) use ( &$generic_failed ): void {
-				$generic_failed[] = array( $name, $run_id, $start_args, $error );
+				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
 			},
 			10,
 			4
@@ -104,21 +105,26 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertCount( 1, $named_failed, 'A non-retryable failure must fire the name-specific failed hook once' );
 		self::assertCount( 1, $generic_failed, 'A non-retryable failure must fire the generic failed hook once' );
 
-		$error = $named_failed[0][2] ?? null;
-		self::assertInstanceOf( EngineError::class, $error );
+		$failure = $named_failed[0][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
 		$expected_message = \sprintf(
 			'Background-work execution failed because %s was thrown.',
 			NonRetryableTaskException::class
 		);
-		self::assertSame( $expected_message, $error->message );
-		self::assertSame( NonRetryableTaskException::class, $error->exception_class );
+		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( $run_id, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( $expected_message, $failure->summary );
+		self::assertNull( $failure->failed_chunk );
 		self::assertSame(
-			array( array( $run_id, $args, $error ) ),
+			array( array( $run_id, $args, $failure ) ),
 			$named_failed,
-			'The name-specific failed hook must receive run ID, start arguments, and engine error'
+			'The name-specific failed hook must receive run ID, start arguments, and run failure'
 		);
 		self::assertSame(
-			array( array( self::NAME, $run_id, $args, $error ) ),
+			array( array( self::NAME, $run_id, $args, $failure ) ),
 			$generic_failed,
 			'The generic failed hook must prepend the task name to the same failure payload'
 		);
