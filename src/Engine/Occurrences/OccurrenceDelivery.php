@@ -96,20 +96,17 @@ final readonly class OccurrenceDelivery {
 	 * @return  void
 	 */
 	public function handle_schedule_due( string $registration_key ): void {
-		$lease_raw = $this->lease->claim( $registration_key );
-		if ( null === $lease_raw ) {
+		$lease_handle = $this->lease->claim( $registration_key );
+		if ( null === $lease_handle ) {
 			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'registration_key' => $registration_key ) );
 
 			return;
 		}
 
-		$lease_released = false;
 		try {
-			$this->handle_occurrence( $registration_key, $lease_raw, $lease_released );
+			$this->handle_occurrence( $registration_key, $lease_handle );
 		} finally {
-			if ( ! $lease_released ) {
-				$this->lease->release( $registration_key, $lease_raw );
-			}
+			$lease_handle->release();
 		}
 	}
 
@@ -133,8 +130,8 @@ final readonly class OccurrenceDelivery {
 		}
 
 		[ $owner, $name ] = $parts;
-		$lease_raw        = $this->lease->claim( $registration_key );
-		if ( null === $lease_raw ) {
+		$lease_handle     = $this->lease->claim( $registration_key );
+		if ( null === $lease_handle ) {
 			return new Failure(
 				new EngineError(
 					\sprintf( 'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $owner ),
@@ -148,9 +145,9 @@ final readonly class OccurrenceDelivery {
 		}
 
 		try {
-			return $this->dispatch_run_now( $registration_key, $owner, $name, $lease_raw );
+			return $this->dispatch_run_now( $registration_key, $owner, $name, $lease_handle );
 		} finally {
-			$this->lease->release( $registration_key, $lease_raw );
+			$lease_handle->release();
 		}
 	}
 
@@ -160,13 +157,12 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   string $lease_raw        Exact occurrence-lease row claimed by this delivery.
-	 * @param   bool   $lease_released   Whether the accepted callback released the occurrence lease.
+	 * @param   string       $registration_key `{owner}:{name}` schedule identity.
+	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
 	 *
 	 * @return  void
 	 */
-	private function handle_occurrence( string $registration_key, string $lease_raw, bool &$lease_released ): void {
+	private function handle_occurrence( string $registration_key, ClaimedLease $lease_handle ): void {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			return;
@@ -336,12 +332,11 @@ final readonly class OccurrenceDelivery {
 			$schedule->args,
 			$schedule->overlap,
 			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_raw, &$lease_released ): void {
+			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
 				try {
 					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
 				} finally {
-					$this->lease->release( $registration_key, $lease_raw );
-					$lease_released = true;
+					$lease_handle->release();
 				}
 			}
 		);
@@ -382,14 +377,14 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key Complete owner-qualified schedule identity.
-	 * @param   string $owner            Stable consumer identifier.
-	 * @param   string $name             Stable schedule name.
-	 * @param   string $lease_raw        Exact occurrence-lease row claimed by this dispatch.
+	 * @param   string       $registration_key Complete owner-qualified schedule identity.
+	 * @param   string       $owner            Stable consumer identifier.
+	 * @param   string       $name             Stable schedule name.
+	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
-	private function dispatch_run_now( string $registration_key, string $owner, string $name, string $lease_raw ): AbstractResult {
+	private function dispatch_run_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			return new Failure( $registration_read->error );
@@ -445,11 +440,11 @@ final readonly class OccurrenceDelivery {
 			$schedule->args,
 			$schedule->overlap,
 			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_raw ): void {
+			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
 				try {
 					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
 				} finally {
-					$this->lease->release( $registration_key, $lease_raw );
+					$lease_handle->release();
 				}
 			}
 		);

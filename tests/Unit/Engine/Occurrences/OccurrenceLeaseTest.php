@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ClaimedLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
@@ -16,6 +17,7 @@ use PHPUnit\Framework\TestCase;
  * Pins occurrence-decision lease claims, stale recovery, and exact release.
  */
 #[CoversClass( OccurrenceLease::class )]
+#[CoversClass( ClaimedLease::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OccurrenceLeaseTest extends TestCase {
@@ -53,10 +55,21 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_absent_lease_is_claimed_and_exact_released(): void {
 		$claim = $this->lease->claim( self::KEY );
 
-		self::assertIsString( $claim );
+		self::assertInstanceOf( ClaimedLease::class, $claim );
 		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
-		$this->lease->release( self::KEY, $claim );
+		$claim->release();
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
+	}
+
+	/** A claimed handle performs its exact release CAS at most once. */
+	public function test_claimed_lease_release_is_idempotent(): void {
+		$claim = $this->lease->claim( self::KEY );
+		self::assertInstanceOf( ClaimedLease::class, $claim );
+
+		$claim->release();
+		$claim->release();
+
+		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'DELETE ' ) && \str_contains( $query, self::option_name() ) ) );
 	}
 
 	/** An inserted lease remains unclaimed when its authoritative confirmation read fails. */
@@ -87,7 +100,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_stale_lease_is_reclaimed_after_sixty_seconds(): void {
 		$this->put_lease( self::NOW - 61 );
 
-		self::assertIsString( $this->lease->claim( self::KEY ) );
+		self::assertInstanceOf( ClaimedLease::class, $this->lease->claim( self::KEY ) );
 		self::assertSame( self::NOW, $this->stored_lease()['heartbeat_at'] ?? null );
 	}
 
@@ -114,7 +127,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_malformed_lease_is_value_cas_reclaimed(): void {
 		$this->wpdb->put( self::option_name(), 'malformed' );
 
-		self::assertIsString( $this->lease->claim( self::KEY ) );
+		self::assertInstanceOf( ClaimedLease::class, $this->lease->claim( self::KEY ) );
 		self::assertSame( self::NOW, $this->stored_lease()['heartbeat_at'] ?? null );
 	}
 

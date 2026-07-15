@@ -75,9 +75,9 @@ final readonly class OccurrenceLease {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  string|null Exact claimed row bytes for release, or null when another holder wins or the claim cannot be verified against storage.
+	 * @return  ClaimedLease|null Claimed lease handle, or null when another holder wins or the claim cannot be verified against storage.
 	 */
-	public function claim( string $registration_key ): ?string {
+	public function claim( string $registration_key ): ?ClaimedLease {
 		$key = self::option_name( $registration_key );
 		$now = $this->clock->now()->getTimestamp();
 		$row = array(
@@ -93,7 +93,7 @@ final readonly class OccurrenceLease {
 				return null;
 			}
 
-			return $raw === $selected->value ? $raw : null;
+			return $raw === $selected->value ? new ClaimedLease( $this->rows, $key, $raw ) : null;
 		}
 
 		$selected = $this->rows->read( $key );
@@ -111,22 +111,7 @@ final readonly class OccurrenceLease {
 			return null;
 		}
 
-		return $this->rows->compare_and_swap( $key, $expected_raw, $raw ) ? $raw : null;
-	}
-
-	/**
-	 * Releases only the exact lease row returned to this claimant.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   string $expected_raw     Exact claimed row bytes.
-	 *
-	 * @return  void
-	 */
-	public function release( string $registration_key, string $expected_raw ): void {
-		$this->rows->delete_if_value_matches( self::option_name( $registration_key ), $expected_raw );
+		return $this->rows->compare_and_swap( $key, $expected_raw, $raw ) ? new ClaimedLease( $this->rows, $key, $raw ) : null;
 	}
 
 	// endregion

@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ClaimedLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -46,6 +47,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( OccurrenceLease::class )]
+#[UsesClass( ClaimedLease::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( OptionRows::class )]
