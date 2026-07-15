@@ -55,6 +55,9 @@ final class RecordingBatch implements BatchInterface {
 	/** Throwable raised after successful-run handling is recorded. */
 	public ?\Throwable $success_throwable = null;
 
+	/** Throwable raised after failed-run handling is recorded. */
+	public ?\Throwable $failure_throwable = null;
+
 	/**
 	 * Observation run after recording successful-run handling and before an optional failure.
 	 *
@@ -184,6 +187,10 @@ final class RecordingBatch implements BatchInterface {
 			'error'      => $error,
 		);
 		$this->record_lifecycle_event( 'failure' );
+
+		if ( null !== $this->failure_throwable ) {
+			throw $this->failure_throwable;
+		}
 	}
 
 	/** {@inheritDoc} */

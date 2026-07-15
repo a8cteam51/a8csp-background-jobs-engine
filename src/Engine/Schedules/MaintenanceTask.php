@@ -116,6 +116,7 @@ final class MaintenanceTask extends AbstractTask {
 	public function handle( array $args ): void {
 		// Run reconciliation consumes transfer evidence before orphan-lock reclamation can erase it.
 		$protected_transfers = array();
+		$deferred_lock_names = array();
 		$run_names           = $this->rows->option_names( self::RUN_PREFIX );
 		if ( $run_names->is_failure() ) {
 			return;
@@ -127,11 +128,26 @@ final class MaintenanceTask extends AbstractTask {
 				continue;
 			}
 
-			$reconciled = $this->reconciliation->reconcile_run(
-				$identity[0],
-				$identity[1],
-				self::TERMINAL_GRACE
-			);
+			try {
+				$reconciled = $this->reconciliation->reconcile_run(
+					$identity[0],
+					$identity[1],
+					self::TERMINAL_GRACE
+				);
+			} catch ( \Throwable $throwable ) {
+				$deferred_lock_names[ $identity[0] ] = true;
+				$this->logger->warning(
+					'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
+					array(
+						'name'              => $identity[0],
+						'run_id'            => $identity[1],
+						'exception_class'   => $throwable::class,
+						'exception_message' => $throwable->getMessage(),
+					)
+				);
+
+				continue;
+			}
 			if ( $reconciled->is_failure() ) {
 				return;
 			}
@@ -154,42 +170,64 @@ final class MaintenanceTask extends AbstractTask {
 			}
 
 			[ $name, $args_hash ] = $identity;
+			if ( isset( $deferred_lock_names[ $name ] ) ) {
+				// An unclassified run can still depend on every same-name lock as authoritative fence evidence.
+				continue;
+			}
+
 			if ( isset( $protected_transfers[ $name . '|' . $args_hash ] ) ) {
 				// A fresh displaced run still needs the foreign lock as authoritative takeover evidence.
 				continue;
 			}
 
-			$inspected = $this->guard->inspect_persisted_lock( $name, $args_hash );
-			if ( $inspected->is_failure() ) {
-				continue;
-			}
-
-			$snapshot = $inspected->value;
-			if ( null === $snapshot ) {
-				continue;
-			}
-
-			$lock = $snapshot['lock'];
-			if ( null === $lock ) {
-				if ( $this->guard->delete_persisted_lock( $name, $args_hash, $snapshot['raw'] ) ) {
-					$this->logger->warning(
-						'Reclaimed schema-invalid execution-overlap lock during maintenance sweep.',
-						array(
-							'name'      => $name,
-							'args_hash' => $args_hash,
-							'run_id'    => null,
-						)
-					);
+			$run_id = null;
+			try {
+				$inspected = $this->guard->inspect_persisted_lock( $name, $args_hash );
+				if ( $inspected->is_failure() ) {
+					continue;
 				}
 
+				$snapshot = $inspected->value;
+				if ( null === $snapshot ) {
+					continue;
+				}
+
+				$lock = $snapshot['lock'];
+				if ( null === $lock ) {
+					if ( $this->guard->delete_persisted_lock( $name, $args_hash, $snapshot['raw'] ) ) {
+						$this->logger->warning(
+							'Reclaimed schema-invalid execution-overlap lock during maintenance sweep.',
+							array(
+								'name'      => $name,
+								'args_hash' => $args_hash,
+								'run_id'    => null,
+							)
+						);
+					}
+
+					continue;
+				}
+
+				$run_id = $lock['run_id'];
+				$this->reconciliation->reconcile_orphaned_lock(
+					$name,
+					$args_hash,
+					$run_id
+				);
+			} catch ( \Throwable $throwable ) {
+				$this->logger->warning(
+					'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
+					array(
+						'name'              => $name,
+						'args_hash'         => $args_hash,
+						'run_id'            => $run_id,
+						'exception_class'   => $throwable::class,
+						'exception_message' => $throwable->getMessage(),
+					)
+				);
+
 				continue;
 			}
-
-			$this->reconciliation->reconcile_orphaned_lock(
-				$name,
-				$args_hash,
-				$lock['run_id']
-			);
 		}
 
 		$this->occurrence_delivery->converge_pending_intents();

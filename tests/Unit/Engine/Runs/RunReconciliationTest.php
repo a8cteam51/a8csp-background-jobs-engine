@@ -279,6 +279,121 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * A throwing run timing filter leaves its row unchanged without starving a later consumer.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_continues_after_one_run_staleness_filter_throws(): void {
+		$this->create_running_run();
+		$run_name = $this->run_option_name();
+		$run_raw  = \maybe_serialize( $this->options()[ $run_name ] ?? null );
+		self::assertIsString( $run_raw );
+		$replacement_run_id = '00000000001700000001-0000000000000000043';
+		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW - 901 );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+
+		$healthy_name  = 'healthy-batch';
+		$healthy_batch = new RecordingBatch( $healthy_name );
+		$this->batches->register( $healthy_batch );
+		$result = $this->dispatcher->start_batch( $healthy_name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		unset( $this->wpdb->rows[ 'a8csp_bgte_lock_' . $healthy_name . '_' . self::ARGS_HASH ] );
+
+		$throwable = new \RuntimeException( 'Run staleness filter exploded.' );
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
+			'a8csp_background_tasks/lock_staleness/' . self::NAME => static function () use ( $throwable ): int {
+				throw $throwable;
+			},
+		);
+
+		$this->logger->records = array();
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayHasKey( $run_name, $options );
+		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertArrayNotHasKey( 'a8csp_bgte_run_' . $healthy_name . '_' . self::RUN_ID, $options );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_' . $healthy_name, $options );
+		self::assertCount( 1, $healthy_batch->failure_calls );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
+				'context' => array(
+					'name'              => self::NAME,
+					'run_id'            => self::RUN_ID,
+					'exception_class'   => \RuntimeException::class,
+					'exception_message' => 'Run staleness filter exploded.',
+				),
+			),
+			$this->exception_diagnostic( 'Run staleness filter exploded.' )
+		);
+	}
+
+	/**
+	 * An unclassified run keeps same-name transfer evidence for a later sweep.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_defers_same_name_locks_after_run_timing_filter_throws(): void {
+		$this->create_running_run();
+		$run_name = $this->run_option_name();
+		$run_raw  = \maybe_serialize( $this->options()[ $run_name ] ?? null );
+		self::assertIsString( $run_raw );
+
+		$replacement_run_id = '00000000001700000001-0000000000000000043';
+		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW - 901 );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+
+		$throwable = new \RuntimeException( 'Run continue-delay filter exploded.' );
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
+			'a8csp_background_tasks/continue_delay' => static function ( int $delay, string $name, string $run_id ) use ( $throwable ): int {
+				if ( self::NAME === $name && self::RUN_ID === $run_id ) {
+					throw $throwable;
+				}
+
+				return $delay;
+			},
+		);
+
+		$this->logger->records = array();
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayHasKey( $run_name, $options );
+		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
+				'context' => array(
+					'name'              => self::NAME,
+					'run_id'            => self::RUN_ID,
+					'exception_class'   => \RuntimeException::class,
+					'exception_message' => 'Run continue-delay filter exploded.',
+				),
+			),
+			$this->exception_diagnostic( 'Run continue-delay filter exploded.' )
+		);
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array();
+		$this->clock->timestamp                   = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
+	}
+
+	/**
 	 * A lock read failure cannot be mistaken for authoritative absence during crash reconciliation.
 	 *
 	 * @return  void
@@ -323,6 +438,29 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertArrayHasKey( $orphan_lock, $this->wpdb->rows );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A failed run-name enumeration aborts before the lock phase.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_aborts_lock_reconciliation_when_run_enumeration_fails(): void {
+		$lock_name = 'a8csp_bgte_lock_orphan-task_' . \str_repeat( 'a', 64 );
+		$this->put_lock( $lock_name, 'orphan-run', self::NOW - 901 );
+		$lock_raw = $this->wpdb->rows[ $lock_name ] ?? null;
+		self::assertIsString( $lock_raw );
+		$this->wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient run-name enumeration failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $lock_name ] ?? null );
 		self::assertSame( array(), $this->logger->records );
 	}
 
@@ -539,6 +677,56 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * A throwing batch failure callback cannot starve a later consumer's crash reconciliation.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_continues_after_a_batch_failure_callback_throws(): void {
+		$throwing_name  = 'broken-batch';
+		$throwing_batch = new RecordingBatch( $throwing_name );
+		$this->batches->register( $throwing_batch );
+		$result = $this->dispatcher->start_batch( $throwing_name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		unset( $this->wpdb->rows[ 'a8csp_bgte_lock_' . $throwing_name . '_' . self::ARGS_HASH ] );
+
+		$this->create_running_run();
+		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$throwing_batch->failure_throwable = new \RuntimeException( 'Batch failure callback exploded.' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertCount( 1, $throwing_batch->failure_calls );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_' . self::NAME, $options );
+		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		self::assertIsArray( $history );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'failed',
+				),
+			),
+			$history['completed'] ?? null
+		);
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
+				'context' => array(
+					'name'              => $throwing_name,
+					'run_id'            => self::RUN_ID,
+					'exception_class'   => \RuntimeException::class,
+					'exception_message' => 'Batch failure callback exploded.',
+				),
+			),
+			$this->exception_diagnostic( 'Batch failure callback exploded.' )
+		);
+	}
+
+	/**
 	 * A schema-invalid lock row is deleted without trusting its serialized fields.
 	 *
 	 * @return  void
@@ -553,6 +741,51 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'corrupt-task', $this->logger->records[0]['context']['name'] ?? null );
 		self::assertNull( $this->logger->records[0]['context']['run_id'] ?? null );
+	}
+
+	/**
+	 * A throwing lock cleanup leaves its exact row intact without starving later lock rows.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_continues_after_one_lock_cleanup_throws(): void {
+		$throwing_name = 'broken-lock';
+		$throwing_hash = \str_repeat( 'b', 64 );
+		$throwing_key  = 'a8csp_bgte_lock_' . $throwing_name . '_' . $throwing_hash;
+		$throwing_raw  = 'broken-lock-row';
+		$this->wpdb->put( $throwing_key, $throwing_raw );
+
+		$healthy_name = 'healthy-lock';
+		$healthy_hash = \str_repeat( 'c', 64 );
+		$healthy_key  = 'a8csp_bgte_lock_' . $healthy_name . '_' . $healthy_hash;
+		$this->wpdb->put( $healthy_key, 'healthy-lock-row' );
+
+		$throwable = new \RuntimeException( 'Lock cleanup exploded.' );
+		$this->wpdb->before_next(
+			'delete',
+			static function () use ( $throwable ): void {
+				throw $throwable;
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $throwing_raw, $this->wpdb->rows[ $throwing_key ] ?? null );
+		self::assertArrayNotHasKey( $healthy_key, $this->wpdb->rows );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
+				'context' => array(
+					'name'              => $throwing_name,
+					'args_hash'         => $throwing_hash,
+					'run_id'            => null,
+					'exception_class'   => \RuntimeException::class,
+					'exception_message' => 'Lock cleanup exploded.',
+				),
+			),
+			$this->exception_diagnostic( 'Lock cleanup exploded.' )
+		);
 	}
 
 	/**
@@ -917,6 +1150,23 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	private function lock_option_name(): string {
 		return 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
+	}
+
+	/**
+	 * Returns one caught-exception diagnostic by its exact message.
+	 *
+	 * @param   string $exception_message Exception message.
+	 *
+	 * @return  array{level: mixed, message: string, context: array<array-key, mixed>}
+	 */
+	private function exception_diagnostic( string $exception_message ): array {
+		foreach ( $this->logger->records as $record ) {
+			if ( ( $record['context']['exception_message'] ?? null ) === $exception_message ) {
+				return $record;
+			}
+		}
+
+		throw new \LogicException( 'Expected a maintenance caught-exception diagnostic.' );
 	}
 
 	/**
