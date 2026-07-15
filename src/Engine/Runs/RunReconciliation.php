@@ -72,7 +72,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
+	 * @param   string $name      Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Lock owner run identifier.
 	 *
@@ -132,7 +132,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name           Stable task or batch name.
+	 * @param   string $name           Complete owner-qualified task or batch identity.
 	 * @param   string $run_id         Run identifier.
 	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
@@ -384,7 +384,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name   Stable task or batch name.
+	 * @param   string   $name   Complete owner-qualified task or batch identity.
 	 * @param   string   $run_id Run identifier.
 	 * @param   RunState $state  Stale non-executing running state.
 	 *
@@ -440,7 +440,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Run identifier.
 	 *
 	 * @return  EngineError

@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Provides the engine's always-on log channel.
+ * Provides the engine's bare-install error-log fallback.
  *
  * @internal
  *
@@ -65,6 +65,19 @@ final class ErrorLogSink implements Component {
 	 */
 	#[\Override]
 	public function initialize(): void {
+		/**
+		 * Filters whether engine log events are written to PHP's configured error log.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   bool $log_to_error_log Whether to register the default error-log handler.
+		 */
+		$log_to_error_log = \apply_filters( 'a8csp_background_tasks/log_to_error_log', true );
+		if ( false === $log_to_error_log ) {
+			return;
+		}
+
 		\add_action( 'a8csp_background_tasks/log', array( self::class, 'log' ), 10, 3 );
 	}
 

@@ -41,7 +41,7 @@ final readonly class Tasks {
 	// region METHODS
 
 	/**
-	 * Registers one task under its stable name.
+	 * Registers one task under its stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

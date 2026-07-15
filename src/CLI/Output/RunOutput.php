@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 
 \defined( 'ABSPATH' ) || exit;
 

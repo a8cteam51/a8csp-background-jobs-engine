@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
@@ -21,7 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
@@ -44,7 +44,7 @@ use PHPUnit\Framework\TestCase;
  * Exercises the internal engine facade across registration, scheduling, and persisted run state.
  *
  */
-#[CoversClass( Engine::class )]
+#[CoversClass( EngineFacade::class )]
 #[CoversClass( Tasks::class )]
 #[CoversClass( Schedules::class )]
 #[CoversClass( Batches::class )]
@@ -59,7 +59,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( OccurrenceDelivery::class )]
-final class EngineTest extends TestCase {
+final class EngineFacadeTest extends TestCase {
 	private const ARGS                 = array(
 		'site_id' => 7,
 		'mode'    => 'full',
@@ -71,7 +71,7 @@ final class EngineTest extends TestCase {
 	private const TASK_IDENTITY        = 'consumer-plugin:email-digest';
 
 	private RecordingBackend $backend;
-	private Engine $engine;
+	private EngineFacade $engine;
 	private WpdbLockSpy $wpdb;
 
 	/**
@@ -163,7 +163,7 @@ final class EngineTest extends TestCase {
 			$clock
 		);
 
-		$this->engine = new Engine(
+		$this->engine = new EngineFacade(
 			new Tasks( $tasks, $dispatcher ),
 			$schedules,
 			new Batches( $batches, $dispatcher ),
@@ -311,7 +311,7 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_declares_no_discard_directly(): void {
-		$method = new \ReflectionMethod( Engine::class, 'retry_failed' );
+		$method = new \ReflectionMethod( EngineFacade::class, 'retry_failed' );
 
 		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
 	}
@@ -322,7 +322,7 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_declares_no_discard_directly(): void {
-		$method = new \ReflectionMethod( Engine::class, 'cancel' );
+		$method = new \ReflectionMethod( EngineFacade::class, 'cancel' );
 
 		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
 	}

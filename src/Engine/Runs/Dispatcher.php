@@ -117,7 +117,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $task_name Stable task name.
+	 * @param   string                  $task_name Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
 	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
@@ -160,7 +160,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $task_name Stable task name.
+	 * @param   string                  $task_name Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   OverlapPolicy           $overlap   Schedule overlap policy.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
@@ -194,7 +194,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $batch_name Stable batch name.
+	 * @param   string                  $batch_name Complete owner-qualified batch identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
@@ -359,7 +359,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError> Success carries the new run identifier after
@@ -447,7 +447,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Retained run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
@@ -571,7 +571,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Run identifier.
 	 *
 	 * @return  Failure<EngineError>
@@ -640,7 +640,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $task_name     Stable task name.
+	 * @param   string                  $task_name     Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args          Task arguments.
 	 * @param   int                     $delay         Scheduling delay in seconds.
 	 * @param   string|null             $dedup_key     Consumer deduplication key whose hash replaces the argument hash.
@@ -924,7 +924,7 @@ final readonly class Dispatcher {
 	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int} $pending
 	 *
 	 * @param   'Task'|'Batch'                $work_type Work contract type.
-	 * @param   string                        $name      Stable task or batch name.
+	 * @param   string                        $name      Complete owner-qualified task or batch identity.
 	 * @param   string                        $run_id    Replacement run identifier.
 	 * @param   array<array-key, mixed>       $args      Start arguments.
 	 * @param   string                        $args_hash Stable single-flight identity.
@@ -993,7 +993,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name      Stable task or batch name.
+	 * @param   string                  $name      Complete owner-qualified task or batch identity.
 	 * @param   array<array-key, mixed> $args      Start arguments.
 	 * @param   'Task'|'Batch'          $work_type Work contract type.
 	 *

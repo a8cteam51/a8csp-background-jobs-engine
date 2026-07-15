@@ -46,12 +46,12 @@ interface TaskInterface extends WorkInterface {
 	/**
 	 * Handles one invocation of the task.
 	 *
-	 * Terminal failures dispatch `a8csp_background_tasks/failed/{name}` with the run identifier,
+	 * Terminal failures dispatch `a8csp_background_tasks/failed/{identity}` with the run identifier,
 	 * start arguments, and run failure, followed by `a8csp_background_tasks/failed` with the task
-	 * identity prepended to the same payload. The `{name}` suffix is the complete `{owner}:{name}`
+	 * identity prepended to the same payload. The `{identity}` suffix is the complete `{owner}:{name}`
 	 * task identity.
 	 *
-	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{name}` with the exact signature
+	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{identity}` with the exact signature
 	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
 	 * by `a8csp_background_tasks/retrying` with the complete task identity prepended to the same
 	 * payload.
@@ -71,9 +71,9 @@ interface TaskInterface extends WorkInterface {
 	/**
 	 * Returns the retry policy for failed invocations.
 	 *
-	 * The engine applies `a8csp_background_tasks/retry_policy/{name}` with the exact signature
+	 * The engine applies `a8csp_background_tasks/retry_policy/{identity}` with the exact signature
 	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
-	 * The `{name}` suffix is the complete `{owner}:{name}` task identity.
+	 * The `{identity}` suffix is the complete `{owner}:{name}` task identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

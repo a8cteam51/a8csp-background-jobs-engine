@@ -5,14 +5,14 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
@@ -122,7 +122,7 @@ final class EngineComponentTest extends TestCase {
 
 		self::assertInstanceOf( Consumer::class, $first );
 		self::assertInstanceOf( Consumer::class, $second );
-		self::assertInstanceOf( Engine::class, $engine );
+		self::assertInstanceOf( EngineFacade::class, $engine );
 		self::assertSame( $engine, Container::get_engine() );
 		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame(
@@ -158,7 +158,7 @@ final class EngineComponentTest extends TestCase {
 		$inspection = Container::get_inspection();
 		Container::boot();
 
-		self::assertInstanceOf( Engine::class, $engine );
+		self::assertInstanceOf( EngineFacade::class, $engine );
 		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame( $engine, Container::get_engine() );
 		self::assertSame( $inspection, Container::get_inspection() );

@@ -90,19 +90,19 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		}
 
 		self::assertCount( 0, $task->calls, 'Enqueueing a task must not invoke its handler inline' );
-		self::assertCount( 0, $named_completed, 'Enqueueing a task must not fire its name-specific completed hook inline' );
+		self::assertCount( 0, $named_completed, 'Enqueueing a task must not fire its identity-specific completed hook inline' );
 		self::assertCount( 0, $generic_completed, 'Enqueueing a task must not fire its generic completed hook inline' );
 
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must execute the pending task action' );
 
 		self::assertCount( 1, $task->calls, 'The runner drive must invoke the task handler exactly once' );
-		self::assertCount( 1, $named_completed, 'The runner drive must fire the name-specific completed hook exactly once' );
+		self::assertCount( 1, $named_completed, 'The runner drive must fire the identity-specific completed hook exactly once' );
 		self::assertCount( 1, $generic_completed, 'The runner drive must fire the generic completed hook exactly once' );
 		self::assertSame( array( $args ), $task->calls, 'The task must receive its original argument array exactly once' );
 		self::assertSame(
 			array( array( $run_id, $args ) ),
 			$named_completed,
-			'The name-specific completed hook must receive run ID and start arguments'
+			'The identity-specific completed hook must receive run ID and start arguments'
 		);
 		self::assertSame(
 			array( array( self::SUCCESS_IDENTITY, $run_id, $args ) ),
@@ -221,14 +221,14 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$action_id = $this->assert_pending_task_action( self::FAILURE_IDENTITY, $run_id, $group );
 
 		self::assertCount( 0, $task->calls, 'Enqueueing a task must not invoke its handler inline' );
-		self::assertCount( 0, $named_failed, 'Enqueueing a task must not fire its name-specific failed hook inline' );
+		self::assertCount( 0, $named_failed, 'Enqueueing a task must not fire its identity-specific failed hook inline' );
 		self::assertCount( 0, $generic_failed, 'Enqueueing a task must not fire its generic failed hook inline' );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the failing task action' );
 
 		self::assertCount( 1, $task->calls, 'The runner drive must invoke the failing task handler exactly once' );
 		self::assertSame( array( $args ), $task->calls, 'A non-retryable task must execute exactly once' );
-		self::assertCount( 1, $named_failed, 'The name-specific failed hook must fire exactly once' );
+		self::assertCount( 1, $named_failed, 'The identity-specific failed hook must fire exactly once' );
 		self::assertCount( 1, $generic_failed, 'The generic failed hook must fire exactly once' );
 		$failure = $named_failed[0][2] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
@@ -246,7 +246,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_id, $args, $failure ) ),
 			$named_failed,
-			'The name-specific failed hook must receive run ID, start arguments, and run failure'
+			'The identity-specific failed hook must receive run ID, start arguments, and run failure'
 		);
 		self::assertSame(
 			array( array( self::FAILURE_IDENTITY, $run_id, $args, $failure ) ),

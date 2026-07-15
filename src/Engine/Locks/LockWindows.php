@@ -61,12 +61,12 @@ final readonly class LockWindows {
 	// region METHODS
 
 	/**
-	 * Resolves the non-negative inter-chunk delay for one batch run.
+	 * Resolves the non-negative continuation delay for one task or batch run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $batch_name Complete owner-qualified task or batch identity.
 	 * @param   string $run_id     Run identifier.
 	 *
 	 * @return  int

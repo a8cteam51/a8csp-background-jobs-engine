@@ -1,9 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
@@ -135,7 +136,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
@@ -221,12 +222,12 @@ final readonly class Inspection {
 	}
 
 	/**
-	 * Returns validated live runs and bounded recent history for one background-work name.
+	 * Returns validated live runs and bounded recent history for one background-work identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @phpstan-return array{
 	 *     observed_at: int,
@@ -386,7 +387,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable background-work name.
+	 * @param   string $name Complete owner-qualified background-work identity.
 	 *
 	 * @return  'batch'|'task'|'unknown'
 	 */
@@ -436,7 +437,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable background-work name.
+	 * @param   string $name Complete owner-qualified background-work identity.
 	 *
 	 * @phpstan-return list<HistoryEntry>|null
 	 *

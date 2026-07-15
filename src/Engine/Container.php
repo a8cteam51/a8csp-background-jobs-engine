@@ -10,9 +10,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine as EngineFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 

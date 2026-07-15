@@ -134,7 +134,7 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param (\Closure(): int)|null $liveness_at
 	 *
 	 * @param   'Task'|'Batch' $work_type   Work contract type.
-	 * @param   string         $name        Stable task or batch name.
+	 * @param   string         $name        Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id      Run identifier.
 	 * @param   int|null       $action_seq  Received lifecycle action sequence.
 	 * @param   RunStore       $run_store   Active-run store.
@@ -237,7 +237,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $task_name Stable task name.
+	 * @param   string   $task_name Complete owner-qualified task identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -263,7 +263,7 @@ final readonly class TerminalTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   BatchInterface $batch      Completed batch.
-	 * @param   string         $batch_name Stable batch name.
+	 * @param   string         $batch_name Complete owner-qualified batch identity.
 	 * @param   string         $run_id     Run identifier.
 	 * @param   RunState       $state      Running state.
 	 * @param   RunStore       $run_store  Active-run store.
@@ -290,7 +290,7 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
 	 * @param   'Task'|'Batch' $work_type            Work contract type.
-	 * @param   string         $name                 Stable task or batch name.
+	 * @param   string         $name                 Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id               Run identifier.
 	 * @param   RunState       $state                Running state from the exact inspected snapshot.
 	 * @param   RunStore       $run_store            Active-run store.
@@ -333,7 +333,7 @@ final readonly class TerminalTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type  Work contract type carried by the lifecycle delivery.
-	 * @param   string         $name       Stable task or batch name.
+	 * @param   string         $name       Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id     Run identifier.
 	 * @param   RunState       $state      Running state.
 	 * @param   RunStore       $run_store  Active-run store.
@@ -371,7 +371,7 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
 	 * @param   BatchInterface $batch      Failed batch.
-	 * @param   string         $batch_name Stable batch name.
+	 * @param   string         $batch_name Complete owner-qualified batch identity.
 	 * @param   string         $run_id     Run identifier.
 	 * @param   RunState       $state      Running state.
 	 * @param   RunStore       $run_store  Active-run store.
@@ -404,7 +404,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   string       $task_name    Stable task name.
+	 * @param   string       $task_name    Complete owner-qualified task identity.
 	 * @param   string       $run_id       Run identifier.
 	 * @param   RunState     $state        Running state.
 	 * @param   RunStore     $run_store    Active-run store.
@@ -436,7 +436,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name         Stable task or batch name.
+	 * @param   string         $name         Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id       Run identifier.
 	 * @param   RunState       $state        Terminalizing run state.
 	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
@@ -457,7 +457,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name         Stable task or batch name.
+	 * @param   string              $name         Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id       Run identifier.
 	 * @param   RunState            $state        Terminal run state.
 	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
@@ -500,7 +500,7 @@ final readonly class TerminalTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type            Work contract type.
-	 * @param   string         $name                 Stable task or batch name.
+	 * @param   string         $name                 Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id               Run identifier.
 	 * @param   RunState       $state                Running state observed before the fence.
 	 * @param   RunStore       $run_store            Active-run store.
@@ -552,7 +552,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name          Stable task or batch name.
+	 * @param   string         $name          Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id        Run identifier.
 	 * @param   string|null    $latest_run_id Latest discoverable pointer value for the single-flight identity.
 	 * @param   RunState       $state         Running state.
@@ -596,7 +596,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name         Stable task or batch name.
+	 * @param   string              $name         Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id       Run identifier.
 	 * @param   RunState            $expected     Complete running state observed by the terminalizing path.
 	 * @param   RunState            $replacement  Terminal replacement state.
@@ -644,7 +644,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name         Stable task or batch name.
+	 * @param   string              $name         Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id       Run identifier.
 	 * @param   RunState            $state        Terminal run state.
 	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
@@ -771,7 +771,7 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
 	 * @param   string              $effect    Terminal effect key.
-	 * @param   string              $name      Stable task or batch name.
+	 * @param   string              $name      Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id    Run identifier.
 	 * @param   RunState            $state     Current terminal state.
 	 * @param   'Task'|'Batch'      $work_type Work contract type.
@@ -801,7 +801,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string         $name           Stable task or batch name.
+	 * @param   string         $name           Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id         Run identifier.
 	 * @param   RunState       $state          Failed terminal state.
 	 * @param   'Task'|'Batch' $work_type      Work contract type.
@@ -846,7 +846,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name   Stable batch name.
+	 * @param   string              $name   Complete owner-qualified batch identity.
 	 * @param   string              $run_id Run identifier.
 	 * @param   RunState            $state  Terminal batch state.
 	 * @param   BatchInterface|null $batch  Registered batch, or null when the callback must be skipped.
@@ -903,7 +903,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name    Stable task or batch name.
+	 * @param   string          $name    Complete owner-qualified task or batch identity.
 	 * @param   string          $run_id  Run identifier.
 	 * @param   RunState        $state   Terminal run state.
 	 * @param   RunFailure|null $failure Reconstructed consumer failure value.
@@ -932,7 +932,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name   Stable task or batch name.
+	 * @param   string   $name   Complete owner-qualified task or batch identity.
 	 * @param   string   $run_id Run identifier.
 	 * @param   RunState $state  Terminal run state.
 	 *
@@ -960,7 +960,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $name      Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id    Run identifier.
 	 * @param   RunState       $state     Failed terminal state.
 	 * @param   'Task'|'Batch' $work_type Work contract type.
@@ -1070,7 +1070,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name         Stable task or batch name.
+	 * @param   string         $name         Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id       Run identifier.
 	 * @param   RunState       $state        Terminal run state.
 	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
@@ -1113,7 +1113,7 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Fires the name-specific lifecycle hook before its generic companion.
+	 * Fires the identity-specific lifecycle hook before its generic companion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1121,31 +1121,31 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param 'started'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event      Lifecycle event name.
-	 * @param   string                  $name       Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity   Complete owner-qualified task or batch identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   RunFailure|null         $failure    Failure detail for a failed event.
 	 *
 	 * @return  void
 	 */
-	private function fire_lifecycle_hooks( string $event, string $name, string $run_id, array $start_args, ?RunFailure $failure = null ): void {
+	private function fire_lifecycle_hooks( string $event, string $identity, string $run_id, array $start_args, ?RunFailure $failure = null ): void {
 		$hook = self::LIFECYCLE_HOOKS[ $event ];
 
 		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
 		if ( null === $failure ) {
 			try {
-				\do_action( $hook . '/' . $name, $run_id, $start_args );
+				\do_action( $hook . '/' . $identity, $run_id, $start_args );
 			} finally {
-				\do_action( $hook, $name, $run_id, $start_args );
+				\do_action( $hook, $identity, $run_id, $start_args );
 			}
 
 			return;
 		}
 
 		try {
-			\do_action( $hook . '/' . $name, $run_id, $start_args, $failure );
+			\do_action( $hook . '/' . $identity, $run_id, $start_args, $failure );
 		} finally {
-			\do_action( $hook, $name, $run_id, $start_args, $failure );
+			\do_action( $hook, $identity, $run_id, $start_args, $failure );
 		}
 		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
 	}

@@ -197,7 +197,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 				),
 			),
 			$completion_observations,
-			'Completed hooks must follow on_success and preserve name-specific then generic payload order'
+			'Completed hooks must follow on_success and preserve identity-specific then generic payload order'
 		);
 
 		$args_hash = self::args_hash( $start_args );

@@ -51,7 +51,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $task_name      Stable task name.
+	 * @param   string $task_name      Complete owner-qualified task identity.
 	 * @param   string $running_run_id Discoverable incumbent run identifier.
 	 *
 	 * @return  self
@@ -75,7 +75,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch'                     $work_type Work contract type.
-	 * @param   string                             $name      Stable task or batch name.
+	 * @param   string                             $name      Complete owner-qualified task or batch identity.
 	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
 	 * @param   SchedulingError                    $error     Scheduling failure.
 	 *
@@ -146,7 +146,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $name      Complete owner-qualified task or batch identity.
 	 * @param   \Throwable     $throwable Retry-policy provider or filter failure.
 	 *
 	 * @return  self
@@ -172,7 +172,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $name      Complete owner-qualified task or batch identity.
 	 * @param   \Throwable     $throwable Retry-state construction failure.
 	 *
 	 * @return  self
@@ -198,7 +198,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $name      Complete owner-qualified task or batch identity.
 	 * @param   \Throwable     $throwable Retry-policy, randomness, hook, or scheduler failure.
 	 *
 	 * @return  self

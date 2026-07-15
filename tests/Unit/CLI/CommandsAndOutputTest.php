@@ -66,7 +66,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame(
 			array(
 				'action'  => 'error',
-				'message' => 'Cancel name is invalid; use a composed {owner}:{name} identity.',
+				'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
 			),
 			RunsCommand::cancel_request_from_args( array( 'email-digest', 'run-1' ), array() )
 		);
@@ -87,7 +87,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame(
 			array(
 				'action'  => 'error',
-				'message' => 'Cancel requires exactly a name and run_id; use wp background-tasks cancel <name> <run_id>.',
+				'message' => 'Cancel requires exactly an identity and run_id; use wp background-tasks cancel <identity> <run_id>.',
 			),
 			RunsCommand::cancel_request_from_args( $args, $assoc_args )
 		);
@@ -290,7 +290,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	#[DataProvider( 'valid_requests' )]
 	public function test_valid_requests_are_parsed( array $args, array $assoc_args, array $expected ): void {
-		self::assertSame( $expected, RunsCommand::failed_request_from_args( $args, $assoc_args ) );
+		self::assertSame( $expected, RunsCommand::failed_runs_request_from_args( $args, $assoc_args ) );
 	}
 
 	/**
@@ -311,7 +311,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'action'  => 'error',
 				'message' => $message,
 			),
-			RunsCommand::failed_request_from_args( $args, $assoc_args )
+			RunsCommand::failed_runs_request_from_args( $args, $assoc_args )
 		);
 	}
 
@@ -832,7 +832,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'missing action' => array(
 				'args'       => array(),
 				'assoc_args' => array(),
-				'message'    => 'A run action is required; use list <name>.',
+				'message'    => 'A run action is required; use list <identity>.',
 			),
 			'unknown action' => array(
 				'args'       => array( 'show', 'consumer-plugin:email-digest' ),
@@ -842,22 +842,22 @@ final class CommandsAndOutputTest extends TestCase {
 			'missing name'   => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array(),
-				'message'    => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
+				'message'    => 'Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].',
 			),
 			'extra name'     => array(
 				'args'       => array( 'list', 'consumer-plugin:email-digest', 'extra' ),
 				'assoc_args' => array(),
-				'message'    => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
+				'message'    => 'Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].',
 			),
 			'stray flag'     => array(
 				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'all' => true ),
-				'message'    => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
+				'message'    => 'Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].',
 			),
 			'invalid name'   => array(
 				'args'       => array( 'list', 'email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Run name is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Run identity is invalid; use a composed {owner}:{name} identity.',
 			),
 			'invalid format' => array(
 				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
@@ -1047,100 +1047,100 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public static function invalid_requests(): array {
 		return array(
-			'missing action'       => array(
+			'missing action'         => array(
 				'args'       => array(),
 				'assoc_args' => array(),
-				'message'    => 'A failed-run action is required; use list, retry <name> <run_id>, purge <name>, or purge --all.',
+				'message'    => 'A failed-run action is required; use list, retry <identity> <run_id>, purge <identity>, or purge --all.',
 			),
-			'unknown action'       => array(
+			'unknown action'         => array(
 				'args'       => array( 'remove' ),
 				'assoc_args' => array(),
 				'message'    => 'Failed-run action "remove" is invalid; use list, retry, or purge.',
 			),
-			'list positional'      => array(
+			'list positional'        => array(
 				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'List accepts only --owner and --format; use wp background-tasks failed list [--owner=<owner>] [--format=<format>].',
+				'message'    => 'List accepts only --owner and --format; use wp background-tasks failed-runs list [--owner=<owner>] [--format=<format>].',
 			),
-			'list flag'            => array(
+			'list flag'              => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'all' => true ),
-				'message'    => 'List accepts only --owner and --format; use wp background-tasks failed list [--owner=<owner>] [--format=<format>].',
+				'message'    => 'List accepts only --owner and --format; use wp background-tasks failed-runs list [--owner=<owner>] [--format=<format>].',
 			),
-			'list owner type'      => array(
+			'list owner type'        => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'owner' => false ),
 				'message'    => 'List owner is invalid; pass a value with --owner=<owner>.',
 			),
-			'list invalid owner'   => array(
+			'list invalid owner'     => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'owner' => 'Consumer-Plugin' ),
 				'message'    => 'List owner is invalid; pass a canonical owner with --owner=<owner>.',
 			),
-			'list format'          => array(
+			'list format'            => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'format' => 'ids' ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
-			'list format type'     => array(
+			'list format type'       => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'format' => true ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
-			'retry missing run_id' => array(
+			'retry missing run_id'   => array(
 				'args'       => array( 'retry', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Retry requires exactly a name and run_id; use wp background-tasks failed retry <name> <run_id>.',
+				'message'    => 'Retry requires exactly an identity and run_id; use wp background-tasks failed-runs retry <identity> <run_id>.',
 			),
-			'retry flag'           => array(
+			'retry flag'             => array(
 				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'run-1' ),
 				'assoc_args' => array( 'all' => true ),
-				'message'    => 'Retry requires exactly a name and run_id; use wp background-tasks failed retry <name> <run_id>.',
+				'message'    => 'Retry requires exactly an identity and run_id; use wp background-tasks failed-runs retry <identity> <run_id>.',
 			),
-			'retry invalid name'   => array(
+			'retry invalid identity' => array(
 				'args'       => array( 'retry', 'email-digest', 'run-1' ),
 				'assoc_args' => array(),
-				'message'    => 'Retry name is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
 			),
-			'bare purge'           => array(
+			'bare purge'             => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array(),
-				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
-			'purge name and all'   => array(
+			'purge name and all'     => array(
 				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'all' => true ),
-				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
-			'purge negated all'    => array(
+			'purge negated all'      => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array( 'all' => false ),
-				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
-			'purge string all'     => array(
+			'purge string all'       => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array( 'all' => 'false' ),
-				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
-			'purge name stray all' => array(
+			'purge name stray all'   => array(
 				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'all' => false ),
-				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
-			'purge extra name'     => array(
+			'purge extra name'       => array(
 				'args'       => array( 'purge', 'consumer-plugin:email-digest', 'other' ),
 				'assoc_args' => array(),
-				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
-			'purge invalid name'   => array(
+			'purge invalid identity' => array(
 				'args'       => array( 'purge', 'email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Purge name is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Purge identity is invalid; use a composed {owner}:{name} identity.',
 			),
-			'purge flag'           => array(
+			'purge flag'             => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array( 'format' => 'json' ),
-				'message'    => 'Purge accepts only --all; use wp background-tasks failed purge <name> or purge --all.',
+				'message'    => 'Purge accepts only --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 			),
 		);
 	}

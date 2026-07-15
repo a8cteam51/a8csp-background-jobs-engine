@@ -89,7 +89,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name             Stable task or batch name.
+	 * @param   string $name             Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   string $run_id           Claiming run identifier.
 	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
@@ -141,7 +141,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
+	 * @param   string $name      Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
@@ -169,7 +169,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name               Stable task or batch name.
+	 * @param   string $name               Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash          Stable single-flight identity.
 	 * @param   string $replacement_run_id Replacement owner.
 	 *
@@ -198,7 +198,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name                  Stable task or batch name.
+	 * @param   string   $name                  Complete owner-qualified task or batch identity.
 	 * @param   string   $args_hash             Stable single-flight identity.
 	 * @param   string   $run_id                Owning run identifier.
 	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time. A future value marks
@@ -254,7 +254,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
+	 * @param   string $name      Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Owning run identifier.
 	 *
@@ -300,7 +300,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name             Stable task or batch name.
+	 * @param   string $name             Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
 	 *
@@ -334,7 +334,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
+	 * @param   string $name      Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null, EngineError>
@@ -367,7 +367,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name         Stable task or batch name.
+	 * @param   string $name         Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $expected_raw Exact inspected row value.
 	 *
@@ -385,7 +385,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name             Stable task or batch name.
+	 * @param   string $name             Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   string $run_id           Expected lock owner.
 	 * @param   int    $staleness_window Resolved staleness window in seconds.
@@ -422,7 +422,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name             Stable task or batch name.
+	 * @param   string $name             Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   string $run_id           Expected lock owner.
 	 * @param   int    $staleness_window Resolved staleness window in seconds.
@@ -466,7 +466,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
+	 * @param   string $name      Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Expected lock owner.
 	 *
@@ -501,7 +501,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name         Stable task or batch name.
+	 * @param   string $name         Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $run_id       Expected lock owner.
 	 * @param   int    $claimed_at   Original run claim timestamp.
@@ -567,7 +567,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name         Stable task or batch name.
+	 * @param   string $name         Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $run_id       Expected lock owner.
 	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
@@ -612,7 +612,7 @@ final readonly class OverlapGuard {
 	 * @param   string                                                         $raw       Exact selected value.
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}|null $old_lock  Parsed stale row, or null when malformed.
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}      $new_lock  Replacement row.
-	 * @param   string                                                         $name      Stable task or batch name.
+	 * @param   string                                                         $name      Complete owner-qualified task or batch identity.
 	 * @param   string                                                         $args_hash Stable single-flight identity.
 	 * @param   string                                                         $run_id    Claiming run identifier.
 	 *
@@ -655,7 +655,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name      Stable task or batch name.
+	 * @param   string $name      Complete owner-qualified task or batch identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  string

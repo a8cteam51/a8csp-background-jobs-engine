@@ -55,6 +55,7 @@ final class PluginBootGateTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
 		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
 		$GLOBALS['a8csp_bgte_test_options']              = array();
 		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
@@ -86,6 +87,24 @@ final class PluginBootGateTest extends TestCase {
 		self::assertSame( 'a8csp_background_tasks/log', $log_registration['hook_name'] ?? null );
 		self::assertSame( 10, $log_registration['priority'] ?? null );
 		self::assertSame( 3, $log_registration['accepted_args'] ?? null );
+		self::assertNull( Component::get_engine() );
+	}
+
+	/**
+	 * The public error-log filter prevents the default sink registration during plugin boot.
+	 *
+	 * @return  void
+	 */
+	public function test_boot_skips_the_default_sink_when_the_filter_is_false(): void {
+		$filter_values = $GLOBALS['a8csp_bgte_test_filter_values'] ?? array();
+		self::assertIsArray( $filter_values );
+		$filter_values['a8csp_background_tasks/log_to_error_log'] = false;
+		$GLOBALS['a8csp_bgte_test_filter_values']                 = $filter_values;
+
+		( new Plugin() )->boot();
+
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_hooks'] );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_action_registrations'] );
 		self::assertNull( Component::get_engine() );
 	}
 

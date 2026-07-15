@@ -59,7 +59,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name  Stable task or batch name.
+	 * @param   string         $name  Complete owner-qualified task or batch identity.
 	 * @param   ClockInterface $clock Timestamp source.
 	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
 	 */

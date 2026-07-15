@@ -8,9 +8,9 @@ use Psr\Clock\ClockInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Constructs the stores bound to one task or batch name.
+ * Constructs the stores bound to one task or batch identity.
  *
- * A single factory keeps name binding at the orchestration boundary without exposing four
+ * A single factory keeps identity binding at the orchestration boundary without exposing four
  * untyped closure dependencies.
  *
  * @internal
@@ -40,12 +40,12 @@ final readonly class StoreFactory {
 	// region METHODS
 
 	/**
-	 * Constructs the active-run store for a task or batch name.
+	 * Constructs the active-run store for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @return  RunStore
 	 */
@@ -54,12 +54,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the latest-run pointer for a task or batch name.
+	 * Constructs the latest-run pointer for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @return  LatestRunPointer
 	 */
@@ -68,12 +68,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the run history for a task or batch name.
+	 * Constructs the run history for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @return  RunHistory
 	 */
@@ -82,12 +82,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the failed-run store for a task or batch name.
+	 * Constructs the failed-run store for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @return  FailedRunStore
 	 */

@@ -19,7 +19,7 @@ final class TaskRegistry {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Registered tasks keyed by stable name.
+	 * Registered tasks keyed by stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -49,7 +49,7 @@ final class TaskRegistry {
 	// region METHODS
 
 	/**
-	 * Registers one uniquely named task instance.
+	 * Registers one task instance under a unique identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -77,7 +77,7 @@ final class TaskRegistry {
 	}
 
 	/**
-	 * Returns the task registered under a stable name.
+	 * Returns the task registered under a stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

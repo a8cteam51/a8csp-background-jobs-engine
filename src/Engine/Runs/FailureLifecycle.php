@@ -61,7 +61,7 @@ final readonly class FailureLifecycle {
 	 * @phpstan-param \Closure(RunState, EngineError, int, string, ApiErrorCode, array<array-key, mixed>|null): void $terminal_failure
 	 *
 	 * @param   'Task'|'Batch'               $work_type        Work contract type.
-	 * @param   string                       $name             Stable task or batch name.
+	 * @param   string                       $name             Complete owner-qualified task or batch identity.
 	 * @param   string                       $run_id           Run identifier.
 	 * @param   RunState                     $state            Fenced running state.
 	 * @param   RunStore                     $run_store        Active-run store.
@@ -151,19 +151,19 @@ final readonly class FailureLifecycle {
 	}
 
 	/**
-	 * Resolves a valid name-specific policy from the contract policy.
+	 * Resolves a valid identity-specific policy from the contract policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $name            Complete owner-qualified task or batch identity.
+	 * @param   string      $identity        Complete owner-qualified task or batch identity.
 	 * @param   RetryPolicy $contract_policy Policy supplied by the work contract.
 	 *
 	 * @return  RetryPolicy
 	 */
-	private function retry_policy( string $name, RetryPolicy $contract_policy ): RetryPolicy {
+	private function retry_policy( string $identity, RetryPolicy $contract_policy ): RetryPolicy {
 		$filtered_policy = \apply_filters(
-			'a8csp_background_tasks/retry_policy/' . $name,
+			'a8csp_background_tasks/retry_policy/' . $identity,
 			$contract_policy
 		);
 		if ( $filtered_policy instanceof RetryPolicy ) {
@@ -173,7 +173,7 @@ final readonly class FailureLifecycle {
 		$this->logger->warning(
 			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.',
 			array(
-				'name'          => $name,
+				'name'          => $identity,
 				'returned_type' => \get_debug_type( $filtered_policy ),
 			)
 		);
@@ -188,7 +188,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch'               $work_type  Work contract type.
-	 * @param   string                       $name       Stable task or batch name.
+	 * @param   string                       $name       Complete owner-qualified task or batch identity.
 	 * @param   string                       $run_id     Run identifier.
 	 * @param   RunState                     $state      Exact persisted state before the retry transition.
 	 * @param   RunStore                     $run_store  Active-run store.
@@ -325,12 +325,12 @@ final readonly class FailureLifecycle {
 	}
 
 	/**
-	 * Fires the name-specific retrying hook before its generic companion.
+	 * Fires the identity-specific retrying hook before its generic companion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity   Complete owner-qualified task or batch identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempt    One-indexed number of the failed attempt.
@@ -338,10 +338,10 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fire_retrying_hooks( string $name, string $run_id, array $start_args, int $attempt, int $delay ): void {
+	private function fire_retrying_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
 		try {
 			\do_action(
-				'a8csp_background_tasks/retrying/' . $name,
+				'a8csp_background_tasks/retrying/' . $identity,
 				$run_id,
 				$start_args,
 				$attempt,
@@ -350,7 +350,7 @@ final readonly class FailureLifecycle {
 		} finally {
 			\do_action(
 				'a8csp_background_tasks/retrying',
-				$name,
+				$identity,
 				$run_id,
 				$start_args,
 				$attempt,

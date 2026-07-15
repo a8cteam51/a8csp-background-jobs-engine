@@ -105,9 +105,9 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable task action' );
 
 		self::assertSame( array( $args ), $task->calls, 'A non-retryable task must execute exactly once' );
-		self::assertSame( array(), $named_retrying, 'A non-retryable failure must not fire the name-specific retrying hook' );
+		self::assertSame( array(), $named_retrying, 'A non-retryable failure must not fire the identity-specific retrying hook' );
 		self::assertSame( array(), $generic_retrying, 'A non-retryable failure must not fire the generic retrying hook' );
-		self::assertCount( 1, $named_failed, 'A non-retryable failure must fire the name-specific failed hook once' );
+		self::assertCount( 1, $named_failed, 'A non-retryable failure must fire the identity-specific failed hook once' );
 		self::assertCount( 1, $generic_failed, 'A non-retryable failure must fire the generic failed hook once' );
 
 		$failure = $named_failed[0][2] ?? null;
@@ -126,7 +126,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_id, $args, $failure ) ),
 			$named_failed,
-			'The name-specific failed hook must receive run ID, start arguments, and run failure'
+			'The identity-specific failed hook must receive run ID, start arguments, and run failure'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $run_id, $args, $failure ) ),

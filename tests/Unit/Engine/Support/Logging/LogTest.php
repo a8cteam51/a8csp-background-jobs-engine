@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the always-on log channel and its bare-install error-log fallback.
+ * Exercises the log channel and its bare-install error-log fallback.
  *
  */
 #[CoversClass( ErrorLogSink::class )]
@@ -41,6 +41,7 @@ final class LogTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
 	}
 
 	/**
@@ -70,6 +71,38 @@ final class LogTest extends TestCase {
 				),
 			),
 			$GLOBALS['a8csp_bgte_test_action_registrations']
+		);
+	}
+
+	/**
+	 * The enabled-by-default handler writes log-channel events to PHP's configured error log.
+	 *
+	 * @return  void
+	 */
+	public function test_default_handler_writes_log_events_to_error_log(): void {
+		( new ErrorLogSink() )->initialize();
+
+		$output = $this->capture_error_log( 'info', 'Default sink enabled', array(), true );
+
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.info: Default sink enabled', $output );
+	}
+
+	/**
+	 * An explicit filter opt-out leaves the log channel without the default error-log handler.
+	 *
+	 * @return  void
+	 */
+	public function test_filter_false_disables_the_default_error_log_handler(): void {
+		$filter_values = $GLOBALS['a8csp_bgte_test_filter_values'] ?? array();
+		self::assertIsArray( $filter_values );
+		$filter_values['a8csp_background_tasks/log_to_error_log'] = false;
+		$GLOBALS['a8csp_bgte_test_filter_values']                 = $filter_values;
+
+		( new ErrorLogSink() )->initialize();
+
+		self::assertSame(
+			'',
+			$this->capture_error_log( 'info', 'Default sink disabled', array(), true )
 		);
 	}
 
@@ -252,13 +285,14 @@ final class LogTest extends TestCase {
 	/**
 	 * Captures PHP's configured error-log destination and restores it after the assertion input runs.
 	 *
-	 * @param   string                  $level   The log level.
-	 * @param   string                  $message The log message.
-	 * @param   array<array-key, mixed> $context The structured context.
+	 * @param   string                  $level                      The log level.
+	 * @param   string                  $message                    The log message.
+	 * @param   array<array-key, mixed> $context                    The structured context.
+	 * @param   bool                    $through_registered_handler Whether to invoke the registered default handler.
 	 *
 	 * @return  string
 	 */
-	private function capture_error_log( string $level, string $message, array $context ): string {
+	private function capture_error_log( string $level, string $message, array $context, bool $through_registered_handler = false ): string {
 		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgte-log-' );
 		if ( false === $temp_file ) {
 			self::fail( 'Unable to create the error-log capture file; make the system temporary directory writable.' );
@@ -279,7 +313,26 @@ final class LogTest extends TestCase {
 		}
 
 		try {
-			ErrorLogSink::log( $level, $message, $context );
+			if ( $through_registered_handler ) {
+				$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? array();
+				self::assertIsArray( $registrations );
+				foreach ( $registrations as $registration ) {
+					if ( ! \is_array( $registration ) ) {
+						self::fail( 'Action registrations must be arrays.' );
+					}
+
+					if ( 'a8csp_background_tasks/log' === ( $registration['hook_name'] ?? null ) ) {
+						$callback = $registration['callback'] ?? null;
+						if ( ! \is_callable( $callback ) ) {
+							self::fail( 'The default log handler must be callable.' );
+						}
+
+						$callback( $level, $message, $context );
+					}
+				}
+			} else {
+				ErrorLogSink::log( $level, $message, $context );
+			}
 
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The capture is a local Unit-test file, while wp_remote_get() is for remote URLs.
 			$output = \file_get_contents( $temp_file );

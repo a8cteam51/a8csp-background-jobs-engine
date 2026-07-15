@@ -156,7 +156,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertCount( 1, $retry_policy_calls, 'The first failure must resolve the filtered retry policy once' );
 		self::assertSame( 1, $retry_policy_calls[0]['arity'] );
 		self::assertSame( $task->retry_policy, $retry_policy_calls[0]['policy'] );
-		self::assertCount( 1, $named_retrying, 'The first failure must fire the name-specific retrying hook once' );
+		self::assertCount( 1, $named_retrying, 'The first failure must fire the identity-specific retrying hook once' );
 		self::assertCount( 1, $generic_retrying, 'The first failure must fire the generic retrying hook once' );
 		self::assertSame( array(), $named_failed, 'The first failure must remain non-terminal below the retry cap' );
 		self::assertSame( array(), $generic_failed, 'The first failure must not fire the generic failed hook' );
@@ -167,7 +167,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $failed_run_id, $args, 1, $delay ) ),
 			$named_retrying,
-			'The name-specific retrying hook must pin the failed attempt number and jittered delay'
+			'The identity-specific retrying hook must pin the failed attempt number and jittered delay'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ),
@@ -230,7 +230,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$recorded_named_failed = $named_failed;
 		/** @var list<array{string, string, array<array-key, mixed>, RunFailure}> $recorded_generic_failed */
 		$recorded_generic_failed = $generic_failed;
-		self::assertCount( 1, $recorded_named_failed, 'Retry exhaustion must fire the name-specific failed hook once' );
+		self::assertCount( 1, $recorded_named_failed, 'Retry exhaustion must fire the identity-specific failed hook once' );
 		self::assertCount( 1, $recorded_generic_failed, 'Retry exhaustion must fire the generic failed hook once' );
 
 		$failure = $recorded_named_failed[0][2] ?? null;
@@ -245,7 +245,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $failed_run_id, $args, $failure ) ),
 			$recorded_named_failed,
-			'The name-specific failed hook must receive run ID, start arguments, and terminal error'
+			'The identity-specific failed hook must receive run ID, start arguments, and terminal error'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ),
@@ -330,7 +330,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $successful_run_id, $args ) ),
 			$named_completed,
-			'The name-specific completed hook must receive the fresh run ID and original arguments'
+			'The identity-specific completed hook must receive the fresh run ID and original arguments'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $successful_run_id, $args ) ),
@@ -340,7 +340,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $failed_run_id, $args, 1, $delay ) ),
 			$named_retrying,
-			'The successful manual retry must not repeat the name-specific retrying hook'
+			'The successful manual retry must not repeat the identity-specific retrying hook'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ),
@@ -350,7 +350,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame(
 			$recorded_named_failed,
 			$named_failed,
-			'The successful manual retry must not repeat the name-specific failed hook'
+			'The successful manual retry must not repeat the identity-specific failed hook'
 		);
 		self::assertSame(
 			$recorded_generic_failed,

@@ -71,7 +71,7 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name Stable task or batch name.
+	 * @param   string          $name Complete owner-qualified task or batch identity.
 	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, or null to resolve the global connection.
 	 */
 	public function __construct(

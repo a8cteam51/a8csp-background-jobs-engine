@@ -161,7 +161,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_a, $start_args ) ),
 			$named_superseded,
-			'The name-specific superseded hook must receive the incumbent run ID and start arguments once'
+			'The identity-specific superseded hook must receive the incumbent run ID and start arguments once'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $run_a, $start_args ) ),
@@ -283,7 +283,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_b, $start_args ) ),
 			$named_completed,
-			'The name-specific completed hook must receive only the replacement payload'
+			'The identity-specific completed hook must receive only the replacement payload'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $run_b, $start_args ) ),
@@ -293,7 +293,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_a, $start_args ) ),
 			$named_superseded,
-			'The replacement lifecycle must not repeat the name-specific superseded hook'
+			'The replacement lifecycle must not repeat the identity-specific superseded hook'
 		);
 		self::assertSame(
 			array( array( self::IDENTITY, $run_a, $start_args ) ),

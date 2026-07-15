@@ -262,7 +262,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_a, $start_args ) ),
 			$named_superseded,
-			'The name-specific superseded hook must receive the reclaimed incumbent payload once'
+			'The identity-specific superseded hook must receive the reclaimed incumbent payload once'
 		);
 		self::assertSame(
 			array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ),
@@ -310,7 +310,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( $run_a, $start_args ) ),
 			$named_superseded,
-			'Reclaimed-run completion must not repeat the name-specific superseded hook'
+			'Reclaimed-run completion must not repeat the identity-specific superseded hook'
 		);
 		self::assertSame(
 			array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ),

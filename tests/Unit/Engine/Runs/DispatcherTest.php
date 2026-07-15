@@ -416,7 +416,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * The name-specific lock-staleness filter receives its complete documented payload.
+	 * The identity-specific lock-staleness filter receives its complete documented payload.
 	 *
 	 * @return  void
 	 */

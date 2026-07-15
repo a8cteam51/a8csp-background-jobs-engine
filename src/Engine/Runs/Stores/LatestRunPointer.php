@@ -61,7 +61,7 @@ final readonly class LatestRunPointer {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $name Stable task or batch name.
+	 * @param   string     $name Complete owner-qualified task or batch identity.
 	 * @param   OptionRows $rows Authoritative raw pointer-row I/O.
 	 */
 	public function __construct(

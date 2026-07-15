@@ -73,7 +73,7 @@ final class LockWindowsTest extends TestCase {
 	}
 
 	/**
-	 * The continuation filter receives its documented default, batch name, and run identifier.
+	 * The continuation filter receives its documented default, work identity, and run identifier.
 	 *
 	 * @return  void
 	 */
@@ -81,7 +81,7 @@ final class LockWindowsTest extends TestCase {
 		$filter_call = null;
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
-			static function ( int $default_delay, string $batch_name, string $run_id ) use ( &$filter_call ): int {
+			static function ( int $default_delay, string $identity, string $run_id ) use ( &$filter_call ): int {
 				$filter_call = array(
 					'arity' => \func_num_args(),
 					'args'  => \func_get_args(),
@@ -126,7 +126,7 @@ final class LockWindowsTest extends TestCase {
 	}
 
 	/**
-	 * The name-specific staleness filter receives only its documented default.
+	 * The identity-specific staleness filter receives only its documented default.
 	 *
 	 * @return  void
 	 */

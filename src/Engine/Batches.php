@@ -42,7 +42,7 @@ final readonly class Batches {
 	// region METHODS
 
 	/**
-	 * Registers one batch under its stable name.
+	 * Registers one batch under its stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

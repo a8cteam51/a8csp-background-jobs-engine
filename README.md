@@ -192,7 +192,7 @@ interface BatchInterface extends WorkInterface {
 
 The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. Direct batch implementations must declare it; invalid values use the shared 300-second default, and the engine caps the credited window at six hours.
 
-`RunFailure` carries the work name, run ID, consumed attempt count, terminalization stage, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
+`RunFailure` carries the work identity, run ID, consumed attempt count, terminalization stage, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
 
@@ -232,7 +232,7 @@ Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard red
 
 ## Admission overlap and catch-up policies
 
-Direct Task enqueue and Batch start coordinate active runs through a scoped overlap identity. A Task's overlap identity is its explicit deduplication key when provided and otherwise its arguments; a Batch's overlap identity is always its start arguments. Matching is scoped to the owner-qualified Task or Batch name.
+Direct Task enqueue and Batch start coordinate active runs through a scoped overlap identity. A Task's overlap identity is its explicit deduplication key when provided and otherwise its arguments; a Batch's overlap identity is always its start arguments. Matching is scoped to the owner-qualified Task or Batch identity.
 
 Schedule overlap is configured independently through `OverlapPolicy`. Catch-up determines what happens when a scheduled delivery is late beyond its grace window.
 
@@ -244,63 +244,56 @@ Schedule overlap is configured independently through `OverlapPolicy`. Catch-up d
 
 `Allow` gives each run an independent overlap identity. `Skip` leaves the active run in place. `Replace` transfers a held matching lock, or acquires or reclaims it when no matching lock is held. An incumbent already inside a callback reaches its next fencing boundary rather than being interrupted mid-callback.
 
-An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{schedule}`. The `{schedule}` suffix and `$schedule` filter argument are the complete `{owner}:{name}` schedule identity. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
+An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{identity}`. The `{identity}` suffix and `$identity` filter argument are the complete `{owner}:{name}` schedule identity. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
 
 ## Hooks and filters
 
-For each lifecycle pair, the name-specific hook fires first and the generic companion follows with the name prepended. Every `{name}` and `{batch}` suffix, and every generic work-name payload, is the complete `{owner}:{name}` identity. The misfired hook's `{schedule}` suffix and generic `$schedule` payload are likewise complete; `$owner` remains a separate argument.
+For each lifecycle pair, the identity-specific hook fires first and the generic companion follows with the identity prepended. Every `{identity}` suffix and every generic `$identity` payload is the complete `{owner}:{name}` identity. The misfired hooks likewise receive the complete schedule identity; `$owner` remains a separate argument.
 
-| Event | Name-specific hook and payload | Generic hook and payload |
+| Event | Identity-specific hook and payload | Generic hook and payload |
 | --- | --- | --- |
-| Started | `a8csp_background_tasks/started/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/started`: `($name, $run_id, $start_args)` |
-| Completed | `a8csp_background_tasks/completed/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/completed`: `($name, $run_id, $start_args)` |
-| Failed | `a8csp_background_tasks/failed/{name}`: `($run_id, $start_args, RunFailure $failure)` | `a8csp_background_tasks/failed`: `($name, $run_id, $start_args, RunFailure $failure)` |
-| Cancelled | `a8csp_background_tasks/cancelled/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/cancelled`: `($name, $run_id, $start_args)` |
-| Retrying | `a8csp_background_tasks/retrying/{name}`: `($run_id, $start_args, $attempt, $delay)` | `a8csp_background_tasks/retrying`: `($name, $run_id, $start_args, $attempt, $delay)` |
-| Superseded | `a8csp_background_tasks/superseded/{name}`: `($run_id, $start_args)` | `a8csp_background_tasks/superseded`: `($name, $run_id, $start_args)` |
-| Misfired | `a8csp_background_tasks/misfired/{schedule}`: `($owner, $due_at, $observed_at)` | `a8csp_background_tasks/misfired`: `($schedule, $owner, $due_at, $observed_at)` |
+| Started | `a8csp_background_tasks/started/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/started`: `($identity, $run_id, $start_args)` |
+| Completed | `a8csp_background_tasks/completed/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/completed`: `($identity, $run_id, $start_args)` |
+| Failed | `a8csp_background_tasks/failed/{identity}`: `($run_id, $start_args, RunFailure $failure)` | `a8csp_background_tasks/failed`: `($identity, $run_id, $start_args, RunFailure $failure)` |
+| Cancelled | `a8csp_background_tasks/cancelled/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/cancelled`: `($identity, $run_id, $start_args)` |
+| Retrying | `a8csp_background_tasks/retrying/{identity}`: `($run_id, $start_args, $attempt, $delay)` | `a8csp_background_tasks/retrying`: `($identity, $run_id, $start_args, $attempt, $delay)` |
+| Superseded | `a8csp_background_tasks/superseded/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/superseded`: `($identity, $run_id, $start_args)` |
+| Misfired | `a8csp_background_tasks/misfired/{identity}`: `($owner, $due_at, $observed_at)` | `a8csp_background_tasks/misfired`: `($identity, $owner, $due_at, $observed_at)` |
 | Log | `a8csp_background_tasks/log`: `($level, $message, $context)` | No generic companion. |
 
-Run IDs, names, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
+Run IDs, identities, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
 Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start`, `a8csp_background_tasks/continue`, `a8csp_background_tasks/run`, `a8csp_background_tasks/cleanup`, or `a8csp_background_tasks/schedule_due`.
 
 | Filter | Input and required return |
 | --- | --- |
-| `a8csp_background_tasks/queue/{batch}` | `($queue, $start_args, $run_id)` returns the complete list of chunk argument arrays. |
-| `a8csp_background_tasks/continue_delay` | `($delay, $name, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives complete Task identities as well as complete Batch identities because the value also feeds every run's lock-staleness floor. |
-| `a8csp_background_tasks/lock_staleness/{name}` | `($seconds)` returns a positive lock window; the default is 900 and the effective value is at least twice the continue delay. |
+| `a8csp_background_tasks/queue/{identity}` | `($queue, $start_args, $run_id)` returns the complete list of chunk argument arrays. |
+| `a8csp_background_tasks/continue_delay` | `($delay, $identity, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives complete Task identities as well as complete Batch identities because the value also feeds every run's lock-staleness floor. |
+| `a8csp_background_tasks/lock_staleness/{identity}` | `($seconds)` returns a positive lock window; the default is 900 and the effective value is at least twice the continue delay. |
 | `a8csp_background_tasks/history_size` | `($size)` returns a positive per-buffer history cap; the default is 30. |
-| `a8csp_background_tasks/retry_policy/{name}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |
-| `a8csp_background_tasks/misfire_grace/{schedule}` | `($grace, $owner, $schedule)` returns a non-negative grace in seconds; the default is one interval. |
+| `a8csp_background_tasks/retry_policy/{identity}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |
+| `a8csp_background_tasks/misfire_grace/{identity}` | `($grace, $owner, $identity)` returns a non-negative grace in seconds; the default is one interval. |
+| `a8csp_background_tasks/log_to_error_log` | `($enabled)` returns whether to register the default PHP error-log sink; the default is `true`, and returning `false` disables it. |
 
 ## Bring your own PSR-3 logger
 
-The default `Engine\Support\Logging\ErrorLogSink` listener writes `a8csp_background_tasks/log` events to PHP's configured error log. Given your own `Psr\Log\LoggerInterface` instance in `$logger`, remove that listener after the engine boots and attach a three-argument listener:
+The engine writes `a8csp_background_tasks/log` events to PHP's configured error log by default. Given your own `Psr\Log\LoggerInterface` instance in `$logger`, disable that sink before the engine boots and attach a three-argument listener:
 
 ```php
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 use Psr\Log\LoggerInterface;
 
 /** @var LoggerInterface $logger */
+\add_filter(
+	'a8csp_background_tasks/log_to_error_log',
+	static fn ( bool $enabled ): bool => false
+);
 \add_action(
-	'plugins_loaded',
-	static function () use ( $logger ): void {
-		\remove_action(
-			'a8csp_background_tasks/log',
-			array( ErrorLogSink::class, 'log' ),
-			10
-		);
-		\add_action(
-			'a8csp_background_tasks/log',
-			static function ( string $level, string $message, array $context ) use ( $logger ): void {
-				$logger->log( $level, $message, $context );
-			},
-			10,
-			3
-		);
+	'a8csp_background_tasks/log',
+	static function ( string $level, string $message, array $context ) use ( $logger ): void {
+		$logger->log( $level, $message, $context );
 	},
-	20
+	10,
+	3
 );
 ```
 
@@ -316,7 +309,7 @@ Use a stable owner slug and pass every schedule owned by that consumer on every 
 
 ## Keep action arguments small
 
-Public start and enqueue arguments are validated as JSON-encodable portable arguments and persisted in run state. The initial Task or Batch delivery carries only the engine envelope of name, run ID, and sequence. The 8,000-byte JSON ceiling applies to each backend action payload. A Batch chunk action also includes one chunk's arguments, so every chunk must fit with the envelope. An oversized or unencodable payload fails with a corrective message naming the hook:
+Public start and enqueue arguments are validated as JSON-encodable portable arguments and persisted in run state. The initial Task or Batch delivery carries only the engine envelope of identity, run ID, and sequence. The 8,000-byte JSON ceiling applies to each backend action payload. A Batch chunk action also includes one chunk's arguments, so every chunk must fit with the envelope. An oversized or unencodable payload fails with a corrective message naming the hook:
 
 > Scheduling hook "&lt;hook&gt;" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.
 
@@ -330,7 +323,7 @@ Each history buffer retains at most the positive `a8csp_background_tasks/history
 
 A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total, including the first, a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw an exception implementing `NonRetryableExceptionInterface` to bypass the remaining attempts for a permanent failure.
 
-After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
+After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
 
 Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. Cancellation is refused while an admitted lifecycle action is executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
 
@@ -342,23 +335,23 @@ The canonical command root is `wp background-tasks`; there is no alias.
 
 | Operation | Effective synopsis |
 | --- | --- |
-| List failed runs | `wp background-tasks failed list [--owner=<owner>] [--format=<format>]` |
-| Retry a failed run | `wp background-tasks failed retry <name> <run_id>` |
-| Purge failed runs for one name | `wp background-tasks failed purge <name>` |
-| Purge every discovered failed-run store | `wp background-tasks failed purge --all` |
-| Cancel a retained run | `wp background-tasks cancel <name> <run_id>` |
+| List failed runs | `wp background-tasks failed-runs list [--owner=<owner>] [--format=<format>]` |
+| Retry a failed run | `wp background-tasks failed-runs retry <identity> <run_id>` |
+| Purge failed runs for one identity | `wp background-tasks failed-runs purge <identity>` |
+| Purge every discovered failed-run store | `wp background-tasks failed-runs purge --all` |
+| Cancel a retained run | `wp background-tasks cancel <identity> <run_id>` |
 | List schedules | `wp background-tasks schedules list [--owner=<owner>] [--format=<format>]` |
-| List runs and recent history | `wp background-tasks runs list <name> [--format=<format>]` |
+| List runs and recent history | `wp background-tasks runs list <identity> [--format=<format>]` |
 
-Every targeted `<name>` argument is a composed `{owner}:{name}` identity. Failed-run and schedule list output include an `owner` column, retain the composed identity in the `name` column, and accept an exact `--owner` filter. The list commands accept `table`, `csv`, `json`, `count`, or `yaml`; the default is `table`. Examples matching the command help are:
+Every targeted `<identity>` argument is a composed `{owner}:{name}` identity. Failed-run and schedule list output include an `owner` column, retain the composed identity in the `name` column, and accept an exact `--owner` filter. The list commands accept `table`, `csv`, `json`, `count`, or `yaml`; the default is `table`. Examples matching the command help are:
 
 ```sh
-wp background-tasks failed list
-wp background-tasks failed list --format=json
-wp background-tasks failed list --owner=consumer-plugin
-wp background-tasks failed retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
-wp background-tasks failed purge consumer-plugin:email-digest
-wp background-tasks failed purge --all
+wp background-tasks failed-runs list
+wp background-tasks failed-runs list --format=json
+wp background-tasks failed-runs list --owner=consumer-plugin
+wp background-tasks failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+wp background-tasks failed-runs purge consumer-plugin:email-digest
+wp background-tasks failed-runs purge --all
 wp background-tasks cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 wp background-tasks schedules list
 wp background-tasks schedules list --owner=consumer-plugin --format=json
@@ -368,4 +361,4 @@ wp background-tasks runs list consumer-plugin:email-digest --format=json
 
 `schedules list` reports persisted registrations and state visible through ready backends. When registrations are listed in table format, the command adds a note if a present backend is not ready and may hold dormant occurrences.
 
-`runs list` table output separates live runs from bounded recent history. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim, and `failed store` marks a failure available to `failed retry`.
+`runs list` table output separates live runs from bounded recent history. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim, and `failed store` marks a failure available to `failed-runs retry`.

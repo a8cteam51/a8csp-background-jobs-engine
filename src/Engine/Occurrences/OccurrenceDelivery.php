@@ -318,7 +318,7 @@ final readonly class OccurrenceDelivery {
 		/**
 		 * Filters the grace window for one schedule occurrence.
 		 *
-		 * The dynamic portion of the hook name, `$registration_key`, is the complete owner-qualified
+		 * The dynamic portion of the hook name, `$identity`, is the complete owner-qualified
 		 * schedule identity.
 		 *
 		 * @since   1.0.0
@@ -326,7 +326,7 @@ final readonly class OccurrenceDelivery {
 		 *
 		 * @param   int    $interval         Default grace window in seconds.
 		 * @param   string $owner            Stable consumer identifier.
-		 * @param   string $registration_key Complete owner-qualified schedule identity.
+		 * @param   string $identity         Complete owner-qualified schedule identity.
 		 */
 		$grace = \apply_filters(
 			'a8csp_background_tasks/misfire_grace/' . $registration_key,
@@ -365,7 +365,7 @@ final readonly class OccurrenceDelivery {
 					/**
 					 * Fires when a Skip schedule drops one beyond-grace occurrence.
 					 *
-					 * The dynamic portion of the hook name, `$registration_key`, is the complete
+					 * The dynamic portion of the hook name, `$identity`, is the complete
 					 * owner-qualified schedule identity.
 					 *
 					 * @since   1.0.0
@@ -383,12 +383,12 @@ final readonly class OccurrenceDelivery {
 					);
 				} finally {
 					/**
-					 * Fires after the name-specific misfired schedule hook.
+					 * Fires after the identity-specific misfired schedule hook.
 					 *
 					 * @since   1.0.0
 					 * @version 1.0.0
 					 *
-					 * @param   string $registration_key Complete owner-qualified schedule identity.
+					 * @param   string $identity         Complete owner-qualified schedule identity.
 					 * @param   string $owner            Stable consumer identifier.
 					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
 					 * @param   int    $now              Occurrence observation timestamp.

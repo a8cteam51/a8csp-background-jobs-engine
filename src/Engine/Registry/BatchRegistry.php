@@ -19,7 +19,7 @@ final class BatchRegistry {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Registered batches keyed by stable name.
+	 * Registered batches keyed by stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -49,7 +49,7 @@ final class BatchRegistry {
 	// region METHODS
 
 	/**
-	 * Registers one uniquely named batch instance.
+	 * Registers one batch instance under a unique identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -77,7 +77,7 @@ final class BatchRegistry {
 	}
 
 	/**
-	 * Returns the batch registered under a stable name.
+	 * Returns the batch registered under a stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

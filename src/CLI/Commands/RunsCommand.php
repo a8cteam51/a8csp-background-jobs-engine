@@ -32,7 +32,7 @@ final readonly class RunsCommand {
 	 *
 	 * ## OPTIONS
 	 *
-	 * <name>
+	 * <identity>
 	 * : Composed `{owner}:{name}` task or batch identity.
 	 *
 	 * <run_id>
@@ -78,13 +78,13 @@ final readonly class RunsCommand {
 		if ( 2 !== \count( $args ) || array() !== $assoc_args ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Cancel requires exactly a name and run_id; use wp background-tasks cancel <name> <run_id>.',
+				'message' => 'Cancel requires exactly an identity and run_id; use wp background-tasks cancel <identity> <run_id>.',
 			);
 		}
 		if ( null === WorkIdentity::parts( $args[0] ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Cancel name is invalid; use a composed {owner}:{name} identity.',
+				'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
 			);
 		}
 
@@ -96,7 +96,7 @@ final readonly class RunsCommand {
 	}
 
 	/**
-	 * Lists live run state and bounded recent history for one background-work name.
+	 * Lists live run state and bounded recent history for one background-work identity.
 	 *
 	 * An executing phase that outlives the staleness window is reclaimed by maintenance; the stale
 	 * heartbeat suffix identifies that condition.
@@ -106,7 +106,7 @@ final readonly class RunsCommand {
 	 * <action>
 	 * : Operation to perform: list.
 	 *
-	 * <name>
+	 * <identity>
 	 * : Composed `{owner}:{name}` task or batch identity.
 	 *
 	 * [--format=<format>]
@@ -120,7 +120,7 @@ final readonly class RunsCommand {
 	 * A waiting live run has a backend delivery or retry pending. An executing run is inside its
 	 * handler, and a stale heartbeat means maintenance can reclaim the abandoned execution. The
 	 * `recent history` section is bounded; `failed store` identifies failures still available to
-	 * `wp background-tasks failed retry`.
+	 * `wp background-tasks failed-runs retry`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -158,7 +158,7 @@ final readonly class RunsCommand {
 		if ( array() === $args ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'A run action is required; use list <name>.',
+				'message' => 'A run action is required; use list <identity>.',
 			);
 		}
 
@@ -172,7 +172,7 @@ final readonly class RunsCommand {
 		if ( 2 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'format' ) ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
+				'message' => 'Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].',
 			);
 		}
 
@@ -180,7 +180,7 @@ final readonly class RunsCommand {
 		if ( null === WorkIdentity::parts( $name ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Run name is invalid; use a composed {owner}:{name} identity.',
+				'message' => 'Run identity is invalid; use a composed {owner}:{name} identity.',
 			);
 		}
 
@@ -207,14 +207,14 @@ final readonly class RunsCommand {
 	 * <action>
 	 * : Operation to perform: list, retry, or purge.
 	 *
-	 * [<name>]
-	 * : Composed `{owner}:{name}` task or batch identity. Required by retry and by a name-scoped purge.
+	 * [<identity>]
+	 * : Composed `{owner}:{name}` task or batch identity. Required by retry and by an identity-scoped purge.
 	 *
 	 * [<run_id>]
 	 * : Retained failed-run identifier. Required by retry.
 	 *
 	 * [--all]
-	 * : Purge every failed-run store. Valid only with purge and without a name.
+	 * : Purge every failed-run store. Valid only with purge and without an identity.
 	 *
 	 * [--owner=<owner>]
 	 * : Show only failed runs belonging to the exact owner. Valid only with list.
@@ -232,11 +232,13 @@ final readonly class RunsCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks failed list
-	 *     $ wp background-tasks failed list --owner=consumer-plugin --format=json
-	 *     $ wp background-tasks failed retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
-	 *     $ wp background-tasks failed purge consumer-plugin:email-digest
-	 *     $ wp background-tasks failed purge --all
+	 *     $ wp background-tasks failed-runs list
+	 *     $ wp background-tasks failed-runs list --owner=consumer-plugin --format=json
+	 *     $ wp background-tasks failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp background-tasks failed-runs purge consumer-plugin:email-digest
+	 *     $ wp background-tasks failed-runs purge --all
+	 *
+	 * @subcommand failed-runs
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -246,8 +248,8 @@ final readonly class RunsCommand {
 	 *
 	 * @return  void
 	 */
-	public function failed( array $args, array $assoc_args ): void {
-		$request = self::failed_request_from_args( $args, $assoc_args );
+	public function failed_runs( array $args, array $assoc_args ): void {
+		$request = self::failed_runs_request_from_args( $args, $assoc_args );
 		if ( 'error' === $request['action'] ) {
 			\WP_CLI::error( $request['message'] );
 			return;
@@ -282,11 +284,11 @@ final readonly class RunsCommand {
 	 *          |array{action: 'retry', name: string, run_id: string}
 	 *          |array{action: 'purge', name: string|null}
 	 */
-	public static function failed_request_from_args( array $args, array $assoc_args ): array {
+	public static function failed_runs_request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'A failed-run action is required; use list, retry <name> <run_id>, purge <name>, or purge --all.',
+				'message' => 'A failed-run action is required; use list, retry <identity> <run_id>, purge <identity>, or purge --all.',
 			);
 		}
 
@@ -296,7 +298,7 @@ final readonly class RunsCommand {
 				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'List accepts only --owner and --format; use wp background-tasks failed list [--owner=<owner>] [--format=<format>].',
+						'message' => 'List accepts only --owner and --format; use wp background-tasks failed-runs list [--owner=<owner>] [--format=<format>].',
 					);
 				}
 
@@ -339,13 +341,13 @@ final readonly class RunsCommand {
 				if ( 3 !== \count( $args ) || array() !== $assoc_args ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Retry requires exactly a name and run_id; use wp background-tasks failed retry <name> <run_id>.',
+						'message' => 'Retry requires exactly an identity and run_id; use wp background-tasks failed-runs retry <identity> <run_id>.',
 					);
 				}
 				if ( null === WorkIdentity::parts( $args[1] ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Retry name is invalid; use a composed {owner}:{name} identity.',
+						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
 					);
 				}
 
@@ -358,7 +360,7 @@ final readonly class RunsCommand {
 				if ( ! self::has_only_keys( $assoc_args, array( 'all' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Purge accepts only --all; use wp background-tasks failed purge <name> or purge --all.',
+						'message' => 'Purge accepts only --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 					);
 				}
 
@@ -374,7 +376,7 @@ final readonly class RunsCommand {
 					if ( null === WorkIdentity::parts( $name ) ) {
 						return array(
 							'action'  => 'error',
-							'message' => 'Purge name is invalid; use a composed {owner}:{name} identity.',
+							'message' => 'Purge identity is invalid; use a composed {owner}:{name} identity.',
 						);
 					}
 
@@ -386,7 +388,7 @@ final readonly class RunsCommand {
 
 				return array(
 					'action'  => 'error',
-					'message' => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
+					'message' => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
 				);
 			default:
 				return array(
@@ -582,7 +584,7 @@ final readonly class RunsCommand {
 	/**
 	 * Purges one failed-run store or every discovered store.
 	 *
-	 * A null name selects every store discovered under the failed-run option prefix.
+	 * A null identity selects every store discovered under the failed-run option prefix.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

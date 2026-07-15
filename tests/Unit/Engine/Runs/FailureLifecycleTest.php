@@ -489,7 +489,7 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A name-specific RetryPolicy replacement controls the cap for that task.
+	 * An identity-specific RetryPolicy replacement controls the cap for that task.
 	 *
 	 * @return  void
 	 */

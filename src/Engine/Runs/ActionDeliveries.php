@@ -267,7 +267,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
 	 * @param   string $run_id    Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
@@ -368,7 +368,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                      $name                     Stable task or batch name.
+	 * @param   string                      $name                     Complete owner-qualified task or batch identity.
 	 * @param   string                      $run_id                   Run identifier.
 	 * @param   array<array-key, mixed>|int $chunk_args_or_action_seq Batch chunk arguments or a task action sequence.
 	 * @param   int|null                    $action_seq               Batch action sequence, or null for a task action.
@@ -454,7 +454,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
 	 * @param   string $run_id    Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
@@ -523,7 +523,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   BatchInterface $batch      Registered batch.
-	 * @param   string         $batch_name Stable batch name.
+	 * @param   string         $batch_name Complete owner-qualified batch identity.
 	 * @param   string         $run_id     Run identifier.
 	 * @param   RunState       $state      Fenced running state.
 	 * @param   RunStore       $run_store  Active-run store.
@@ -561,7 +561,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   TaskInterface $task      Registered task.
-	 * @param   string        $task_name Stable task name.
+	 * @param   string        $task_name Complete owner-qualified task identity.
 	 * @param   string        $run_id    Run identifier.
 	 * @param   RunState      $state     Fenced running state.
 	 * @param   RunStore      $run_store Active-run store.
@@ -612,7 +612,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   BatchInterface          $batch      Registered batch.
-	 * @param   string                  $batch_name Stable batch name.
+	 * @param   string                  $batch_name Complete owner-qualified batch identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $chunk_args Chunk arguments.
 	 * @param   RunState                $state      Fenced running state.
@@ -756,7 +756,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   BatchInterface                $batch      Registered batch.
-	 * @param   string                        $batch_name Stable batch name.
+	 * @param   string                        $batch_name Complete owner-qualified batch identity.
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   RunState                      $state      Fenced running state.
 	 * @param   RunStore                      $run_store  Active-run store.
@@ -825,7 +825,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
 	 * @param   string $run_id    Run identifier.
 	 * @param   string $stage     Internal batch stage.
 	 *
@@ -857,7 +857,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $name      Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id    Run identifier.
 	 * @param   RunState       $state     Fenced running state.
 	 * @param   RunStore       $run_store Active-run store.

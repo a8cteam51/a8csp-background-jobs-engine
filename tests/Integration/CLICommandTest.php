@@ -230,7 +230,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command();
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-tasks cancel <name> <run_id>\n", $result['stdout'] );
+		self::assertSame( "usage: wp background-tasks cancel <identity> <run_id>\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -279,7 +279,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_failed_list_reports_an_informative_empty_result(): void {
-		$result = self::run_failed_command( 'list' );
+		$result = self::run_failed_runs_command( 'list' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "No failed runs are retained.\n", $result['stdout'] );
@@ -295,7 +295,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$this->expect_option( self::option_name( self::LIST_STORE_NAME ) );
 		$this->seed_failed_run( self::LIST_STORE_NAME );
 
-		$result = self::run_failed_command( 'list', '--format=json' );
+		$result = self::run_failed_runs_command( 'list', '--format=json' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
@@ -318,7 +318,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$this->seed_failed_run( self::LIST_STORE_NAME );
 
 		$result = self::run_command_with_globals(
-			'failed',
+			'failed-runs',
 			array( '--require=' . self::FAILED_READ_BOOTSTRAP ),
 			'list'
 		);
@@ -333,12 +333,12 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Retry preserves the engine's corrective failure for an unregistered background-work name.
+	 * Retry preserves the engine's corrective failure for an unregistered background-work identity.
 	 *
 	 * @return  void
 	 */
 	public function test_failed_retry_surfaces_the_unregistered_engine_error(): void {
-		$result = self::run_failed_command( 'retry', self::UNREGISTERED_NAME, self::RUN_ID );
+		$result = self::run_failed_runs_command( 'retry', self::UNREGISTERED_NAME, self::RUN_ID );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
@@ -358,7 +358,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$rows  = self::option_rows();
 		$store = $this->seed_failed_run( self::PURGE_STORE_NAME, $rows );
 
-		$result = self::run_failed_command( 'purge', self::PURGE_STORE_NAME );
+		$result = self::run_failed_runs_command( 'purge', self::PURGE_STORE_NAME );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
@@ -378,7 +378,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$rows  = self::option_rows();
 		$store = $this->seed_failed_run( self::ALL_STORE_NAME, $rows );
 
-		$result = self::run_failed_command( 'purge', '--all' );
+		$result = self::run_failed_runs_command( 'purge', '--all' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "Success: Purged 1 failed run across all names.\n", $result['stdout'] );
@@ -392,7 +392,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_failed_purge_no_all_names_the_correct_usage(): void {
-		$result = self::run_failed_command( 'purge', '--no-all' );
+		$result = self::run_failed_runs_command( 'purge', '--no-all' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
@@ -405,7 +405,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_failed_purge_without_a_scope_names_the_correct_usage(): void {
-		$result = self::run_failed_command( 'purge' );
+		$result = self::run_failed_runs_command( 'purge' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
@@ -418,7 +418,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_invalid_failed_action_names_the_supported_actions(): void {
-		$result = self::run_failed_command( 'remove' );
+		$result = self::run_failed_runs_command( 'remove' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
@@ -703,7 +703,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_runs_without_required_positionals_use_the_native_synopsis(): void {
-		$expected = "usage: wp background-tasks runs <action> <name> [--format=<format>]\n";
+		$expected = "usage: wp background-tasks runs <action> <identity> [--format=<format>]\n";
 
 		foreach ( array( array(), array( 'list' ) ) as $arguments ) {
 			$result = self::run_runs_command( ...$arguments );
@@ -754,7 +754,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $invalid_name['exit_code'] );
 		self::assertSame( '', $invalid_name['stdout'] );
 		self::assertSame(
-			"Error: Run name is invalid; use a composed {owner}:{name} identity.\n",
+			"Error: Run identity is invalid; use a composed {owner}:{name} identity.\n",
 			$invalid_name['stderr']
 		);
 
@@ -871,12 +871,12 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Runs the registered command through wp-env's actual WP-CLI executable.
 	 *
-	 * @param   string ...$arguments Arguments following the failed command.
+	 * @param   string ...$arguments Arguments following the failed-runs command.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
 	 */
-	private static function run_failed_command( string ...$arguments ): array {
-		return self::run_command( 'failed', ...$arguments );
+	private static function run_failed_runs_command( string ...$arguments ): array {
+		return self::run_command( 'failed-runs', ...$arguments );
 	}
 
 	/**
@@ -1060,7 +1060,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Persists one deterministic retained failure.
 	 *
-	 * @param   string          $name Stable background-work name.
+	 * @param   string          $name Complete owner-qualified background-work identity.
 	 * @param   OptionRows|null $rows Site-bound row seam, or null to construct one.
 	 *
 	 * @return  FailedRunStore
@@ -1092,7 +1092,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Asserts that a child-process purge removed both authoritative and public store state.
 	 *
-	 * @param   string         $name  Stable background-work name.
+	 * @param   string         $name  Complete owner-qualified background-work identity.
 	 * @param   FailedRunStore $store Failed-run store constructed by the PHPUnit request.
 	 * @param   OptionRows     $rows  Authoritative option-row seam.
 	 *
@@ -1119,7 +1119,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Returns the failed-store option name for a stable background-work identity.
 	 *
-	 * @param   string $name Stable background-work name.
+	 * @param   string $name Complete owner-qualified background-work identity.
 	 *
 	 * @return  string
 	 */
@@ -1133,8 +1133,8 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function purge_usage_error(): string {
-		return 'Error: Purge requires exactly one name or --all; ' .
-			"use wp background-tasks failed purge <name> or purge --all.\n";
+		return 'Error: Purge requires exactly one identity or --all; ' .
+			"use wp background-tasks failed-runs purge <identity> or purge --all.\n";
 	}
 
 	// endregion.

@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
@@ -21,7 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Engine {
+final readonly class EngineFacade {
 	// region MAGIC METHODS
 
 	/**
@@ -49,12 +49,12 @@ final readonly class Engine {
 	// region METHODS
 
 	/**
-	 * Returns the last completed run retained for one background-work name.
+	 * Returns the last completed run retained for one background-work identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Complete owner-qualified task or batch identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
@@ -69,7 +69,7 @@ final readonly class Engine {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
@@ -85,7 +85,7 @@ final readonly class Engine {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Retained run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>

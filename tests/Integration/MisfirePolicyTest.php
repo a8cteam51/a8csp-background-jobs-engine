@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundTasksEngine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
@@ -321,9 +321,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 * @param   FixedClock      $clock  Deterministic current instant.
 	 * @param   RecordingLogger $logger Recorded engine log sink.
 	 *
-	 * @return  Engine
+	 * @return  EngineFacade
 	 */
-	private function build_engine( FixedClock $clock, RecordingLogger $logger ): Engine {
+	private function build_engine( FixedClock $clock, RecordingLogger $logger ): EngineFacade {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
@@ -406,7 +406,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$lock_windows,
 			$clock
 		);
-		$engine               = new Engine(
+		$engine               = new EngineFacade(
 			new Tasks( $tasks, $dispatcher ),
 			$schedules,
 			new Batches( $batches, $dispatcher ),
