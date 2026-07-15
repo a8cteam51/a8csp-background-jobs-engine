@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
@@ -85,8 +86,9 @@ final class InspectionTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
 
 		$this->clock      = new FixedClock( self::NOW );
-		$this->tasks      = new TaskRegistry();
-		$this->batches    = new BatchRegistry();
+		$work             = new WorkRegistry();
+		$this->tasks      = new TaskRegistry( $work );
+		$this->batches    = new BatchRegistry( $work );
 		$this->backend    = new RecordingBackend();
 		$this->wpdb       = new WpdbLockSpy();
 		$rows             = new OptionRows( $this->wpdb );
@@ -120,13 +122,13 @@ final class InspectionTest extends TestCase {
 			'refresh-index',
 			array( 'scope' => 'all' )
 		);
-		$this->tasks->register( new RecordingTask( 'refresh-index' ) );
+		$this->tasks->register( 'owner-a:refresh-index', new RecordingTask( 'refresh-index' ) );
 		self::assertTrue(
 			$this->schedules->replace_owner(
 				'owner-b',
 				array(),
 				array(
-					'orphaned' => array(
+					'owner-b:orphaned' => array(
 						'fingerprint' => 'orphaned-fingerprint',
 						'next_due'    => self::NOW + 600,
 						'last_fired'  => null,
@@ -139,9 +141,9 @@ final class InspectionTest extends TestCase {
 		self::assertTrue(
 			$this->schedules->replace_owner(
 				'owner-a',
-				array( 'nightly' => $schedule ),
+				self::declarations( 'owner-a', $schedule ),
 				array(
-					'nightly' => array(
+					'owner-a:nightly' => array(
 						'fingerprint' => $schedule->fingerprint(),
 						'next_due'    => self::NOW + 300,
 						'last_fired'  => self::NOW - 60,
@@ -153,7 +155,7 @@ final class InspectionTest extends TestCase {
 		);
 		$this->backend->scheduled = true;
 		$args_hash                = self::args_hash( $schedule->args );
-		$this->put_lock( 'refresh-index', $args_hash, 'run-lock', self::NOW );
+		$this->put_lock( 'owner-a:refresh-index', $args_hash, 'run-lock', self::NOW );
 
 		self::assertSame(
 			array(
@@ -162,7 +164,7 @@ final class InspectionTest extends TestCase {
 				'entries'           => array(
 					array(
 						'owner'      => 'owner-a',
-						'name'       => 'nightly',
+						'name'       => 'owner-a:nightly',
 						'recurrence' => 300,
 						'next_due'   => self::NOW + 300,
 						'last_fired' => self::NOW - 60,
@@ -177,7 +179,7 @@ final class InspectionTest extends TestCase {
 					),
 					array(
 						'owner'      => 'owner-b',
-						'name'       => 'orphaned',
+						'name'       => 'owner-b:orphaned',
 						'recurrence' => null,
 						'next_due'   => self::NOW + 600,
 						'last_fired' => null,
@@ -264,7 +266,7 @@ final class InspectionTest extends TestCase {
 		);
 		$registrations = array();
 		foreach ( $schedules as $name => $schedule ) {
-			$registrations[ $name ] = array(
+			$registrations[ 'owner:' . $name ] = array(
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => self::NOW + 300,
 				'last_fired'  => null,
@@ -272,9 +274,15 @@ final class InspectionTest extends TestCase {
 				'skips'       => 0,
 			);
 		}
-		self::assertTrue( $this->schedules->replace_owner( 'owner', $schedules, $registrations ) );
+		self::assertTrue(
+			$this->schedules->replace_owner(
+				'owner',
+				self::declarations( 'owner', ...\array_values( $schedules ) ),
+				$registrations
+			)
+		);
 		$this->wpdb->put(
-			'a8csp_bgte_lock_invalid-task_' . self::args_hash( array( 'case' => 'invalid' ) ),
+			'a8csp_bgte_lock_owner:invalid-task_' . self::args_hash( array( 'case' => 'invalid' ) ),
 			'not-a-lock-row'
 		);
 		$this->wpdb->before_next( 'select', static function (): void {} );
@@ -289,10 +297,10 @@ final class InspectionTest extends TestCase {
 		self::assertNotNull( $snapshot );
 		$locks = \array_column( $snapshot['entries'], 'lock', 'name' );
 
-		self::assertSame( array( 'state' => 'overlap_allowed' ), $locks['allow'] );
-		self::assertSame( array( 'state' => 'read_failed' ), $locks['failed'] );
-		self::assertSame( array( 'state' => 'free' ), $locks['free'] );
-		self::assertSame( array( 'state' => 'invalid' ), $locks['invalid'] );
+		self::assertSame( array( 'state' => 'overlap_allowed' ), $locks['owner:allow'] );
+		self::assertSame( array( 'state' => 'read_failed' ), $locks['owner:failed'] );
+		self::assertSame( array( 'state' => 'free' ), $locks['owner:free'] );
+		self::assertSame( array( 'state' => 'invalid' ), $locks['owner:invalid'] );
 	}
 
 	/**
@@ -301,10 +309,11 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_expose_phase_queue_kind_and_strict_staleness(): void {
-		$this->tasks->register( new RecordingTask( 'email-digest' ) );
+		$identity = 'owner:email-digest';
+		$this->tasks->register( $identity, new RecordingTask( 'email-digest' ) );
 		$fresh_id    = self::run_id( 1 );
 		$stale_id    = self::run_id( 2 );
-		$store       = $this->stores->run_store( 'email-digest' );
+		$store       = $this->stores->run_store( $identity );
 		$fresh_state = $store->create( $fresh_id, array(), 'hash-fresh', array( array() ) );
 		$stale_state = $store->create( $stale_id, array(), 'hash-stale', array( array() ) );
 		self::assertNotNull( $fresh_state );
@@ -326,7 +335,7 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$snapshot = $this->inspection->runs( 'email-digest' );
+		$snapshot = $this->inspection->runs( $identity );
 
 		self::assertSame( self::NOW, $snapshot['observed_at'] );
 		self::assertNull( $snapshot['live_error'] );
@@ -365,9 +374,10 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_merge_valid_live_rows_and_bounded_history(): void {
-		$this->batches->register( new RecordingBatch( 'catalog-sync' ) );
+		$identity = 'owner:catalog-sync';
+		$this->batches->register( $identity, new RecordingBatch( 'catalog-sync' ) );
 		$live_id = self::run_id( 1 );
-		$store   = $this->stores->run_store( 'catalog-sync' );
+		$store   = $this->stores->run_store( $identity );
 		$state   = $store->create(
 			$live_id,
 			array(),
@@ -380,25 +390,25 @@ final class InspectionTest extends TestCase {
 		self::assertNotNull( $state );
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_run_catalog-sync_' . self::run_id( 99 ) ] = 'not-a-run-row';
+		$options[ 'a8csp_bgte_run_' . $identity . '_' . self::run_id( 99 ) ] = 'not-a-run-row';
 
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$history = $this->stores->run_history( 'catalog-sync' );
+		$history = $this->stores->run_history( $identity );
 		self::assertTrue( $history->record_started( 'run-completed', 'hash-completed' ) );
 		self::assertTrue( $history->record_started( 'run-failed', 'hash-failed' ) );
 		self::assertTrue( $history->record_started( $live_id, 'hash-live' ) );
 		self::assertTrue( $history->record_terminal( 'run-completed', 'hash-completed', RunStatus::Completed ) );
 		self::assertTrue( $history->record_terminal( 'run-failed', 'hash-failed', RunStatus::Failed ) );
 		self::assertTrue(
-			$this->stores->failed_run_store( 'catalog-sync' )->record(
+			$this->stores->failed_run_store( $identity )->record(
 				'run-failed',
 				self::NOW - 1,
 				array(),
 				2,
 				new EngineError( 'Retained failure.' ),
 				new RunFailure(
-					name: 'catalog-sync',
+					name: $identity,
 					run_id: 'run-failed',
 					attempts: 2,
 					stage: 'execution',
@@ -409,7 +419,7 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$snapshot = $this->inspection->runs( 'catalog-sync' );
+		$snapshot = $this->inspection->runs( $identity );
 
 		self::assertCount( 1, $snapshot['live'] );
 		self::assertSame( 'batch', $snapshot['live'][0]['kind'] );
@@ -450,7 +460,7 @@ final class InspectionTest extends TestCase {
 			}
 		);
 
-		$snapshot = $this->inspection->runs( 'unavailable-history' );
+		$snapshot = $this->inspection->runs( 'owner:unavailable-history' );
 
 		self::assertNull( $snapshot['live_error'] );
 		self::assertSame( array(), $snapshot['live'] );
@@ -465,25 +475,49 @@ final class InspectionTest extends TestCase {
 	public function test_run_enumeration_requires_the_exact_parsed_name(): void {
 		$requested_id = self::run_id( 1 );
 		$foreign_id   = self::run_id( 2 );
-		$this->tasks->register( new RecordingTask( 'foo' ) );
-		$this->tasks->register( new RecordingTask( 'foo_bar' ) );
+		$this->tasks->register( 'owner:foo', new RecordingTask( 'foo' ) );
+		$this->tasks->register( 'owner:foo_bar', new RecordingTask( 'foo_bar' ) );
 		self::assertNotNull(
-			$this->stores->run_store( 'foo' )->create( $requested_id, array(), 'foo-hash', array( array() ) )
+			$this->stores->run_store( 'owner:foo' )->create( $requested_id, array(), 'foo-hash', array( array() ) )
 		);
 		self::assertNotNull(
-			$this->stores->run_store( 'foo_bar' )->create( $foreign_id, array(), 'foo-bar-hash', array( array() ) )
+			$this->stores->run_store( 'owner:foo_bar' )->create( $foreign_id, array(), 'foo-bar-hash', array( array() ) )
 		);
 		self::assertSame(
 			array(
-				'name'   => 'foo_bar',
+				'name'   => 'owner:foo_bar',
 				'run_id' => $foreign_id,
 			),
-			Inspection::run_identity_from_option_name( 'a8csp_bgte_run_foo_bar_' . $foreign_id )
+			Inspection::run_identity_from_option_name( 'a8csp_bgte_run_owner:foo_bar_' . $foreign_id )
 		);
 
-		$snapshot = $this->inspection->runs( 'foo' );
+		$snapshot = $this->inspection->runs( 'owner:foo' );
 
 		self::assertSame( array( $requested_id ), \array_column( $snapshot['live'], 'run_id' ) );
+		self::assertSame( 1, $snapshot['live_scanned'] );
+		self::assertSame( 0, $snapshot['live_uninspected'] );
+	}
+
+	/**
+	 * Malformed fixed-width candidates cannot consume the valid live-run inspection cap.
+	 *
+	 * @return  void
+	 */
+	public function test_run_enumeration_skips_malformed_candidates_before_valid_rows(): void {
+		$identity = 'owner:malformed-leading';
+		$run_id   = self::run_id( 1 );
+		self::assertNotNull(
+			$this->stores->run_store( $identity )->create( $run_id, array(), 'valid-hash', array( array() ) )
+		);
+
+		$prefix = 'a8csp_bgte_run_' . $identity . '_';
+		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
+			$this->wpdb->put( $prefix . \sprintf( '!%039d', $sequence ), 'malformed-run-row' );
+		}
+
+		$snapshot = $this->inspection->runs( $identity );
+
+		self::assertSame( array( $run_id ), \array_column( $snapshot['live'], 'run_id' ) );
 		self::assertSame( 1, $snapshot['live_scanned'] );
 		self::assertSame( 0, $snapshot['live_uninspected'] );
 	}
@@ -494,15 +528,15 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_enumeration_is_bounded_with_explicit_truncation_counts(): void {
-		$this->tasks->register( new RecordingTask( 'many-runs' ) );
-		$store = $this->stores->run_store( 'many-runs' );
+		$this->tasks->register( 'owner:many-runs', new RecordingTask( 'many-runs' ) );
+		$store = $this->stores->run_store( 'owner:many-runs' );
 		for ( $sequence = 1; $sequence <= 24; ++$sequence ) {
 			self::assertNotNull(
 				$store->create( self::run_id( $sequence ), array(), 'hash-' . $sequence, array( array() ) )
 			);
 		}
 
-		$snapshot = $this->inspection->runs( 'many-runs' );
+		$snapshot = $this->inspection->runs( 'owner:many-runs' );
 
 		self::assertNull( $snapshot['live_error'] );
 		self::assertSame( 20, $snapshot['live_scanned'] );
@@ -520,18 +554,23 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_run_read_failures_do_not_collapse_into_absence(): void {
 		$this->wpdb->before_next(
-			'count',
+			'scan',
 			static function ( WpdbLockSpy $wpdb ): void {
 				$wpdb->last_error = 'scripted enumeration failure';
 			}
 		);
 
-		$enumeration_failure = $this->inspection->runs( 'failed-enumeration' );
+		$enumeration_failure = $this->inspection->runs( 'owner:failed-enumeration' );
 
 		self::assertSame( 'enumeration_failed', $enumeration_failure['live_error'] );
 		self::assertSame( array(), $enumeration_failure['live'] );
 		self::assertSame( array(), $enumeration_failure['history'] );
 
+		$scan_prefix = 'a8csp_bgte_run_owner:failed-scan_';
+		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
+			$this->wpdb->put( $scan_prefix . \sprintf( '!%039d', $sequence ), 'malformed-run-row' );
+		}
+		$this->wpdb->before_next( 'scan', static function (): void {} );
 		$this->wpdb->before_next(
 			'scan',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -539,7 +578,7 @@ final class InspectionTest extends TestCase {
 			}
 		);
 
-		$scan_failure = $this->inspection->runs( 'failed-scan' );
+		$scan_failure = $this->inspection->runs( 'owner:failed-scan' );
 
 		self::assertSame( 'enumeration_failed', $scan_failure['live_error'] );
 		self::assertSame( array(), $scan_failure['live'] );
@@ -547,7 +586,7 @@ final class InspectionTest extends TestCase {
 
 		$run_id = self::run_id( 1 );
 		self::assertNotNull(
-			$this->stores->run_store( 'failed-row' )->create( $run_id, array(), 'hash', array( array() ) )
+			$this->stores->run_store( 'owner:failed-row' )->create( $run_id, array(), 'hash', array( array() ) )
 		);
 		$this->wpdb->before_next(
 			'select',
@@ -556,7 +595,7 @@ final class InspectionTest extends TestCase {
 			}
 		);
 
-		$row_failure = $this->inspection->runs( 'failed-row' );
+		$row_failure = $this->inspection->runs( 'owner:failed-row' );
 
 		self::assertSame( 'read_failed', $row_failure['live_error'] );
 		self::assertSame( array(), $row_failure['live'] );
@@ -564,14 +603,14 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
-	 * Undeclared and ambiguously declared live work retains unknown kind and observable queue depth.
+	 * Complete identities keep work kinds owner-qualified while undeclared work remains unknown.
 	 *
 	 * @return  void
 	 */
-	public function test_unknown_work_kind_preserves_queue_depth(): void {
+	public function test_work_kind_is_owner_qualified_and_unknown_preserves_queue_depth(): void {
 		$orphan_id = self::run_id( 1 );
 		self::assertNotNull(
-			$this->stores->run_store( 'orphaned' )->create(
+			$this->stores->run_store( 'owner:orphaned' )->create(
 				$orphan_id,
 				array(),
 				'orphaned-hash',
@@ -579,25 +618,37 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$ambiguous_id = self::run_id( 2 );
-		$this->tasks->register( new RecordingTask( 'ambiguous' ) );
-		$this->batches->register( new RecordingBatch( 'ambiguous' ) );
+		$task_id = self::run_id( 2 );
+		$this->tasks->register( 'owner-a:shared', new RecordingTask( 'shared' ) );
 		self::assertNotNull(
-			$this->stores->run_store( 'ambiguous' )->create(
-				$ambiguous_id,
+			$this->stores->run_store( 'owner-a:shared' )->create(
+				$task_id,
 				array(),
-				'ambiguous-hash',
+				'task-hash',
+				array( array( 'page' => 1 ) )
+			)
+		);
+		$batch_id = self::run_id( 3 );
+		$this->batches->register( 'owner-b:shared', new RecordingBatch( 'shared' ) );
+		self::assertNotNull(
+			$this->stores->run_store( 'owner-b:shared' )->create(
+				$batch_id,
+				array(),
+				'batch-hash',
 				array( array( 'page' => 1 ) )
 			)
 		);
 
-		$orphaned  = $this->inspection->runs( 'orphaned' )['live'][0];
-		$ambiguous = $this->inspection->runs( 'ambiguous' )['live'][0];
+		$orphaned = $this->inspection->runs( 'owner:orphaned' )['live'][0];
+		$task     = $this->inspection->runs( 'owner-a:shared' )['live'][0];
+		$batch    = $this->inspection->runs( 'owner-b:shared' )['live'][0];
 
 		self::assertSame( 'unknown', $orphaned['kind'] );
 		self::assertSame( 2, $orphaned['queue_depth'] );
-		self::assertSame( 'unknown', $ambiguous['kind'] );
-		self::assertSame( 1, $ambiguous['queue_depth'] );
+		self::assertSame( 'task', $task['kind'] );
+		self::assertNull( $task['queue_depth'] );
+		self::assertSame( 'batch', $batch['kind'] );
+		self::assertSame( 1, $batch['queue_depth'] );
 	}
 
 	/**
@@ -626,9 +677,29 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
+	 * Returns request-local declarations keyed by complete schedule identity.
+	 *
+	 * @param   string   $owner     Owner identifier.
+	 * @param   Schedule ...$schedules Schedule value objects.
+	 *
+	 * @return  array<string, array{schedule: Schedule, task: string}>
+	 */
+	private static function declarations( string $owner, Schedule ...$schedules ): array {
+		$declarations = array();
+		foreach ( $schedules as $schedule ) {
+			$declarations[ $owner . ':' . $schedule->name ] = array(
+				'schedule' => $schedule,
+				'task'     => $owner . ':' . $schedule->task,
+			);
+		}
+
+		return $declarations;
+	}
+
+	/**
 	 * Persists one exact complete lock row.
 	 *
-	 * @param   string $name         Stable background-work name.
+	 * @param   string $name         Complete background-work identity.
 	 * @param   string $args_hash    Stable argument identity.
 	 * @param   string $run_id       Owning run identifier.
 	 * @param   int    $heartbeat_at Latest heartbeat timestamp.

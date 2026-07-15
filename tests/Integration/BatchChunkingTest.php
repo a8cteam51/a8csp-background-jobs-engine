@@ -13,8 +13,14 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 final class BatchChunkingTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Public owner unique to this integration-test graph. */
+	private const OWNER = 'integration-batch-chunking';
+
 	/** Batch identity unique within the request-persistent integration registry. */
 	private const NAME = 'integration-batch-chunking';
+
+	/** Owner-qualified batch identity persisted by the engine. */
+	private const IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 
@@ -45,11 +51,10 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			$context->prepend( array( 'chunk' => 'front' ) );
 		};
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register batches' );
-		$engine->batches()->register( $batch );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->batches()->register( $batch );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
 		$continue_delay_calls = array();
 		\add_filter(
 			'a8csp_background_tasks/continue_delay',
@@ -64,7 +69,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 
 		$completion_observations = array();
 		\add_action(
-			'a8csp_background_tasks/completed/' . self::NAME,
+			'a8csp_background_tasks/completed/' . self::IDENTITY,
 			static function ( string $run_id, array $args ) use ( $batch, &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'          => 'named',
@@ -88,11 +93,11 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = \a8csp_bgte_start_batch( self::NAME, $start_args );
+		$result = $consumer->batches()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The registered batch must start through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
-		$group  = self::NAME . '|' . $run_id;
+		$group  = self::IDENTITY . '|' . $run_id;
 
 		self::assertSame( array(), $batch->generate_calls, 'Starting a batch must not generate its queue inline' );
 
@@ -118,7 +123,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 				'A CONTINUE action must leave the process ledger unchanged; dispatch the visible chunk through its RUN action'
 			);
 			$run_action_ids[] = $this->assert_pending_chunk_action(
-				self::NAME,
+				self::IDENTITY,
 				$run_id,
 				$group,
 				$expected_chunk
@@ -141,7 +146,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		);
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute terminal batch cleanup' );
 		self::assertSame(
-			\array_fill( 0, 6, array( 60, self::NAME, $run_id ) ),
+			\array_fill( 0, 6, array( 60, self::IDENTITY, $run_id ) ),
 			$continue_delay_calls,
 			'The zero-delay filter must receive its default, batch name, and run ID for the lock and every chunk'
 		);
@@ -187,7 +192,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 				),
 				array(
 					'hook'          => 'generic',
-					'payload'       => array( self::NAME, $run_id, $start_args ),
+					'payload'       => array( self::IDENTITY, $run_id, $start_args ),
 					'success_calls' => 1,
 				),
 			),
@@ -197,15 +202,15 @@ final class BatchChunkingTest extends IntegrationTestCase {
 
 		$args_hash = self::args_hash( $start_args );
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id, false ),
+			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ),
 			'Terminal batch success must delete the active run option'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::NAME . '_' . $args_hash, false ),
+			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
 			'Terminal batch success must release the overlap lock'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_failed_' . self::NAME, false ),
+			\get_option( 'a8csp_bgte_failed_' . self::IDENTITY, false ),
 			'Terminal batch success must not create a failed-run row'
 		);
 		self::assertSame(
@@ -213,7 +218,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 				'all'     => $run_id,
 				'by_hash' => array( $args_hash => $run_id ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
 			'Terminal batch success must retain the latest pointers'
 		);
 		self::assertSame(
@@ -237,13 +242,13 @@ final class BatchChunkingTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
 			'Terminal batch success must retain one started and completed history entry'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::NAME,
-				'a8csp_bgte_latest_' . self::NAME,
+				'a8csp_bgte_history_' . self::IDENTITY,
+				'a8csp_bgte_latest_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Completed batch state must contain only its history ring and latest pointer'

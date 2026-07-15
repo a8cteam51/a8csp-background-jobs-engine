@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
@@ -50,6 +51,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( SchedulerFacade::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TerminalTransitions::class )]
+#[UsesClass( WorkRegistry::class )]
 final class DispatcherCancelTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -58,11 +60,15 @@ final class DispatcherCancelTest extends TestCase {
 		'mode'    => 'full',
 	);
 
-	private const ARGS_HASH  = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const BATCH_NAME = 'catalog-sync';
-	private const NOW        = 1_700_000_000;
-	private const RUN_ID     = '00000000001700000000-0000000000000000042';
-	private const TASK_NAME  = 'email-digest';
+	private const ARGS_HASH        = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const BATCH_IDENTITY   = self::OWNER . ':' . self::BATCH_NAME;
+	private const BATCH_NAME       = 'catalog-sync';
+	private const NOW              = 1_700_000_000;
+	private const OWNER            = 'runs-tests';
+	private const RUN_ID           = '00000000001700000000-0000000000000000042';
+	private const TASK_IDENTITY    = self::OWNER . ':' . self::TASK_NAME;
+	private const TASK_NAME        = 'email-digest';
+	private const UNKNOWN_IDENTITY = self::OWNER . ':unknown';
 
 	private BatchRegistry $batches;
 	private FixedClock $clock;
@@ -128,11 +134,12 @@ final class DispatcherCancelTest extends TestCase {
 		$this->logger            = new RecordingLogger();
 		$this->primary_backend   = new RecordingBackend();
 		$this->secondary_backend = new RecordingBackend();
-		$this->tasks             = new TaskRegistry();
-		$this->batches           = new BatchRegistry();
+		$work                    = new WorkRegistry();
+		$this->tasks             = new TaskRegistry( $work );
+		$this->batches           = new BatchRegistry( $work );
 		$this->task              = new RecordingTask( self::TASK_NAME );
-		$this->tasks->register( $this->task );
-		$this->batches->register( new RecordingBatch( self::BATCH_NAME ) );
+		$this->tasks->register( self::TASK_IDENTITY, $this->task );
+		$this->batches->register( self::BATCH_IDENTITY, new RecordingBatch( self::BATCH_NAME ) );
 		$this->wpdb = new WpdbLockSpy();
 
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
@@ -171,9 +178,9 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_pending_task_records_the_outcome_hooks_and_group_clear(): void {
 		$run_id = $this->enqueue_task();
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_successful_cancel( $result, self::TASK_NAME, $run_id );
+		$this->assert_successful_cancel( $result, self::TASK_IDENTITY, $run_id );
 	}
 
 	/** A backend clear failure does not change the already-fenced cancellation outcome. */
@@ -187,31 +194,31 @@ final class DispatcherCancelTest extends TestCase {
 			)
 		);
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_successful_cancel( $result, self::TASK_NAME, $run_id );
+		$this->assert_successful_cancel( $result, self::TASK_IDENTITY, $run_id );
 	}
 
 	/** A missing run names both identities and says that no retained work remains. */
 	public function test_cancel_rejects_a_missing_run(): void {
-		$result = $this->dispatcher->cancel( self::TASK_NAME, 'missing-run' );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, 'missing-run' );
 
 		$this->assert_engine_failure(
 			$result,
-			'Run "missing-run" for background-work "email-digest" is not retained; nothing remains to cancel.'
+			'Run "missing-run" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.'
 		);
 		$this->assert_no_scheduler_or_hook_effects();
 	}
 
 	/** A corrupt run is indistinguishable from absent retained state at the public boundary. */
 	public function test_cancel_rejects_a_corrupt_run(): void {
-		$this->wpdb->put( $this->run_option_name( self::TASK_NAME, 'corrupt-run' ), 'corrupt' );
+		$this->wpdb->put( $this->run_option_name( self::TASK_IDENTITY, 'corrupt-run' ), 'corrupt' );
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, 'corrupt-run' );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, 'corrupt-run' );
 
 		$this->assert_engine_failure(
 			$result,
-			'Run "corrupt-run" for background-work "email-digest" is not retained; nothing remains to cancel.'
+			'Run "corrupt-run" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.'
 		);
 		$this->assert_no_scheduler_or_hook_effects();
 	}
@@ -220,13 +227,13 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_an_already_terminal_run(): void {
 		$run_id = $this->enqueue_task();
 		$this->replace_state(
-			self::TASK_NAME,
+			self::TASK_IDENTITY,
 			$run_id,
 			static fn ( RunState $state ): RunState => $state->with_status( RunStatus::Completed )
 		);
 		$this->reset_observations();
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
 		$this->assert_engine_failure(
 			$result,
@@ -239,13 +246,13 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_an_executing_run_before_any_write(): void {
 		$run_id = $this->enqueue_task();
 		$this->replace_state(
-			self::TASK_NAME,
+			self::TASK_IDENTITY,
 			$run_id,
 			static fn ( RunState $state ): RunState => $state->with_executing( true )
 		);
 		$this->reset_observations();
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
 		$this->assert_executing_failure( $result, $run_id );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_lifecycle_events'] );
@@ -259,20 +266,20 @@ final class DispatcherCancelTest extends TestCase {
 			'update',
 			function (): void {
 				$this->replace_state(
-					self::TASK_NAME,
+					self::TASK_IDENTITY,
 					self::RUN_ID,
 					static fn ( RunState $state ): RunState => $state->with_heartbeat_at( self::NOW + 1 )
 				);
 			}
 		);
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
 		$this->assert_engine_failure(
 			$result,
 			'Run "00000000001700000000-0000000000000000042" changed state while the cancel was in flight; re-inspect the run before retrying.'
 		);
-		$state = $this->run_state( self::TASK_NAME, $run_id );
+		$state = $this->run_state( self::TASK_IDENTITY, $run_id );
 		self::assertSame( self::NOW + 1, $state->heartbeat_at );
 		self::assertFalse( $state->executing );
 		$this->assert_no_scheduler_or_hook_effects();
@@ -281,14 +288,14 @@ final class DispatcherCancelTest extends TestCase {
 	/** A delivery marker that wins the shared-row CAS changes the cancellation result to executing. */
 	public function test_cancel_reports_executing_when_the_delivery_marker_wins_the_race(): void {
 		$run_id    = $this->enqueue_task();
-		$run_store = $this->stores->run_store( self::TASK_NAME );
+		$run_store = $this->stores->run_store( self::TASK_IDENTITY );
 		$admitted  = null;
 		$this->wpdb->before_next(
 			'update',
 			function () use ( &$admitted, $run_id, $run_store ): void {
 				$admitted = $this->terminal_transitions->active_run_state(
 					'Task',
-					self::TASK_NAME,
+					self::TASK_IDENTITY,
 					$run_id,
 					1,
 					$run_store
@@ -296,12 +303,12 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
 		self::assertInstanceOf( RunState::class, $admitted );
 		self::assertTrue( $admitted->executing );
 		$this->assert_executing_failure( $result, $run_id );
-		self::assertTrue( $this->run_state( self::TASK_NAME, $run_id )->executing );
+		self::assertTrue( $this->run_state( self::TASK_IDENTITY, $run_id )->executing );
 		self::assertSame( array(), $this->task->calls );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
@@ -309,19 +316,19 @@ final class DispatcherCancelTest extends TestCase {
 	/** A cancellation that wins first deletes the row before delivery admission can expose user code. */
 	public function test_delivery_admission_drops_when_cancel_wins_the_marker_race(): void {
 		$run_id        = $this->enqueue_task();
-		$run_store     = $this->stores->run_store( self::TASK_NAME );
+		$run_store     = $this->stores->run_store( self::TASK_IDENTITY );
 		$cancel_result = null;
 		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next(
 			'update',
 			function () use ( &$cancel_result, $run_id ): void {
-				$cancel_result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+				$cancel_result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 			}
 		);
 
 		$admitted = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::TASK_NAME,
+			self::TASK_IDENTITY,
 			$run_id,
 			1,
 			$run_store
@@ -329,71 +336,50 @@ final class DispatcherCancelTest extends TestCase {
 
 		self::assertNull( $admitted );
 		self::assertInstanceOf( Success::class, $cancel_result );
-		$this->assert_successful_cancel( $cancel_result, self::TASK_NAME, $run_id );
+		$this->assert_successful_cancel( $cancel_result, self::TASK_IDENTITY, $run_id );
 		self::assertSame( array(), $this->task->calls );
 	}
 
 	/** Cancellation gives an unregistered name a cancel-specific correction. */
 	public function test_cancel_rejects_an_unregistered_name_with_cancel_wording(): void {
-		$result = $this->dispatcher->cancel( 'unknown', 'run-1' );
+		$result = $this->dispatcher->cancel( self::UNKNOWN_IDENTITY, 'run-1' );
 
 		$this->assert_engine_failure(
 			$result,
-			'Background-work "unknown" is not registered; register the matching task or batch before cancelling its run.'
+			'Background-work "runs-tests:unknown" is not registered; register the matching task or batch before cancelling its run.'
 		);
 		$this->assert_no_scheduler_or_hook_effects();
-	}
-
-	/** Cancellation mirrors retry_failed's logged refusal for an ambiguous registration. */
-	public function test_cancel_rejects_a_name_resolvable_in_both_registries(): void {
-		$this->batches->register( new RecordingBatch( self::TASK_NAME ) );
-		$message = 'Background-work name "email-digest" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.';
-
-		$result = $this->dispatcher->cancel( self::TASK_NAME, 'run-1' );
-
-		$this->assert_engine_failure( $result, $message );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => $message,
-					'context' => array( 'name' => self::TASK_NAME ),
-				),
-			),
-			$this->logger->records
-		);
-		$this->assert_no_scheduler_or_hook_effects( keep_logs: true );
 	}
 
 	/** An unmaterialized batch remains cancellable while its empty queue still has sequence one. */
 	public function test_cancel_accepts_a_pre_start_batch_with_an_empty_queue(): void {
 		$run_id = $this->start_batch();
-		$state  = $this->run_state( self::BATCH_NAME, $run_id );
+		$state  = $this->run_state( self::BATCH_IDENTITY, $run_id );
 		self::assertSame( array(), $state->queue );
 		self::assertSame( 1, $state->action_seq );
 
-		$result = $this->dispatcher->cancel( self::BATCH_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::BATCH_IDENTITY, $run_id );
 
-		$this->assert_successful_cancel( $result, self::BATCH_NAME, $run_id );
+		$this->assert_successful_cancel( $result, self::BATCH_IDENTITY, $run_id );
 	}
 
 	/** A zero-chunk batch preserves its pending cleanup and success callback. */
 	public function test_cancel_rejects_a_zero_chunk_batch_pending_cleanup(): void {
 		$run_id = $this->start_batch();
 		$this->replace_state(
-			self::BATCH_NAME,
+			self::BATCH_IDENTITY,
 			$run_id,
 			static fn ( RunState $state ): RunState => $state->with_action_seq( 2 )
 		);
 		$this->reset_observations();
 
-		$result = $this->dispatcher->cancel( self::BATCH_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::BATCH_IDENTITY, $run_id );
 
 		$this->assert_engine_failure(
 			$result,
 			'Run "00000000001700000000-0000000000000000042" has no chunks left to process; the pending cleanup completes it.'
 		);
-		self::assertSame( array(), $this->run_state( self::BATCH_NAME, $run_id )->queue );
+		self::assertSame( array(), $this->run_state( self::BATCH_IDENTITY, $run_id )->queue );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
 
@@ -402,7 +388,7 @@ final class DispatcherCancelTest extends TestCase {
 		$run_id = $this->start_batch();
 		$chunk  = array( 'chunk' => 'next' );
 		$this->replace_state(
-			self::BATCH_NAME,
+			self::BATCH_IDENTITY,
 			$run_id,
 			static fn ( RunState $state ): RunState => $state
 				->with_queue( array( $chunk ) )
@@ -411,16 +397,16 @@ final class DispatcherCancelTest extends TestCase {
 		);
 		$this->reset_observations();
 
-		$result = $this->dispatcher->cancel( self::BATCH_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::BATCH_IDENTITY, $run_id );
 
-		$this->assert_successful_cancel( $result, self::BATCH_NAME, $run_id );
+		$this->assert_successful_cancel( $result, self::BATCH_IDENTITY, $run_id );
 	}
 
 	/** A task retry state clears its executing marker and remains cancellable during backoff. */
 	public function test_cancel_accepts_a_task_in_retry_backoff(): void {
 		$run_id = $this->enqueue_task();
 		$state  = $this->replace_state(
-			self::TASK_NAME,
+			self::TASK_IDENTITY,
 			$run_id,
 			static fn ( RunState $current ): RunState => $current
 				->with_chunk_retries( 1 )
@@ -433,26 +419,26 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertFalse( $state->executing );
 		$this->reset_observations();
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_successful_cancel( $result, self::TASK_NAME, $run_id );
+		$this->assert_successful_cancel( $result, self::TASK_IDENTITY, $run_id );
 	}
 
 	/** A sequential second cancellation observes the row deletion and returns the missing-state refusal. */
 	public function test_second_cancel_reports_that_the_run_is_not_retained(): void {
 		$run_id = $this->enqueue_task();
-		$first  = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$first  = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 		self::assertInstanceOf( Success::class, $first );
 		$this->reset_observations();
 
-		$second = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$second = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
 		$this->assert_engine_failure(
 			$second,
-			'Run "00000000001700000000-0000000000000000042" for background-work "email-digest" is not retained; nothing remains to cancel.'
+			'Run "00000000001700000000-0000000000000000042" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.'
 		);
 		$this->assert_no_scheduler_or_hook_effects();
-		$this->assert_cancelled_history( self::TASK_NAME, $run_id );
+		$this->assert_cancelled_history( self::TASK_IDENTITY, $run_id );
 	}
 
 	/** A run-state read failure aborts the cancel with a retryable refusal instead of a not-retained claim. */
@@ -465,14 +451,14 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->cancel( self::TASK_NAME, $run_id );
+		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
 		$this->assert_engine_failure(
 			$result,
-			\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, self::TASK_NAME )
+			\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, self::TASK_IDENTITY )
 		);
 		$this->assert_no_scheduler_or_hook_effects();
-		self::assertNotNull( $this->option( $this->run_option_name( self::TASK_NAME, $run_id ) ) );
+		self::assertNotNull( $this->option( $this->run_option_name( self::TASK_IDENTITY, $run_id ) ) );
 	}
 
 	/** Cancellation declares its result non-discardable at the dispatcher boundary. */
@@ -492,7 +478,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_task(): string {
-		$result = $this->dispatcher->enqueue( self::TASK_NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::TASK_IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->reset_observations();
@@ -506,7 +492,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function start_batch(): string {
-		$result = $this->dispatcher->start_batch( self::BATCH_NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::BATCH_IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->reset_observations();

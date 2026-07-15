@@ -23,6 +23,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class FailedRunStoreTest extends TestCase {
+	private const OWNER = 'runs-tests';
+
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
 
@@ -66,7 +68,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_all_returns_an_empty_list_without_failures(): void {
-		$result = ( new FailedRunStore( 'reports', $this->rows ) )->all();
+		$result = ( new FailedRunStore( self::identity( 'reports' ), $this->rows ) )->all();
 		if ( $result->is_failure() ) {
 			self::fail( $result->error->message );
 		}
@@ -83,7 +85,7 @@ final class FailedRunStoreTest extends TestCase {
 			}
 		);
 
-		$result = ( new FailedRunStore( 'reports', $this->rows ) )->all();
+		$result = ( new FailedRunStore( self::identity( 'reports' ), $this->rows ) )->all();
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -111,9 +113,9 @@ final class FailedRunStoreTest extends TestCase {
 			),
 		);
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture must model hostile raw option bytes.
-		$this->wpdb->put( 'a8csp_bgte_failed_poisoned', \serialize( array( $expected[0], new FailedRunStorePoison() ) ) );
+		$this->wpdb->put( 'a8csp_bgte_failed_runs-tests:poisoned', \serialize( array( $expected[0], new FailedRunStorePoison() ) ) );
 
-		$result = ( new FailedRunStore( 'poisoned', $this->rows ) )->all();
+		$result = ( new FailedRunStore( self::identity( 'poisoned' ), $this->rows ) )->all();
 		if ( $result->is_failure() ) {
 			self::fail( $result->error->message );
 		}
@@ -128,7 +130,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_record_all_and_remove_round_trip_exact_entries(): void {
-		$store = new FailedRunStore( 'reports', $this->rows );
+		$store = new FailedRunStore( self::identity( 'reports' ), $this->rows );
 
 		self::assertTrue(
 			$store->record(
@@ -185,7 +187,7 @@ final class FailedRunStoreTest extends TestCase {
 		}
 
 		self::assertSame( $expected, $all->value );
-		$this->assert_authoritative_row( 'a8csp_bgte_failed_reports', $expected );
+		$this->assert_authoritative_row( 'a8csp_bgte_failed_runs-tests:reports', $expected );
 
 		self::assertTrue( $store->remove( 'run-a' ) );
 
@@ -195,19 +197,19 @@ final class FailedRunStoreTest extends TestCase {
 		}
 
 		self::assertSame( array( $expected[1] ), $remaining->value );
-		$this->assert_authoritative_row( 'a8csp_bgte_failed_reports', array( $expected[1] ) );
+		$this->assert_authoritative_row( 'a8csp_bgte_failed_runs-tests:reports', array( $expected[1] ) );
 
 		self::assertTrue( $store->remove( 'run-b' ) );
-		$raw = $this->wpdb->rows['a8csp_bgte_failed_reports'] ?? null;
+		$raw = $this->wpdb->rows['a8csp_bgte_failed_runs-tests:reports'] ?? null;
 		self::assertIsString( $raw );
 		self::assertSame( self::raw( array() ), $raw );
-		$this->assert_authoritative_row( 'a8csp_bgte_failed_reports', array() );
+		$this->assert_authoritative_row( 'a8csp_bgte_failed_runs-tests:reports', array() );
 	}
 
 	/** Repeating a failed run keeps the first persisted payload and issues no write. */
 	public function test_record_is_first_write_wins_for_an_existing_run_id(): void {
-		$key   = 'a8csp_bgte_failed_first-write-wins';
-		$store = new FailedRunStore( 'first-write-wins', $this->rows );
+		$key   = 'a8csp_bgte_failed_runs-tests:first-write-wins';
+		$store = new FailedRunStore( self::identity( 'first-write-wins' ), $this->rows );
 		$first = self::entry( 'run-a', 100, array( 'source' => 'first' ), 1, 'First failure.' );
 
 		self::assertTrue(
@@ -234,8 +236,8 @@ final class FailedRunStoreTest extends TestCase {
 
 	/** A rival insert for the same run ID wins without a duplicate or overwrite. */
 	public function test_interleaved_same_run_id_insert_converges_on_the_first_payload(): void {
-		$key            = 'a8csp_bgte_failed_same-run-race';
-		$store          = new FailedRunStore( 'same-run-race', $this->rows );
+		$key            = 'a8csp_bgte_failed_runs-tests:same-run-race';
+		$store          = new FailedRunStore( self::identity( 'same-run-race' ), $this->rows );
 		$rival_recorded = null;
 		$rival          = self::entry( 'run-a', 100, array( 'source' => 'rival' ), 1, 'Rival failure.' );
 		$this->wpdb->before_next(
@@ -276,7 +278,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_ring_buffer_evicts_the_oldest_entry_past_twenty(): void {
-		$store = new FailedRunStore( 'exports', $this->rows );
+		$store = new FailedRunStore( self::identity( 'exports' ), $this->rows );
 
 		for ( $index = 0; $index <= 20; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
@@ -309,7 +311,7 @@ final class FailedRunStoreTest extends TestCase {
 		);
 		self::assertSame( 'Failure 01', $entries[0]['error']['message'] );
 		self::assertSame( 'Failure 20', $entries[19]['error']['message'] );
-		$this->assert_authoritative_row( 'a8csp_bgte_failed_exports', $entries );
+		$this->assert_authoritative_row( 'a8csp_bgte_failed_runs-tests:exports', $entries );
 	}
 
 	/** Two interleaved appends preserve both entries and retain only the newest twenty. */
@@ -318,9 +320,9 @@ final class FailedRunStoreTest extends TestCase {
 		for ( $index = 0; $index < 19; ++$index ) {
 			$entries[] = self::entry( 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), 100 + $index );
 		}
-		$key = 'a8csp_bgte_failed_interleaved';
+		$key = 'a8csp_bgte_failed_runs-tests:interleaved';
 		$this->wpdb->put( $key, self::raw( $entries ) );
-		$store = new FailedRunStore( 'interleaved', $this->rows );
+		$store = new FailedRunStore( self::identity( 'interleaved' ), $this->rows );
 		$this->wpdb->before_next(
 			'update',
 			static function ( WpdbLockSpy $wpdb ) use ( $store ): void {
@@ -347,7 +349,7 @@ final class FailedRunStoreTest extends TestCase {
 
 	/** A lost exact update retries from fresh bytes without normalizing away its rival. */
 	public function test_record_retries_a_lost_exact_update_and_preserves_rival_bytes(): void {
-		$key         = 'a8csp_bgte_failed_record-cas-retry';
+		$key         = 'a8csp_bgte_failed_runs-tests:record-cas-retry';
 		$stored      = array( self::entry( 'run-existing', 100 ) );
 		$rival_entry = self::entry( 'run-rival', 200, array( 'token' => "rival-\0bytes" ), 2, "Rival \0 failure." );
 		$concurrent  = array( $stored[0], $rival_entry );
@@ -358,7 +360,7 @@ final class FailedRunStoreTest extends TestCase {
 				$wpdb->put( $key, self::raw( $concurrent ) );
 			}
 		);
-		$store = new FailedRunStore( 'record-cas-retry', $this->rows );
+		$store = new FailedRunStore( self::identity( 'record-cas-retry' ), $this->rows );
 
 		$recorded = $store->record( 'run-requested', 300, array(), 3, new EngineError( 'Requested failure.' ), self::failure( 'run-requested', 3, 'Requested failure.', 'record-cas-retry' ) );
 
@@ -381,9 +383,9 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_remove_of_absent_run_is_a_no_op(): void {
-		$key   = 'a8csp_bgte_failed_imports';
+		$key   = 'a8csp_bgte_failed_runs-tests:imports';
 		$raw   = self::raw( array( self::entry( 'run-a', 100 ) ) );
-		$store = new FailedRunStore( 'imports', $this->rows );
+		$store = new FailedRunStore( self::identity( 'imports' ), $this->rows );
 		$this->wpdb->put( $key, $raw );
 
 		$removed = $store->remove( 'missing' );
@@ -397,13 +399,13 @@ final class FailedRunStoreTest extends TestCase {
 
 	/** An absent failed-run row already satisfies removal without issuing a write. */
 	public function test_remove_of_absent_row_returns_true_without_writing(): void {
-		self::assertTrue( ( new FailedRunStore( 'absent', $this->rows ) )->remove( 'run-a' ) );
+		self::assertTrue( ( new FailedRunStore( self::identity( 'absent' ), $this->rows ) )->remove( 'run-a' ) );
 		self::assertSame( array(), $this->write_queries() );
 	}
 
 	/** Recording aborts without replacing retained entries when their authoritative read fails. */
 	public function test_record_does_not_write_when_the_store_read_fails(): void {
-		$key           = 'a8csp_bgte_failed_imports';
+		$key           = 'a8csp_bgte_failed_runs-tests:imports';
 		$persisted_raw = self::raw( array( self::entry( 'run-existing', 100, array(), 1, 'Existing failure.' ) ) );
 		$this->wpdb->put( $key, $persisted_raw );
 		$read_failures = 0;
@@ -415,7 +417,7 @@ final class FailedRunStoreTest extends TestCase {
 			}
 		);
 
-		$recorded = ( new FailedRunStore( 'imports', $this->rows ) )->record(
+		$recorded = ( new FailedRunStore( self::identity( 'imports' ), $this->rows ) )->record(
 			'run-new',
 			200,
 			array(),
@@ -433,12 +435,12 @@ final class FailedRunStoreTest extends TestCase {
 
 	/** A failed exact record update with unchanged selected bytes reports failure. */
 	public function test_record_returns_false_when_a_failed_exact_update_leaves_raw_unchanged(): void {
-		$key = 'a8csp_bgte_failed_record-write-failure';
+		$key = 'a8csp_bgte_failed_runs-tests:record-write-failure';
 		$raw = self::raw( array( self::entry( 'run-existing', 100 ) ) );
 		$this->wpdb->put( $key, $raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$recorded = ( new FailedRunStore( 'record-write-failure', $this->rows ) )
+		$recorded = ( new FailedRunStore( self::identity( 'record-write-failure' ), $this->rows ) )
 			->record( 'run-new', 200, array(), 2, new EngineError( 'New failure.' ), self::failure( 'run-new', 2, 'New failure.', 'record-write-failure' ) );
 
 		self::assertFalse( $recorded );
@@ -448,7 +450,7 @@ final class FailedRunStoreTest extends TestCase {
 
 	/** Removal aborts without replacing retained entries when their authoritative read fails. */
 	public function test_remove_does_not_write_when_the_store_read_fails(): void {
-		$key           = 'a8csp_bgte_failed_imports';
+		$key           = 'a8csp_bgte_failed_runs-tests:imports';
 		$persisted_raw = self::raw( array( self::entry( 'run-existing', 100, array(), 1, 'Existing failure.' ) ) );
 		$this->wpdb->put( $key, $persisted_raw );
 		$read_failures = 0;
@@ -460,7 +462,7 @@ final class FailedRunStoreTest extends TestCase {
 			}
 		);
 
-		$removed = ( new FailedRunStore( 'imports', $this->rows ) )->remove( 'run-existing' );
+		$removed = ( new FailedRunStore( self::identity( 'imports' ), $this->rows ) )->remove( 'run-existing' );
 
 		self::assertFalse( $removed );
 		self::assertSame( 1, $read_failures );
@@ -471,12 +473,12 @@ final class FailedRunStoreTest extends TestCase {
 
 	/** A failed exact removal with unchanged selected bytes reports failure. */
 	public function test_remove_returns_false_when_a_failed_exact_update_leaves_raw_unchanged(): void {
-		$key = 'a8csp_bgte_failed_remove-write-failure';
+		$key = 'a8csp_bgte_failed_runs-tests:remove-write-failure';
 		$raw = self::raw( array( self::entry( 'run-existing', 100 ) ) );
 		$this->wpdb->put( $key, $raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$removed = ( new FailedRunStore( 'remove-write-failure', $this->rows ) )->remove( 'run-existing' );
+		$removed = ( new FailedRunStore( self::identity( 'remove-write-failure' ), $this->rows ) )->remove( 'run-existing' );
 
 		self::assertFalse( $removed );
 		self::assertSame( $raw, $this->wpdb->rows[ $key ] ?? null );
@@ -489,11 +491,11 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_purge_deletes_the_store_and_returns_its_entry_count(): void {
-		$store = new FailedRunStore( 'reports', $this->rows );
+		$store = new FailedRunStore( self::identity( 'reports' ), $this->rows );
 		self::assertTrue( $store->record( 'run-a', 100, array(), 1, new EngineError( 'First failure.' ), self::failure( 'run-a', 1, 'First failure.', 'reports' ) ) );
 		self::assertTrue( $store->record( 'run-b', 200, array(), 2, new EngineError( 'Second failure.' ), self::failure( 'run-b', 2, 'Second failure.', 'reports' ) ) );
 		$this->assert_authoritative_row(
-			'a8csp_bgte_failed_reports',
+			'a8csp_bgte_failed_runs-tests:reports',
 			array(
 				self::entry( 'run-a', 100, array(), 1, 'First failure.' ),
 				self::entry( 'run-b', 200, array(), 2, 'Second failure.' ),
@@ -501,7 +503,7 @@ final class FailedRunStoreTest extends TestCase {
 		);
 
 		self::assertSame( 2, $store->purge() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_reports', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs-tests:reports', $this->wpdb->rows );
 		self::assertSame( array(), $this->option_calls() );
 		self::assertSame( 0, $store->purge() );
 	}
@@ -512,9 +514,9 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_purge_returns_failure_when_the_authoritative_read_fails(): void {
-		$store = new FailedRunStore( 'read-failure', $this->rows );
+		$store = new FailedRunStore( self::identity( 'read-failure' ), $this->rows );
 		self::assertTrue( $store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ), self::failure( 'run-a', 1, 'Failure.', 'read-failure' ) ) );
-		$raw = $this->wpdb->rows['a8csp_bgte_failed_read-failure'] ?? null;
+		$raw = $this->wpdb->rows['a8csp_bgte_failed_runs-tests:read-failure'] ?? null;
 		self::assertIsString( $raw );
 		$this->wpdb->before_next(
 			'select',
@@ -524,9 +526,9 @@ final class FailedRunStoreTest extends TestCase {
 		);
 
 		self::assertNull( $store->purge() );
-		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_failed_read-failure'] ?? null );
+		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_failed_runs-tests:read-failure'] ?? null );
 		self::assertSame( array( self::entry( 'run-a', 100 ) ), RawOptionDecoder::decode( $raw ) );
-		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_failed_read-failure'] ?? null );
+		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_failed_runs-tests:read-failure'] ?? null );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
@@ -536,9 +538,9 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_purge_returns_failure_when_the_exact_delete_fails(): void {
-		$store = new FailedRunStore( 'delete-failure', $this->rows );
+		$store = new FailedRunStore( self::identity( 'delete-failure' ), $this->rows );
 		self::assertTrue( $store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ), self::failure( 'run-a', 1, 'Failure.', 'delete-failure' ) ) );
-		$raw = $this->wpdb->rows['a8csp_bgte_failed_delete-failure'] ?? null;
+		$raw = $this->wpdb->rows['a8csp_bgte_failed_runs-tests:delete-failure'] ?? null;
 		self::assertIsString( $raw );
 		$this->wpdb->before_next(
 			'delete',
@@ -549,9 +551,9 @@ final class FailedRunStoreTest extends TestCase {
 		$this->wpdb->script_result( 'delete', false );
 
 		self::assertNull( $store->purge() );
-		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_failed_delete-failure'] ?? null );
+		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_failed_runs-tests:delete-failure'] ?? null );
 		self::assertSame( array( self::entry( 'run-a', 100 ) ), RawOptionDecoder::decode( $raw ) );
-		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_failed_delete-failure'] ?? null );
+		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_failed_runs-tests:delete-failure'] ?? null );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
@@ -561,7 +563,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_purge_retries_a_cas_loss_and_reports_the_deleted_snapshot_count(): void {
-		$store = new FailedRunStore( 'cas-retry', $this->rows );
+		$store = new FailedRunStore( self::identity( 'cas-retry' ), $this->rows );
 		self::assertTrue( $store->record( 'run-a', 100, array(), 1, new EngineError( 'First failure.' ), self::failure( 'run-a', 1, 'First failure.', 'cas-retry' ) ) );
 		$this->wpdb->before_next(
 			'delete',
@@ -571,7 +573,7 @@ final class FailedRunStoreTest extends TestCase {
 		);
 
 		self::assertSame( 2, $store->purge() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_cas-retry', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs-tests:cas-retry', $this->wpdb->rows );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
@@ -581,7 +583,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_purge_reports_failure_after_three_cas_losses(): void {
-		$store = new FailedRunStore( 'cas-exhaustion', $this->rows );
+		$store = new FailedRunStore( self::identity( 'cas-exhaustion' ), $this->rows );
 		self::assertTrue( $store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure A.' ), self::failure( 'run-a', 1, 'Failure A.', 'cas-exhaustion' ) ) );
 
 		foreach ( array( 'b', 'c', 'd' ) as $index => $suffix ) {
@@ -609,7 +611,7 @@ final class FailedRunStoreTest extends TestCase {
 		}
 
 		self::assertCount( 4, $result->value );
-		$this->assert_authoritative_row( 'a8csp_bgte_failed_cas-exhaustion', $result->value );
+		$this->assert_authoritative_row( 'a8csp_bgte_failed_runs-tests:cas-exhaustion', $result->value );
 	}
 
 	/**
@@ -618,9 +620,9 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_purge_deletes_malformed_raw_storage_with_a_zero_count(): void {
-		$this->wpdb->put( 'a8csp_bgte_failed_malformed', 'not a failed-run list' );
+		$this->wpdb->put( 'a8csp_bgte_failed_runs-tests:malformed', 'not a failed-run list' );
 
-		$store = new FailedRunStore( 'malformed', $this->rows );
+		$store = new FailedRunStore( self::identity( 'malformed' ), $this->rows );
 
 		$result = $store->all();
 		if ( $result->is_failure() ) {
@@ -629,7 +631,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertSame( array(), $result->value );
 		self::assertSame( 0, $store->purge() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_malformed', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs-tests:malformed', $this->wpdb->rows );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
@@ -641,12 +643,12 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_purge_counts_a_serialized_object_payload_as_zero_valid_entries(): void {
 		$raw = \maybe_serialize( new \stdClass() );
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_failed_object', $raw );
+		$this->wpdb->put( 'a8csp_bgte_failed_runs-tests:object', $raw );
 
-		$store = new FailedRunStore( 'object', $this->rows );
+		$store = new FailedRunStore( self::identity( 'object' ), $this->rows );
 
 		self::assertSame( 0, $store->purge() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_object', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs-tests:object', $this->wpdb->rows );
 	}
 
 	/**
@@ -671,10 +673,10 @@ final class FailedRunStoreTest extends TestCase {
 				),
 			);
 		}
-		$key = 'a8csp_bgte_failed_oversized';
+		$key = 'a8csp_bgte_failed_runs-tests:oversized';
 		$this->wpdb->put( $key, self::raw( $entries ) );
 
-		$store = new FailedRunStore( 'oversized', $this->rows );
+		$store = new FailedRunStore( self::identity( 'oversized' ), $this->rows );
 
 		self::assertTrue( $store->remove( 'run-00' ) );
 		$result = $store->all();
@@ -736,7 +738,7 @@ final class FailedRunStoreTest extends TestCase {
 	 */
 	private static function failure( string $run_id, int $attempts, string $summary, string $name, ?array $failed_chunk = null ): RunFailure {
 		return new RunFailure(
-			name: $name,
+			name: self::identity( $name ),
 			run_id: $run_id,
 			attempts: $attempts,
 			stage: 'execution',
@@ -744,6 +746,17 @@ final class FailedRunStoreTest extends TestCase {
 			summary: $summary,
 			failed_chunk: $failed_chunk,
 		);
+	}
+
+	/**
+	 * Returns one owner-qualified test work identity.
+	 *
+	 * @param   string $name Owner-local work name.
+	 *
+	 * @return  string
+	 */
+	private static function identity( string $name ): string {
+		return self::OWNER . ':' . $name;
 	}
 
 	/**

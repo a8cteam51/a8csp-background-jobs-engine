@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
@@ -44,12 +45,12 @@ final class ScheduleRegistry {
 	private const UPDATE_ATTEMPTS = 5;
 
 	/**
-	 * Current-request declarations keyed independently inside each owner.
+	 * Current-request declarations keyed by complete schedule identity inside each owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<array-key, array<array-key, Schedule>>
+	 * @var     array<string, array<string, array{schedule: Schedule, task: string}>>
 	 */
 	private array $schedules = array();
 
@@ -81,7 +82,7 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $owner Stable consumer identifier.
 	 *
-	 * @return  AbstractResult<array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>, EngineError>
+	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>, EngineError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registrations_for( string $owner ): AbstractResult {
@@ -95,7 +96,7 @@ final class ScheduleRegistry {
 			return new Success( array() );
 		}
 
-		return new Success( self::registrations_from_rows( $rows ) );
+		return new Success( self::registrations_from_rows( $owner, $rows ) );
 	}
 
 	/**
@@ -121,11 +122,8 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			foreach ( self::registrations_from_rows( $rows ) as $name => $registration ) {
-				$key = (string) $owner . ':' . (string) $name;
-				if ( null !== self::key_parts( $key ) ) {
-					$registrations[ $key ] = $registration;
-				}
+			foreach ( self::registrations_from_rows( (string) $owner, $rows ) as $identity => $registration ) {
+				$registrations[ $identity ] = $registration;
 			}
 		}
 
@@ -138,17 +136,22 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<array-key, Schedule>                                                                    $schedules
-	 * @phpstan-param array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}> $registrations
+	 * @phpstan-param array<string, array{schedule: Schedule, task: string}>                                          $schedules
+	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}> $registrations
 	 *
 	 * @param   string $owner         Stable consumer identifier.
-	 * @param   array  $schedules     Declared schedules keyed by name.
-	 * @param   array  $registrations Persisted owner state.
+	 * @param   array  $schedules     Declared schedules keyed by complete identity.
+	 * @param   array  $registrations Persisted owner state keyed by complete identity.
 	 *
 	 * @return  bool True when the requested registry state is confirmed persisted.
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
 	public function replace_owner( string $owner, array $schedules, array $registrations ): bool {
+		$owner_registrations = self::owner_registrations( $owner, $registrations );
+		if ( null === $owner_registrations ) {
+			return false;
+		}
+
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( self::OPTION_NAME );
 			if ( $read->is_failure() ) {
@@ -157,13 +160,13 @@ final class ScheduleRegistry {
 
 			$expected_raw = $read->value;
 			if ( null === $expected_raw ) {
-				if ( array() === $registrations ) {
+				if ( array() === $owner_registrations ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return true;
 				}
 
-				$replacement_raw = self::serialize_registry( array( $owner => $registrations ) );
+				$replacement_raw = self::serialize_registry( array( $owner => $owner_registrations ) );
 				if ( $this->rows->insert( self::OPTION_NAME, $replacement_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
@@ -179,10 +182,10 @@ final class ScheduleRegistry {
 			}
 
 			$next = $stored;
-			if ( array() === $registrations ) {
+			if ( array() === $owner_registrations ) {
 				unset( $next[ $owner ] );
 			} else {
-				$next[ $owner ] = $registrations;
+				$next[ $owner ] = $owner_registrations;
 			}
 
 			if ( $next === $stored ) {
@@ -253,15 +256,15 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  Schedule|null
+	 * @return  array{schedule: Schedule, task: string}|null
 	 */
-	public function get( string $registration_key ): ?Schedule {
-		$parts = self::key_parts( $registration_key );
+	public function get( string $registration_key ): ?array {
+		$parts = WorkIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return null;
 		}
 
-		return $this->schedules[ $parts[0] ][ $parts[1] ] ?? null;
+		return $this->schedules[ $parts[0] ][ $registration_key ] ?? null;
 	}
 
 	/**
@@ -276,7 +279,7 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registration( string $registration_key ): AbstractResult {
-		$parts = self::key_parts( $registration_key );
+		$parts = WorkIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return new Success( null );
 		}
@@ -286,7 +289,7 @@ final class ScheduleRegistry {
 			return $registrations;
 		}
 
-		return new Success( $registrations->value[ $parts[1] ] ?? null );
+		return new Success( $registrations->value[ $registration_key ] ?? null );
 	}
 
 	/**
@@ -305,12 +308,12 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
 	public function update_registration( string $registration_key, string $observed_fingerprint, array $registration ): RegistrationUpdateOutcome {
-		$parts = self::key_parts( $registration_key );
+		$parts = WorkIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return RegistrationUpdateOutcome::Failed;
 		}
 
-		[ $owner, $name ] = $parts;
+		$owner = $parts[0];
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( self::OPTION_NAME );
 			if ( $expected->is_failure() ) {
@@ -329,13 +332,13 @@ final class ScheduleRegistry {
 
 			$owner_rows = $stored[ $owner ] ?? null;
 			// The fresh existence check prevents a concurrently pruned row from being resurrected.
-			if ( ! \is_array( $owner_rows ) || ! \array_key_exists( $name, $owner_rows ) ) {
+			if ( ! \is_array( $owner_rows ) || ! \array_key_exists( $registration_key, $owner_rows ) ) {
 				return RegistrationUpdateOutcome::Pruned;
 			}
 
 			// A row update persists only for the definition generation the caller validated;
 			// a changed fingerprint marks an in-flight occurrence as superseded by synchronization.
-			$current_registration = $owner_rows[ $name ];
+			$current_registration = $owner_rows[ $registration_key ];
 			if (
 				! \is_array( $current_registration )
 				|| ( $current_registration['fingerprint'] ?? null ) !== $observed_fingerprint
@@ -343,9 +346,9 @@ final class ScheduleRegistry {
 				return RegistrationUpdateOutcome::Superseded;
 			}
 
-			$owner_rows[ $name ] = $registration;
-			$stored[ $owner ]    = $owner_rows;
-			$replacement_raw     = self::serialize_registry( $stored );
+			$owner_rows[ $registration_key ] = $registration;
+			$stored[ $owner ]                = $owner_rows;
+			$replacement_raw                 = self::serialize_registry( $stored );
 			if ( $this->rows->replace( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
 				return RegistrationUpdateOutcome::Updated;
 			}
@@ -377,13 +380,23 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $rows Persisted rows for one owner.
+	 * @param   string                  $owner Validated persisted owner key.
+	 * @param   array<array-key, mixed> $rows  Persisted rows for one owner.
 	 *
-	 * @return  array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
 	 */
-	private static function registrations_from_rows( array $rows ): array {
+	private static function registrations_from_rows( string $owner, array $rows ): array {
 		$registrations = array();
-		foreach ( $rows as $name => $row ) {
+		foreach ( $rows as $registration_key => $row ) {
+			if ( ! \is_string( $registration_key ) ) {
+				continue;
+			}
+
+			$parts = WorkIdentity::parts( $registration_key );
+			if ( null === $parts || $owner !== $parts[0] ) {
+				continue;
+			}
+
 			if ( ! \is_array( $row ) ) {
 				continue;
 			}
@@ -403,7 +416,7 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$registrations[ $name ] = array(
+			$registrations[ $registration_key ] = array(
 				'fingerprint' => $row['fingerprint'],
 				'next_due'    => $row['next_due'],
 				'last_fired'  => $row['last_fired'] ?? null,
@@ -413,6 +426,37 @@ final class ScheduleRegistry {
 		}
 
 		return $registrations;
+	}
+
+	/**
+	 * Returns one owner's persisted row shape from complete registration identities.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}> $registrations
+	 *
+	 * @param   string $owner         Stable consumer or engine identifier.
+	 * @param   array  $registrations Persisted owner state keyed by complete identity.
+	 *
+	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>|null
+	 */
+	private static function owner_registrations( string $owner, array $registrations ): ?array {
+		$rows = array();
+		foreach ( $registrations as $registration_key => $registration ) {
+			if ( ! \is_string( $registration_key ) ) {
+				return null;
+			}
+
+			$parts = WorkIdentity::parts( $registration_key );
+			if ( null === $parts || $owner !== $parts[0] ) {
+				return null;
+			}
+
+			$rows[ $registration_key ] = $registration;
+		}
+
+		return $rows;
 	}
 
 	/**
@@ -466,8 +510,8 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                     $owner     Stable consumer identifier.
-	 * @param   array<array-key, Schedule> $schedules Declared schedules keyed by name.
+	 * @param   string                                                 $owner     Stable consumer identifier.
+	 * @param   array<string, array{schedule: Schedule, task: string}> $schedules Declared schedules keyed by complete identity.
 	 *
 	 * @return  void
 	 */
@@ -478,25 +522,6 @@ final class ScheduleRegistry {
 		}
 
 		$this->schedules[ $owner ] = $schedules;
-	}
-
-	/**
-	 * Splits a complete backend registration key.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 *
-	 * @return  array{string, string}|null
-	 */
-	private static function key_parts( string $registration_key ): ?array {
-		$parts = \explode( ':', $registration_key, 2 );
-		if ( 2 !== \count( $parts ) || '' === $parts[0] || '' === $parts[1] ) {
-			return null;
-		}
-
-		return array( $parts[0], $parts[1] );
 	}
 
 	// endregion

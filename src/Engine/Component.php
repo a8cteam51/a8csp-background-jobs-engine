@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
@@ -28,6 +29,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBac
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -51,6 +53,16 @@ final class Component implements ComponentContract {
 	 * @var     EngineFacade|null
 	 */
 	private static ?EngineFacade $engine = null;
+
+	/**
+	 * Whether engine wiring is currently in flight.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     bool
+	 */
+	private static bool $booting = false;
 
 	/**
 	 * Read-only inspection service published by the initialized component.
@@ -89,9 +101,12 @@ final class Component implements ComponentContract {
 	 */
 	#[\Override]
 	public function initialize(): void {
-		if ( null !== self::$engine ) {
+		// The in-flight flag keeps a re-entrant resolve during wiring from building a second graph.
+		if ( null !== self::$engine || self::$booting ) {
 			return;
 		}
+
+		self::$booting = true;
 
 		global $wpdb;
 
@@ -101,8 +116,9 @@ final class Component implements ComponentContract {
 		 * @var \wpdb $wpdb
 		 */
 		$option_rows          = new OptionRows( $wpdb );
-		$tasks                = new TaskRegistry();
-		$batches              = new BatchRegistry();
+		$work                 = new WorkRegistry();
+		$tasks                = new TaskRegistry( $work );
+		$batches              = new BatchRegistry( $work );
 		$schedules            = new ScheduleRegistry( $option_rows );
 		$logger               = new HookLogger();
 		$clock                = new SystemClock();
@@ -169,6 +185,7 @@ final class Component implements ComponentContract {
 			$logger
 		);
 		$tasks->register(
+			WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ),
 			new MaintenanceTask(
 				$option_rows,
 				$reconciliation,
@@ -205,10 +222,14 @@ final class Component implements ComponentContract {
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
-		$maintenance_schedule->register_hooks();
 
 		self::$engine     = $engine;
+		self::$booting    = false;
 		self::$inspection = $inspection;
+
+		// Late maintenance synchronization invokes scheduler filters; publication keeps a consumer
+		// resolving from one of those filters on this same graph instead of rebuilding it recursively.
+		$maintenance_schedule->register_hooks();
 	}
 
 	// endregion

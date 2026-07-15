@@ -1,10 +1,9 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -35,47 +34,35 @@ function a8csp_bgte_plugin(): Plugin {
 }
 
 /**
- * Returns the consumer engine after its component has initialized.
+ * Returns the owner-bound background-work consumer.
+ *
+ * Call from `plugins_loaded` or later. Resolution during any `plugins_loaded` priority initializes
+ * the engine graph on demand, so consumer ordering within that hook is immaterial. Use the calling
+ * plugin's lowercase slug as the owner; owner exclusivity is a consumer convention, while the
+ * `a8csp-bgte` prefix is enforced as the engine's reserved namespace.
  *
  * @since   1.0.0
  * @version 1.0.0
  *
- * @return  Engine|null
+ * @param   string $owner Stable consumer-plugin owner.
+ *
+ * @throws  \InvalidArgumentException When the owner violates the canonical consumer grammar.
+ * @throws  \LogicException           When called before the earliest safe hook or engine wiring fails.
+ *
+ * @return  Consumer
  */
-function a8csp_bgte_engine(): ?Engine {
-	if ( 0 === did_action( 'plugins_loaded' ) ) {
-		_doing_it_wrong(
-			__FUNCTION__,
-			'Call a8csp_bgte_engine() after plugins_loaded, when the engine has booted.',
-			'1.0.0'
-		);
+function a8csp_bgte( string $owner ): Consumer {
+	WorkIdentity::validate_owner( $owner );
 
-		return null;
+	if ( 0 === did_action( 'plugins_loaded' ) && ! doing_action( 'plugins_loaded' ) ) {
+		throw new \LogicException(
+			'The background tasks consumer is available from the plugins_loaded hook; call a8csp_bgte() from a plugins_loaded callback or later.'
+		);
 	}
 
-	return Component::get_engine();
+	Container::boot();
+
+	return Container::consumer( $owner );
 }
-
-/**
- * Returns the shared engine-unavailable failure for the procedural wrappers.
- *
- * @internal Wrapper fallback seam.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @return  Failure<EngineError>
- */
-function a8csp_bgte_engine_unavailable_failure(): Failure {
-	return new Failure( new EngineError( 'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.' ) );
-}
-
-// endregion
-
-// region OTHER
-
-require_once __DIR__ . '/includes/task-functions.php';
-require_once __DIR__ . '/includes/batch-functions.php';
-require_once __DIR__ . '/includes/schedule-functions.php';
 
 // endregion

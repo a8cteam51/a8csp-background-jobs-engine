@@ -66,7 +66,7 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
 	 * @param   string $run_id     Run identifier.
 	 *
 	 * @return  int
@@ -88,7 +88,7 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Complete owner-qualified task or batch identity.
 	 * @param   string $run_id Run identifier.
 	 *
 	 * @return  int

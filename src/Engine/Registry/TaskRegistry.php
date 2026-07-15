@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -29,6 +30,22 @@ final class TaskRegistry {
 
 	// endregion
 
+	// region MAGIC METHODS
+
+	/**
+	 * Constructor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   WorkRegistry $work Shared task-and-batch identity registry.
+	 */
+	public function __construct(
+		private readonly WorkRegistry $work
+	) {}
+
+	// endregion
+
 	// region METHODS
 
 	/**
@@ -37,33 +54,26 @@ final class TaskRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskInterface $task Task to register.
+	 * @param   string        $identity Complete owner-qualified identity.
+	 * @param   TaskInterface $task     Task to register.
 	 *
-	 * @throws  \InvalidArgumentException When the task name is outside the stable-name grammar or exceeds 110 bytes.
-	 * @throws  \LogicException           When the task name is already registered.
+	 * @throws  \InvalidArgumentException When the identity and task name disagree, or another kind owns the identity.
+	 * @throws  \LogicException           When the task identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register( TaskInterface $task ): void {
+	public function register( string $identity, TaskInterface $task ): void {
 		$name = $task->get_name();
-		if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $name ) ) {
+		WorkIdentity::validate_name( $name );
+		$parts = WorkIdentity::parts( $identity );
+		if ( null === $parts || $name !== $parts[1] ) {
 			throw new \InvalidArgumentException(
-				'Task name is invalid; return a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
-			);
-		}
-		if ( 110 < \strlen( $name ) ) {
-			throw new \InvalidArgumentException(
-				'Task name must be at most 110 bytes; shorten the task name.'
+				'Task identity must be canonical and end with the task\'s declared local name.'
 			);
 		}
 
-		if ( isset( $this->tasks[ $name ] ) ) {
-			throw new \LogicException(
-				'Task name is already registered; register each task name exactly once.'
-			);
-		}
-
-		$this->tasks[ $name ] = $task;
+		$this->work->claim( $identity, 'task' );
+		$this->tasks[ $identity ] = $task;
 	}
 
 	/**
@@ -72,12 +82,26 @@ final class TaskRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task name.
+	 * @param   string $name Complete owner-qualified task identity.
 	 *
 	 * @return  TaskInterface|null
 	 */
 	public function get( string $name ): ?TaskInterface {
 		return $this->tasks[ $name ] ?? null;
+	}
+
+	/**
+	 * Returns the recorded work kind for one complete identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Complete owner-qualified work identity.
+	 *
+	 * @return  'batch'|'task'|null
+	 */
+	public function kind( string $name ): ?string {
+		return $this->work->kind( $name );
 	}
 
 	// endregion

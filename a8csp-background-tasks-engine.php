@@ -115,5 +115,10 @@ if ( is_wp_error( A8CSP_BGTE_REQUIREMENTS ) ) {
 	a8csp_bgte_output_requirements_error( A8CSP_BGTE_REQUIREMENTS );
 } else {
 	require_once A8CSP_BGTE_DIR_PATH . '/functions.php';
+	add_action(
+		'plugins_loaded',
+		array( A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container::class, 'boot' ),
+		0
+	);
 	add_action( 'plugins_loaded', 'a8csp_bgte_plugin' ); // @phpstan-ignore return.void
 }

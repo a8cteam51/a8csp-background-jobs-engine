@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
@@ -60,6 +61,7 @@ final class ScheduleExecutionTest extends TestCase {
 	private const REGISTRATION_KEY = 'owner-a:nightly';
 	private const RUN_ID           = '00000000001700000300-0000000000000000042';
 	private const TASK             = 'refresh-index';
+	private const TASK_IDENTITY    = 'owner-a:refresh-index';
 
 	private Schedules $api;
 	private RecordingBackend $backend;
@@ -206,7 +208,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp_background_tasks/started/' . self::TASK => function (): void {
+			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => function (): void {
 				$this->clock->timestamp += 61;
 				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 			},
@@ -258,7 +260,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->clock->timestamp = self::NOW + self::INTERVAL;
 
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/started/' . self::TASK => new \RuntimeException( 'listener failed' ),
+			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => new \RuntimeException( 'listener failed' ),
 		);
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
@@ -305,7 +307,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * The per-name misfire-grace filter receives the default, owner, and schedule name.
+	 * The per-registration misfire-grace filter receives the default, owner, and complete schedule identity.
 	 *
 	 * @return  void
 	 */
@@ -313,11 +315,11 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule() );
 		$filter_args                              = null;
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp_background_tasks/misfire_grace/' . self::NAME =>
-			static function ( int $grace, string $owner, string $name ) use ( &$filter_args ): int {
+			'a8csp_background_tasks/misfire_grace/' . self::REGISTRATION_KEY =>
+			static function ( int $grace, string $owner, string $schedule ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
-					'args'  => array( $grace, $owner, $name ),
+					'args'  => array( $grace, $owner, $schedule ),
 				);
 
 				return $grace;
@@ -330,7 +332,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame(
 			array(
 				'arity' => 3,
-				'args'  => array( self::INTERVAL, self::OWNER, self::NAME ),
+				'args'  => array( self::INTERVAL, self::OWNER, self::REGISTRATION_KEY ),
 			),
 			$filter_args
 		);
@@ -369,12 +371,12 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/misfired/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY,
 					'args'      => array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/misfired',
-					'args'      => array( self::NAME, self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
+					'args'      => array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
 				),
 			),
 			$this->fired_actions()
@@ -395,7 +397,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/misfired/' . self::NAME => $throwable,
+			'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY => $throwable,
 		);
 		$this->clock->timestamp                       = self::NOW + self::INTERVAL + 901;
 
@@ -405,7 +407,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( 1, $this->registration()['misfires'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/misfired/' . self::NAME,
+				'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY,
 				'a8csp_background_tasks/misfired',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -859,7 +861,7 @@ final class ScheduleExecutionTest extends TestCase {
 			CatchUpPolicy::RunOnce,
 			23
 		);
-		$result      = $current_api->sync( self::OWNER, array( $current ) );
+		$result      = $current_api->sync( self::OWNER, self::declarations( self::OWNER, $current ) );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
 		$this->logger->records  = array();
@@ -929,7 +931,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 				$owner = $registry[ self::OWNER ] ?? null;
 				self::assertIsArray( $owner );
-				unset( $owner[ self::NAME ] );
+				unset( $owner[ self::REGISTRATION_KEY ] );
 
 				$registry[ self::OWNER ] = $owner;
 				$replacement_raw         = \maybe_serialize( $registry );
@@ -971,7 +973,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb->before_next(
 			'update',
 			static function ( WpdbLockSpy $wpdb ) use ( $current_api, $current, &$current_raw ): void {
-				$result = $current_api->sync( self::OWNER, array( $current ) );
+				$result = $current_api->sync( self::OWNER, self::declarations( self::OWNER, $current ) );
 				self::assertInstanceOf( Success::class, $result );
 
 				$current_raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
@@ -1039,7 +1041,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->backend->results['schedule_recurring'] = $failure;
 
-		$synced = $this->api->sync( self::OWNER, array( $schedule ) );
+		$synced = $this->api->sync( self::OWNER, self::declarations( self::OWNER, $schedule ) );
 
 		self::assertSame( $failure, $synced );
 		self::assertSame( $schedule->fingerprint(), $this->registration()['fingerprint'] ?? null );
@@ -1051,7 +1053,7 @@ final class ScheduleExecutionTest extends TestCase {
 		unset( $this->backend->results['schedule_recurring'] );
 		$this->backend->calls = array();
 
-		$result = $this->api->run_now( self::OWNER, self::NAME );
+		$result = $this->api->run_now( self::REGISTRATION_KEY );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
@@ -1071,7 +1073,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$next_due               = $this->registration()['next_due'] ?? null;
 		$this->clock->timestamp = self::NOW + 10;
 
-		$result = $this->api->run_now( self::OWNER, self::NAME );
+		$result = $this->api->run_now( self::REGISTRATION_KEY );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
@@ -1092,7 +1094,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$observed = null;
 
 		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp_background_tasks/started/' . self::TASK => function () use ( &$observed ): void {
+			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => function () use ( &$observed ): void {
 				$observed = array(
 					'last_fired' => $this->registration()['last_fired'] ?? null,
 					'lease_held' => \array_key_exists(
@@ -1103,7 +1105,7 @@ final class ScheduleExecutionTest extends TestCase {
 			},
 		);
 
-		$result = $this->api->run_now( self::OWNER, self::NAME );
+		$result = $this->api->run_now( self::REGISTRATION_KEY );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -1124,7 +1126,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
 		$this->wpdb->script_result( 'update', false );
 
-		$result = $this->api->run_now( self::OWNER, self::NAME );
+		$result = $this->api->run_now( self::REGISTRATION_KEY );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
@@ -1142,7 +1144,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->seed_held_lock();
 		$before = $this->registration();
 
-		$result = $this->api->run_now( self::OWNER, self::NAME );
+		$result = $this->api->run_now( self::REGISTRATION_KEY );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -1160,7 +1162,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Replace ) );
 		$this->seed_held_lock();
 
-		$result = $this->api->run_now( self::OWNER, self::NAME );
+		$result = $this->api->run_now( self::REGISTRATION_KEY );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $result->value, $this->lock_owner( self::ARGS_HASH ) );
@@ -1194,6 +1196,26 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * Returns request-local declarations keyed by complete schedule identity.
+	 *
+	 * @param   string   $owner     Owner identifier.
+	 * @param   Schedule ...$schedules Schedule value objects.
+	 *
+	 * @return  array<string, array{schedule: Schedule, task: string}>
+	 */
+	private static function declarations( string $owner, Schedule ...$schedules ): array {
+		$declarations = array();
+		foreach ( $schedules as $schedule ) {
+			$declarations[ $owner . ':' . $schedule->name ] = array(
+				'schedule' => $schedule,
+				'task'     => $owner . ':' . $schedule->task,
+			);
+		}
+
+		return $declarations;
+	}
+
+	/**
 	 * Synchronizes one declaration and clears setup observations.
 	 *
 	 * @param   Schedule $schedule Schedule declaration.
@@ -1201,7 +1223,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	private function sync_schedule( Schedule $schedule ): void {
-		$result = $this->api->sync( self::OWNER, array( $schedule ) );
+		$result = $this->api->sync( self::OWNER, self::declarations( self::OWNER, $schedule ) );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->backend->calls                     = array();
@@ -1237,9 +1259,10 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  OccurrenceDelivery
 	 */
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
-		$tasks   = new TaskRegistry();
-		$batches = new BatchRegistry();
-		$tasks->register( new RecordingTask( self::TASK ) );
+		$work    = new WorkRegistry();
+		$tasks   = new TaskRegistry( $work );
+		$batches = new BatchRegistry( $work );
+		$tasks->register( self::TASK_IDENTITY, new RecordingTask( self::TASK ) );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
@@ -1292,14 +1315,14 @@ final class ScheduleExecutionTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::TASK . '_' . self::ARGS_HASH, $raw );
+		$this->wpdb->put( 'a8csp_bgte_lock_' . self::TASK_IDENTITY . '_' . self::ARGS_HASH, $raw );
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::TASK ] = array(
+		$options[ 'a8csp_bgte_latest_' . self::TASK_IDENTITY ] = array(
 			'all'     => 'run-incumbent',
 			'by_hash' => array( self::ARGS_HASH => 'run-incumbent' ),
 		);
-		$GLOBALS['a8csp_bgte_test_options']           = $options;
+		$GLOBALS['a8csp_bgte_test_options']                    = $options;
 	}
 
 	/**
@@ -1310,7 +1333,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  string|null
 	 */
 	private function lock_owner( string $args_hash ): ?string {
-		$raw = $this->wpdb->rows[ 'a8csp_bgte_lock_' . self::TASK . '_' . $args_hash ] ?? null;
+		$raw = $this->wpdb->rows[ 'a8csp_bgte_lock_' . self::TASK_IDENTITY . '_' . $args_hash ] ?? null;
 		if ( ! \is_string( $raw ) ) {
 			return null;
 		}
@@ -1339,7 +1362,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsArray( $owners );
 		$schedules = $owners[ self::OWNER ] ?? null;
 		self::assertIsArray( $schedules );
-		$registration = $schedules[ self::NAME ] ?? null;
+		$registration = $schedules[ self::REGISTRATION_KEY ] ?? null;
 		self::assertIsArray( $registration );
 
 		return $registration;

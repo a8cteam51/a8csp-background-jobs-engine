@@ -17,20 +17,38 @@ use PHPUnit\Framework\Attributes\Group;
 final class CancellationTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Consumer owner isolated to cancellation coverage. */
+	private const OWNER = 'integration-cancellation';
+
 	/** Task identity isolated to the executing-refusal race. */
 	private const EXECUTING_NAME = 'integration-cancel-executing-refusal';
+
+	/** Owner-qualified task identity isolated to the executing-refusal race. */
+	private const EXECUTING_IDENTITY = self::OWNER . ':' . self::EXECUTING_NAME;
 
 	/** Task identity isolated to retry-backoff cancellation. */
 	private const BACKOFF_NAME = 'integration-cancel-backoff';
 
+	/** Owner-qualified task identity isolated to retry-backoff cancellation. */
+	private const BACKOFF_IDENTITY = self::OWNER . ':' . self::BACKOFF_NAME;
+
 	/** Batch identity isolated to between-chunks cancellation. */
 	private const BATCH_NAME = 'integration-cancel-between-chunks';
+
+	/** Owner-qualified batch identity isolated to between-chunks cancellation. */
+	private const BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
 
 	/** Task identity isolated to sibling-group cancellation. */
 	private const SIBLING_NAME = 'integration-cancel-sibling-isolation';
 
+	/** Owner-qualified task identity isolated to sibling-group cancellation. */
+	private const SIBLING_IDENTITY = self::OWNER . ':' . self::SIBLING_NAME;
+
 	/** Task identity isolated to the degraded WP-Cron survivor. */
 	private const DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
+
+	/** Owner-qualified task identity isolated to the degraded WP-Cron survivor. */
+	private const DEGRADED_IDENTITY = self::OWNER . ':' . self::DEGRADED_NAME;
 
 	// endregion.
 
@@ -45,17 +63,16 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 41 );
 		$task = new RecordingTask( self::EXECUTING_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::EXECUTING_NAME );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::EXECUTING_IDENTITY );
 
-		$enqueued = \a8csp_bgte_enqueue_task( self::EXECUTING_NAME, $args );
+		$enqueued = $consumer->tasks()->enqueue( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id    = $enqueued->value;
-		$group     = self::EXECUTING_NAME . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::EXECUTING_NAME, $run_id, $group );
+		$group     = self::EXECUTING_IDENTITY . '|' . $run_id;
+		$action_id = $this->assert_pending_task_action( self::EXECUTING_IDENTITY, $run_id, $group );
 		$store     = $this->action_scheduler_store();
 
 		$observed_status = null;
@@ -63,7 +80,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$cancel_result   = null;
 		$task->on_handle = static function ( array $received_args ) use (
 			$action_id,
-			$engine,
+			$consumer,
 			$run_id,
 			$store,
 			&$cancel_result,
@@ -71,8 +88,8 @@ final class CancellationTest extends IntegrationTestCase {
 			&$observed_status
 		): void {
 			$observed_status = $store->get_status( $action_id );
-			$observed_state  = \get_option( 'a8csp_bgte_run_' . self::EXECUTING_NAME . '_' . $run_id, null );
-			$cancel_result   = $engine->cancel( self::EXECUTING_NAME, $run_id );
+			$observed_state  = \get_option( 'a8csp_bgte_run_' . self::EXECUTING_IDENTITY . '_' . $run_id, null );
+			$cancel_result   = $consumer->runs()->cancel( self::EXECUTING_NAME, $run_id );
 		};
 
 		$completed_action_ids = array();
@@ -108,9 +125,9 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'completed',
 				),
 			),
-			self::terminal_entries( self::EXECUTING_NAME )
+			self::terminal_entries( self::EXECUTING_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::EXECUTING_NAME, $run_id, $args );
+		self::assert_run_storage_cleared( self::EXECUTING_IDENTITY, $run_id, $args );
 	}
 
 	/**
@@ -129,17 +146,16 @@ final class CancellationTest extends IntegrationTestCase {
 			max_delay: 300
 		);
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BACKOFF_NAME );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::BACKOFF_IDENTITY );
 
-		$enqueued = \a8csp_bgte_enqueue_task( self::BACKOFF_NAME, $args );
+		$enqueued = $consumer->tasks()->enqueue( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id            = $enqueued->value;
-		$group             = self::BACKOFF_NAME . '|' . $run_id;
-		$initial_action_id = $this->assert_pending_task_action( self::BACKOFF_NAME, $run_id, $group );
+		$group             = self::BACKOFF_IDENTITY . '|' . $run_id;
+		$initial_action_id = $this->assert_pending_task_action( self::BACKOFF_IDENTITY, $run_id, $group );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute only the first failed attempt' );
 
@@ -148,16 +164,16 @@ final class CancellationTest extends IntegrationTestCase {
 		$retry_action_id = $this->assert_sole_pending_action(
 			'a8csp_background_tasks/run',
 			$group,
-			array( self::BACKOFF_NAME, $run_id, 2 )
+			array( self::BACKOFF_IDENTITY, $run_id, 2 )
 		);
-		$run_state       = \get_option( 'a8csp_bgte_run_' . self::BACKOFF_NAME . '_' . $run_id, null );
+		$run_state       = \get_option( 'a8csp_bgte_run_' . self::BACKOFF_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
 		self::assertSame( 1, $run_state['chunk_retries'] ?? null );
 		self::assertSame( 2, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The persisted backoff window must be cancellable' );
 
-		$cancelled = $engine->cancel( self::BACKOFF_NAME, $run_id );
+		$cancelled = $consumer->runs()->cancel( self::BACKOFF_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -181,9 +197,9 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			self::terminal_entries( self::BACKOFF_NAME )
+			self::terminal_entries( self::BACKOFF_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::BACKOFF_NAME, $run_id, $args );
+		self::assert_run_storage_cleared( self::BACKOFF_IDENTITY, $run_id, $args );
 	}
 
 	/**
@@ -198,21 +214,20 @@ final class CancellationTest extends IntegrationTestCase {
 		$batch        = new RecordingBatch( self::BATCH_NAME );
 		$batch->queue = array( $first_chunk, $next_chunk );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->batches()->register( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_NAME );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->batches()->register( $batch );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_IDENTITY );
 
-		$started = \a8csp_bgte_start_batch( self::BATCH_NAME, $start_args );
+		$started = $consumer->batches()->start( self::BATCH_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
 		self::assertIsString( $started->value );
 		$run_id = $started->value;
-		$group  = self::BATCH_NAME . '|' . $run_id;
+		$group  = self::BATCH_IDENTITY . '|' . $run_id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the batch queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the first retained queue head' );
 
-		$pre_run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_NAME . '_' . $run_id, null );
+		$pre_run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $pre_run_state );
 		self::assertSame( array( $first_chunk, $next_chunk ), $pre_run_state['queue'] ?? null );
 		self::assertSame( 3, $pre_run_state['action_seq'] ?? null );
@@ -220,12 +235,12 @@ final class CancellationTest extends IntegrationTestCase {
 		$this->assert_sole_pending_action(
 			'a8csp_background_tasks/run',
 			$group,
-			array( self::BATCH_NAME, $run_id, $first_chunk, 3 )
+			array( self::BATCH_IDENTITY, $run_id, $first_chunk, 3 )
 		);
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk' );
 
-		$run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_NAME . '_' . $run_id, null );
+		$run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
 		self::assertSame( 4, $run_state['action_seq'] ?? null );
@@ -233,10 +248,10 @@ final class CancellationTest extends IntegrationTestCase {
 		$continue_action_id = $this->assert_sole_pending_action(
 			'a8csp_background_tasks/continue',
 			$group,
-			array( self::BATCH_NAME, $run_id, 4 )
+			array( self::BATCH_IDENTITY, $run_id, 4 )
 		);
 
-		$cancelled = $engine->cancel( self::BATCH_NAME, $run_id );
+		$cancelled = $consumer->runs()->cancel( self::BATCH_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -262,9 +277,9 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			self::terminal_entries( self::BATCH_NAME )
+			self::terminal_entries( self::BATCH_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::BATCH_NAME, $run_id, $start_args );
+		self::assert_run_storage_cleared( self::BATCH_IDENTITY, $run_id, $start_args );
 	}
 
 	/**
@@ -277,25 +292,24 @@ final class CancellationTest extends IntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$task   = new RecordingTask( self::SIBLING_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SIBLING_NAME );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::SIBLING_IDENTITY );
 
-		$enqueued_a = \a8csp_bgte_enqueue_task( self::SIBLING_NAME, $args_a );
-		$enqueued_b = \a8csp_bgte_enqueue_task( self::SIBLING_NAME, $args_b );
+		$enqueued_a = $consumer->tasks()->enqueue( self::SIBLING_NAME, $args_a );
+		$enqueued_b = $consumer->tasks()->enqueue( self::SIBLING_NAME, $args_b );
 		self::assertInstanceOf( Success::class, $enqueued_a );
 		self::assertInstanceOf( Success::class, $enqueued_b );
 		self::assertIsString( $enqueued_a->value );
 		self::assertIsString( $enqueued_b->value );
 		$run_a    = $enqueued_a->value;
 		$run_b    = $enqueued_b->value;
-		$group_a  = self::SIBLING_NAME . '|' . $run_a;
-		$group_b  = self::SIBLING_NAME . '|' . $run_b;
-		$action_a = $this->assert_pending_task_action( self::SIBLING_NAME, $run_a, $group_a );
-		$action_b = $this->assert_pending_task_action( self::SIBLING_NAME, $run_b, $group_b );
+		$group_a  = self::SIBLING_IDENTITY . '|' . $run_a;
+		$group_b  = self::SIBLING_IDENTITY . '|' . $run_b;
+		$action_a = $this->assert_pending_task_action( self::SIBLING_IDENTITY, $run_a, $group_a );
+		$action_b = $this->assert_pending_task_action( self::SIBLING_IDENTITY, $run_b, $group_b );
 
-		$cancelled = $engine->cancel( self::SIBLING_NAME, $run_a );
+		$cancelled = $consumer->runs()->cancel( self::SIBLING_NAME, $run_a );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_a, $cancelled->value );
@@ -325,7 +339,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		self::assertSame( array( $args_b ), $task->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
-		$history = \get_option( 'a8csp_bgte_history_' . self::SIBLING_NAME, null );
+		$history = \get_option( 'a8csp_bgte_history_' . self::SIBLING_IDENTITY, null );
 		self::assertIsArray( $history );
 		self::assertSame( array( $run_a, $run_b ), $history['started'] ?? null );
 		self::assertSame(
@@ -349,10 +363,10 @@ final class CancellationTest extends IntegrationTestCase {
 					self::args_hash( $args_b ) => $run_b,
 				),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::SIBLING_NAME, null )
+			\get_option( 'a8csp_bgte_latest_' . self::SIBLING_IDENTITY, null )
 		);
-		self::assert_run_storage_cleared( self::SIBLING_NAME, $run_a, $args_a );
-		self::assert_run_storage_cleared( self::SIBLING_NAME, $run_b, $args_b );
+		self::assert_run_storage_cleared( self::SIBLING_IDENTITY, $run_a, $args_a );
+		self::assert_run_storage_cleared( self::SIBLING_IDENTITY, $run_b, $args_b );
 	}
 
 	/**
@@ -370,16 +384,15 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 46 );
 		$task = new RecordingTask( self::DEGRADED_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::DEGRADED_NAME );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::DEGRADED_IDENTITY );
 
 		$raw_deliveries = array();
 		\add_action(
 			'a8csp_background_tasks/run',
 			static function ( string $name, string $run_id, int $action_seq ) use ( &$raw_deliveries ): void {
-				if ( self::DEGRADED_NAME === $name ) {
+				if ( self::DEGRADED_IDENTITY === $name ) {
 					$raw_deliveries[] = array( $name, $run_id, $action_seq );
 				}
 			},
@@ -387,23 +400,23 @@ final class CancellationTest extends IntegrationTestCase {
 			3
 		);
 
-		$enqueued = \a8csp_bgte_enqueue_task( self::DEGRADED_NAME, $args );
+		$enqueued = $consumer->tasks()->enqueue( self::DEGRADED_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id      = $enqueued->value;
-		$group       = self::DEGRADED_NAME . '|' . $run_id;
-		$action_args = array( self::DEGRADED_NAME, $run_id, 1 );
+		$group       = self::DEGRADED_IDENTITY . '|' . $run_id;
+		$action_args = array( self::DEGRADED_IDENTITY, $run_id, 1 );
 		$action_id   = null;
 		$cron_before = array();
 		if ( \class_exists( \ActionScheduler::class ) ) {
-			$action_id = $this->assert_pending_task_action( self::DEGRADED_NAME, $run_id, $group );
+			$action_id = $this->assert_pending_task_action( self::DEGRADED_IDENTITY, $run_id, $group );
 		} else {
 			$cron_before = $this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args );
 			self::assertCount( 1, $cron_before, 'The degraded backend must retain one pending WP-Cron single' );
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
 
-		$cancelled = $engine->cancel( self::DEGRADED_NAME, $run_id );
+		$cancelled = $consumer->runs()->cancel( self::DEGRADED_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 
@@ -443,13 +456,13 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			self::terminal_entries( self::DEGRADED_NAME )
+			self::terminal_entries( self::DEGRADED_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::DEGRADED_NAME, $run_id, $args );
+		self::assert_run_storage_cleared( self::DEGRADED_IDENTITY, $run_id, $args );
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::DEGRADED_NAME,
-				'a8csp_bgte_latest_' . self::DEGRADED_NAME,
+				'a8csp_bgte_history_' . self::DEGRADED_IDENTITY,
+				'a8csp_bgte_latest_' . self::DEGRADED_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Cancelled degraded state must retain only history and the latest pointer'

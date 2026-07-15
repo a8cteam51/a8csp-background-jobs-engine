@@ -15,8 +15,14 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 final class NonRetryableTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Public owner unique to this integration-test graph. */
+	private const OWNER = 'integration-non-retryable';
+
 	/** Task identity unique within the request-persistent integration registry. */
 	private const NAME = 'integration-non-retryable';
+
+	/** Owner-qualified task identity persisted by the engine. */
+	private const IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 
@@ -35,19 +41,18 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$task            = new RecordingTask( self::NAME );
 		$task->throwable = new NonRetryableTaskException( 'The requested record is permanently unavailable.' );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register tasks' );
-		$engine->tasks()->register( $task );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::NAME );
-		$this->expect_option( 'a8csp_bgte_failed_' . self::NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_failed_' . self::IDENTITY );
 
 		$named_retrying   = array();
 		$generic_retrying = array();
 		$named_failed     = array();
 		$generic_failed   = array();
 		\add_action(
-			'a8csp_background_tasks/retrying/' . self::NAME,
+			'a8csp_background_tasks/retrying/' . self::IDENTITY,
 			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retrying ): void {
 				$named_retrying[] = array( $run_id, $start_args, $attempt, $delay );
 			},
@@ -69,7 +74,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp_background_tasks/failed/' . self::NAME,
+			'a8csp_background_tasks/failed/' . self::IDENTITY,
 			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
 				$named_failed[] = array( $run_id, $start_args, $failure );
 			},
@@ -90,12 +95,12 @@ final class NonRetryableTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = \a8csp_bgte_enqueue_task( self::NAME, $args );
+		$result = $consumer->tasks()->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable task must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$run_id    = $result->value;
-		$group     = self::NAME . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::NAME, $run_id, $group );
+		$group     = self::IDENTITY . '|' . $run_id;
+		$action_id = $this->assert_pending_task_action( self::IDENTITY, $run_id, $group );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable task action' );
 
@@ -111,7 +116,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			'Background-work execution failed because %s was thrown.',
 			NonRetryableTaskException::class
 		);
-		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::IDENTITY, $failure->name );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'execution', $failure->stage );
@@ -124,7 +129,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			'The name-specific failed hook must receive run ID, start arguments, and run failure'
 		);
 		self::assertSame(
-			array( array( self::NAME, $run_id, $args, $failure ) ),
+			array( array( self::IDENTITY, $run_id, $args, $failure ) ),
 			$generic_failed,
 			'The generic failed hook must prepend the task name to the same failure payload'
 		);
@@ -149,11 +154,11 @@ final class NonRetryableTest extends IntegrationTestCase {
 
 		$args_hash = self::args_hash( $args );
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id, false ),
+			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ),
 			'Terminal non-retryable failure must delete the active run option'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::NAME . '_' . $args_hash, false ),
+			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
 			'Terminal non-retryable failure must release the overlap lock'
 		);
 		self::assertSame(
@@ -161,7 +166,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 				'all'     => $run_id,
 				'by_hash' => array( $args_hash => $run_id ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
 			'Terminal non-retryable failure must retain the latest pointers'
 		);
 		self::assertSame(
@@ -185,11 +190,11 @@ final class NonRetryableTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
 			'Terminal non-retryable failure must retain one started and terminal history entry'
 		);
 
-		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::NAME, null );
+		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
 		self::assertIsArray( $failed_entries );
 		self::assertCount( 1, $failed_entries, 'A non-retryable failure must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;
@@ -212,9 +217,9 @@ final class NonRetryableTest extends IntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_failed_' . self::NAME,
-				'a8csp_bgte_history_' . self::NAME,
-				'a8csp_bgte_latest_' . self::NAME,
+				'a8csp_bgte_failed_' . self::IDENTITY,
+				'a8csp_bgte_history_' . self::IDENTITY,
+				'a8csp_bgte_latest_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Non-retryable failure must retain only its failed store, history ring, and latest pointer'

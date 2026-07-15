@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -30,22 +29,22 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const WP_PATH = '/var/www/html';
 
 	/** Failed-run identity isolated to list coverage. */
-	private const LIST_STORE_NAME = 'integration-cli-command-list-store';
+	private const LIST_STORE_NAME = 'integration-cli-command:integration-cli-command-list-store';
 
 	/** Failed-run identity isolated to name-scoped purge coverage. */
-	private const PURGE_STORE_NAME = 'integration-cli-command-purge-store';
+	private const PURGE_STORE_NAME = 'integration-cli-command:integration-cli-command-purge-store';
 
 	/** Failed-run identity isolated to prefix-discovered purge coverage. */
-	private const ALL_STORE_NAME = 'integration-cli-command-all-store';
+	private const ALL_STORE_NAME = 'integration-cli-command:integration-cli-command-all-store';
 
 	/** Background-work identity deliberately absent from the child request's registries. */
-	private const UNREGISTERED_NAME = 'integration-cli-command-unregistered';
+	private const UNREGISTERED_NAME = 'integration-cli-command:integration-cli-command-unregistered';
 
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
-	private const CANCEL_NAME = MaintenanceTask::NAME;
+	private const CANCEL_NAME = 'a8csp-bgte:maintenance';
 
 	/** Batch identity registered by the cancel-completeness WP-CLI bootstrap. */
-	private const CANCEL_BATCH_NAME = 'integration-cli-command-cancel-batch';
+	private const CANCEL_BATCH_NAME = 'integration-cli-command:integration-cli-command-cancel-batch';
 
 	/** Test-only WP-CLI bootstrap that registers the cancel-completeness batch. */
 	private const CANCEL_BATCH_BOOTSTRAP = self::WP_PATH
@@ -67,6 +66,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/** Task declared in every isolated inspection request. */
 	private const INSPECTION_TASK = 'integration-cli-inspection-task';
+
+	/** Owner-qualified task identity declared in every isolated inspection request. */
+	private const INSPECTION_TASK_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_TASK;
 
 	/** Run identity shared by deterministic retained-failure fixtures. */
 	private const RUN_ID = 'integration-cli-command-run-1';
@@ -111,7 +113,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
-			"Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte-maintenance\".\n",
+			"Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte:maintenance\".\n",
 			$result['stdout']
 		);
 		self::assertSame( '', $result['stderr'] );
@@ -196,7 +198,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame(
-			'Error: Background-work "integration-cli-command-unregistered" is not registered; ' .
+			'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' .
 			"register the matching task or batch before cancelling its run.\n",
 			$result['stderr']
 		);
@@ -214,7 +216,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame(
 			'Error: Run "integration-cli-command-run-1" for background-work ' .
-			"\"a8csp-bgte-maintenance\" is not retained; nothing remains to cancel.\n",
+			"\"a8csp-bgte:maintenance\" is not retained; nothing remains to cancel.\n",
 			$result['stderr']
 		);
 	}
@@ -297,7 +299,8 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
-			'[{"name":"integration-cli-command-list-store","run_id":"integration-cli-command-run-1",' .
+			'[{"owner":"integration-cli-command","name":"integration-cli-command:integration-cli-command-list-store",' .
+			'"run_id":"integration-cli-command-run-1",' .
 			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"error_class":"RuntimeException",' .
 			'"error_message":"CLI boundary failure."}]',
 			$result['stdout']
@@ -323,7 +326,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame(
-			'Error: Failed runs for "integration-cli-command-list-store" are unavailable because the authoritative ' .
+			'Error: Failed runs for "integration-cli-command:integration-cli-command-list-store" are unavailable because the authoritative ' .
 			"database read failed; resolve the database error and try again.\n",
 			$result['stderr']
 		);
@@ -340,7 +343,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame(
-			'Error: Background-work "integration-cli-command-unregistered" is not registered; ' .
+			'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' .
 			"register the matching task or batch before retrying its failed run.\n",
 			$result['stderr']
 		);
@@ -359,7 +362,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
-			"Success: Purged 1 failed run for \"integration-cli-command-purge-store\".\n",
+			"Success: Purged 1 failed run for \"integration-cli-command:integration-cli-command-purge-store\".\n",
 			$result['stdout']
 		);
 		self::assertSame( '', $result['stderr'] );
@@ -477,7 +480,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			\array_keys( $row )
 		);
 		self::assertSame( self::INSPECTION_OWNER, $row['owner'] ?? null );
-		self::assertSame( self::INSPECTION_SCHEDULE, $row['name'] ?? null );
+		self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $row['name'] ?? null );
 		self::assertSame( 300, $row['recurrence'] ?? null );
 		$next_due = $row['next_due'] ?? null;
 		self::assertIsString( $next_due );
@@ -660,10 +663,13 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_runs_list_reports_the_empty_state(): void {
-		$result = self::run_runs_command( 'list', 'unknown-stable-name' );
+		$result = self::run_runs_command( 'list', 'integration-cli-command:unknown-stable-name' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( "No live runs or history are retained for \"unknown-stable-name\".\n", $result['stdout'] );
+		self::assertSame(
+			"No live runs or history are retained for \"integration-cli-command:unknown-stable-name\".\n",
+			$result['stdout']
+		);
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -680,7 +686,7 @@ final class CLICommandTest extends IntegrationTestCase {
 				'--require=' . self::FAILED_READ_BOOTSTRAP,
 			),
 			'list',
-			self::INSPECTION_TASK
+			self::INSPECTION_TASK_IDENTITY
 		);
 
 		self::assertSame( 0, $result['exit_code'] );
@@ -748,7 +754,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $invalid_name['exit_code'] );
 		self::assertSame( '', $invalid_name['stdout'] );
 		self::assertSame(
-			"Error: Run name is invalid; use lowercase letters, digits, underscores, and hyphens.\n",
+			"Error: Run name is invalid; use a composed {owner}:{name} identity.\n",
 			$invalid_name['stderr']
 		);
 
@@ -769,30 +775,29 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine );
+		$consumer        = \a8csp_bgte( self::INSPECTION_OWNER );
 		$task            = new RecordingTask( self::INSPECTION_TASK );
 		$task->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$engine->tasks()->register( $task );
+		$consumer->tasks()->register( $task );
 		$schedule = new Schedule(
 			self::INSPECTION_SCHEDULE,
 			Recurrence::every( 300 ),
 			self::INSPECTION_TASK,
 			array( 'source' => 'schedule' )
 		);
-		$synced   = $engine->schedules()->sync( self::INSPECTION_OWNER, array( $schedule ) );
+		$synced   = $consumer->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter(
-			'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK,
+			'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK_IDENTITY,
 			static fn (): RetryPolicy => $retry_policy
 		);
 
-		$enqueued = $engine->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
+		$enqueued = $consumer->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id = $enqueued->value;
-		$this->expect_option( 'a8csp_bgte_latest_' . self::INSPECTION_TASK );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::INSPECTION_TASK_IDENTITY );
 
 		try {
 			self::assertSame( 1, $this->run_next_engine_action() );
@@ -808,7 +813,7 @@ final class CLICommandTest extends IntegrationTestCase {
 				'runs',
 				array( '--require=' . self::INSPECTION_BOOTSTRAP ),
 				'list',
-				self::INSPECTION_TASK,
+				self::INSPECTION_TASK_IDENTITY,
 				'--format=json'
 			);
 
@@ -819,6 +824,11 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertIsArray( $schedule_rows );
 			$schedule_row = $schedule_rows[0] ?? null;
 			self::assertIsArray( $schedule_row );
+			self::assertSame( self::INSPECTION_OWNER, $schedule_row['owner'] ?? null );
+			self::assertSame(
+				self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE,
+				$schedule_row['name'] ?? null
+			);
 			self::assertSame( 'yes', $schedule_row['scheduled'] ?? null );
 			self::assertSame( 'free', $schedule_row['lock'] ?? null );
 
@@ -849,7 +859,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertSame( $run_id, $history_rows[0]['run_id'] ?? null );
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
-			$cancelled = $engine->cancel( self::INSPECTION_TASK, $run_id );
+			$cancelled = $consumer->runs()->cancel( self::INSPECTION_TASK, $run_id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		}
 	}

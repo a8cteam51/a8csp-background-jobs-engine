@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
@@ -49,8 +50,14 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Schedule isolated to the RunOnce occurrence. */
 	private const RUN_ONCE_SCHEDULE = 'late-run-once';
 
+	/** Owner-qualified RunOnce schedule identity. */
+	private const RUN_ONCE_SCHEDULE_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE;
+
 	/** Task isolated to the RunOnce occurrence. */
 	private const RUN_ONCE_TASK = 'integration-misfire-run-once-task';
+
+	/** Owner-qualified RunOnce target identity. */
+	private const RUN_ONCE_TASK_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_TASK;
 
 	/** Owner isolated to the Skip occurrence. */
 	private const SKIP_OWNER = 'integration-misfire-skip';
@@ -58,8 +65,14 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Schedule isolated to the Skip occurrence. */
 	private const SKIP_SCHEDULE = 'late-skip';
 
+	/** Owner-qualified Skip schedule identity. */
+	private const SKIP_SCHEDULE_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE;
+
 	/** Task isolated to the Skip occurrence. */
 	private const SKIP_TASK = 'integration-misfire-skip-task';
+
+	/** Owner-qualified Skip target identity. */
+	private const SKIP_TASK_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_TASK;
 
 	/** Owner isolated to the grace-boundary occurrences. */
 	private const BOUNDARY_OWNER = 'integration-misfire-boundary';
@@ -67,14 +80,26 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Schedule exactly at the grace boundary. */
 	private const EXACT_SCHEDULE = 'exact-grace';
 
+	/** Owner-qualified exact-boundary schedule identity. */
+	private const EXACT_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE;
+
 	/** Task exactly at the grace boundary. */
 	private const EXACT_TASK = 'integration-misfire-exact-task';
+
+	/** Owner-qualified exact-boundary target identity. */
+	private const EXACT_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_TASK;
 
 	/** Schedule one second beyond the grace boundary. */
 	private const BEYOND_SCHEDULE = 'beyond-grace';
 
+	/** Owner-qualified beyond-boundary schedule identity. */
+	private const BEYOND_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE;
+
 	/** Task one second beyond the grace boundary. */
 	private const BEYOND_TASK = 'integration-misfire-beyond-task';
+
+	/** Owner-qualified beyond-boundary target identity. */
+	private const BEYOND_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_TASK;
 
 	// endregion.
 
@@ -90,10 +115,10 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
 		$this->expect_option( 'a8csp_bgte_schedules' );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::RUN_ONCE_TASK );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::RUN_ONCE_TASK_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::RUN_ONCE_TASK );
-		$engine->tasks()->register( $task );
+		$engine->tasks()->register( self::RUN_ONCE_TASK_IDENTITY, $task );
 		$schedule = new Schedule(
 			self::RUN_ONCE_SCHEDULE,
 			Recurrence::every( self::INTERVAL ),
@@ -107,11 +132,15 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->set_next_due( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE, $aged_due );
 		$dynamic_misfires = array();
 		$generic_misfires = array();
-		$this->record_misfire_hooks( self::RUN_ONCE_SCHEDULE, $dynamic_misfires, $generic_misfires );
+		$this->record_misfire_hooks(
+			self::RUN_ONCE_SCHEDULE_IDENTITY,
+			$dynamic_misfires,
+			$generic_misfires
+		);
 
 		\do_action(
 			'a8csp_background_tasks/schedule_due',
-			self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE
+			self::RUN_ONCE_SCHEDULE_IDENTITY
 		);
 		self::assertSame( array(), $task->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the task inline' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the single RunOnce make-up occurrence' );
@@ -142,7 +171,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_schedules' );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::SKIP_TASK );
-		$engine->tasks()->register( $task );
+		$engine->tasks()->register( self::SKIP_TASK_IDENTITY, $task );
 		$schedule = new Schedule(
 			self::SKIP_SCHEDULE,
 			Recurrence::every( self::INTERVAL ),
@@ -157,9 +186,13 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->set_next_due( self::SKIP_OWNER, self::SKIP_SCHEDULE, $aged_due );
 		$dynamic_misfires = array();
 		$generic_misfires = array();
-		$this->record_misfire_hooks( self::SKIP_SCHEDULE, $dynamic_misfires, $generic_misfires );
+		$this->record_misfire_hooks(
+			self::SKIP_SCHEDULE_IDENTITY,
+			$dynamic_misfires,
+			$generic_misfires
+		);
 
-		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-task action for the dropped occurrence' );
 		self::assertSame( array(), $task->calls, 'Skip must not execute a task for the dropped occurrence' );
@@ -169,9 +202,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			'The dynamic misfire hook must receive owner, due instant, and fired instant'
 		);
 		self::assertSame(
-			array( array( self::SKIP_SCHEDULE, self::SKIP_OWNER, $aged_due, $now ) ),
+			array( array( self::SKIP_SCHEDULE_IDENTITY, self::SKIP_OWNER, $aged_due, $now ) ),
 			$generic_misfires,
-			'The generic misfire hook must prepend the schedule name to the same payload'
+			'The generic misfire hook must prepend the complete schedule identity to the same payload'
 		);
 		$expected_due = self::realigned_due( $aged_due, $now );
 		$registration = $this->registration( self::SKIP_OWNER, self::SKIP_SCHEDULE );
@@ -207,12 +240,12 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
 		$this->expect_option( 'a8csp_bgte_schedules' );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::EXACT_TASK );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::EXACT_TASK_IDENTITY );
 		$engine      = $this->build_engine( $clock, $logger );
 		$exact_task  = new RecordingTask( self::EXACT_TASK );
 		$beyond_task = new RecordingTask( self::BEYOND_TASK );
-		$engine->tasks()->register( $exact_task );
-		$engine->tasks()->register( $beyond_task );
+		$engine->tasks()->register( self::EXACT_TASK_IDENTITY, $exact_task );
+		$engine->tasks()->register( self::BEYOND_TASK_IDENTITY, $beyond_task );
 		$exact  = new Schedule(
 			self::EXACT_SCHEDULE,
 			Recurrence::every( self::INTERVAL ),
@@ -235,12 +268,20 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$exact_generic  = array();
 		$beyond_dynamic = array();
 		$beyond_generic = array();
-		$this->record_misfire_hooks( self::EXACT_SCHEDULE, $exact_dynamic, $exact_generic );
-		$this->record_misfire_hooks( self::BEYOND_SCHEDULE, $beyond_dynamic, $beyond_generic );
+		$this->record_misfire_hooks(
+			self::EXACT_SCHEDULE_IDENTITY,
+			$exact_dynamic,
+			$exact_generic
+		);
+		$this->record_misfire_hooks(
+			self::BEYOND_SCHEDULE_IDENTITY,
+			$beyond_dynamic,
+			$beyond_generic
+		);
 
-		\do_action( 'a8csp_background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::EXACT_SCHEDULE_IDENTITY );
 		self::assertSame( 1, $this->run_next_due_action(), 'An occurrence exactly at grace must execute normally' );
-		\do_action( 'a8csp_background_tasks/schedule_due', self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE );
+		\do_action( 'a8csp_background_tasks/schedule_due', self::BEYOND_SCHEDULE_IDENTITY );
 		self::assertSame( 0, $this->run_next_due_action(), 'An occurrence one second beyond grace must be dropped' );
 
 		self::assertSame( array( array() ), $exact_task->calls, 'Exactly-at-grace must remain a due task occurrence' );
@@ -253,7 +294,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			'One-second-beyond must fire the dynamic misfire hook'
 		);
 		self::assertSame(
-			array( array( self::BEYOND_SCHEDULE, self::BOUNDARY_OWNER, $beyond_due, $now ) ),
+			array( array( self::BEYOND_SCHEDULE_IDENTITY, self::BOUNDARY_OWNER, $beyond_due, $now ) ),
 			$beyond_generic,
 			'One-second-beyond must fire the generic misfire hook'
 		);
@@ -286,8 +327,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
-		$tasks                = new TaskRegistry();
-		$batches              = new BatchRegistry();
+		$work                 = new WorkRegistry();
+		$tasks                = new TaskRegistry( $work );
+		$batches              = new BatchRegistry( $work );
 		$schedule_registry    = new ScheduleRegistry( $rows );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
@@ -372,7 +414,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Asserts a public schedule synchronization succeeds.
+	 * Asserts an internal deterministic schedule synchronization succeeds.
 	 *
 	 * @param   Schedules       $schedules Schedule API.
 	 * @param   string          $owner     Stable owner.
@@ -381,8 +423,17 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function assert_sync_success( Schedules $schedules, string $owner, array $declared ): void {
-		$result = $schedules->sync( $owner, $declared );
-		self::assertInstanceOf( Success::class, $result, 'Schedule sync must succeed through the public API' );
+		$declarations = array();
+		foreach ( $declared as $schedule ) {
+			$identity                  = $owner . ':' . $schedule->name;
+			$declarations[ $identity ] = array(
+				'schedule' => $schedule,
+				'task'     => $owner . ':' . $schedule->task,
+			);
+		}
+
+		$result = $schedules->sync( $owner, $declarations );
+		self::assertInstanceOf( Success::class, $result, 'The deterministic schedule sync must succeed' );
 		self::assertTrue( $result->value );
 	}
 
@@ -400,11 +451,12 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertIsArray( $registry );
 		$owner_registrations = $registry[ $owner ] ?? null;
 		self::assertIsArray( $owner_registrations );
-		$registration = $owner_registrations[ $name ] ?? null;
+		$identity     = $owner . ':' . $name;
+		$registration = $owner_registrations[ $identity ] ?? null;
 		self::assertIsArray( $registration );
-		$registration['next_due']     = $next_due;
-		$owner_registrations[ $name ] = $registration;
-		$registry[ $owner ]           = $owner_registrations;
+		$registration['next_due']         = $next_due;
+		$owner_registrations[ $identity ] = $registration;
+		$registry[ $owner ]               = $owner_registrations;
 		self::assertTrue(
 			\update_option( 'a8csp_bgte_schedules', $registry, false ),
 			'The misfire simulation must persist the manipulated next-due instant'
@@ -424,7 +476,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertIsArray( $registry );
 		$owner_registrations = $registry[ $owner ] ?? null;
 		self::assertIsArray( $owner_registrations );
-		$registration = $owner_registrations[ $name ] ?? null;
+		$registration = $owner_registrations[ $owner . ':' . $name ] ?? null;
 		self::assertIsArray( $registration );
 		self::assertIsString( $registration['fingerprint'] ?? null );
 		self::assertIsInt( $registration['next_due'] ?? null );
@@ -439,15 +491,15 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/**
 	 * Records the dynamic and generic misfire hook payloads for one schedule.
 	 *
-	 * @param   string                                $name    Stable schedule name.
-	 * @param   list<array{string, int, int}>         $dynamic Dynamic-hook payloads.
-	 * @param   list<array{string, string, int, int}> $generic Generic-hook payloads.
+	 * @param   string                                $identity Owner-qualified schedule identity.
+	 * @param   list<array{string, int, int}>         $dynamic  Dynamic-hook payloads.
+	 * @param   list<array{string, string, int, int}> $generic  Generic-hook payloads.
 	 *
 	 * @return  void
 	 */
-	private function record_misfire_hooks( string $name, array &$dynamic, array &$generic ): void {
+	private function record_misfire_hooks( string $identity, array &$dynamic, array &$generic ): void {
 		\add_action(
-			'a8csp_background_tasks/misfired/' . $name,
+			'a8csp_background_tasks/misfired/' . $identity,
 			static function ( string $owner, int $due, int $fired_at ) use ( &$dynamic ): void {
 				$dynamic[] = array( $owner, $due, $fired_at );
 			},
@@ -456,8 +508,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/misfired',
-			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $name, &$generic ): void {
-				if ( $schedule === $name ) {
+			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $identity, &$generic ): void {
+				if ( $schedule === $identity ) {
 					$generic[] = array( $schedule, $owner, $due, $fired_at );
 				}
 			},

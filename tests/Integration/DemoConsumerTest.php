@@ -22,6 +22,15 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	/** Transient isolated to the directly dispatched task. */
 	private const MANUAL_SNAPSHOT_TRANSIENT = 'a8csp_demo_manual_site_health_snapshot';
 
+	/** Owner-qualified demo task identity. */
+	private const TASK_IDENTITY = DemoConsumer::OWNER . ':' . SiteHealthPingTask::NAME;
+
+	/** Owner-qualified demo batch identity. */
+	private const BATCH_IDENTITY = DemoConsumer::OWNER . ':' . CommentCountRecountBatch::NAME;
+
+	/** Owner-qualified demo schedule identity. */
+	private const SCHEDULE_IDENTITY = DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME;
+
 	/**
 	 * Posts created for the batch proof and removed during teardown.
 	 *
@@ -91,8 +100,8 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		$scheduled_args   = array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT );
 		$scheduled_run_id = null;
 
-		$this->expect_option( 'a8csp_bgte_latest_' . SiteHealthPingTask::NAME );
-		$this->expect_option( 'a8csp_bgte_latest_' . CommentCountRecountBatch::NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::TASK_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_IDENTITY );
 
 		$task_started_named     = array();
 		$task_started_generic   = array();
@@ -104,7 +113,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		$batch_completed_global = array();
 
 		\add_action(
-			'a8csp_background_tasks/started/' . SiteHealthPingTask::NAME,
+			'a8csp_background_tasks/started/' . self::TASK_IDENTITY,
 			static function (
 				string $run_id,
 				array $args
@@ -124,7 +133,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		\add_action(
 			'a8csp_background_tasks/started',
 			static function ( string $name, string $run_id, array $args ) use ( &$task_started_generic ): void {
-				if ( SiteHealthPingTask::NAME === $name ) {
+				if ( self::TASK_IDENTITY === $name ) {
 					$task_started_generic[] = array( $name, $run_id, $args );
 				}
 			},
@@ -132,7 +141,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_background_tasks/completed/' . SiteHealthPingTask::NAME,
+			'a8csp_background_tasks/completed/' . self::TASK_IDENTITY,
 			static function ( string $run_id, array $args ) use ( &$task_completed_named ): void {
 				$task_completed_named[] = array( $run_id, $args );
 			},
@@ -142,7 +151,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		\add_action(
 			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( &$task_completed_generic ): void {
-				if ( SiteHealthPingTask::NAME === $name ) {
+				if ( self::TASK_IDENTITY === $name ) {
 					$task_completed_generic[] = array( $name, $run_id, $args );
 				}
 			},
@@ -166,7 +175,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp_background_tasks/completed/' . CommentCountRecountBatch::NAME,
+			'a8csp_background_tasks/completed/' . self::BATCH_IDENTITY,
 			static function ( string $run_id, array $args ) use ( &$batch_completed_named ): void {
 				$batch_completed_named[] = array( $run_id, $args );
 			},
@@ -176,7 +185,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		\add_action(
 			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( &$batch_completed_global ): void {
-				if ( CommentCountRecountBatch::NAME === $name ) {
+				if ( self::BATCH_IDENTITY === $name ) {
 					$batch_completed_global[] = array( $name, $run_id, $args );
 				}
 			},
@@ -185,7 +194,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		);
 		\add_filter(
 			'a8csp_background_tasks/continue_delay',
-			static fn ( int $delay, string $name ): int => CommentCountRecountBatch::NAME === $name ? 0 : $delay,
+			static fn ( int $delay, string $name ): int => self::BATCH_IDENTITY === $name ? 0 : $delay,
 			10,
 			2
 		);
@@ -200,17 +209,16 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		);
 		\do_action( 'init' );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its facade before init consumers run' );
+		$api = \a8csp_bgte( DemoConsumer::OWNER );
 
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
-		$manual      = \a8csp_bgte_enqueue_task( SiteHealthPingTask::NAME, $manual_args );
-		self::assertInstanceOf( Success::class, $manual, 'The demo task must enqueue through the public wrapper' );
+		$manual      = $api->tasks()->enqueue( SiteHealthPingTask::NAME, $manual_args );
+		self::assertInstanceOf( Success::class, $manual, 'The demo task must enqueue through the owner-bound facade' );
 		self::assertIsString( $manual->value );
 		$manual_run_id = $manual->value;
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $task_started_named );
 		self::assertSame(
-			array( array( SiteHealthPingTask::NAME, $manual_run_id, $manual_args ) ),
+			array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ),
 			$task_started_generic
 		);
 
@@ -230,7 +238,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		$this->assert_site_health_snapshot( self::MANUAL_SNAPSHOT_TRANSIENT );
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $task_completed_named );
 		self::assertSame(
-			array( array( SiteHealthPingTask::NAME, $manual_run_id, $manual_args ) ),
+			array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ),
 			$task_completed_generic
 		);
 
@@ -242,12 +250,12 @@ final class DemoConsumerTest extends IntegrationTestCase {
 				? $this->run_matching_due_action(
 					static fn ( string $hook, array $args ): bool =>
 						'a8csp_background_tasks/schedule_due' === $hook
-						&& array( DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME ) === $args
+						&& array( self::SCHEDULE_IDENTITY ) === $args
 				)
 				: $this->run_matching_due_cron_event(
 					static fn ( string $hook, array $args ): bool =>
 						'a8csp_background_tasks/schedule_due' === $hook
-						&& array( DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME ) === $args
+						&& array( self::SCHEDULE_IDENTITY ) === $args
 				),
 			'The scheduler must execute the demo consumer recurring occurrence'
 		);
@@ -265,7 +273,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertIsString( $scheduled_run_id );
 		self::assertContains( array( $scheduled_run_id, $scheduled_args ), $task_started_named );
 
-		$stopped_schedule = $engine->schedules()->sync( DemoConsumer::OWNER, array() );
+		$stopped_schedule = $api->schedules()->sync( array() );
 		self::assertInstanceOf(
 			Success::class,
 			$stopped_schedule,
@@ -300,8 +308,8 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		}
 
 		$batch_args = array( 'post_type' => self::POST_TYPE );
-		$batch      = \a8csp_bgte_start_batch( CommentCountRecountBatch::NAME, $batch_args );
-		self::assertInstanceOf( Success::class, $batch, 'The demo batch must start through the public wrapper' );
+		$batch      = $api->batches()->start( CommentCountRecountBatch::NAME, $batch_args );
+		self::assertInstanceOf( Success::class, $batch, 'The demo batch must start through the owner-bound facade' );
 		self::assertIsString( $batch->value );
 		$batch_run_id = $batch->value;
 
@@ -324,7 +332,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertSame( array( array( $batch_run_id, $batch_args ) ), $batch_succeeded );
 		self::assertSame( array( array( $batch_run_id, $batch_args ) ), $batch_completed_named );
 		self::assertSame(
-			array( array( CommentCountRecountBatch::NAME, $batch_run_id, $batch_args ) ),
+			array( array( self::BATCH_IDENTITY, $batch_run_id, $batch_args ) ),
 			$batch_completed_global
 		);
 		self::assertSame( 1, (int) \get_comments_number( $first_post_id ) );

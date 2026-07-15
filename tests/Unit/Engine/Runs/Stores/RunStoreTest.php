@@ -35,6 +35,8 @@ final class RunStoreWakeupProbe {
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( ScalarTree::class )]
 final class RunStoreTest extends TestCase {
+	private const OWNER = 'runs-tests';
+
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
 
@@ -81,13 +83,24 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Returns one owner-qualified test work identity.
+	 *
+	 * @param   string $name Owner-local work name.
+	 *
+	 * @return  string
+	 */
+	private static function identity( string $name ): string {
+		return self::OWNER . ':' . $name;
+	}
+
+	/**
 	 * Creation persists the exact schema and hydrates every typed field unchanged.
 	 *
 	 * @return  void
 	 */
 	public function test_create_get_round_trip_pins_schema_key_and_clock_stamps(): void {
 		$clock = new FixedClock( 1_700_000_100 );
-		$store = new RunStore( 'email-digest', $clock, $this->rows );
+		$store = new RunStore( self::identity( 'email-digest' ), $clock, $this->rows );
 		$state = $store->create(
 			run_id: 'run-123',
 			start_args: array( 'site_id' => 7 ),
@@ -125,17 +138,17 @@ final class RunStoreTest extends TestCase {
 			'created_at'    => 1_700_000_100,
 			'heartbeat_at'  => 1_700_000_100,
 		);
-		self::assertSame( $expected, $this->option( 'a8csp_bgte_run_email-digest_run-123' ) );
+		self::assertSame( $expected, $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-123' ) );
 		$inspection = $store->inspect( 'run-123' );
 		if ( $inspection->is_failure() ) {
 			self::fail( $inspection->error->message );
 		}
 		self::assertSame( \maybe_serialize( $expected ), $inspection->value['raw'] ?? null );
-		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_run_email-digest_run-123' ) );
+		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_run_runs-tests:email-digest_run-123' ) );
 
 		$add_calls = $this->option_calls( 'add_option' );
 		self::assertCount( 1, $add_calls );
-		self::assertSame( 'a8csp_bgte_run_email-digest_run-123', $add_calls[0]['args'][0] );
+		self::assertSame( 'a8csp_bgte_run_runs-tests:email-digest_run-123', $add_calls[0]['args'][0] );
 		self::assertSame( '', $add_calls[0]['args'][2] );
 		self::assertSame( false, $add_calls[0]['args'][3] );
 	}
@@ -146,7 +159,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_descriptor_round_trips_and_serializes_only_while_present(): void {
-		$store   = new RunStore( 'email-digest', new FixedClock( 1_700_000_100 ), $this->rows );
+		$store   = new RunStore( self::identity( 'email-digest' ), new FixedClock( 1_700_000_100 ), $this->rows );
 		$pending = array(
 			'stage'    => 'run',
 			'mode'     => 'single',
@@ -158,14 +171,14 @@ final class RunStoreTest extends TestCase {
 		self::assertNotNull( $state );
 
 		self::assertSame( $pending, $store->get( 'run-pending' )?->pending );
-		$stored = $this->option( 'a8csp_bgte_run_email-digest_run-pending' );
+		$stored = $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-pending' );
 		self::assertIsArray( $stored );
 		self::assertSame( $pending, $stored['pending'] ?? null );
 
 		$replacement     = $state->with_pending( null );
 		$replacement_raw = $store->transition_state( 'run-pending', $state, $replacement );
 		self::assertIsString( $replacement_raw );
-		$stored = $this->option( 'a8csp_bgte_run_email-digest_run-pending' );
+		$stored = $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-pending' );
 		self::assertIsArray( $stored );
 		$legacy_shape = array(
 			'status'        => 'running',
@@ -186,7 +199,7 @@ final class RunStoreTest extends TestCase {
 
 	/** Terminal failure detail and effect progress round-trip only while present. */
 	public function test_terminal_metadata_round_trips_and_serializes_only_while_present(): void {
-		$store = new RunStore( 'terminal-metadata', new FixedClock( 100 ), $this->rows );
+		$store = new RunStore( self::identity( 'terminal-metadata' ), new FixedClock( 100 ), $this->rows );
 		$state = $store->create( 'run-terminal', array( 'scope' => 'all' ), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$error    = array(
@@ -228,7 +241,7 @@ final class RunStoreTest extends TestCase {
 
 	/** Appending a terminal effect returns the exact replacement snapshot. */
 	public function test_append_terminal_effect_returns_the_exact_replacement_snapshot(): void {
-		$store = new RunStore( 'effect-append', new FixedClock( 100 ), $this->rows );
+		$store = new RunStore( self::identity( 'effect-append' ), new FixedClock( 100 ), $this->rows );
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$terminal = $state
@@ -259,7 +272,7 @@ final class RunStoreTest extends TestCase {
 
 	/** A rival append of the same terminal effect converges on one current snapshot. */
 	public function test_append_terminal_effect_accepts_a_rival_append_of_the_same_key(): void {
-		$store = new RunStore( 'effect-same-rival', new FixedClock( 100 ), $this->rows );
+		$store = new RunStore( self::identity( 'effect-same-rival' ), new FixedClock( 100 ), $this->rows );
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$terminal = $state->with_status( RunStatus::Completed );
@@ -283,7 +296,7 @@ final class RunStoreTest extends TestCase {
 
 	/** A rival terminal effect is preserved before retrying the requested append. */
 	public function test_append_terminal_effect_retries_from_a_fresh_rival_snapshot(): void {
-		$store = new RunStore( 'effect-different-rival', new FixedClock( 100 ), $this->rows );
+		$store = new RunStore( self::identity( 'effect-different-rival' ), new FixedClock( 100 ), $this->rows );
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$terminal = $state->with_status( RunStatus::Completed );
@@ -305,7 +318,7 @@ final class RunStoreTest extends TestCase {
 
 	/** Empty terminal effect keys are not persistable identities. */
 	public function test_append_terminal_effect_rejects_an_empty_key(): void {
-		$store = new RunStore( 'effect-empty', new FixedClock( 100 ), $this->rows );
+		$store = new RunStore( self::identity( 'effect-empty' ), new FixedClock( 100 ), $this->rows );
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$inspection = $store->inspect( 'run-effect' );
@@ -321,7 +334,7 @@ final class RunStoreTest extends TestCase {
 
 	/** Terminal effect appends stop after five failed exact writes. */
 	public function test_append_terminal_effect_exhausts_its_bounded_cas_attempts(): void {
-		$store = new RunStore( 'effect-exhaustion', new FixedClock( 100 ), $this->rows );
+		$store = new RunStore( self::identity( 'effect-exhaustion' ), new FixedClock( 100 ), $this->rows );
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$inspection = $store->inspect( 'run-effect' );
@@ -356,11 +369,11 @@ final class RunStoreTest extends TestCase {
 	public function test_create_reports_failure_without_overwriting_an_existing_option(): void {
 		$clock = new FixedClock( 123 );
 
-		$key = 'a8csp_bgte_run_reports_run-existing';
+		$key = 'a8csp_bgte_run_runs-tests:reports_run-existing';
 
 		$GLOBALS['a8csp_bgte_test_options'] = array( $key => 'existing value' );
 
-		$store = new RunStore( 'reports', $clock, $this->rows );
+		$store = new RunStore( self::identity( 'reports' ), $clock, $this->rows );
 
 		$state = $store->create( 'run-existing', array(), 'hash', array() );
 
@@ -376,7 +389,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_state_transitions_round_trip_every_read_modify_write_mutation(): void {
 		$clock = new FixedClock( 100 );
-		$store = new RunStore( 'reports', $clock, $this->rows );
+		$store = new RunStore( self::identity( 'reports' ), $clock, $this->rows );
 		$state = $store->create(
 			'run-rmw',
 			array( 'scope' => 'all' ),
@@ -461,7 +474,7 @@ final class RunStoreTest extends TestCase {
 
 	/** A stale live-state writer loses after an exact transition or terminal deletion. */
 	public function test_state_transition_never_recreates_or_overwrites_a_lost_snapshot(): void {
-		$store = new RunStore( 'fenced-live', new FixedClock( 200 ), $this->rows );
+		$store = new RunStore( self::identity( 'fenced-live' ), new FixedClock( 200 ), $this->rows );
 		$state = $store->create( 'run-live', array(), 'hash', array() );
 		self::assertNotNull( $state );
 
@@ -488,13 +501,13 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_refresh_heartbeat_does_not_recreate_unrecoverable_runs(): void {
 		$clock = new FixedClock( 200 );
-		$store = new RunStore( 'heartbeat', $clock, $this->rows );
+		$store = new RunStore( self::identity( 'heartbeat' ), $clock, $this->rows );
 
 		self::assertNull( $store->refresh_heartbeat( 'missing' ) );
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( array(), $this->all_option_calls() );
 
-		$key = 'a8csp_bgte_run_heartbeat_corrupted';
+		$key = 'a8csp_bgte_run_runs-tests:heartbeat_corrupted';
 
 		$GLOBALS['a8csp_bgte_test_options'] = array( $key => 'corrupted' );
 
@@ -511,15 +524,15 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_delete_removes_the_run_option(): void {
 		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'cleanup', $clock, $this->rows );
+		$store = new RunStore( self::identity( 'cleanup' ), $clock, $this->rows );
 		$store->create( 'run-delete', array(), 'hash', array() );
 
 		$store->delete( 'run-delete' );
 
 		self::assertNull( $store->get( 'run-delete' ) );
-		self::assertArrayNotHasKey( 'a8csp_bgte_run_cleanup_run-delete', $this->options() );
+		self::assertArrayNotHasKey( 'a8csp_bgte_run_runs-tests:cleanup_run-delete', $this->options() );
 		self::assertSame(
-			array( 'a8csp_bgte_run_cleanup_run-delete' ),
+			array( 'a8csp_bgte_run_runs-tests:cleanup_run-delete' ),
 			$this->option_calls( 'delete_option' )[0]['args']
 		);
 	}
@@ -527,7 +540,7 @@ final class RunStoreTest extends TestCase {
 	/** Terminal transitions and cleanup win only against the exact observed raw snapshots. */
 	public function test_transition_and_exact_delete_are_value_conditioned(): void {
 		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'fenced', $clock, $this->rows );
+		$store = new RunStore( self::identity( 'fenced' ), $clock, $this->rows );
 		$state = $store->create( 'run-fenced', array(), 'hash', array() );
 		self::assertNotNull( $state );
 
@@ -552,11 +565,11 @@ final class RunStoreTest extends TestCase {
 
 	/** Raw inspection retains corrupt bytes so maintenance can exact-delete only that snapshot. */
 	public function test_inspect_exposes_a_corrupt_raw_snapshot_for_exact_deletion(): void {
-		$key                                = 'a8csp_bgte_run_corruption_run-corrupt';
+		$key                                = 'a8csp_bgte_run_runs-tests:corruption_run-corrupt';
 		$options                            = $this->options();
 		$options[ $key ]                    = 'corrupt-raw';
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
-		$store                              = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
+		$store                              = new RunStore( self::identity( 'corruption' ), new FixedClock( 123 ), $this->rows );
 
 		$inspection = $store->inspect( 'run-corrupt' );
 		if ( $inspection->is_failure() ) {
@@ -581,7 +594,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_get_ignores_a_stale_options_view(): void {
-		$key   = 'a8csp_bgte_run_authoritative_run-current';
+		$key   = 'a8csp_bgte_run_runs-tests:authoritative_run-current';
 		$state = array(
 			'status'        => 'running',
 			'executing'     => false,
@@ -601,7 +614,7 @@ final class RunStoreTest extends TestCase {
 		$raw                 = \maybe_serialize( $state );
 		self::assertIsString( $raw );
 		$this->wpdb->put( $key, $raw );
-		$store = new RunStore( 'authoritative', new FixedClock( 123 ), $this->rows );
+		$store = new RunStore( self::identity( 'authoritative' ), new FixedClock( 123 ), $this->rows );
 
 		$stored = $store->get( 'run-current' );
 
@@ -616,7 +629,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_get_returns_null_when_the_authoritative_read_fails(): void {
-		$key = 'a8csp_bgte_run_read-failure_run-current';
+		$key = 'a8csp_bgte_run_runs-tests:read-failure_run-current';
 		$raw = \maybe_serialize(
 			array(
 				'status'        => 'running',
@@ -638,7 +651,7 @@ final class RunStoreTest extends TestCase {
 				$wpdb->last_error = 'transient run read failure';
 			}
 		);
-		$store = new RunStore( 'read-failure', new FixedClock( 123 ), $this->rows );
+		$store = new RunStore( self::identity( 'read-failure' ), new FixedClock( 123 ), $this->rows );
 
 		self::assertNull( $store->get( 'run-current' ) );
 		self::assertSame( $raw, $this->wpdb->rows[ $key ] );
@@ -650,7 +663,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_get_and_inspect_reject_object_bearing_chunks_without_instantiation(): void {
-		$key = 'a8csp_bgte_run_poisoned_run-object';
+		$key = 'a8csp_bgte_run_runs-tests:poisoned_run-object';
 		$raw = \maybe_serialize(
 			array(
 				'status'        => 'running',
@@ -677,7 +690,7 @@ final class RunStoreTest extends TestCase {
 			return $key === $option ? \unserialize( $raw ) : $default_value;
 		};
 
-		$store = new RunStore( 'poisoned', new FixedClock( 123 ), $this->rows );
+		$store = new RunStore( self::identity( 'poisoned' ), new FixedClock( 123 ), $this->rows );
 
 		self::assertNull( $store->get( 'run-object' ) );
 		$inspection = $store->inspect( 'run-object' );
@@ -697,8 +710,8 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_get_returns_null_for_missing_and_malformed_options(): void {
 		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'corruption', $clock, $this->rows );
-		$key   = 'a8csp_bgte_run_corruption_run-bad';
+		$store = new RunStore( self::identity( 'corruption' ), $clock, $this->rows );
+		$key   = 'a8csp_bgte_run_runs-tests:corruption_run-bad';
 
 		self::assertNull( $store->get( 'run-bad' ) );
 
@@ -887,8 +900,8 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_get_rejects_noncanonical_pending_descriptors(): void {
-		$store           = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
-		$key             = 'a8csp_bgte_run_corruption_run-bad';
+		$store           = new RunStore( self::identity( 'corruption' ), new FixedClock( 123 ), $this->rows );
+		$key             = 'a8csp_bgte_run_runs-tests:corruption_run-bad';
 		$state           = array(
 			'status'        => 'running',
 			'executing'     => false,
@@ -960,8 +973,8 @@ final class RunStoreTest extends TestCase {
 
 	/** Optional terminal metadata must use its exact canonical nested shapes. */
 	public function test_get_rejects_noncanonical_terminal_metadata(): void {
-		$store            = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
-		$key              = 'a8csp_bgte_run_corruption_run-bad';
+		$store            = new RunStore( self::identity( 'corruption' ), new FixedClock( 123 ), $this->rows );
+		$key              = 'a8csp_bgte_run_runs-tests:corruption_run-bad';
 		$state            = array(
 			'status'        => 'failed',
 			'executing'     => false,

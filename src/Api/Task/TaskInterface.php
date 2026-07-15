@@ -20,7 +20,7 @@ interface TaskInterface extends WorkInterface {
 	// region METHODS
 
 	/**
-	 * Returns the non-empty stable task identity matching `[a-z0-9_-]+`.
+	 * Returns the 1-to-64-byte owner-local task name matching `[a-z0-9_-]+`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -48,11 +48,13 @@ interface TaskInterface extends WorkInterface {
 	 *
 	 * Terminal failures dispatch `a8csp_background_tasks/failed/{name}` with the run identifier,
 	 * start arguments, and run failure, followed by `a8csp_background_tasks/failed` with the task
-	 * name prepended to the same payload.
+	 * identity prepended to the same payload. The `{name}` suffix is the complete `{owner}:{name}`
+	 * task identity.
 	 *
 	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{name}` with the exact signature
 	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
-	 * by `a8csp_background_tasks/retrying` with the task name prepended to the same payload.
+	 * by `a8csp_background_tasks/retrying` with the complete task identity prepended to the same
+	 * payload.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -71,6 +73,7 @@ interface TaskInterface extends WorkInterface {
 	 *
 	 * The engine applies `a8csp_background_tasks/retry_policy/{name}` with the exact signature
 	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
+	 * The `{name}` suffix is the complete `{owner}:{name}` task identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

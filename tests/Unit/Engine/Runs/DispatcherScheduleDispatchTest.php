@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -38,13 +39,16 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( BatchRegistry::class )]
+#[UsesClass( WorkRegistry::class )]
 final class DispatcherScheduleDispatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS      = array( 'site_id' => 7 );
 	private const ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
+	private const IDENTITY  = self::OWNER . ':' . self::NAME;
 	private const NAME      = 'email-digest';
 	private const NOW       = 1_700_000_000;
+	private const OWNER     = 'runs-tests';
 	private const RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private RecordingBackend $backend;
@@ -96,11 +100,12 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$clock         = new FixedClock( self::NOW );
 		$logger        = new RecordingLogger();
-		$tasks         = new TaskRegistry();
-		$batches       = new BatchRegistry();
+		$work          = new WorkRegistry();
+		$tasks         = new TaskRegistry( $work );
+		$batches       = new BatchRegistry( $work );
 		$this->backend = new RecordingBackend();
 		$this->wpdb    = new WpdbLockSpy();
-		$tasks->register( new RecordingTask( self::NAME ) );
+		$tasks->register( self::IDENTITY, new RecordingTask( self::NAME ) );
 		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
@@ -139,7 +144,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		bool $backend_unique
 	): void {
 		$policy = OverlapPolicy::from( $policy_value );
-		$result = $this->dispatcher->dispatch_scheduled_task( self::NAME, self::ARGS, $policy, 23 );
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, $policy, 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -178,13 +183,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$called = false;
 
 		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Allow,
 			10,
 			function () use ( &$called ): void {
 				$called  = true;
-				$history = $this->option( 'a8csp_bgte_history_' . self::NAME );
+				$history = $this->option( 'a8csp_bgte_history_' . self::IDENTITY );
 				self::assertNull( $history );
 				self::assertSame( array(), $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null );
 			}
@@ -196,7 +201,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertIsArray( $actions );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started/' . self::IDENTITY,
 				'a8csp_background_tasks/started',
 			),
 			\array_column( $actions, 'hook_name' )
@@ -212,7 +217,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->seed_held_lock();
 
 		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Allow,
 			10
@@ -222,7 +227,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame( 'run-incumbent', $this->lock_owner( self::ARGS_HASH ) );
 
-		$run = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
@@ -239,13 +244,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 */
 	public function test_allow_dispatch_reports_a_forced_run_id_collision(): void {
 		$first = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Allow,
 			10
 		);
 		self::assertInstanceOf( Success::class, $first );
-		$run = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		$salted_hash = $run['args_hash'] ?? null;
 		self::assertIsString( $salted_hash );
@@ -257,10 +262,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . $salted_hash, $raw );
+		$this->wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $salted_hash, $raw );
 
 		$collision = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Allow,
 			10
@@ -282,12 +287,12 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->seed_held_lock();
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
+		unset( $options[ 'a8csp_bgte_latest_' . self::IDENTITY ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
 		$accepted = false;
 		$result   = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Skip,
 			10,
@@ -302,7 +307,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertFalse( $accepted );
 		self::assertSame( 'run-incumbent', $this->lock_owner( self::ARGS_HASH ) );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
 	/**
@@ -314,7 +319,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->wpdb->script_result( 'insert', false );
 
 		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Skip,
 			10
@@ -324,7 +329,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertStringContainsString( 'could not confirm the owner', $result->error->message );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
 	/**
@@ -336,7 +341,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->seed_held_lock();
 
 		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Replace,
 			10
@@ -366,12 +371,12 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 					)
 				);
 				self::assertIsString( $raw );
-				$wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
+				$wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH, $raw );
 			}
 		);
 
 		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Replace,
 			10
@@ -379,7 +384,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertSame( 'run-rival', $this->lock_owner( self::ARGS_HASH ) );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
 		self::assertSame( array(), $this->backend->calls );
 	}
 
@@ -400,7 +405,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$accepted = false;
 		$result   = $this->dispatcher->dispatch_scheduled_task(
-			self::NAME,
+			self::IDENTITY,
 			self::ARGS,
 			OverlapPolicy::Replace,
 			10,
@@ -411,7 +416,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertSame( $failure, $result );
 		self::assertNull( $this->lock_owner( self::ARGS_HASH ) );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
 		self::assertFalse( $accepted );
 	}
 
@@ -433,15 +438,15 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
+		$this->wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH, $raw );
 
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::NAME ] = array(
+		$options[ 'a8csp_bgte_latest_' . self::IDENTITY ] = array(
 			'all'     => 'run-incumbent',
 			'by_hash' => array( self::ARGS_HASH => 'run-incumbent' ),
 		);
-		$GLOBALS['a8csp_bgte_test_options']           = $options;
+		$GLOBALS['a8csp_bgte_test_options']               = $options;
 	}
 
 	/**
@@ -452,7 +457,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @return  string|null
 	 */
 	private function lock_owner( string $args_hash ): ?string {
-		$raw = $this->wpdb->rows[ 'a8csp_bgte_lock_' . self::NAME . '_' . $args_hash ] ?? null;
+		$raw = $this->wpdb->rows[ 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash ] ?? null;
 		if ( ! \is_string( $raw ) ) {
 			return null;
 		}

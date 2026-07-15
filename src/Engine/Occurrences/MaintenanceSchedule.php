@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -87,16 +88,22 @@ final readonly class MaintenanceSchedule {
 		}
 
 		try {
-			$result = $this->schedules->sync_owner(
-				'a8csp-bgte',
+			$owner                = WorkIdentity::ENGINE_OWNER;
+			$schedule_identity    = WorkIdentity::compose( $owner, MaintenanceTask::NAME, true );
+			$maintenance_schedule = new Schedule(
+				MaintenanceTask::NAME,
+				Recurrence::every( \HOUR_IN_SECONDS ),
+				MaintenanceTask::NAME,
+				array(),
+				OverlapPolicy::Skip,
+				CatchUpPolicy::RunOnce
+			);
+			$result               = $this->schedules->sync_owner(
+				$owner,
 				array(
-					new Schedule(
-						'maintenance',
-						Recurrence::every( \HOUR_IN_SECONDS ),
-						MaintenanceTask::NAME,
-						array(),
-						OverlapPolicy::Skip,
-						CatchUpPolicy::RunOnce
+					$schedule_identity => array(
+						'schedule' => $maintenance_schedule,
+						'task'     => $schedule_identity,
 					),
 				)
 			);

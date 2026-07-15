@@ -16,11 +16,20 @@ use PHPUnit\Framework\Attributes\Group;
 final class TaskLifecycleTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Public owner unique to this integration-test graph. */
+	private const OWNER = 'integration-task-lifecycle';
+
 	/** Successful task identity unique within the request-persistent integration registry. */
 	private const SUCCESS_NAME = 'integration-task-lifecycle-success';
 
+	/** Owner-qualified successful task identity persisted by the engine. */
+	private const SUCCESS_IDENTITY = self::OWNER . ':' . self::SUCCESS_NAME;
+
 	/** Failed task identity unique within the request-persistent integration registry. */
 	private const FAILURE_NAME = 'integration-task-lifecycle-failure';
+
+	/** Owner-qualified failed task identity persisted by the engine. */
+	private const FAILURE_IDENTITY = self::OWNER . ':' . self::FAILURE_NAME;
 
 	// endregion.
 
@@ -39,16 +48,15 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		);
 		$task = new RecordingTask( self::SUCCESS_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register tasks' );
-		$engine->tasks()->register( $task );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SUCCESS_NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::SUCCESS_IDENTITY );
 
 		$named_completed   = array();
 		$generic_completed = array();
 		\add_action(
-			'a8csp_background_tasks/completed/' . self::SUCCESS_NAME,
+			'a8csp_background_tasks/completed/' . self::SUCCESS_IDENTITY,
 			static function ( string $run_id, array $start_args ) use ( &$named_completed ): void {
 				$named_completed[] = array( $run_id, $start_args );
 			},
@@ -64,18 +72,18 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = \a8csp_bgte_enqueue_task( self::SUCCESS_NAME, $args );
+		$result = $consumer->tasks()->enqueue( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered task must enqueue through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
-		$group  = self::SUCCESS_NAME . '|' . $run_id;
+		$group  = self::SUCCESS_IDENTITY . '|' . $run_id;
 		if ( \class_exists( \ActionScheduler::class ) ) {
-			$action_id = $this->assert_pending_task_action( self::SUCCESS_NAME, $run_id, $group );
+			$action_id = $this->assert_pending_task_action( self::SUCCESS_IDENTITY, $run_id, $group );
 		} else {
 			$action_id   = null;
 			$cron_events = $this->wordpress_cron_events(
 				'a8csp_background_tasks/run',
-				array( self::SUCCESS_NAME, $run_id, 1 )
+				array( self::SUCCESS_IDENTITY, $run_id, 1 )
 			);
 			self::assertCount( 1, $cron_events, 'The facade fallback must persist exactly one WP-Cron task occurrence' );
 			self::assertFalse( $cron_events[0]['schedule'], 'The facade fallback must enqueue the task as a single WP-Cron event' );
@@ -97,7 +105,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			'The name-specific completed hook must receive run ID and start arguments'
 		);
 		self::assertSame(
-			array( array( self::SUCCESS_NAME, $run_id, $args ) ),
+			array( array( self::SUCCESS_IDENTITY, $run_id, $args ) ),
 			$generic_completed,
 			'The generic completed hook must prepend the task name to the same payload'
 		);
@@ -110,22 +118,22 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		} else {
 			self::assertSame(
 				array(),
-				$this->wordpress_cron_events( 'a8csp_background_tasks/run', array( self::SUCCESS_NAME, $run_id, 1 ) ),
+				$this->wordpress_cron_events( 'a8csp_background_tasks/run', array( self::SUCCESS_IDENTITY, $run_id, 1 ) ),
 				'WP-Cron completion must clear the delivered task occurrence'
 			);
 		}
 
 		$args_hash = self::args_hash( $args );
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::SUCCESS_NAME . '_' . $run_id, false ),
+			\get_option( 'a8csp_bgte_run_' . self::SUCCESS_IDENTITY . '_' . $run_id, false ),
 			'Terminal task success must delete the active run option'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::SUCCESS_NAME . '_' . $args_hash, false ),
+			\get_option( 'a8csp_bgte_lock_' . self::SUCCESS_IDENTITY . '_' . $args_hash, false ),
 			'Terminal task success must release the overlap lock'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_failed_' . self::SUCCESS_NAME, false ),
+			\get_option( 'a8csp_bgte_failed_' . self::SUCCESS_IDENTITY, false ),
 			'Terminal task success must not create a failed-run row'
 		);
 		self::assertSame(
@@ -133,7 +141,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 				'all'     => $run_id,
 				'by_hash' => array( $args_hash => $run_id ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::SUCCESS_NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::SUCCESS_IDENTITY, null ),
 			'Terminal task success must retain the latest global and argument-identity pointers'
 		);
 		self::assertSame(
@@ -157,7 +165,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::SUCCESS_NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::SUCCESS_IDENTITY, null ),
 			'Terminal task success must retain one started and completed history entry'
 		);
 	}
@@ -175,17 +183,16 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$task            = new RecordingTask( self::FAILURE_NAME );
 		$task->throwable = new NonRetryableTaskException( 'The remote record no longer exists.' );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register tasks' );
-		$engine->tasks()->register( $task );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::FAILURE_NAME );
-		$this->expect_option( 'a8csp_bgte_failed_' . self::FAILURE_NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::FAILURE_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_failed_' . self::FAILURE_IDENTITY );
 
 		$named_failed   = array();
 		$generic_failed = array();
 		\add_action(
-			'a8csp_background_tasks/failed/' . self::FAILURE_NAME,
+			'a8csp_background_tasks/failed/' . self::FAILURE_IDENTITY,
 			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
 				$named_failed[] = array( $run_id, $start_args, $failure );
 			},
@@ -206,12 +213,12 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = \a8csp_bgte_enqueue_task( self::FAILURE_NAME, $args );
+		$result = $consumer->tasks()->enqueue( self::FAILURE_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The failing task must enqueue before its handler executes' );
 		self::assertIsString( $result->value );
 		$run_id    = $result->value;
-		$group     = self::FAILURE_NAME . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::FAILURE_NAME, $run_id, $group );
+		$group     = self::FAILURE_IDENTITY . '|' . $run_id;
+		$action_id = $this->assert_pending_task_action( self::FAILURE_IDENTITY, $run_id, $group );
 
 		self::assertCount( 0, $task->calls, 'Enqueueing a task must not invoke its handler inline' );
 		self::assertCount( 0, $named_failed, 'Enqueueing a task must not fire its name-specific failed hook inline' );
@@ -229,7 +236,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			'Background-work execution failed because %s was thrown.',
 			NonRetryableTaskException::class
 		);
-		self::assertSame( self::FAILURE_NAME, $failure->name );
+		self::assertSame( self::FAILURE_IDENTITY, $failure->name );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'execution', $failure->stage );
@@ -242,7 +249,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			'The name-specific failed hook must receive run ID, start arguments, and run failure'
 		);
 		self::assertSame(
-			array( array( self::FAILURE_NAME, $run_id, $args, $failure ) ),
+			array( array( self::FAILURE_IDENTITY, $run_id, $args, $failure ) ),
 			$generic_failed,
 			'The generic failed hook must prepend the task name to the same failure payload'
 		);
@@ -254,11 +261,11 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 
 		$args_hash = self::args_hash( $args );
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::FAILURE_NAME . '_' . $run_id, false ),
+			\get_option( 'a8csp_bgte_run_' . self::FAILURE_IDENTITY . '_' . $run_id, false ),
 			'Terminal task failure must delete the active run option'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::FAILURE_NAME . '_' . $args_hash, false ),
+			\get_option( 'a8csp_bgte_lock_' . self::FAILURE_IDENTITY . '_' . $args_hash, false ),
 			'Terminal task failure must release the overlap lock'
 		);
 		self::assertSame(
@@ -266,7 +273,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 				'all'     => $run_id,
 				'by_hash' => array( $args_hash => $run_id ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::FAILURE_NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::FAILURE_IDENTITY, null ),
 			'Terminal task failure must retain the latest pointers'
 		);
 		self::assertSame(
@@ -290,11 +297,11 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::FAILURE_NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::FAILURE_IDENTITY, null ),
 			'Terminal task failure must retain one started and terminal history entry'
 		);
 
-		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::FAILURE_NAME, null );
+		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::FAILURE_IDENTITY, null );
 		self::assertIsArray( $failed_entries );
 		self::assertCount( 1, $failed_entries, 'A first-attempt terminal failure must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;

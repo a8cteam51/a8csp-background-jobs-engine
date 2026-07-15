@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -29,6 +30,22 @@ final class BatchRegistry {
 
 	// endregion
 
+	// region MAGIC METHODS
+
+	/**
+	 * Constructor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   WorkRegistry $work Shared task-and-batch identity registry.
+	 */
+	public function __construct(
+		private readonly WorkRegistry $work
+	) {}
+
+	// endregion
+
 	// region METHODS
 
 	/**
@@ -37,33 +54,26 @@ final class BatchRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface $batch Batch to register.
+	 * @param   string         $identity Complete owner-qualified identity.
+	 * @param   BatchInterface $batch    Batch to register.
 	 *
-	 * @throws  \InvalidArgumentException When the batch name is outside the stable-name grammar or exceeds 110 bytes.
-	 * @throws  \LogicException           When the batch name is already registered.
+	 * @throws  \InvalidArgumentException When the identity and batch name disagree, or another kind owns the identity.
+	 * @throws  \LogicException           When the batch identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register( BatchInterface $batch ): void {
+	public function register( string $identity, BatchInterface $batch ): void {
 		$name = $batch->get_name();
-		if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $name ) ) {
+		WorkIdentity::validate_name( $name );
+		$parts = WorkIdentity::parts( $identity );
+		if ( null === $parts || $name !== $parts[1] ) {
 			throw new \InvalidArgumentException(
-				'Batch name is invalid; return a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
-			);
-		}
-		if ( 110 < \strlen( $name ) ) {
-			throw new \InvalidArgumentException(
-				'Batch name must be at most 110 bytes; shorten the batch name.'
+				'Batch identity must be canonical and end with the batch\'s declared local name.'
 			);
 		}
 
-		if ( isset( $this->batches[ $name ] ) ) {
-			throw new \LogicException(
-				'Batch name is already registered; register each batch name exactly once.'
-			);
-		}
-
-		$this->batches[ $name ] = $batch;
+		$this->work->claim( $identity, 'batch' );
+		$this->batches[ $identity ] = $batch;
 	}
 
 	/**
@@ -72,7 +82,7 @@ final class BatchRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable batch name.
+	 * @param   string $name Complete owner-qualified batch identity.
 	 *
 	 * @return  BatchInterface|null
 	 */

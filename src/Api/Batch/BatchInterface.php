@@ -29,7 +29,7 @@ interface BatchInterface extends WorkInterface {
 	// region METHODS
 
 	/**
-	 * Returns the non-empty stable batch identity matching `[a-z0-9_-]+`.
+	 * Returns the 1-to-64-byte owner-local batch name matching `[a-z0-9_-]+`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -59,7 +59,8 @@ interface BatchInterface extends WorkInterface {
 	 * The engine materializes the iterable, then applies
 	 * `a8csp_background_tasks/queue/{batch}` with the exact signature
 	 * `(list<array<array-key, mixed>> $queue, array<array-key, mixed> $start_args, string $run_id):`
-	 * `list<array<array-key, mixed>>` before persistence.
+	 * `list<array<array-key, mixed>>` before persistence. The `{batch}` suffix is the complete
+	 * `{owner}:{name}` batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -80,7 +81,8 @@ interface BatchInterface extends WorkInterface {
 	 * that let a replayed chunk converge inside the chunk arguments.
 	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{name}` with the exact signature
 	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
-	 * by `a8csp_background_tasks/retrying` with the batch name prepended to the same payload.
+	 * by `a8csp_background_tasks/retrying` with the complete batch identity prepended to the same
+	 * payload. The `{name}` suffix is the complete `{owner}:{name}` batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -130,6 +132,7 @@ interface BatchInterface extends WorkInterface {
 	 *
 	 * The engine applies `a8csp_background_tasks/retry_policy/{name}` with the exact signature
 	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
+	 * The `{name}` suffix is the complete `{owner}:{name}` batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

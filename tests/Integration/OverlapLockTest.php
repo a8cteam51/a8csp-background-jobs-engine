@@ -15,11 +15,20 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 final class OverlapLockTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Consumer owner isolated to overlap integration coverage. */
+	private const OWNER = 'integration-overlap-lock';
+
 	/** Batch identity isolated to the held-lock Skip case. */
 	private const SKIP_NAME = 'integration-overlap-skip';
 
+	/** Owner-qualified identity isolated to the held-lock Skip case. */
+	private const SKIP_IDENTITY = self::OWNER . ':' . self::SKIP_NAME;
+
 	/** Batch identity isolated to the stale crash-reclaim case. */
 	private const RECLAIM_NAME = 'integration-overlap-reclaim';
+
+	/** Owner-qualified identity isolated to the stale crash-reclaim case. */
+	private const RECLAIM_IDENTITY = self::OWNER . ':' . self::RECLAIM_NAME;
 
 	// endregion.
 
@@ -39,18 +48,18 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		$this->register_batch( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SKIP_NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::SKIP_IDENTITY );
 		$this->filter_continue_delay_to_zero();
 
 		$run_a     = $this->start_batch( self::SKIP_NAME, $start_args, true );
-		$group_a   = self::SKIP_NAME . '|' . $run_a;
+		$group_a   = self::SKIP_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
-		$lock_name = 'a8csp_bgte_lock_' . self::SKIP_NAME . '_' . $args_hash;
+		$lock_name = 'a8csp_bgte_lock_' . self::SKIP_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the unique incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the unique incumbent first chunk' );
 		$first_action_id = $this->assert_pending_chunk_action(
-			self::SKIP_NAME,
+			self::SKIP_IDENTITY,
 			$run_a,
 			$group_a,
 			array( 'chunk' => 'one' )
@@ -58,14 +67,14 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
-		$result              = \a8csp_bgte_start_batch( self::SKIP_NAME, $start_args, unique: true );
+		$result              = \a8csp_bgte( self::OWNER )->batches()->start( self::SKIP_NAME, $start_args, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result, 'A second unique start must be refused under the fresh lock' );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
 			\sprintf(
 				'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',
-				self::SKIP_NAME,
+				self::SKIP_IDENTITY,
 				$run_a
 			),
 			$result->error->message,
@@ -84,7 +93,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 				'all'     => $run_a,
 				'by_hash' => array( $args_hash => $run_a ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::SKIP_NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::SKIP_IDENTITY, null ),
 			'A skipped unique start must preserve the incumbent latest pointers'
 		);
 		self::assertSame(
@@ -98,7 +107,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::SKIP_NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::SKIP_IDENTITY, null ),
 			'A skipped unique start must not create a second history entry'
 		);
 
@@ -110,7 +119,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the incumbent second chunk' );
 		$second_action_id = $this->assert_pending_chunk_action(
-			self::SKIP_NAME,
+			self::SKIP_IDENTITY,
 			$run_a,
 			$group_a,
 			array( 'chunk' => 'two' )
@@ -140,11 +149,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'The accepted incumbent must complete normally after the unique skip'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Incumbent completion must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::SKIP_NAME . '_' . $run_a, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::SKIP_IDENTITY . '_' . $run_a, false ) );
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::SKIP_NAME,
-				'a8csp_bgte_latest_' . self::SKIP_NAME,
+				'a8csp_bgte_history_' . self::SKIP_IDENTITY,
+				'a8csp_bgte_latest_' . self::SKIP_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Unique Skip completion must retain only history and latest pointer state'
@@ -165,7 +174,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		$this->register_batch( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::RECLAIM_NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::RECLAIM_IDENTITY );
 		$this->filter_continue_delay_to_zero();
 
 		$named_superseded   = array();
@@ -173,7 +182,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$log_records        = array();
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_background_tasks/superseded/' . self::RECLAIM_NAME,
+			'a8csp_background_tasks/superseded/' . self::RECLAIM_IDENTITY,
 			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {
 				$named_superseded[] = array( $run_id, $args );
 			},
@@ -198,14 +207,14 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		$run_a     = $this->start_batch( self::RECLAIM_NAME, $start_args, true );
-		$group_a   = self::RECLAIM_NAME . '|' . $run_a;
+		$group_a   = self::RECLAIM_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
-		$lock_name = 'a8csp_bgte_lock_' . self::RECLAIM_NAME . '_' . $args_hash;
+		$lock_name = 'a8csp_bgte_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the crash-simulated incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the crash-simulated incumbent chunk' );
 		$run_a_action_id = $this->assert_pending_chunk_action(
-			self::RECLAIM_NAME,
+			self::RECLAIM_IDENTITY,
 			$run_a,
 			$group_a,
 			array( 'chunk' => 'one' )
@@ -220,7 +229,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		$run_b   = $this->start_batch( self::RECLAIM_NAME, $start_args, true );
-		$group_b = self::RECLAIM_NAME . '|' . $run_b;
+		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
 		self::assertNotSame( $run_a, $run_b, 'Stale reclaim must allocate a fresh run identifier' );
 		self::assertSame(
 			array(
@@ -228,7 +237,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					'warning',
 					'Reclaimed stale execution-overlap lock.',
 					array(
-						'name'        => self::RECLAIM_NAME,
+						'name'        => self::RECLAIM_IDENTITY,
 						'args_hash'   => $args_hash,
 						'dead_run_id' => $run_a,
 						'run_id'      => $run_b,
@@ -241,8 +250,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'The reclaimed lock must belong to the fresh run' );
-		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_NAME . '_' . $run_a, null ) );
-		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_NAME . '_' . $run_b, null ) );
+		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, null ) );
+		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, null ) );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the orphaned incumbent chunk after reclaim' );
 		self::assertSame( array(), $batch->process_calls, 'The orphaned incumbent must stop before chunk execution' );
@@ -252,12 +261,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'The name-specific superseded hook must receive the reclaimed incumbent payload once'
 		);
 		self::assertSame(
-			array( array( self::RECLAIM_NAME, $run_a, $start_args ) ),
+			array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ),
 			$generic_superseded,
 			'The generic superseded hook must prepend the reclaimed batch name once'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::RECLAIM_NAME . '_' . $run_a, false ),
+			\get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ),
 			'The orphaned incumbent delivery must delete its active run option'
 		);
 		$lock = \get_option( $lock_name, null );
@@ -272,7 +281,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the reclaimed run queue' );
 		$this->drive_generated_batch_to_completion(
 			$batch,
-			self::RECLAIM_NAME,
+			self::RECLAIM_IDENTITY,
 			$run_b,
 			$group_b,
 			array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) )
@@ -300,7 +309,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'Reclaimed-run completion must not repeat the name-specific superseded hook'
 		);
 		self::assertSame(
-			array( array( self::RECLAIM_NAME, $run_a, $start_args ) ),
+			array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ),
 			$generic_superseded,
 			'Reclaimed-run completion must not repeat the generic superseded hook'
 		);
@@ -310,7 +319,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					'warning',
 					'Reclaimed stale execution-overlap lock.',
 					array(
-						'name'        => self::RECLAIM_NAME,
+						'name'        => self::RECLAIM_IDENTITY,
 						'args_hash'   => $args_hash,
 						'dead_run_id' => $run_a,
 						'run_id'      => $run_b,
@@ -320,7 +329,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					'info',
 					'Superseded batch run after its ownership fence failed.',
 					array(
-						'batch_name'    => self::RECLAIM_NAME,
+						'batch_name'    => self::RECLAIM_IDENTITY,
 						'run_id'        => $run_a,
 						'latest_run_id' => $run_b,
 					),
@@ -330,8 +339,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'Reclaim and orphan cleanup must emit only their warning and informational records'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Reclaimed run completion must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_NAME . '_' . $run_b, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::RECLAIM_NAME, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::RECLAIM_IDENTITY, false ) );
 		self::assertSame(
 			array(
 				'started'   => array( $run_a, $run_b ),
@@ -361,13 +370,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::RECLAIM_NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::RECLAIM_IDENTITY, null ),
 			'Reclaim history must retain the superseded orphan and completed replacement'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::RECLAIM_NAME,
-				'a8csp_bgte_latest_' . self::RECLAIM_NAME,
+				'a8csp_bgte_history_' . self::RECLAIM_IDENTITY,
+				'a8csp_bgte_latest_' . self::RECLAIM_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reclaim completion must retain only history and latest pointer state'
@@ -386,9 +395,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function register_batch( RecordingBatch $batch ): void {
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register batches' );
-		$engine->batches()->register( $batch );
+		\a8csp_bgte( self::OWNER )->batches()->register( $batch );
 	}
 
 	/**
@@ -406,7 +413,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Starts a batch through the public wrapper and returns its run identifier.
+	 * Starts a batch through the owner-bound facade and returns its run identifier.
 	 *
 	 * @param   string                  $name       Stable batch name.
 	 * @param   array<array-key, mixed> $start_args Batch start arguments.
@@ -415,7 +422,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private function start_batch( string $name, array $start_args, bool $unique = false ): string {
-		$result = \a8csp_bgte_start_batch( $name, $start_args, unique: $unique );
+		$result = \a8csp_bgte( self::OWNER )->batches()->start( $name, $start_args, unique: $unique );
 		self::assertInstanceOf( Success::class, $result, 'The batch must start through the public API' );
 		self::assertIsString( $result->value );
 

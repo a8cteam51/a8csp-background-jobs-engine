@@ -196,13 +196,9 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	public function start_batch( string $batch_name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
-		$batch = $this->batches->get( $batch_name );
-		if ( null !== $batch && null !== $this->tasks->get( $batch_name ) ) {
-			$error = EngineError::ambiguous_name( $batch_name );
-			$this->logger->warning( $error->message, array( 'name' => $batch_name ) );
-
-			return new Failure( $error );
-		}
+		$batch = 'batch' === $this->tasks->kind( $batch_name )
+			? $this->batches->get( $batch_name )
+			: null;
 
 		if ( null === $batch ) {
 			return new Failure(
@@ -343,14 +339,9 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		$task  = $this->tasks->get( $name );
-		$batch = $this->batches->get( $name );
-		if ( null !== $task && null !== $batch ) {
-			$error = EngineError::ambiguous_name( $name );
-			$this->logger->warning( $error->message, array( 'name' => $name ) );
-
-			return new Failure( $error );
-		}
+		$kind  = $this->tasks->kind( $name );
+		$task  = 'task' === $kind ? $this->tasks->get( $name ) : null;
+		$batch = 'batch' === $kind ? $this->batches->get( $name ) : null;
 
 		if ( null === $task && null === $batch ) {
 			return new Failure(
@@ -428,14 +419,9 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, string $run_id ): AbstractResult {
-		$task  = $this->tasks->get( $name );
-		$batch = $this->batches->get( $name );
-		if ( null !== $task && null !== $batch ) {
-			$error = EngineError::ambiguous_name( $name );
-			$this->logger->warning( $error->message, array( 'name' => $name ) );
-
-			return new Failure( $error );
-		}
+		$kind  = $this->tasks->kind( $name );
+		$task  = 'task' === $kind ? $this->tasks->get( $name ) : null;
+		$batch = 'batch' === $kind ? $this->batches->get( $name ) : null;
 
 		if ( null === $task && null === $batch ) {
 			return new Failure(
@@ -607,13 +593,9 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
 	 */
 	private function dispatch_task( string $task_name, array $args, int $delay, bool $unique, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
-		$task = $this->tasks->get( $task_name );
-		if ( null !== $task && null !== $this->batches->get( $task_name ) ) {
-			$error = EngineError::ambiguous_name( $task_name );
-			$this->logger->warning( $error->message, array( 'name' => $task_name ) );
-
-			return new Failure( $error );
-		}
+		$task = 'task' === $this->tasks->kind( $task_name )
+			? $this->tasks->get( $task_name )
+			: null;
 
 		if ( null === $task ) {
 			return new Failure(

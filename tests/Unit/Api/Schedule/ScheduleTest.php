@@ -69,10 +69,28 @@ final class ScheduleTest extends TestCase {
 	public function test_constructor_rejects_invalid_names_with_the_fix( string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs(
-			'Schedule name is invalid; pass a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
+			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
 		);
 
 		new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
+	}
+
+	/**
+	 * The shared local-name byte ceiling is inclusive at 64 bytes.
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_accepts_64_name_bytes_and_rejects_65(): void {
+		$accepted = new Schedule( \str_repeat( 'a', 64 ), Recurrence::every( 300 ), 'refresh-index' );
+
+		self::assertSame( \str_repeat( 'a', 64 ), $accepted->name );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs(
+			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
+		);
+
+		new Schedule( \str_repeat( 'a', 65 ), Recurrence::every( 300 ), 'refresh-index' );
 	}
 
 	/**

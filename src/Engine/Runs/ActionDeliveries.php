@@ -117,16 +117,17 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
 	 * @param   string $run_id    Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$registered_batch = $this->batches->get( $batch_name );
-		$registered_task  = $this->tasks->get( $batch_name );
-		$liveness_at      = null !== $registered_batch && null === $registered_task
+		$registered_batch = 'batch' === $this->tasks->kind( $batch_name )
+			? $this->batches->get( $batch_name )
+			: null;
+		$liveness_at      = null !== $registered_batch
 			? fn (): int => $this->execution_lease_at( $registered_batch )
 			: null;
 		$run_store        = $this->stores->run_store( $batch_name );
@@ -378,30 +379,18 @@ final readonly class ActionDeliveries {
 		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
 		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
 		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
-		$task         = $this->tasks->get( $name );
-		$batch        = $this->batches->get( $name );
+		$kind         = $this->tasks->kind( $name );
+		$task         = 'task' === $kind ? $this->tasks->get( $name ) : null;
+		$batch        = 'batch' === $kind ? $this->batches->get( $name ) : null;
 		$liveness_at  = null;
-		if ( null === $chunk_args && null !== $task && null === $batch ) {
+		if ( null === $chunk_args && null !== $task ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $task );
-		} elseif ( null !== $chunk_args && null !== $batch && null === $task ) {
+		} elseif ( null !== $chunk_args && null !== $batch ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
 		}
 		$run_store = $this->stores->run_store( $name );
 		$state     = $this->terminal_transitions->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
-			return;
-		}
-
-		if ( null !== $task && null !== $batch ) {
-			$this->logger->warning(
-				'Run action name is registered as both a task and a batch; rename one registration before dispatching the action.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-				)
-			);
-			$this->fail_orphaned_run( $work_type, $name, $run_id, $state, $run_store );
-
 			return;
 		}
 
@@ -831,7 +820,7 @@ final readonly class ActionDeliveries {
 	}
 
 	/**
-	 * Returns a batch only when one internal action resolves unambiguously.
+	 * Returns the batch recorded for one internal action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -843,19 +832,9 @@ final readonly class ActionDeliveries {
 	 * @return  BatchInterface|null
 	 */
 	private function batch_for_action( string $batch_name, string $run_id, string $stage ): ?BatchInterface {
-		$batch = $this->batches->get( $batch_name );
-		if ( null !== $batch && null !== $this->tasks->get( $batch_name ) ) {
-			$this->logger->warning(
-				'Batch action name is registered as both a task and a batch; rename one registration before dispatching the action.',
-				array(
-					'batch_name' => $batch_name,
-					'run_id'     => $run_id,
-					'stage'      => $stage,
-				)
-			);
-
-			return null;
-		}
+		$batch = 'batch' === $this->tasks->kind( $batch_name )
+			? $this->batches->get( $batch_name )
+			: null;
 
 		if ( null === $batch ) {
 			$this->logger->warning(
@@ -872,7 +851,7 @@ final readonly class ActionDeliveries {
 	}
 
 	/**
-	 * Fails a live run whose task or batch registration no longer resolves unambiguously.
+	 * Fails a live run whose required task or batch is no longer registered.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -888,7 +867,7 @@ final readonly class ActionDeliveries {
 	private function fail_orphaned_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$error = new EngineError(
 			\sprintf(
-				'%1$s name "%2$s" is no longer registered unambiguously for run "%3$s"; re-register exactly one %4$s under that name or purge the run.',
+				'%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.',
 				$work_type,
 				$name,
 				$run_id,

@@ -13,8 +13,8 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the real `Plugin::boot()` path outside WordPress through the recording hook stubs. The
- * component registry boots in place, and a second boot is a no-op.
+ * Exercises the WP-facing `Plugin::boot()` path outside WordPress through the recording hook stubs.
+ * Engine runtime wiring belongs to the separate owner-bound front door.
  *
  */
 #[CoversClass( Plugin::class )]
@@ -67,32 +67,26 @@ final class PluginBootGateTest extends TestCase {
 	}
 
 	/**
-	 * The component registry registers logging, scheduler, and orchestration hooks.
+	 * Plugin boot registers only WP-facing component hooks and leaves the engine graph untouched.
 	 *
 	 * @return  void
 	 */
-	public function test_boot_registers_the_plugin_component_hooks(): void {
+	public function test_boot_registers_only_the_plugin_component_hooks(): void {
 		( new Plugin() )->boot();
 
 		self::assertSame(
-			array(
-				'a8csp_background_tasks/log',
-				'cron_schedules',
-				'a8csp_background_tasks/start',
-				'a8csp_background_tasks/continue',
-				'a8csp_background_tasks/run',
-				'a8csp_background_tasks/cleanup',
-				'a8csp_background_tasks/schedule_due',
-				'init',
-			),
+			array( 'a8csp_background_tasks/log' ),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);
 		$action_registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
 		self::assertIsArray( $action_registrations );
-		$init_registration = $action_registrations[6] ?? null;
-		self::assertIsArray( $init_registration );
-		self::assertSame( 'init', $init_registration['hook_name'] ?? null );
-		self::assertSame( 10, $init_registration['priority'] ?? null );
+		self::assertCount( 1, $action_registrations );
+		$log_registration = $action_registrations[0] ?? null;
+		self::assertIsArray( $log_registration );
+		self::assertSame( 'a8csp_background_tasks/log', $log_registration['hook_name'] ?? null );
+		self::assertSame( 10, $log_registration['priority'] ?? null );
+		self::assertSame( 3, $log_registration['accepted_args'] ?? null );
+		self::assertNull( Component::get_engine() );
 	}
 
 	/**
@@ -106,16 +100,7 @@ final class PluginBootGateTest extends TestCase {
 		$plugin->boot();
 
 		self::assertSame(
-			array(
-				'a8csp_background_tasks/log',
-				'cron_schedules',
-				'a8csp_background_tasks/start',
-				'a8csp_background_tasks/continue',
-				'a8csp_background_tasks/run',
-				'a8csp_background_tasks/cleanup',
-				'a8csp_background_tasks/schedule_due',
-				'init',
-			),
+			array( 'a8csp_background_tasks/log' ),
 			$GLOBALS['a8csp_bgte_test_hooks']
 		);
 	}

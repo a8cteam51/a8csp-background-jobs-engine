@@ -14,8 +14,14 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 final class SupersededRunTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Consumer owner isolated to supersession coverage. */
+	private const OWNER = 'integration-superseded';
+
 	/** Batch identity unique within the request-persistent integration registry. */
 	private const NAME = 'integration-superseded-run';
+
+	/** Owner-qualified batch identity persisted by the engine. */
+	private const IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 
@@ -37,11 +43,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register batches' );
-		$engine->batches()->register( $batch );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->batches()->register( $batch );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
 		\add_filter(
 			'a8csp_background_tasks/continue_delay',
 			static fn ( int $delay, string $name, string $run_id ): int => 0,
@@ -61,7 +66,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$log_records = array();
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_background_tasks/superseded/' . self::NAME,
+			'a8csp_background_tasks/superseded/' . self::IDENTITY,
 			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {
 				$named_superseded[] = array( $run_id, $args );
 			},
@@ -77,7 +82,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_background_tasks/completed/' . self::NAME,
+			'a8csp_background_tasks/completed/' . self::IDENTITY,
 			static function ( string $run_id, array $args ) use ( &$named_completed ): void {
 				$named_completed[] = array( $run_id, $args );
 			},
@@ -101,11 +106,11 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a_result = \a8csp_bgte_start_batch( self::NAME, $start_args );
+		$run_a_result = $consumer->batches()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent batch must start through the public API' );
 		self::assertIsString( $run_a_result->value );
 		$run_a      = $run_a_result->value;
-		$group_a    = self::NAME . '|' . $run_a;
+		$group_a    = self::IDENTITY . '|' . $run_a;
 		$start_a_id = $this->assert_pending_start_action( $run_a, $group_a );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the incumbent queue' );
@@ -120,22 +125,22 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must dequeue the incumbent first chunk' );
 		self::assertSame( array(), $batch->process_calls, 'The incumbent continue action must not process its exposed chunk inline' );
 		$run_a_action_id = $this->assert_pending_chunk_action(
-			self::NAME,
+			self::IDENTITY,
 			$run_a,
 			$group_a,
 			array( 'chunk' => 'one' )
 		);
 
-		$run_b_result = \a8csp_bgte_start_batch( self::NAME, $start_args );
+		$run_b_result = $consumer->batches()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal batch start must replace the same-arguments incumbent' );
 		self::assertIsString( $run_b_result->value );
 		$run_b      = $run_b_result->value;
-		$group_b    = self::NAME . '|' . $run_b;
+		$group_b    = self::IDENTITY . '|' . $run_b;
 		$start_b_id = $this->assert_pending_start_action( $run_b, $group_b );
 		self::assertNotSame( $run_a, $run_b, 'Replacement must allocate a fresh run identifier' );
 
 		$args_hash = self::args_hash( $start_args );
-		$lock      = \get_option( 'a8csp_bgte_lock_' . self::NAME . '_' . $args_hash, null );
+		$lock      = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'The replacement batch must take ownership of the overlap lock' );
 		self::assertSame(
@@ -143,11 +148,11 @@ final class SupersededRunTest extends IntegrationTestCase {
 				'all'     => $run_b,
 				'by_hash' => array( $args_hash => $run_b ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
 			'The replacement batch must become latest for the shared argument identity'
 		);
-		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_a, null ) );
-		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_b, null ) );
+		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, null ) );
+		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_b, null ) );
 		self::assertSame( array(), $named_superseded, 'Starting the replacement must defer incumbent cleanup to its stale delivery' );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the incumbent chunk after replacement' );
@@ -159,7 +164,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			'The name-specific superseded hook must receive the incumbent run ID and start arguments once'
 		);
 		self::assertSame(
-			array( array( self::NAME, $run_a, $start_args ) ),
+			array( array( self::IDENTITY, $run_a, $start_args ) ),
 			$generic_superseded,
 			'The generic superseded hook must prepend the batch name to the same incumbent payload once'
 		);
@@ -168,7 +173,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 				'info',
 				'Superseded batch run after its ownership fence failed.',
 				array(
-					'batch_name'    => self::NAME,
+					'batch_name'    => self::IDENTITY,
 					'run_id'        => $run_a,
 					'latest_run_id' => $run_b,
 				),
@@ -180,10 +185,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 			'Supersession must emit only its quiet informational log record'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_a, false ),
+			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, false ),
 			'The stale incumbent delivery must delete its run option'
 		);
-		$lock = \get_option( 'a8csp_bgte_lock_' . self::NAME . '_' . $args_hash, null );
+		$lock = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Incumbent cleanup must preserve the replacement lock owner' );
 		self::assertSame(
@@ -220,7 +225,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 				'A replacement continue action must not process its exposed chunk inline'
 			);
 			$run_b_action_ids[] = $this->assert_pending_chunk_action(
-				self::NAME,
+				self::IDENTITY,
 				$run_b,
 				$group_b,
 				$expected_chunk
@@ -281,7 +286,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			'The name-specific completed hook must receive only the replacement payload'
 		);
 		self::assertSame(
-			array( array( self::NAME, $run_b, $start_args ) ),
+			array( array( self::IDENTITY, $run_b, $start_args ) ),
 			$generic_completed,
 			'The generic completed hook must prepend the batch name to the replacement payload'
 		);
@@ -291,20 +296,20 @@ final class SupersededRunTest extends IntegrationTestCase {
 			'The replacement lifecycle must not repeat the name-specific superseded hook'
 		);
 		self::assertSame(
-			array( array( self::NAME, $run_a, $start_args ) ),
+			array( array( self::IDENTITY, $run_a, $start_args ) ),
 			$generic_superseded,
 			'The replacement lifecycle must not repeat the generic superseded hook'
 		);
 		self::assertSame( $expected_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );
 
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_a, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_b, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_b, false ) );
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::NAME . '_' . $args_hash, false ),
+			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
 			'Terminal replacement success must release the overlap lock'
 		);
 		self::assertFalse(
-			\get_option( 'a8csp_bgte_failed_' . self::NAME, false ),
+			\get_option( 'a8csp_bgte_failed_' . self::IDENTITY, false ),
 			'Supersession and replacement success must not retain failed-run state'
 		);
 		self::assertSame(
@@ -312,7 +317,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 				'all'     => $run_b,
 				'by_hash' => array( $args_hash => $run_b ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
 			'Terminal replacement success must retain the replacement pointers'
 		);
 		self::assertSame(
@@ -344,13 +349,13 @@ final class SupersededRunTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::NAME, null ),
+			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
 			'History must retain the superseded incumbent and completed replacement in lifecycle order'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::NAME,
-				'a8csp_bgte_latest_' . self::NAME,
+				'a8csp_bgte_history_' . self::IDENTITY,
+				'a8csp_bgte_latest_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Replacement completion must retain only history and latest pointer state'
@@ -389,7 +394,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
 		self::assertSame( 'a8csp_background_tasks/start', $action->get_hook() );
-		self::assertSame( array( self::NAME, $run_id, 1 ), $action->get_args() );
+		self::assertSame( array( self::IDENTITY, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
 

@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
@@ -38,7 +39,7 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the consumer facade across registration, scheduling, and persisted run state.
+ * Exercises the internal engine facade across registration, scheduling, and persisted run state.
  *
  */
 #[CoversClass( Engine::class )]
@@ -57,12 +58,15 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( OccurrenceDelivery::class )]
 final class EngineTest extends TestCase {
-	private const ARGS   = array(
+	private const ARGS                 = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const NOW    = 1_700_000_000;
-	private const RUN_ID = '00000000001700000000-0000000000000000042';
+	private const BATCH_IDENTITY       = 'consumer-plugin:catalog-sync';
+	private const MAINTENANCE_IDENTITY = 'a8csp-bgte:maintenance';
+	private const NOW                  = 1_700_000_000;
+	private const RUN_ID               = '00000000001700000000-0000000000000000042';
+	private const TASK_IDENTITY        = 'consumer-plugin:email-digest';
 
 	private RecordingBackend $backend;
 	private Engine $engine;
@@ -111,8 +115,9 @@ final class EngineTest extends TestCase {
 
 		$clock                = new FixedClock( self::NOW );
 		$logger               = new RecordingLogger();
-		$tasks                = new TaskRegistry();
-		$batches              = new BatchRegistry();
+		$work                 = new WorkRegistry();
+		$tasks                = new TaskRegistry( $work );
+		$batches              = new BatchRegistry( $work );
 		$this->backend        = new RecordingBackend();
 		$this->wpdb           = new WpdbLockSpy();
 		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $this->wpdb ) );
@@ -170,10 +175,10 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_register_then_enqueue_round_trips_through_the_task_facade(): void {
-		$this->engine->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$this->engine->tasks()->register( self::TASK_IDENTITY, new RecordingTask( 'email-digest' ) );
 
 		$result = $this->engine->tasks()->enqueue(
-			'email-digest',
+			self::TASK_IDENTITY,
 			self::ARGS,
 			delay: 300,
 			unique: true,
@@ -189,8 +194,8 @@ final class EngineTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp_background_tasks/run',
 						'timestamp' => self::NOW + 300,
-						'args'      => array( 'email-digest', self::RUN_ID, 1 ),
-						'group'     => 'email-digest|' . self::RUN_ID,
+						'args'      => array( self::TASK_IDENTITY, self::RUN_ID, 1 ),
+						'group'     => self::TASK_IDENTITY . '|' . self::RUN_ID,
 						'priority'  => 5,
 					),
 				),
@@ -198,35 +203,18 @@ final class EngineTest extends TestCase {
 			$this->backend->calls
 		);
 
-		$run = $this->option( 'a8csp_bgte_run_email-digest_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgte_run_' . self::TASK_IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( 'running', $run['status'] ?? null );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/email-digest',
+				'a8csp_background_tasks/started/' . self::TASK_IDENTITY,
 				'a8csp_background_tasks/started',
 			),
 			$this->fired_hook_names()
 		);
-	}
-
-	/**
-	 * Public task enqueue rejects the engine-reserved maintenance identity.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_rejects_the_engine_maintenance_identity(): void {
-		$result = $this->engine->tasks()->enqueue( MaintenanceTask::NAME, self::ARGS );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Background-work name "a8csp-bgte-maintenance" is engine-reserved; register and dispatch consumer work under its own name.',
-			$result->error->message
-		);
-		self::assertSame( array(), $this->backend->calls );
 	}
 
 	/**
@@ -235,9 +223,9 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_register_then_start_round_trips_through_the_batch_facade(): void {
-		$this->engine->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+		$this->engine->batches()->register( self::BATCH_IDENTITY, new RecordingBatch( 'catalog-sync' ) );
 
-		$result = $this->engine->batches()->start( 'catalog-sync', self::ARGS, unique: true, priority: 23 );
+		$result = $this->engine->batches()->start( self::BATCH_IDENTITY, self::ARGS, unique: true, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -247,8 +235,8 @@ final class EngineTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/start',
-						'args'     => array( 'catalog-sync', self::RUN_ID, 1 ),
-						'group'    => 'catalog-sync|' . self::RUN_ID,
+						'args'     => array( self::BATCH_IDENTITY, self::RUN_ID, 1 ),
+						'group'    => self::BATCH_IDENTITY . '|' . self::RUN_ID,
 						'unique'   => true,
 						'priority' => 23,
 					),
@@ -257,45 +245,11 @@ final class EngineTest extends TestCase {
 			$this->backend->calls
 		);
 
-		$run = $this->option( 'a8csp_bgte_run_catalog-sync_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgte_run_' . self::BATCH_IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( 'running', $run['status'] ?? null );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array(), $run['queue'] ?? null );
-	}
-
-	/**
-	 * Public batch start rejects the engine-reserved maintenance identity.
-	 *
-	 * @return  void
-	 */
-	public function test_start_rejects_the_engine_maintenance_identity(): void {
-		$result = $this->engine->batches()->start( MaintenanceTask::NAME, self::ARGS );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Background-work name "a8csp-bgte-maintenance" is engine-reserved; register and dispatch consumer work under its own name.',
-			$result->error->message
-		);
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * The internal maintenance task identity cannot be shadowed by a consumer batch.
-	 *
-	 * @return  void
-	 */
-	public function test_batch_registration_rejects_the_engine_maintenance_identity(): void {
-		try {
-			$this->engine->batches()->register( new RecordingBatch( 'a8csp-bgte-maintenance' ) );
-			self::fail( 'Reserved maintenance batch registration did not throw.' );
-		} catch ( \LogicException $exception ) {
-			self::assertSame(
-				'Batch name "a8csp-bgte-maintenance" is reserved for engine maintenance; choose a consumer-specific batch name.',
-				$exception->getMessage()
-			);
-		}
 	}
 
 	/**
@@ -304,35 +258,31 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->tasks()->enqueue( 'unknown', self::ARGS );
+		$result = $this->engine->tasks()->enqueue( 'consumer-plugin:unknown', self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "unknown" is not registered; register it before enqueueing.',
+			'Task "consumer-plugin:unknown" is not registered; register it before enqueueing.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
 	}
 
 	/**
-	 * A name shared by a task and batch preserves the orchestration ambiguity failure.
+	 * Cross-kind identity collisions fail at registration before dispatch can observe ambiguity.
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_surfaces_an_ambiguous_name_failure(): void {
-		$this->engine->tasks()->register( new RecordingTask( 'shared-work' ) );
-		$this->engine->batches()->register( new RecordingBatch( 'shared-work' ) );
+	public function test_cross_kind_collision_fails_during_engine_registration(): void {
+		$this->engine->tasks()->register( 'consumer-plugin:shared-work', new RecordingTask( 'shared-work' ) );
 
-		$result = $this->engine->tasks()->enqueue( 'shared-work', self::ARGS );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Background-work name "shared-work" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.',
-			$result->error->message
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs(
+			'Background-work identity "consumer-plugin:shared-work" is already registered as a task; it cannot also be registered as a batch.'
 		);
-		self::assertSame( array(), $this->backend->calls );
+
+		$this->engine->batches()->register( 'consumer-plugin:shared-work', new RecordingBatch( 'shared-work' ) );
 	}
 
 	/**
@@ -363,12 +313,12 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->cancel( 'unknown', 'run-1' );
+		$result = $this->engine->cancel( 'consumer-plugin:unknown', 'run-1' );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Background-work "unknown" is not registered; register the matching task or batch before cancelling its run.',
+			'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before cancelling its run.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
@@ -380,12 +330,12 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->retry_failed( 'unknown', 'run-1' );
+		$result = $this->engine->retry_failed( 'consumer-plugin:unknown', 'run-1' );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Background-work "unknown" is not registered; register the matching task or batch before retrying its failed run.',
+			'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
@@ -397,8 +347,8 @@ final class EngineTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_dispatches_the_engine_maintenance_identity(): void {
-		$this->engine->tasks()->register( new RecordingTask( MaintenanceTask::NAME ) );
-		$store = new FailedRunStore( MaintenanceTask::NAME, new OptionRows( $this->wpdb ) );
+		$this->engine->tasks()->register( self::MAINTENANCE_IDENTITY, new RecordingTask( MaintenanceTask::NAME ) );
+		$store = new FailedRunStore( self::MAINTENANCE_IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-maintenance-run',
@@ -407,7 +357,7 @@ final class EngineTest extends TestCase {
 				1,
 				new EngineError( 'Maintenance failed.' ),
 				new RunFailure(
-					name: MaintenanceTask::NAME,
+					name: self::MAINTENANCE_IDENTITY,
 					run_id: 'failed-maintenance-run',
 					attempts: 1,
 					stage: 'execution',
@@ -417,7 +367,7 @@ final class EngineTest extends TestCase {
 				)
 			)
 		);
-		$failed_key = 'a8csp_bgte_failed_' . MaintenanceTask::NAME;
+		$failed_key = 'a8csp_bgte_failed_' . self::MAINTENANCE_IDENTITY;
 		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
 		self::assertIsString( $failed_raw );
 		$failed_runs = RawOptionDecoder::decode( $failed_raw );
@@ -426,7 +376,7 @@ final class EngineTest extends TestCase {
 		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 
-		$result = $this->engine->retry_failed( MaintenanceTask::NAME, 'failed-maintenance-run' );
+		$result = $this->engine->retry_failed( self::MAINTENANCE_IDENTITY, 'failed-maintenance-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -447,8 +397,8 @@ final class EngineTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( MaintenanceTask::NAME, self::RUN_ID, 1 ),
-						'group'    => MaintenanceTask::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::MAINTENANCE_IDENTITY, self::RUN_ID, 1 ),
+						'group'    => self::MAINTENANCE_IDENTITY . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
 					),

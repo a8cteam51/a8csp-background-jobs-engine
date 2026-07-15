@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -12,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -36,6 +38,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	/** Task invoked by the legitimately re-declared schedule. */
 	private const REDECLARED_TASK = 'integration-unknown-cleanup-redeclared-task';
 
+	/** Owner-qualified task identity invoked by the legitimately re-declared schedule. */
+	private const REDECLARED_IDENTITY = self::OWNER . ':' . self::REDECLARED_TASK;
+
 	/** Unknown registration identity isolated to the degraded WP-Cron probe. */
 	private const WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
 
@@ -54,7 +59,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	public function test_live_maintenance_sweep_converges_the_unknown_recurring_chain(): void {
 		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( 'a8csp_bgte_schedules' );
-		$this->expect_option( 'a8csp_bgte_latest_' . MaintenanceTask::NAME );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::MAINTENANCE_KEY );
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
@@ -116,18 +121,21 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			'The unknown delivery must publish the current registration warning'
 		);
 
-		$engine = \a8csp_bgte_engine();
+		$engine = Container::get_engine();
 		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
 		$synced = $engine->schedules()->sync_owner(
 			'a8csp-bgte',
 			array(
-				new Schedule(
-					'maintenance',
-					Recurrence::every( \HOUR_IN_SECONDS ),
-					MaintenanceTask::NAME,
-					array(),
-					OverlapPolicy::Skip,
-					CatchUpPolicy::RunOnce
+				self::MAINTENANCE_KEY => array(
+					'schedule' => new Schedule(
+						MaintenanceTask::NAME,
+						Recurrence::every( \HOUR_IN_SECONDS ),
+						MaintenanceTask::NAME,
+						array(),
+						OverlapPolicy::Skip,
+						CatchUpPolicy::RunOnce
+					),
+					'task'     => self::MAINTENANCE_KEY,
 				),
 			)
 		);
@@ -138,11 +146,12 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertIsArray( $registry );
 		$maintenance_owner = $registry['a8csp-bgte'] ?? null;
 		self::assertIsArray( $maintenance_owner );
-		$maintenance_registration = $maintenance_owner['maintenance'] ?? null;
+		$maintenance_registration = $maintenance_owner[ self::MAINTENANCE_KEY ] ?? null;
 		self::assertIsArray( $maintenance_registration );
 		$maintenance_registration['next_due'] = \time() - 1;
-		$maintenance_owner['maintenance']     = $maintenance_registration;
-		$registry['a8csp-bgte']               = $maintenance_owner;
+
+		$maintenance_owner[ self::MAINTENANCE_KEY ] = $maintenance_registration;
+		$registry['a8csp-bgte']                     = $maintenance_owner;
 		self::assertTrue(
 			\update_option( 'a8csp_bgte_schedules', $registry, false ),
 			'The maintenance occurrence must be due before its live delivery fires'
@@ -182,7 +191,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	public function test_sweep_convergence_preserves_a_redeclared_action_scheduler_chain(): void {
 		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( 'a8csp_bgte_schedules' );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_TASK );
+		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_IDENTITY );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$unknown_action_id = \as_schedule_recurring_action(
@@ -206,10 +215,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before schedule redeclaration' );
-		$task = new RecordingTask( self::REDECLARED_TASK );
-		$engine->tasks()->register( $task );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$task     = new RecordingTask( self::REDECLARED_TASK );
+		$consumer->tasks()->register( $task );
 		$schedule = new Schedule(
 			self::SCHEDULE,
 			Recurrence::every( 300 ),
@@ -218,7 +226,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			OverlapPolicy::Skip,
 			CatchUpPolicy::RunOnce
 		);
-		$synced   = $engine->schedules()->sync( self::OWNER, array( $schedule ) );
+		$synced   = $consumer->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );
 		self::assertSame(
@@ -278,7 +286,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			1,
 			$this->run_matching_due_action(
 				static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run' === $hook
-					&& self::REDECLARED_TASK === ( $args[0] ?? null )
+					&& self::REDECLARED_IDENTITY === ( $args[0] ?? null )
 			),
 			'The retained schedule occurrence must dispatch its declared task'
 		);
@@ -356,8 +364,6 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$this->expect_option( $intent_option );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before convergence' );
 		$delivery = $this->occurrence_delivery();
 
 		$action_id = \as_schedule_recurring_action(
@@ -553,7 +559,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertIsArray( $registry );
 		$owner_rows = $registry[ $owner ] ?? null;
 		self::assertIsArray( $owner_rows );
-		$registration = $owner_rows[ $name ] ?? null;
+		$registration = $owner_rows[ WorkIdentity::compose( $owner, $name, true ) ] ?? null;
 		self::assertIsArray( $registration );
 		$next_due = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
@@ -575,10 +581,11 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertIsArray( $registry );
 		$owner_rows = $registry[ $owner ] ?? null;
 		self::assertIsArray( $owner_rows );
-		$registration = $owner_rows[ $name ] ?? null;
+		$identity     = WorkIdentity::compose( $owner, $name, true );
+		$registration = $owner_rows[ $identity ] ?? null;
 		self::assertIsArray( $registration );
 		$registration['next_due'] = $next_due;
-		$owner_rows[ $name ]      = $registration;
+		$owner_rows[ $identity ]  = $registration;
 		$registry[ $owner ]       = $owner_rows;
 		self::assertTrue(
 			\update_option( 'a8csp_bgte_schedules', $registry, false ),

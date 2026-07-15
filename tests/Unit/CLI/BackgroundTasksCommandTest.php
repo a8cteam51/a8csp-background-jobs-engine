@@ -39,13 +39,28 @@ final class BackgroundTasksCommandTest extends TestCase {
 		self::assertSame(
 			array(
 				'action' => 'cancel',
-				'name'   => 'email-digest',
+				'name'   => 'consumer-plugin:email-digest',
 				'run_id' => 'run-1',
 			),
 			BackgroundTasksCommand::cancel_request_from_args(
-				array( 'email-digest', 'run-1' ),
+				array( 'consumer-plugin:email-digest', 'run-1' ),
 				array()
 			)
+		);
+	}
+
+	/**
+	 * Cancel accepts only the canonical owner-qualified identity.
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_an_unqualified_identity(): void {
+		self::assertSame(
+			array(
+				'action'  => 'error',
+				'message' => 'Cancel name is invalid; use a composed {owner}:{name} identity.',
+			),
+			BackgroundTasksCommand::cancel_request_from_args( array( 'email-digest', 'run-1' ), array() )
 		);
 	}
 
@@ -71,14 +86,14 @@ final class BackgroundTasksCommandTest extends TestCase {
 	}
 
 	/**
-	 * Rows expose the exact fields in name, timestamp, and run-identifier order.
+	 * Rows expose owner and composed identity before the retained failure fields.
 	 *
 	 * @return  void
 	 */
 	public function test_rows_are_shaped_and_ordered_deterministically(): void {
 		$rows = BackgroundTasksCommand::rows_from_entries(
 			array(
-				'zeta-task'  => array(
+				'owner-z:zeta-task'  => array(
 					array(
 						'run_id'     => 'run-z',
 						'failed_at'  => 0,
@@ -90,7 +105,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 						),
 					),
 				),
-				'alpha-task' => array(
+				'owner-a:alpha-task' => array(
 					array(
 						'run_id'     => 'run-b',
 						'failed_at'  => 2,
@@ -128,7 +143,8 @@ final class BackgroundTasksCommandTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'name'          => 'alpha-task',
+					'owner'         => 'owner-a',
+					'name'          => 'owner-a:alpha-task',
 					'run_id'        => 'run-c',
 					'failed_at'     => '1970-01-01T00:00:01+00:00',
 					'attempts'      => 1,
@@ -136,7 +152,8 @@ final class BackgroundTasksCommandTest extends TestCase {
 					'error_message' => 'First alpha failure.',
 				),
 				array(
-					'name'          => 'alpha-task',
+					'owner'         => 'owner-a',
+					'name'          => 'owner-a:alpha-task',
 					'run_id'        => 'run-a',
 					'failed_at'     => '1970-01-01T00:00:02+00:00',
 					'attempts'      => 3,
@@ -144,7 +161,8 @@ final class BackgroundTasksCommandTest extends TestCase {
 					'error_message' => 'Tied alpha failure.',
 				),
 				array(
-					'name'          => 'alpha-task',
+					'owner'         => 'owner-a',
+					'name'          => 'owner-a:alpha-task',
 					'run_id'        => 'run-b',
 					'failed_at'     => '1970-01-01T00:00:02+00:00',
 					'attempts'      => 2,
@@ -152,7 +170,8 @@ final class BackgroundTasksCommandTest extends TestCase {
 					'error_message' => 'Second alpha failure.',
 				),
 				array(
-					'name'          => 'zeta-task',
+					'owner'         => 'owner-z',
+					'name'          => 'owner-z:zeta-task',
 					'run_id'        => 'run-z',
 					'failed_at'     => '1970-01-01T00:00:00+00:00',
 					'attempts'      => 4,
@@ -161,6 +180,56 @@ final class BackgroundTasksCommandTest extends TestCase {
 				),
 			),
 			$rows
+		);
+	}
+
+	/**
+	 * The failed-list owner filter is an exact namespace match.
+	 *
+	 * @return  void
+	 */
+	public function test_rows_are_filtered_to_the_exact_owner(): void {
+		self::assertSame(
+			array(
+				array(
+					'owner'         => 'owner-a',
+					'name'          => 'owner-a:task',
+					'run_id'        => 'run-a',
+					'failed_at'     => '1970-01-01T00:00:01+00:00',
+					'attempts'      => 1,
+					'error_class'   => null,
+					'error_message' => 'Owner A failure.',
+				),
+			),
+			BackgroundTasksCommand::rows_from_entries(
+				array(
+					'owner-a:task'  => array(
+						array(
+							'run_id'     => 'run-a',
+							'failed_at'  => 1,
+							'start_args' => array(),
+							'attempts'   => 1,
+							'error'      => array(
+								'class'   => null,
+								'message' => 'Owner A failure.',
+							),
+						),
+					),
+					'owner-ab:task' => array(
+						array(
+							'run_id'     => 'run-ab',
+							'failed_at'  => 2,
+							'start_args' => array(),
+							'attempts'   => 1,
+							'error'      => array(
+								'class'   => null,
+								'message' => 'Owner AB failure.',
+							),
+						),
+					),
+				),
+				'owner-a'
+			)
 		);
 	}
 
@@ -174,24 +243,27 @@ final class BackgroundTasksCommandTest extends TestCase {
 	}
 
 	/**
-	 * Discovery accepts only stable suffixes under the exact failed-run option prefix.
+	 * Discovery accepts only composed identities under the exact failed-run option prefix.
 	 *
 	 * @return  void
 	 */
 	public function test_discovered_option_names_are_filtered_deduplicated_and_sorted(): void {
 		self::assertSame(
-			array( 'alpha-task', 'alpha_task', 'zeta' ),
+			array( 'a8csp-bgte:maintenance', 'alpha:alpha-task', 'alpha:alpha_task', 'zeta:task' ),
 			BackgroundTasksCommand::names_from_option_names(
 				array(
-					'a8csp_bgte_failed_zeta',
+					'a8csp_bgte_failed_zeta:task',
 					42,
-					'other_failed_alpha-task',
+					'other_failed_alpha:alpha-task',
 					'a8csp_bgte_failed_',
-					'a8csp_bgte_failed_Alpha',
-					'a8csp_bgte_failed_alpha/task',
+					'a8csp_bgte_failed_Alpha:task',
+					'a8csp_bgte_failed_alpha:task/more',
 					'a8csp_bgte_failed_alpha-task',
-					'a8csp_bgte_failed_alpha_task',
-					'a8csp_bgte_failed_alpha-task',
+					'a8csp_bgte_failed_alpha:task:extra',
+					'a8csp_bgte_failed_alpha:alpha-task',
+					'a8csp_bgte_failed_alpha:alpha_task',
+					'a8csp_bgte_failed_alpha:alpha-task',
+					'a8csp_bgte_failed_a8csp-bgte:maintenance',
 				)
 			)
 		);
@@ -286,11 +358,11 @@ final class BackgroundTasksCommandTest extends TestCase {
 		self::assertSame(
 			array(
 				'action' => 'list',
-				'name'   => 'email_digest-2',
+				'name'   => 'consumer-plugin:email_digest-2',
 				'format' => $format,
 			),
 			BackgroundTasksCommand::runs_request_from_args(
-				array( 'list', 'email_digest-2' ),
+				array( 'list', 'consumer-plugin:email_digest-2' ),
 				$assoc_args
 			)
 		);
@@ -328,7 +400,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 			array(
 				array(
 					'owner'      => 'owner-b',
-					'name'       => 'orphaned',
+					'name'       => 'owner-b:orphaned',
 					'recurrence' => null,
 					'next_due'   => 1_699_996_400,
 					'last_fired' => null,
@@ -339,7 +411,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				),
 				array(
 					'owner'      => 'owner-a',
-					'name'       => 'nightly',
+					'name'       => 'owner-a:nightly',
 					'recurrence' => 300,
 					'next_due'   => 1_700_000_060,
 					'last_fired' => 1_699_999_999,
@@ -360,7 +432,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 			array(
 				array(
 					'owner'      => 'owner-a',
-					'name'       => 'nightly',
+					'name'       => 'owner-a:nightly',
 					'recurrence' => 300,
 					'next_due'   => '2023-11-14T22:14:20+00:00 (in 1m)',
 					'last_fired' => '2023-11-14T22:13:19+00:00',
@@ -371,7 +443,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				),
 				array(
 					'owner'      => 'owner-b',
-					'name'       => 'orphaned',
+					'name'       => 'owner-b:orphaned',
 					'recurrence' => 'unknown (not declared this request)',
 					'next_due'   => '2023-11-14T21:13:20+00:00 (overdue 1h)',
 					'last_fired' => 'never',
@@ -690,6 +762,11 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'assoc_args' => array( 'owner' => false ),
 				'message'    => 'Schedule list owner is invalid; pass a value with --owner=<owner>.',
 			),
+			'invalid owner'    => array(
+				'args'       => array( 'list' ),
+				'assoc_args' => array( 'owner' => 'Consumer-Plugin' ),
+				'message'    => 'Schedule list owner is invalid; pass a canonical owner with --owner=<owner>.',
+			),
 			'invalid format'   => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'format' => 'ids' ),
@@ -750,7 +827,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'message'    => 'A run action is required; use list <name>.',
 			),
 			'unknown action' => array(
-				'args'       => array( 'show', 'email-digest' ),
+				'args'       => array( 'show', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array(),
 				'message'    => 'Run action "show" is invalid; use list.',
 			),
@@ -760,27 +837,27 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'message'    => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
 			),
 			'extra name'     => array(
-				'args'       => array( 'list', 'email-digest', 'extra' ),
+				'args'       => array( 'list', 'consumer-plugin:email-digest', 'extra' ),
 				'assoc_args' => array(),
 				'message'    => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
 			),
 			'stray flag'     => array(
-				'args'       => array( 'list', 'email-digest' ),
+				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'all' => true ),
 				'message'    => 'Run list requires exactly one name and accepts only --format; use wp background-tasks runs list <name> [--format=<format>].',
 			),
 			'invalid name'   => array(
-				'args'       => array( 'list', 'Email Digest' ),
+				'args'       => array( 'list', 'email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Run name is invalid; use lowercase letters, digits, underscores, and hyphens.',
+				'message'    => 'Run name is invalid; use a composed {owner}:{name} identity.',
 			),
 			'invalid format' => array(
-				'args'       => array( 'list', 'email-digest' ),
+				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'format' => 'ids' ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
 			'negated format' => array(
-				'args'       => array( 'list', 'email-digest' ),
+				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'format' => false ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
@@ -874,6 +951,16 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'assoc_args' => array(),
 				'expected'   => array(
 					'action' => 'list',
+					'owner'  => null,
+					'format' => 'table',
+				),
+			),
+			'list owner'   => array(
+				'args'       => array( 'list' ),
+				'assoc_args' => array( 'owner' => 'consumer-plugin' ),
+				'expected'   => array(
+					'action' => 'list',
+					'owner'  => 'consumer-plugin',
 					'format' => 'table',
 				),
 			),
@@ -882,6 +969,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'assoc_args' => array( 'format' => 'csv' ),
 				'expected'   => array(
 					'action' => 'list',
+					'owner'  => null,
 					'format' => 'csv',
 				),
 			),
@@ -890,6 +978,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'assoc_args' => array( 'format' => 'json' ),
 				'expected'   => array(
 					'action' => 'list',
+					'owner'  => null,
 					'format' => 'json',
 				),
 			),
@@ -898,6 +987,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'assoc_args' => array( 'format' => 'count' ),
 				'expected'   => array(
 					'action' => 'list',
+					'owner'  => null,
 					'format' => 'count',
 				),
 			),
@@ -906,24 +996,25 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'assoc_args' => array( 'format' => 'yaml' ),
 				'expected'   => array(
 					'action' => 'list',
+					'owner'  => null,
 					'format' => 'yaml',
 				),
 			),
 			'retry'        => array(
-				'args'       => array( 'retry', 'email-digest', 'run-1' ),
+				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'run-1' ),
 				'assoc_args' => array(),
 				'expected'   => array(
 					'action' => 'retry',
-					'name'   => 'email-digest',
+					'name'   => 'consumer-plugin:email-digest',
 					'run_id' => 'run-1',
 				),
 			),
 			'purge name'   => array(
-				'args'       => array( 'purge', 'email_digest-2' ),
+				'args'       => array( 'purge', 'consumer-plugin:email_digest-2' ),
 				'assoc_args' => array(),
 				'expected'   => array(
 					'action' => 'purge',
-					'name'   => 'email_digest-2',
+					'name'   => 'consumer-plugin:email_digest-2',
 				),
 			),
 			'purge all'    => array(
@@ -959,14 +1050,24 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'message'    => 'Failed-run action "remove" is invalid; use list, retry, or purge.',
 			),
 			'list positional'      => array(
-				'args'       => array( 'list', 'email-digest' ),
+				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'List accepts only --format; use wp background-tasks failed list [--format=<format>].',
+				'message'    => 'List accepts only --owner and --format; use wp background-tasks failed list [--owner=<owner>] [--format=<format>].',
 			),
 			'list flag'            => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'all' => true ),
-				'message'    => 'List accepts only --format; use wp background-tasks failed list [--format=<format>].',
+				'message'    => 'List accepts only --owner and --format; use wp background-tasks failed list [--owner=<owner>] [--format=<format>].',
+			),
+			'list owner type'      => array(
+				'args'       => array( 'list' ),
+				'assoc_args' => array( 'owner' => false ),
+				'message'    => 'List owner is invalid; pass a value with --owner=<owner>.',
+			),
+			'list invalid owner'   => array(
+				'args'       => array( 'list' ),
+				'assoc_args' => array( 'owner' => 'Consumer-Plugin' ),
+				'message'    => 'List owner is invalid; pass a canonical owner with --owner=<owner>.',
 			),
 			'list format'          => array(
 				'args'       => array( 'list' ),
@@ -979,14 +1080,19 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
 			'retry missing run_id' => array(
-				'args'       => array( 'retry', 'email-digest' ),
+				'args'       => array( 'retry', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array(),
 				'message'    => 'Retry requires exactly a name and run_id; use wp background-tasks failed retry <name> <run_id>.',
 			),
 			'retry flag'           => array(
-				'args'       => array( 'retry', 'email-digest', 'run-1' ),
+				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'run-1' ),
 				'assoc_args' => array( 'all' => true ),
 				'message'    => 'Retry requires exactly a name and run_id; use wp background-tasks failed retry <name> <run_id>.',
+			),
+			'retry invalid name'   => array(
+				'args'       => array( 'retry', 'email-digest', 'run-1' ),
+				'assoc_args' => array(),
+				'message'    => 'Retry name is invalid; use a composed {owner}:{name} identity.',
 			),
 			'bare purge'           => array(
 				'args'       => array( 'purge' ),
@@ -994,7 +1100,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
 			),
 			'purge name and all'   => array(
-				'args'       => array( 'purge', 'email-digest' ),
+				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'all' => true ),
 				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
 			),
@@ -1009,19 +1115,19 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
 			),
 			'purge name stray all' => array(
-				'args'       => array( 'purge', 'email-digest' ),
+				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'all' => false ),
 				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
 			),
 			'purge extra name'     => array(
-				'args'       => array( 'purge', 'email-digest', 'other' ),
+				'args'       => array( 'purge', 'consumer-plugin:email-digest', 'other' ),
 				'assoc_args' => array(),
 				'message'    => 'Purge requires exactly one name or --all; use wp background-tasks failed purge <name> or purge --all.',
 			),
 			'purge invalid name'   => array(
-				'args'       => array( 'purge', 'Email Digest' ),
+				'args'       => array( 'purge', 'email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Purge name is invalid; use lowercase letters, digits, underscores, and hyphens.',
+				'message'    => 'Purge name is invalid; use a composed {owner}:{name} identity.',
 			),
 			'purge flag'           => array(
 				'args'       => array( 'purge' ),

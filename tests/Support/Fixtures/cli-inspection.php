@@ -13,14 +13,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		$engine = \a8csp_bgte_engine();
-		if ( null === $engine ) {
-			return;
-		}
-
-		$engine->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
-		$result = $engine->schedules()->sync(
-			'integration-cli-inspection-owner',
+		$consumer = \a8csp_bgte( 'integration-cli-inspection-owner' );
+		$consumer->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
+		$result = $consumer->schedules()->sync(
 			array(
 				new Schedule(
 					'inspection-schedule',
@@ -31,7 +26,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 			)
 		);
 		if ( $result->is_failure() ) {
-			\WP_CLI::error( $result->error->message );
+			\WP_CLI::error( 'The CLI inspection fixture could not synchronize its schedule.' );
 		}
 	}
 );

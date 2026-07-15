@@ -159,71 +159,93 @@ final readonly class OptionRows {
 	}
 
 	/**
-	 * Returns one bounded page and the complete candidate count for an exact option-name length.
+	 * Returns one bounded page and the complete accepted count for an exact option-name byte length.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $prefix       Literal option-name prefix.
-	 * @param   int    $total_length Required complete option-name length.
-	 * @param   int    $limit        Positive maximum number of names returned.
+	 * @param   string                 $prefix       Literal option-name prefix.
+	 * @param   int                    $total_length Required complete option-name byte length.
+	 * @param   int                    $limit        Positive maximum number of names returned.
+	 * @param   callable(string): bool $is_valid     Complete-name validity predicate.
 	 *
 	 * @throws  \InvalidArgumentException When the length or limit is invalid.
 	 * @throws  \LogicException           When the current site differs from the bound site.
 	 *
 	 * @return  array{names: list<string>, total: int}|null Null when either authoritative read fails.
 	 */
-	public function option_names_page( string $prefix, int $total_length, int $limit ): ?array {
+	public function option_names_page( string $prefix, int $total_length, int $limit, callable $is_valid ): ?array {
 		if ( \strlen( $prefix ) > $total_length || 1 > $limit ) {
 			throw new \InvalidArgumentException( 'An option-name page requires a complete length at least as long as its prefix and a positive limit.' );
 		}
 
 		$this->assert_site();
-		$wpdb    = $this->wpdb;
-		$pattern = $wpdb->esc_like( $prefix ) . '%';
-		$count   = $wpdb->get_var(
-			$wpdb->prepare(
-				'SELECT COUNT(*) FROM %i WHERE `option_name` LIKE %s AND CHAR_LENGTH(`option_name`) = %d',
-				$wpdb->options,
-				$pattern,
-				$total_length
-			)
-		);
-		if (
-			$this->last_read_failed()
-			|| ! \is_string( $count )
-			|| 1 !== \preg_match( '/\A\d+\z/', $count )
-		) {
-			return null;
-		}
+		$wpdb     = $this->wpdb;
+		$pattern  = $wpdb->esc_like( $prefix ) . '%';
+		$accepted = array();
+		$total    = 0;
+		$cursor   = null;
 
-		$names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND CHAR_LENGTH(`option_name`) = %d ORDER BY `option_name` ASC LIMIT %d',
-				$wpdb->options,
-				$pattern,
-				$total_length,
-				$limit
-			)
-		);
-		if ( $this->last_read_failed() ) {
-			return null;
-		}
-
-		$typed = array();
-		foreach ( $names as $name ) {
-			if (
-				\is_string( $name )
-				&& \strlen( $name ) === $total_length
-				&& \str_starts_with( $name, $prefix )
-			) {
-				$typed[] = $name;
+		do {
+			$candidates = null === $cursor
+				? $wpdb->get_col(
+					$wpdb->prepare(
+						'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d ORDER BY BINARY `option_name` ASC LIMIT %d',
+						$wpdb->options,
+						$pattern,
+						$total_length,
+						$limit
+					)
+				)
+				: $wpdb->get_col(
+					$wpdb->prepare(
+						'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d',
+						$wpdb->options,
+						$pattern,
+						$total_length,
+						$cursor,
+						$limit
+					)
+				);
+			if ( $this->last_read_failed() ) {
+				return null;
 			}
-		}
+
+			$candidate_count = \count( $candidates );
+			if ( 0 === $candidate_count ) {
+				break;
+			}
+
+			$next_cursor = $candidates[ $candidate_count - 1 ] ?? null;
+			if (
+				! \is_string( $next_cursor )
+				|| ( null !== $cursor && 0 >= \strcmp( $next_cursor, $cursor ) )
+			) {
+				return null;
+			}
+
+			foreach ( $candidates as $name ) {
+				if (
+					! \is_string( $name )
+					|| \strlen( $name ) !== $total_length
+					|| ! \str_starts_with( $name, $prefix )
+					|| ! $is_valid( $name )
+				) {
+					continue;
+				}
+
+				++$total;
+				if ( $total <= $limit ) {
+					$accepted[] = $name;
+				}
+			}
+
+			$cursor = $next_cursor;
+		} while ( $candidate_count === $limit );
 
 		return array(
-			'names' => $typed,
-			'total' => \max( (int) $count, \count( $typed ) ),
+			'names' => $accepted,
+			'total' => $total,
 		);
 	}
 

@@ -30,6 +30,8 @@ final class RunHistoryWakeupProbe {
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class RunHistoryTest extends TestCase {
+	private const OWNER = 'runs-tests';
+
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
 
@@ -70,12 +72,23 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
+	 * Returns one owner-qualified test work identity.
+	 *
+	 * @param   string $name Owner-local work name.
+	 *
+	 * @return  string
+	 */
+	private static function identity( string $name ): string {
+		return self::OWNER . ':' . $name;
+	}
+
+	/**
 	 * Started and terminal writes persist the mirrored by-hash schema under the literal key.
 	 *
 	 * @return  void
 	 */
 	public function test_records_started_and_terminal_with_the_literal_option_key(): void {
-		$history = new RunHistory( 'reports', $this->rows );
+		$history = new RunHistory( self::identity( 'reports' ), $this->rows );
 
 		self::assertTrue( $history->record_started( 'run-a', 'hash-a' ) );
 		self::assertTrue( $history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed ) );
@@ -101,9 +114,9 @@ final class RunHistoryTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_reports' )
+			$this->option( 'a8csp_bgte_history_runs-tests:reports' )
 		);
-		self::assertSame( 'off', $this->autoload_flag( 'a8csp_bgte_history_reports' ) );
+		self::assertSame( 'off', $this->autoload_flag( 'a8csp_bgte_history_runs-tests:reports' ) );
 	}
 
 	/**
@@ -112,7 +125,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_repeated_writes_are_idempotent_in_global_and_per_hash_buffers(): void {
-		$history = new RunHistory( 'reports', $this->rows );
+		$history = new RunHistory( self::identity( 'reports' ), $this->rows );
 
 		self::assertTrue( $history->record_started( 'run-a', 'hash-a' ) );
 		self::assertTrue( $history->record_started( 'run-a', 'hash-a' ) );
@@ -140,7 +153,7 @@ final class RunHistoryTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_reports' )
+			$this->option( 'a8csp_bgte_history_runs-tests:reports' )
 		);
 	}
 
@@ -150,7 +163,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_interleaved_started_writes_preserve_both_appends_and_the_history_cap(): void {
-		$key              = 'a8csp_bgte_history_interleaved';
+		$key              = 'a8csp_bgte_history_runs-tests:interleaved';
 		$started          = \array_map(
 			static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
 			\range( 1, 30 )
@@ -166,7 +179,7 @@ final class RunHistoryTest extends TestCase {
 			),
 		);
 		$stored_raw       = \maybe_serialize( $stored );
-		$rival_history    = new RunHistory( 'interleaved', $this->rows );
+		$rival_history    = new RunHistory( self::identity( 'interleaved' ), $this->rows );
 		$rival_recorded   = null;
 		$expected_started = array(
 			...\array_slice( $started, 2 ),
@@ -194,7 +207,7 @@ final class RunHistoryTest extends TestCase {
 			}
 		);
 
-		$recorded = ( new RunHistory( 'interleaved', $this->rows ) )->record_started( 'run-outer', 'hash-a' );
+		$recorded = ( new RunHistory( self::identity( 'interleaved' ), $this->rows ) )->record_started( 'run-outer', 'hash-a' );
 
 		self::assertTrue( $rival_recorded );
 		self::assertTrue( $recorded );
@@ -219,7 +232,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_started_write_retries_a_lost_cas_and_preserves_the_rival_write(): void {
-		$key          = 'a8csp_bgte_history_lost-cas';
+		$key          = 'a8csp_bgte_history_runs-tests:lost-cas';
 		$stored       = array(
 			'started'   => array( 'run-existing' ),
 			'completed' => array(),
@@ -272,7 +285,7 @@ final class RunHistoryTest extends TestCase {
 			}
 		);
 
-		$recorded = ( new RunHistory( 'lost-cas', $this->rows ) )->record_started( 'run-outer', 'hash-a' );
+		$recorded = ( new RunHistory( self::identity( 'lost-cas' ), $this->rows ) )->record_started( 'run-outer', 'hash-a' );
 
 		self::assertTrue( $recorded );
 		self::assertSame( $expected_raw, $this->wpdb->rows[ $key ] ?? null );
@@ -292,7 +305,7 @@ final class RunHistoryTest extends TestCase {
 			}
 		);
 
-		$recorded = ( new RunHistory( 'read-failure', $this->rows ) )->record_started( 'run-a', 'hash-a' );
+		$recorded = ( new RunHistory( self::identity( 'read-failure' ), $this->rows ) )->record_started( 'run-a', 'hash-a' );
 
 		self::assertFalse( $recorded );
 		self::assertSame( array(), $this->write_queries() );
@@ -304,7 +317,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_started_write_returns_false_when_a_failed_update_leaves_the_raw_row_unchanged(): void {
-		$key        = 'a8csp_bgte_history_update-failure';
+		$key        = 'a8csp_bgte_history_runs-tests:update-failure';
 		$stored     = array(
 			'started'   => array( 'run-existing' ),
 			'completed' => array(),
@@ -320,7 +333,7 @@ final class RunHistoryTest extends TestCase {
 		$this->wpdb->put( $key, $stored_raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$recorded = ( new RunHistory( 'update-failure', $this->rows ) )->record_started( 'run-new', 'hash-a' );
+		$recorded = ( new RunHistory( self::identity( 'update-failure' ), $this->rows ) )->record_started( 'run-new', 'hash-a' );
 
 		self::assertFalse( $recorded );
 		self::assertSame( $stored_raw, $this->wpdb->rows[ $key ] ?? null );
@@ -333,7 +346,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_duplicate_started_identifier_returns_true_without_writing(): void {
-		$key        = 'a8csp_bgte_history_duplicate';
+		$key        = 'a8csp_bgte_history_runs-tests:duplicate';
 		$stored     = array(
 			'started'   => array( 'run-a' ),
 			'completed' => array(),
@@ -348,7 +361,7 @@ final class RunHistoryTest extends TestCase {
 		self::assertIsString( $stored_raw );
 		$this->wpdb->put( $key, $stored_raw );
 
-		$recorded = ( new RunHistory( 'duplicate', $this->rows ) )->record_started( 'run-a', 'hash-a' );
+		$recorded = ( new RunHistory( self::identity( 'duplicate' ), $this->rows ) )->record_started( 'run-a', 'hash-a' );
 
 		self::assertTrue( $recorded );
 		self::assertSame( $stored_raw, $this->wpdb->rows[ $key ] ?? null );
@@ -361,7 +374,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_ring_buffers_evict_the_oldest_entry_past_thirty(): void {
-		$history = new RunHistory( 'exports', $this->rows );
+		$history = new RunHistory( self::identity( 'exports' ), $this->rows );
 
 		for ( $index = 0; $index <= 30; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
@@ -392,7 +405,7 @@ final class RunHistoryTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_exports' )
+			$this->option( 'a8csp_bgte_history_runs-tests:exports' )
 		);
 
 		$this->assert_all_option_writes_disable_autoload();
@@ -404,7 +417,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_history_size_filter_is_applied_at_write(): void {
-		$history = new RunHistory( 'imports', $this->rows );
+		$history = new RunHistory( self::identity( 'imports' ), $this->rows );
 
 		for ( $index = 0; $index < 3; ++$index ) {
 			self::assertTrue( $history->record_started( 'started-a' . $index, 'hash-a' ) );
@@ -416,7 +429,7 @@ final class RunHistoryTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp_background_tasks/history_size' => 2 );
 		self::assertTrue( $history->record_started( 'started-a3', 'hash-a' ) );
 
-		$option = $this->option( 'a8csp_bgte_history_imports' );
+		$option = $this->option( 'a8csp_bgte_history_runs-tests:imports' );
 		self::assertSame(
 			array(
 				'started'   => array( 'started-b2', 'started-a3' ),
@@ -471,7 +484,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_by_hash_buffers_are_isolated_and_newest_last(): void {
-		$history = new RunHistory( 'isolation', $this->rows );
+		$history = new RunHistory( self::identity( 'isolation' ), $this->rows );
 
 		self::assertTrue( $history->record_started( 'started-a1', 'hash-a' ) );
 		self::assertTrue( $history->record_started( 'started-b1', 'hash-b' ) );
@@ -522,7 +535,7 @@ final class RunHistoryTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_isolation' )
+			$this->option( 'a8csp_bgte_history_runs-tests:isolation' )
 		);
 	}
 
@@ -535,7 +548,7 @@ final class RunHistoryTest extends TestCase {
 	 */
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_record_terminal_persists_every_terminal_status( string $status ): void {
-		$name    = 'status-' . $status;
+		$name    = self::identity( 'status-' . $status );
 		$history = new RunHistory( $name, $this->rows );
 
 		self::assertTrue( $history->record_terminal( 'run-a', 'hash-a', RunStatus::from( $status ) ) );
@@ -579,7 +592,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_record_terminal_rejects_a_running_status(): void {
-		$history = new RunHistory( 'running', $this->rows );
+		$history = new RunHistory( self::identity( 'running' ), $this->rows );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Run history records only terminal outcomes.' );
@@ -594,7 +607,7 @@ final class RunHistoryTest extends TestCase {
 	 */
 	public function test_read_exposures_skip_malformed_rows_without_writing(): void {
 		$this->put_option(
-			'a8csp_bgte_history_inspection',
+			'a8csp_bgte_history_runs-tests:inspection',
 			array(
 				'started'   => array( 'started-a', 42, 'started-b', false ),
 				'completed' => array(
@@ -616,7 +629,7 @@ final class RunHistoryTest extends TestCase {
 			)
 		);
 
-		$history = new RunHistory( 'inspection', $this->rows );
+		$history = new RunHistory( self::identity( 'inspection' ), $this->rows );
 
 		self::assertSame( array( 'started-a', 'started-b' ), $history->started_entries() );
 		self::assertSame(
@@ -637,7 +650,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_read_exposures_report_an_authoritative_read_failure(): void {
-		$history = new RunHistory( 'inspection', $this->rows );
+		$history = new RunHistory( self::identity( 'inspection' ), $this->rows );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -673,9 +686,9 @@ final class RunHistoryTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_history_started-raw', $raw );
+		$this->wpdb->put( 'a8csp_bgte_history_runs-tests:started-raw', $raw );
 
-		$history = new RunHistory( 'started-raw', $this->rows );
+		$history = new RunHistory( self::identity( 'started-raw' ), $this->rows );
 
 		self::assertSame( array( 'started-safe' ), $history->started_entries() );
 		self::assertFalse( RunHistoryWakeupProbe::$woke );
@@ -702,9 +715,9 @@ final class RunHistoryTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_history_terminal-raw', $raw );
+		$this->wpdb->put( 'a8csp_bgte_history_runs-tests:terminal-raw', $raw );
 
-		$history = new RunHistory( 'terminal-raw', $this->rows );
+		$history = new RunHistory( self::identity( 'terminal-raw' ), $this->rows );
 
 		self::assertSame(
 			array(
@@ -762,7 +775,7 @@ final class RunHistoryTest extends TestCase {
 		);
 
 		$this->put_option(
-			'a8csp_bgte_history_decode',
+			'a8csp_bgte_history_runs-tests:decode',
 			array(
 				'started'   => array( 'existing-run', 42 ),
 				'completed' => $persisted_entries,
@@ -776,7 +789,7 @@ final class RunHistoryTest extends TestCase {
 			)
 		);
 
-		$history = new RunHistory( 'decode', $this->rows );
+		$history = new RunHistory( self::identity( 'decode' ), $this->rows );
 
 		self::assertTrue( $history->record_started( 'new-run', 'hash-a' ) );
 
@@ -791,7 +804,7 @@ final class RunHistoryTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_decode' )
+			$this->option( 'a8csp_bgte_history_runs-tests:decode' )
 		);
 	}
 
@@ -802,7 +815,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_hash_buckets_evict_the_least_recently_recorded_identity_past_twenty(): void {
-		$history = new RunHistory( 'sync', $this->rows );
+		$history = new RunHistory( self::identity( 'sync' ), $this->rows );
 
 		foreach ( \range( 1, 20 ) as $index ) {
 			self::assertTrue( $history->record_started( "run-{$index}", "hash-{$index}" ) );
@@ -841,7 +854,7 @@ final class RunHistoryTest extends TestCase {
 				'completed' => array(),
 				'by_hash'   => $expected_by_hash,
 			),
-			$this->option( 'a8csp_bgte_history_sync' )
+			$this->option( 'a8csp_bgte_history_runs-tests:sync' )
 		);
 	}
 

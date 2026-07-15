@@ -7,8 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
@@ -48,21 +46,16 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface $batch Batch to register.
+	 * @param   string         $identity Complete owner-qualified identity.
+	 * @param   BatchInterface $batch    Batch to register.
 	 *
-	 * @throws  \InvalidArgumentException When the batch name is outside the stable-name grammar.
-	 * @throws  \LogicException           When the batch name is engine-reserved or already registered.
+	 * @throws  \InvalidArgumentException When the identity and batch name disagree, or a task owns the identity.
+	 * @throws  \LogicException           When the batch identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register( BatchInterface $batch ): void {
-		if ( MaintenanceTask::NAME === $batch->get_name() ) {
-			throw new \LogicException(
-				'Batch name "a8csp-bgte-maintenance" is reserved for engine maintenance; choose a consumer-specific batch name.'
-			);
-		}
-
-		$this->registry->register( $batch );
+	public function register( string $identity, BatchInterface $batch ): void {
+		$this->registry->register( $identity, $batch );
 	}
 
 	/**
@@ -74,7 +67,7 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Stable batch name.
+	 * @param   string                  $name       Complete owner-qualified batch identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   bool                    $unique     Whether a fresh incumbent causes Failure instead of replacement and
 	 *                                              backend uniqueness is requested.
@@ -84,17 +77,6 @@ final readonly class Batches {
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	public function start( string $name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
-		if ( MaintenanceTask::NAME === $name ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Background-work name "%s" is engine-reserved; register and dispatch consumer work under its own name.',
-						MaintenanceTask::NAME
-					)
-				)
-			);
-		}
-
 		return $this->dispatcher->start_batch( $name, $start_args, $unique, $priority );
 	}
 

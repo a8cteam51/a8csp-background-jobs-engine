@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
@@ -168,14 +169,22 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
-	 * @param   string $name  Stable schedule name.
+	 * @param   string $registration_key Complete owner-qualified schedule identity.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
-	public function run_now_under_lease( string $owner, string $name ): AbstractResult {
-		$registration_key = $owner . ':' . $name;
+	public function run_now_under_lease( string $registration_key ): AbstractResult {
+		$parts = WorkIdentity::parts( $registration_key );
+		if ( null === $parts ) {
+			return new Failure(
+				new EngineError(
+					'Schedule identity is invalid; pass one canonical {owner}:{name} identity.'
+				)
+			);
+		}
+
+		[ $owner, $name ] = $parts;
 		$lease_raw        = $this->lease->claim( $registration_key );
 		if ( null === $lease_raw ) {
 			return new Failure(
@@ -190,7 +199,7 @@ final readonly class OccurrenceDelivery {
 		}
 
 		try {
-			return $this->dispatch_run_now( $owner, $name, $lease_raw );
+			return $this->dispatch_run_now( $registration_key, $owner, $name, $lease_raw );
 		} finally {
 			$this->lease->release( $registration_key, $lease_raw );
 		}
@@ -234,8 +243,8 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$schedule = $this->registry->get( $registration_key );
-		if ( null === $schedule ) {
+		$declaration = $this->registry->get( $registration_key );
+		if ( null === $declaration ) {
 			$this->logger->debug(
 				'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.',
 				array( 'registration_key' => $registration_key )
@@ -243,6 +252,8 @@ final readonly class OccurrenceDelivery {
 
 			return;
 		}
+
+		$schedule = $declaration['schedule'];
 
 		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
 			$this->logger->debug(
@@ -253,7 +264,10 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$parts = \explode( ':', $registration_key, 2 );
+		$parts = WorkIdentity::parts( $registration_key );
+		if ( null === $parts ) {
+			return;
+		}
 		$owner = $parts[0];
 		$name  = $parts[1];
 		$now   = $this->clock->now()->getTimestamp();
@@ -284,11 +298,24 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
+		/**
+		 * Filters the grace window for one schedule occurrence.
+		 *
+		 * The dynamic portion of the hook name, `$registration_key`, is the complete owner-qualified
+		 * schedule identity.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int    $interval         Default grace window in seconds.
+		 * @param   string $owner            Stable consumer identifier.
+		 * @param   string $registration_key Complete owner-qualified schedule identity.
+		 */
 		$grace = \apply_filters(
-			'a8csp_background_tasks/misfire_grace/' . $name,
+			'a8csp_background_tasks/misfire_grace/' . $registration_key,
 			$interval,
 			$owner,
-			$name
+			$registration_key
 		);
 		if ( ! \is_int( $grace ) || 0 > $grace ) {
 			$grace = $interval;
@@ -318,16 +345,40 @@ final readonly class OccurrenceDelivery {
 			$this->persist_delivery_state( $registration_key, $owner, $registration );
 			try {
 				try {
+					/**
+					 * Fires when a Skip schedule drops one beyond-grace occurrence.
+					 *
+					 * The dynamic portion of the hook name, `$registration_key`, is the complete
+					 * owner-qualified schedule identity.
+					 *
+					 * @since   1.0.0
+					 * @version 1.0.0
+					 *
+					 * @param   string $owner        Stable consumer identifier.
+					 * @param   int    $misfired_due Dropped occurrence due timestamp.
+					 * @param   int    $now          Occurrence observation timestamp.
+					 */
 					\do_action(
-						'a8csp_background_tasks/misfired/' . $name,
+						'a8csp_background_tasks/misfired/' . $registration_key,
 						$owner,
 						$misfired_due,
 						$now
 					);
 				} finally {
+					/**
+					 * Fires after the name-specific misfired schedule hook.
+					 *
+					 * @since   1.0.0
+					 * @version 1.0.0
+					 *
+					 * @param   string $registration_key Complete owner-qualified schedule identity.
+					 * @param   string $owner            Stable consumer identifier.
+					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
+					 * @param   int    $now              Occurrence observation timestamp.
+					 */
 					\do_action(
 						'a8csp_background_tasks/misfired',
-						$name,
+						$registration_key,
 						$owner,
 						$misfired_due,
 						$now
@@ -360,7 +411,7 @@ final readonly class OccurrenceDelivery {
 		$accepted_registration['next_due']   = $next_due;
 		$accepted_registration['last_fired'] = $now;
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_task(
-			$schedule->task,
+			$declaration['task'],
 			$schedule->args,
 			$schedule->overlap,
 			$schedule->priority,
@@ -410,14 +461,14 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner     Stable consumer identifier.
-	 * @param   string $name      Stable schedule name.
-	 * @param   string $lease_raw Exact occurrence-lease row claimed by this dispatch.
+	 * @param   string $registration_key Complete owner-qualified schedule identity.
+	 * @param   string $owner            Stable consumer identifier.
+	 * @param   string $name             Stable schedule name.
+	 * @param   string $lease_raw        Exact occurrence-lease row claimed by this dispatch.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
-	private function dispatch_run_now( string $owner, string $name, string $lease_raw ): AbstractResult {
-		$registration_key  = $owner . ':' . $name;
+	private function dispatch_run_now( string $registration_key, string $owner, string $name, string $lease_raw ): AbstractResult {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			return new Failure( $registration_read->error );
@@ -436,8 +487,8 @@ final readonly class OccurrenceDelivery {
 			);
 		}
 
-		$schedule = $this->registry->get( $registration_key );
-		if ( null === $schedule ) {
+		$declaration = $this->registry->get( $registration_key );
+		if ( null === $declaration ) {
 			return new Failure(
 				new EngineError(
 					\sprintf(
@@ -448,6 +499,8 @@ final readonly class OccurrenceDelivery {
 				)
 			);
 		}
+
+		$schedule = $declaration['schedule'];
 
 		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
 			return new Failure(
@@ -464,7 +517,7 @@ final readonly class OccurrenceDelivery {
 		$accepted_registration               = $registration;
 		$accepted_registration['last_fired'] = $this->clock->now()->getTimestamp();
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_task(
-			$schedule->task,
+			$declaration['task'],
 			$schedule->args,
 			$schedule->overlap,
 			$schedule->priority,

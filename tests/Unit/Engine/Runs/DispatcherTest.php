@@ -23,6 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
@@ -61,6 +62,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
+#[UsesClass( WorkRegistry::class )]
 final class DispatcherTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -69,10 +71,13 @@ final class DispatcherTest extends TestCase {
 		'mode'    => 'full',
 	);
 
-	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const NAME      = 'email-digest';
-	private const NOW       = 1_700_000_000;
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
+	private const ARGS_HASH        = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const NAME             = 'email-digest';
+	private const NOW              = 1_700_000_000;
+	private const OWNER            = 'runs-tests';
+	private const RUN_ID           = '00000000001700000000-0000000000000000042';
+	private const UNKNOWN_IDENTITY = self::OWNER . ':unknown';
 
 	private FixedClock $clock;
 	private RecordingBackend $backend;
@@ -133,10 +138,11 @@ final class DispatcherTest extends TestCase {
 		$this->logger     = new RecordingLogger();
 		$this->randomizer = new RecordingRandomizer( 42 );
 		$this->task       = new RecordingTask( self::NAME );
-		$this->registry   = new TaskRegistry();
-		$this->registry->register( $this->task );
+		$work             = new WorkRegistry();
+		$this->registry   = new TaskRegistry( $work );
+		$this->registry->register( self::IDENTITY, $this->task );
 		$this->wpdb           = new WpdbLockSpy();
-		$batches              = new BatchRegistry();
+		$batches              = new BatchRegistry( $work );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
@@ -173,7 +179,7 @@ final class DispatcherTest extends TestCase {
 				$scheduled_state = $this->option( $this->run_option_name() );
 			}
 		);
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: 23 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -192,8 +198,8 @@ final class DispatcherTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::NAME, self::RUN_ID, 1 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 23,
 					),
@@ -229,7 +235,7 @@ final class DispatcherTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 		self::assertSame(
 			array(
@@ -242,7 +248,7 @@ final class DispatcherTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
+			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
 		);
 		self::assertSame(
 			array(
@@ -255,12 +261,12 @@ final class DispatcherTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/started/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/started/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/started',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -273,11 +279,11 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_wraps_a_recording_backend_for_group_clearance(): void {
-		$enqueued = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$enqueued = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $enqueued );
 		$this->backend->calls = array();
 
-		$cancelled = $this->dispatcher->cancel( self::NAME, self::RUN_ID );
+		$cancelled = $this->dispatcher->cancel( self::IDENTITY, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( self::RUN_ID, $cancelled->value );
@@ -292,7 +298,7 @@ final class DispatcherTest extends TestCase {
 					'args' => array(
 						'hook'  => '',
 						'args'  => array(),
-						'group' => self::NAME . '|' . self::RUN_ID,
+						'group' => self::IDENTITY . '|' . self::RUN_ID,
 					),
 				),
 			),
@@ -307,17 +313,17 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_enqueue_terminalizes_when_a_task_started_listener_throws(): void {
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/started/' . self::NAME => new \RuntimeException(
+			'a8csp_background_tasks/started/' . self::IDENTITY => new \RuntimeException(
 				'Started listener exploded.'
 			),
 		);
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" started listener failed because RuntimeException was thrown. Fix the started-hook listener before enqueueing the task again.',
+			'Task "runs-tests:email-digest" started listener failed because RuntimeException was thrown. Fix the started-hook listener before enqueueing the task again.',
 			$result->error->message
 		);
 		self::assertCount( 1, $this->backend->calls );
@@ -331,9 +337,9 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( $result->error->message, $stored_error['message'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started/' . self::IDENTITY,
 				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -354,7 +360,7 @@ final class DispatcherTest extends TestCase {
 	): void {
 		if ( null !== $staleness_filter ) {
 			$this->set_filter_value(
-				'a8csp_background_tasks/lock_staleness/' . self::NAME,
+				'a8csp_background_tasks/lock_staleness/' . self::IDENTITY,
 				$staleness_filter
 			);
 		}
@@ -364,7 +370,7 @@ final class DispatcherTest extends TestCase {
 
 		$this->seed_running_lock( $heartbeat_age );
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, unique: true );
 
 		if ( $is_reclaimed ) {
 			self::assertInstanceOf( Success::class, $result );
@@ -376,7 +382,7 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" is already running as run "run-running"; wait for that run to finish before dispatching the same arguments.',
+			'Task "runs-tests:email-digest" is already running as run "run-running"; wait for that run to finish before dispatching the same arguments.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
@@ -396,12 +402,12 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
+			'Task "runs-tests:email-digest" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
 			$result->error->message
 		);
 		self::assertSame( $incumbent_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
@@ -417,7 +423,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_passes_all_documented_arguments_to_the_lock_staleness_filter(): void {
 		$filter_args = null;
 		$this->set_filter_value(
-			'a8csp_background_tasks/lock_staleness/' . self::NAME,
+			'a8csp_background_tasks/lock_staleness/' . self::IDENTITY,
 			static function ( int $default_staleness ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -428,7 +434,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -523,7 +529,7 @@ final class DispatcherTest extends TestCase {
 				$scheduled_state = $this->option( $this->run_option_name() );
 			}
 		);
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120, unique: true, priority: 31 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 120, unique: true, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -533,8 +539,8 @@ final class DispatcherTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp_background_tasks/run',
 						'timestamp' => self::NOW + 120,
-						'args'      => array( self::NAME, self::RUN_ID, 1 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
+						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'     => self::IDENTITY . '|' . self::RUN_ID,
 						'priority'  => 31,
 					),
 				),
@@ -566,7 +572,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_fails(): void {
 		$this->wpdb->script_result( 'update', false );
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 120 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertNull( $this->lock() );
@@ -587,12 +593,12 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 120 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.',
+			'Task "runs-tests:email-digest" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.',
 			$result->error->message
 		);
 		self::assertNull( $this->lock() );
@@ -606,7 +612,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_passes_unique_to_async_scheduling(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Success::class, $result );
 		$call = $this->backend->calls[0] ?? null;
@@ -631,12 +637,12 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_rejects_an_unknown_task_without_touching_boundaries(): void {
-		$result = $this->dispatcher->enqueue( 'unknown', self::ARGS );
+		$result = $this->dispatcher->enqueue( self::UNKNOWN_IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "unknown" is not registered; register it before enqueueing.',
+			'Task "runs-tests:unknown" is not registered; register it before enqueueing.',
 			$result->error->message
 		);
 		$this->assert_enqueue_boundaries_untouched();
@@ -649,13 +655,13 @@ final class DispatcherTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_priorities' )]
 	public function test_enqueue_rejects_priority_outside_the_engine_range( int $priority ): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: $priority );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, priority: $priority );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
 			\sprintf(
-				'Task "email-digest" priority %d is invalid; pass a value from 0 through 255.',
+				'Task "runs-tests:email-digest" priority %d is invalid; pass a value from 0 through 255.',
 				$priority
 			),
 			$result->error->message
@@ -690,19 +696,19 @@ final class DispatcherTest extends TestCase {
 
 		$this->backend->results['enqueue_async'] = $failure;
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 
 		self::assertSame( $failure, $result );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_history_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_history_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame(
 			array(
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 	}
 
@@ -713,7 +719,7 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_enqueue_rejects_non_scalar_argument_trees_before_claiming_a_lock(): void {
 		$result = $this->dispatcher->enqueue(
-			self::NAME,
+			self::IDENTITY,
 			array(
 				'callback' => static function (): void {},
 			)
@@ -722,7 +728,7 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
+			'Task "runs-tests:email-digest" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
 			$result->error->message
 		);
 		$this->assert_enqueue_boundaries_untouched();
@@ -736,12 +742,12 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_rejects_a_delay_that_overflows_unix_seconds(): void {
 		$this->clock->timestamp = \PHP_INT_MAX - 5;
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 10 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 10 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" delay 10 exceeds supported Unix seconds; pass a smaller delay.',
+			'Task "runs-tests:email-digest" delay 10 exceeds supported Unix seconds; pass a smaller delay.',
 			$result->error->message
 		);
 		self::assertSame( 1, $this->clock->calls );
@@ -769,7 +775,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_reenqueues_a_task_and_removes_the_failed_entry(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-run',
@@ -787,7 +793,7 @@ final class DispatcherTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$new_run_id              = '00000000001700000100-0000000000000000043';
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
@@ -803,8 +809,8 @@ final class DispatcherTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::NAME, $new_run_id, 1 ),
-						'group'    => self::NAME . '|' . $new_run_id,
+						'args'     => array( self::IDENTITY, $new_run_id, 1 ),
+						'group'    => self::IDENTITY . '|' . $new_run_id,
 						'unique'   => false,
 						'priority' => 10,
 					),
@@ -812,7 +818,7 @@ final class DispatcherTest extends TestCase {
 			),
 			$this->backend->calls
 		);
-		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
+		$new_state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $new_run_id );
 		self::assertIsArray( $new_state );
 		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
 		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
@@ -820,7 +826,7 @@ final class DispatcherTest extends TestCase {
 
 	/** A failed retained-entry removal is logged without changing a successful retry outcome. */
 	public function test_retry_failed_logs_a_failed_retained_entry_removal_and_keeps_success(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-run',
@@ -838,7 +844,7 @@ final class DispatcherTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$this->wpdb->script_result( 'update', false );
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( '00000000001700000100-0000000000000000043', $result->value );
@@ -853,7 +859,7 @@ final class DispatcherTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Retried run "failed-run" could not be removed from retained failed-run data.',
 					'context' => array(
-						'name'   => self::NAME,
+						'name'   => self::IDENTITY,
 						'run_id' => 'failed-run',
 					),
 				),
@@ -868,7 +874,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_uses_the_first_entry_matching_the_run_identifier(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-run',
@@ -896,11 +902,11 @@ final class DispatcherTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$new_run_id              = '00000000001700000100-0000000000000000043';
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
-		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
+		$new_state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $new_run_id );
 		self::assertIsArray( $new_state );
 		self::assertSame( array( 'ordinal' => 'first' ), $new_state['start_args'] ?? null );
 	}
@@ -911,7 +917,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_rejects_an_authoritative_store_read_failure(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-run',
@@ -923,7 +929,7 @@ final class DispatcherTest extends TestCase {
 			)
 		);
 		$this->assert_failed_run_storage_is_authoritative();
-		$failed_key = 'a8csp_bgte_failed_' . self::NAME;
+		$failed_key = 'a8csp_bgte_failed_' . self::IDENTITY;
 		$persisted  = $this->wpdb->rows[ $failed_key ] ?? null;
 		self::assertIsString( $persisted );
 		$this->backend->calls    = array();
@@ -935,7 +941,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'failed-run' );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -955,7 +961,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_rejects_a_missing_entry_and_names_what_exists(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'retained-run',
@@ -970,12 +976,12 @@ final class DispatcherTest extends TestCase {
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'missing-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'missing-run' );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Failed run "missing-run" for background-work "email-digest" is not retained; retry one of the retained run identifiers: "retained-run".',
+			'Failed run "missing-run" for background-work "runs-tests:email-digest" is not retained; retry one of the retained run identifiers: "retained-run".',
 			$result->error->message
 		);
 		$remaining = $store->all();
@@ -994,7 +1000,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_retains_the_task_entry_when_enqueue_fails(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-run',
@@ -1024,7 +1030,7 @@ final class DispatcherTest extends TestCase {
 		$this->randomizer->value                 = 43;
 		$this->clock->timestamp                  = self::NOW + 100;
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'failed-run' );
 		$actual = $store->all();
 		if ( $actual->is_failure() ) {
 			self::fail( $actual->error->message );
@@ -1045,7 +1051,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -1054,7 +1060,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
+		return 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**
@@ -1079,7 +1085,7 @@ final class DispatcherTest extends TestCase {
 		);
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::NAME ] = array(
+		$options[ 'a8csp_bgte_latest_' . self::IDENTITY ] = array(
 			'all'     => 'run-running',
 			'by_hash' => array( self::ARGS_HASH => 'run-running' ),
 		);
@@ -1121,7 +1127,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private function failed_runs(): array {
-		$key = 'a8csp_bgte_failed_' . self::NAME;
+		$key = 'a8csp_bgte_failed_' . self::IDENTITY;
 		$raw = $this->wpdb->rows[ $key ] ?? null;
 		self::assertIsString( $raw );
 		$value = RawOptionDecoder::decode( $raw );
@@ -1142,7 +1148,7 @@ final class DispatcherTest extends TestCase {
 	 */
 	private static function retained_failure( string $run_id, int $attempts ): RunFailure {
 		return new RunFailure(
-			name: self::NAME,
+			name: self::IDENTITY,
 			run_id: $run_id,
 			attempts: $attempts,
 			stage: 'execution',
@@ -1161,7 +1167,7 @@ final class DispatcherTest extends TestCase {
 	private function assert_no_failed_run_option_function_writes(): void {
 		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
-		$key = 'a8csp_bgte_failed_' . self::NAME;
+		$key = 'a8csp_bgte_failed_' . self::IDENTITY;
 		foreach ( $calls as $call ) {
 			self::assertIsArray( $call );
 			$args = $call['args'] ?? null;

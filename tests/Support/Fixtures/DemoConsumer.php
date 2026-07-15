@@ -27,7 +27,7 @@ final readonly class DemoConsumer {
 	 *
 	 * @var     string
 	 */
-	public const OWNER = 'a8csp-bgte-demo';
+	public const OWNER = 'a8csp-demo-consumer';
 
 	/**
 	 * Stable name of the recurring site-health schedule.
@@ -101,33 +101,11 @@ final readonly class DemoConsumer {
 	 * @return  void
 	 */
 	public function register_background_work(): void {
-		$engine = \a8csp_bgte_engine();
-		if ( null === $engine ) {
-			/**
-			 * Fires when the demo consumer cannot reach the engine during registration.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $level   Consumer log level.
-			 * @param   string                  $message Consumer failure message.
-			 * @param   array<array-key, mixed> $context Structured failure context.
-			 */
-			\do_action(
-				self::LOG_HOOK,
-				'error',
-				'The demo consumer could not register because the background tasks engine is unavailable.',
-				array()
-			);
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( new SiteHealthPingTask() );
+		$consumer->batches()->register( new CommentCountRecountBatch() );
 
-			return;
-		}
-
-		$engine->tasks()->register( new SiteHealthPingTask() );
-		$engine->batches()->register( new CommentCountRecountBatch() );
-
-		$synced = $engine->schedules()->sync(
-			self::OWNER,
+		$synced = $consumer->schedules()->sync(
 			array(
 				new Schedule(
 					self::SCHEDULE_NAME,
@@ -141,12 +119,21 @@ final readonly class DemoConsumer {
 			)
 		);
 		if ( $synced->is_failure() ) {
-			// Payload documented at the hook's first fire site above.
+			/**
+			 * Fires when the demo consumer cannot synchronize its schedule declaration.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $level   Consumer log level.
+			 * @param   string                  $message Consumer failure message.
+			 * @param   array<array-key, mixed> $context Structured failure context.
+			 */
 			\do_action(
 				self::LOG_HOOK,
 				'error',
 				'The demo consumer could not synchronize its site-health schedule.',
-				array( 'error' => $synced->error->message )
+				array( 'error_type' => \get_debug_type( $synced->error ) )
 			);
 		}
 	}

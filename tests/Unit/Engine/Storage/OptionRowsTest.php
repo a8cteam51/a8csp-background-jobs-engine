@@ -92,6 +92,36 @@ final class OptionRowsTest extends TestCase {
 		);
 	}
 
+	/** A bounded page keysets past rejected candidates and counts only accepted names. */
+	public function test_option_names_page_applies_the_limit_after_validation(): void {
+		$prefix       = 'a8csp_bgte_run_owner:email-digest_';
+		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
+		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
+		$wpdb         = new WpdbLockSpy();
+		$wpdb->put( $prefix . \sprintf( '!%039d', 1 ), 'malformed-run-row' );
+		$wpdb->put( $prefix . \sprintf( '!%039d', 2 ), 'malformed-run-row' );
+		$wpdb->put( $first_valid, 'first-run-row' );
+		$wpdb->put( $second_valid, 'second-run-row' );
+
+		$page = ( new OptionRows( $wpdb ) )->option_names_page(
+			$prefix,
+			\strlen( $first_valid ),
+			1,
+			static fn ( string $name ): bool => 1 === \preg_match(
+				'/\A\d{20}-\d{19}\z/D',
+				\substr( $name, \strlen( $prefix ) )
+			)
+		);
+
+		self::assertSame(
+			array(
+				'names' => array( $first_valid ),
+				'total' => 2,
+			),
+			$page
+		);
+	}
+
 	/** Authoritative reads distinguish found, missing, and failed outcomes. */
 	public function test_read_returns_explicit_found_missing_and_failed_outcomes(): void {
 		$wpdb = new WpdbLockSpy();

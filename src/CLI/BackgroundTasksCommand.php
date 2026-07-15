@@ -2,10 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component as EngineComponent;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -25,6 +26,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
  *     error: array{class: string|null, message: string}
  * }
  * @phpstan-type FailedRunRow array{
+ *     owner: string,
  *     name: string,
  *     run_id: string,
  *     failed_at: string,
@@ -82,6 +84,7 @@ final class BackgroundTasksCommand {
 	 * @var     list<string>
 	 */
 	private const LIST_FIELDS = array(
+		'owner',
 		'name',
 		'run_id',
 		'failed_at',
@@ -187,14 +190,14 @@ final class BackgroundTasksCommand {
 	 * ## OPTIONS
 	 *
 	 * <name>
-	 * : Stable task or batch name.
+	 * : Composed `{owner}:{name}` task or batch identity.
 	 *
 	 * <run_id>
 	 * : Retained engine-run identifier.
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks cancel email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp background-tasks cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -233,6 +236,12 @@ final class BackgroundTasksCommand {
 			return array(
 				'action'  => 'error',
 				'message' => 'Cancel requires exactly a name and run_id; use wp background-tasks cancel <name> <run_id>.',
+			);
+		}
+		if ( null === WorkIdentity::parts( $args[0] ) ) {
+			return array(
+				'action'  => 'error',
+				'message' => 'Cancel name is invalid; use a composed {owner}:{name} identity.',
 			);
 		}
 
@@ -335,6 +344,14 @@ final class BackgroundTasksCommand {
 			}
 
 			$owner = $owner_argument;
+			try {
+				WorkIdentity::validate_owner( $owner, true );
+			} catch ( \InvalidArgumentException ) {
+				return array(
+					'action'  => 'error',
+					'message' => 'Schedule list owner is invalid; pass a canonical owner with --owner=<owner>.',
+				);
+			}
 		}
 
 		$format = $assoc_args['format'] ?? 'table';
@@ -364,15 +381,15 @@ final class BackgroundTasksCommand {
 	 * : Operation to perform: list.
 	 *
 	 * <name>
-	 * : Stable task or batch name.
+	 * : Composed `{owner}:{name}` task or batch identity.
 	 *
 	 * [--format=<format>]
 	 * : Render list output as table, csv, json, count, or yaml. Defaults to table.
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks runs list email-digest
-	 *     $ wp background-tasks runs list email-digest --format=json
+	 *     $ wp background-tasks runs list consumer-plugin:email-digest
+	 *     $ wp background-tasks runs list consumer-plugin:email-digest --format=json
 	 *
 	 * A waiting live run has a backend delivery or retry pending. An executing run is inside its
 	 * handler, and a stale heartbeat means maintenance can reclaim the abandoned execution. The
@@ -434,10 +451,10 @@ final class BackgroundTasksCommand {
 		}
 
 		$name = $args[1];
-		if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $name ) ) {
+		if ( null === WorkIdentity::parts( $name ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Run name is invalid; use lowercase letters, digits, underscores, and hyphens.',
+				'message' => 'Run name is invalid; use a composed {owner}:{name} identity.',
 			);
 		}
 
@@ -465,13 +482,16 @@ final class BackgroundTasksCommand {
 	 * : Operation to perform: list, retry, or purge.
 	 *
 	 * [<name>]
-	 * : Stable task or batch name. Required by retry and by a name-scoped purge.
+	 * : Composed `{owner}:{name}` task or batch identity. Required by retry and by a name-scoped purge.
 	 *
 	 * [<run_id>]
 	 * : Retained failed-run identifier. Required by retry.
 	 *
 	 * [--all]
 	 * : Purge every failed-run store. Valid only with purge and without a name.
+	 *
+	 * [--owner=<owner>]
+	 * : Show only failed runs belonging to the exact owner. Valid only with list.
 	 *
 	 * [--format=<format>]
 	 * : Render list output in the selected format. Defaults to table.
@@ -487,9 +507,9 @@ final class BackgroundTasksCommand {
 	 * ## EXAMPLES
 	 *
 	 *     $ wp background-tasks failed list
-	 *     $ wp background-tasks failed list --format=json
-	 *     $ wp background-tasks failed retry email-digest 00000000000000000001-0000000000000000001
-	 *     $ wp background-tasks failed purge email-digest
+	 *     $ wp background-tasks failed list --owner=consumer-plugin --format=json
+	 *     $ wp background-tasks failed retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp background-tasks failed purge consumer-plugin:email-digest
 	 *     $ wp background-tasks failed purge --all
 	 *
 	 * @since   1.0.0
@@ -509,7 +529,7 @@ final class BackgroundTasksCommand {
 
 		switch ( $request['action'] ) {
 			case 'list':
-				$this->list_failed_runs( $request['format'] );
+				$this->list_failed_runs( $request['owner'], $request['format'] );
 				break;
 			case 'retry':
 				$this->retry_failed_run( $request['name'], $request['run_id'] );
@@ -532,7 +552,7 @@ final class BackgroundTasksCommand {
 	 * @param   array<string, mixed> $assoc_args Named command arguments.
 	 *
 	 * @return  array{action: 'error', message: string}
-	 *          |array{action: 'list', format: string}
+	 *          |array{action: 'list', owner: string|null, format: string}
 	 *          |array{action: 'retry', name: string, run_id: string}
 	 *          |array{action: 'purge', name: string|null}
 	 */
@@ -547,11 +567,32 @@ final class BackgroundTasksCommand {
 		$action = $args[0];
 		switch ( $action ) {
 			case 'list':
-				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'format' ) ) ) {
+				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'List accepts only --format; use wp background-tasks failed list [--format=<format>].',
+						'message' => 'List accepts only --owner and --format; use wp background-tasks failed list [--owner=<owner>] [--format=<format>].',
 					);
+				}
+
+				$owner = null;
+				if ( \array_key_exists( 'owner', $assoc_args ) ) {
+					$owner_argument = $assoc_args['owner'];
+					if ( ! \is_string( $owner_argument ) ) {
+						return array(
+							'action'  => 'error',
+							'message' => 'List owner is invalid; pass a value with --owner=<owner>.',
+						);
+					}
+
+					$owner = $owner_argument;
+					try {
+						WorkIdentity::validate_owner( $owner, true );
+					} catch ( \InvalidArgumentException ) {
+						return array(
+							'action'  => 'error',
+							'message' => 'List owner is invalid; pass a canonical owner with --owner=<owner>.',
+						);
+					}
 				}
 
 				// WP-CLI injects documented YAML defaults into every action, so the fallback stays code-only.
@@ -565,6 +606,7 @@ final class BackgroundTasksCommand {
 
 				return array(
 					'action' => 'list',
+					'owner'  => $owner,
 					'format' => $format,
 				);
 			case 'retry':
@@ -572,6 +614,12 @@ final class BackgroundTasksCommand {
 					return array(
 						'action'  => 'error',
 						'message' => 'Retry requires exactly a name and run_id; use wp background-tasks failed retry <name> <run_id>.',
+					);
+				}
+				if ( null === WorkIdentity::parts( $args[1] ) ) {
+					return array(
+						'action'  => 'error',
+						'message' => 'Retry name is invalid; use a composed {owner}:{name} identity.',
 					);
 				}
 
@@ -597,10 +645,10 @@ final class BackgroundTasksCommand {
 
 				if ( 2 === \count( $args ) && ! \array_key_exists( 'all', $assoc_args ) ) {
 					$name = $args[1];
-					if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $name ) ) {
+					if ( null === WorkIdentity::parts( $name ) ) {
 						return array(
 							'action'  => 'error',
-							'message' => 'Purge name is invalid; use lowercase letters, digits, underscores, and hyphens.',
+							'message' => 'Purge name is invalid; use a composed {owner}:{name} identity.',
 						);
 					}
 
@@ -635,17 +683,23 @@ final class BackgroundTasksCommand {
 	 *
 	 * @phpstan-param array<string, list<FailedRunEntry>> $entries_by_name
 	 *
-	 * @param   array $entries_by_name Failed runs keyed by task or batch name.
+	 * @param   array       $entries_by_name Failed runs keyed by composed task or batch identity.
+	 * @param   string|null $owner           Exact owner filter, or null for every owner.
 	 *
 	 * @phpstan-return list<FailedRunRow>
 	 *
 	 * @return  array
 	 */
-	public static function rows_from_entries( array $entries_by_name ): array {
+	public static function rows_from_entries( array $entries_by_name, ?string $owner = null ): array {
 		\ksort( $entries_by_name, \SORT_STRING );
 
 		$rows = array();
 		foreach ( $entries_by_name as $name => $entries ) {
+			$parts = WorkIdentity::parts( $name );
+			if ( null === $parts || ( null !== $owner && $owner !== $parts[0] ) ) {
+				continue;
+			}
+
 			\usort(
 				$entries,
 				static function ( array $left, array $right ): int {
@@ -656,6 +710,7 @@ final class BackgroundTasksCommand {
 
 			foreach ( $entries as $entry ) {
 				$rows[] = array(
+					'owner'         => $parts[0],
 					'name'          => $name,
 					'run_id'        => $entry['run_id'],
 					'failed_at'     => \gmdate( \DATE_ATOM, $entry['failed_at'] ),
@@ -670,7 +725,7 @@ final class BackgroundTasksCommand {
 	}
 
 	/**
-	 * Extracts valid stable names from discovered failed-run option names.
+	 * Extracts valid composed identities from discovered failed-run option names.
 	 *
 	 * @internal Command discovery seam.
 	 *
@@ -689,7 +744,7 @@ final class BackgroundTasksCommand {
 			}
 
 			$name = \substr( $option_name, \strlen( self::FAILED_OPTION_PREFIX ) );
-			if ( 1 === \preg_match( '/\A[a-z0-9_-]+\z/', $name ) ) {
+			if ( null !== WorkIdentity::parts( $name ) ) {
 				$names[ $name ] = true;
 			}
 		}
@@ -965,7 +1020,7 @@ final class BackgroundTasksCommand {
 	 * @return  void
 	 */
 	private function list_schedules( ?string $owner, string $format ): void {
-		$inspection = EngineComponent::get_inspection();
+		$inspection = Container::get_inspection();
 		if ( null === $inspection ) {
 			\WP_CLI::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
@@ -1004,13 +1059,13 @@ final class BackgroundTasksCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Composed task or batch identity.
 	 * @param   string $format WP-CLI output format.
 	 *
 	 * @return  void
 	 */
 	private function list_runs( string $name, string $format ): void {
-		$inspection = EngineComponent::get_inspection();
+		$inspection = Container::get_inspection();
 		if ( null === $inspection ) {
 			\WP_CLI::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
@@ -1117,18 +1172,18 @@ final class BackgroundTasksCommand {
 	}
 
 	/**
-	 * Delegates cancellation to the public engine facade and reports its result.
+	 * Delegates cancellation to the internal engine facade and reports its result.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Composed task or batch identity.
 	 * @param   string $run_id Retained run identifier.
 	 *
 	 * @return  void
 	 */
 	private function cancel_run( string $name, string $run_id ): void {
-		$engine = \a8csp_bgte_engine();
+		$engine = Container::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
 			return;
@@ -1155,15 +1210,28 @@ final class BackgroundTasksCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $format WP-CLI output format.
+	 * @param   string|null $owner  Exact owner filter, or null for every owner.
+	 * @param   string      $format WP-CLI output format.
 	 *
 	 * @return  void
 	 */
-	private function list_failed_runs( string $format ): void {
+	private function list_failed_runs( ?string $owner, string $format ): void {
 		$names = $this->failed_run_names();
 		if ( null === $names ) {
 			\WP_CLI::error( 'The database check for failed-run stores failed; resolve the database error and try again.' );
 			return;
+		}
+		if ( null !== $owner ) {
+			$names = \array_values(
+				\array_filter(
+					$names,
+					static function ( string $name ) use ( $owner ): bool {
+						$parts = WorkIdentity::parts( $name );
+
+						return null !== $parts && $owner === $parts[0];
+					}
+				)
+			);
 		}
 
 		global $wpdb;
@@ -1190,7 +1258,7 @@ final class BackgroundTasksCommand {
 			$entries_by_name[ $name ] = $entries->value;
 		}
 
-		$rows = self::rows_from_entries( $entries_by_name );
+		$rows = self::rows_from_entries( $entries_by_name, $owner );
 		if ( array() === $rows && 'table' === $format ) {
 			\WP_CLI::line( 'No failed runs are retained.' );
 			return;
@@ -1200,18 +1268,18 @@ final class BackgroundTasksCommand {
 	}
 
 	/**
-	 * Delegates one retry to the public engine facade and reports its result.
+	 * Delegates one retry to the internal engine facade and reports its result.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task or batch name.
+	 * @param   string $name   Composed task or batch identity.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
 	 * @return  void
 	 */
 	private function retry_failed_run( string $name, string $run_id ): void {
-		$engine = \a8csp_bgte_engine();
+		$engine = Container::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
 			return;
@@ -1241,7 +1309,7 @@ final class BackgroundTasksCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $name Stable task or batch name, or null for every name.
+	 * @param   string|null $name Composed task or batch identity, or null for every identity.
 	 *
 	 * @return  void
 	 */
@@ -1288,7 +1356,7 @@ final class BackgroundTasksCommand {
 	}
 
 	/**
-	 * Discovers stable names from dynamically named failed-run option rows.
+	 * Discovers composed identities from dynamically named failed-run option rows.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

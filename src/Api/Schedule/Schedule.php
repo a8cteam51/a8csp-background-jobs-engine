@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -54,11 +55,7 @@ final readonly class Schedule {
 		public CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce,
 		public int $priority = 10,
 	) {
-		if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $this->name ) ) {
-			throw new \InvalidArgumentException(
-				'Schedule name is invalid; pass a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
-			);
-		}
+		WorkIdentity::validate_name( $this->name );
 
 		if ( 0 > $this->priority || 255 < $this->priority ) {
 			// Exception values are diagnostic data, not rendered output.

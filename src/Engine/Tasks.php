@@ -7,8 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 
 \defined( 'ABSPATH' ) || exit;
@@ -48,15 +46,16 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskInterface $task Task to register.
+	 * @param   string        $identity Complete owner-qualified identity.
+	 * @param   TaskInterface $task     Task to register.
 	 *
-	 * @throws  \InvalidArgumentException When the task name is outside the stable-name grammar.
-	 * @throws  \LogicException           When the task name is already registered.
+	 * @throws  \InvalidArgumentException When the identity and task name disagree, or a batch owns the identity.
+	 * @throws  \LogicException           When the task identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register( TaskInterface $task ): void {
-		$this->registry->register( $task );
+	public function register( string $identity, TaskInterface $task ): void {
+		$this->registry->register( $identity, $task );
 	}
 
 	/**
@@ -65,7 +64,7 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name     Stable task name.
+	 * @param   string                  $name     Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args     Task arguments.
 	 * @param   int                     $delay    Scheduling delay in seconds.
 	 * @param   bool                    $unique   Whether the backend retains an identical async action.
@@ -75,17 +74,6 @@ final readonly class Tasks {
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	public function enqueue( string $name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
-		if ( MaintenanceTask::NAME === $name ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Background-work name "%s" is engine-reserved; register and dispatch consumer work under its own name.',
-						MaintenanceTask::NAME
-					)
-				)
-			);
-		}
-
 		return $this->dispatcher->enqueue( $name, $args, $delay, $unique, $priority );
 	}
 

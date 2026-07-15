@@ -127,25 +127,6 @@ final readonly class EngineError implements ErrorInterface {
 	}
 
 	/**
-	 * Returns a failure that names the global background-work identity correction.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Ambiguous task and batch name.
-	 *
-	 * @return  self
-	 */
-	public static function ambiguous_name( string $name ): self {
-		return new self(
-			\sprintf(
-				'Background-work name "%s" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.',
-				$name
-			)
-		);
-	}
-
-	/**
 	 * Converts a retry-policy boundary throwable into terminal failure detail.
 	 *
 	 * @since   1.0.0

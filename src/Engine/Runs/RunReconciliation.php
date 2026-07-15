@@ -170,8 +170,9 @@ final readonly class RunReconciliation {
 				? $this->overlap_guard->fence_abandoned_run( $name, $state->args_hash, $run_id, $staleness )
 				: $this->overlap_guard->classify_run_fence( $name, $state->args_hash, $run_id );
 
-			$batch     = $this->batches->get( $name );
-			$work_type = null !== $batch && null === $this->tasks->get( $name ) ? 'Batch' : 'Task';
+			$kind      = $this->tasks->kind( $name );
+			$batch     = 'batch' === $kind ? $this->batches->get( $name ) : null;
+			$work_type = 'batch' === $kind ? 'Batch' : 'Task';
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the incumbent is still inside its callback; a fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
@@ -307,7 +308,7 @@ final readonly class RunReconciliation {
 			$failed_chunk = 'Batch' === $work_type && 'run' === ( $state->pending['stage'] ?? null )
 				? ( $state->queue[0] ?? null )
 				: null;
-			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
+			if ( null !== $batch ) {
 				$this->terminal_transitions->fail_batch(
 					$batch,
 					$name,
@@ -347,13 +348,12 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		$task           = $this->tasks->get( $name );
-		$batch          = $this->batches->get( $name );
+		$kind           = $this->tasks->kind( $name );
 		$resolved_batch = null;
-		if ( null !== $batch && null === $task ) {
+		if ( 'batch' === $kind ) {
 			$work_type      = 'Batch';
-			$resolved_batch = $batch;
-		} elseif ( null !== $task && null === $batch ) {
+			$resolved_batch = $this->batches->get( $name );
+		} elseif ( 'task' === $kind ) {
 			$work_type = 'Task';
 		} else {
 			// The callback superset lets an unresolved terminal row converge without inventing a persisted work-kind field.
@@ -398,9 +398,8 @@ final readonly class RunReconciliation {
 			throw new \LogicException( 'Pending-action redrive requires a durable descriptor.' );
 		}
 
-		$args  = array( $name, $run_id );
-		$batch = $this->batches->get( $name );
-		if ( 'run' === $pending['stage'] && null !== $batch && null === $this->tasks->get( $name ) ) {
+		$args = array( $name, $run_id );
+		if ( 'run' === $pending['stage'] && 'batch' === $this->tasks->kind( $name ) ) {
 			$chunk_args = $state->queue[0] ?? null;
 			if ( ! \is_array( $chunk_args ) ) {
 				throw new \LogicException( 'Pending batch run redrive requires a retained queue head.' );

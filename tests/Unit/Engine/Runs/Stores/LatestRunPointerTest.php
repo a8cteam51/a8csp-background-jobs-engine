@@ -18,6 +18,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class LatestRunPointerTest extends TestCase {
+	private const OWNER = 'runs-tests';
+
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
 
@@ -56,12 +58,23 @@ final class LatestRunPointerTest extends TestCase {
 	}
 
 	/**
+	 * Returns one owner-qualified test work identity.
+	 *
+	 * @param   string $name Owner-local work name.
+	 *
+	 * @return  string
+	 */
+	private static function identity( string $name ): string {
+		return self::OWNER . ':' . $name;
+	}
+
+	/**
 	 * Empty pointer reads report no latest run.
 	 *
 	 * @return  void
 	 */
 	public function test_reads_return_null_without_a_pointer(): void {
-		$pointer = new LatestRunPointer( 'reports', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'reports' ), $this->rows );
 
 		self::assertNull( $pointer->get_latest() );
 		self::assertNull( $pointer->get_latest_for_hash( 'hash-a' ) );
@@ -75,7 +88,7 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_record_overwrites_all_and_pins_the_literal_option_key(): void {
-		$pointer = new LatestRunPointer( 'reports', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'reports' ), $this->rows );
 
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-b', 'hash-b' ) );
@@ -90,7 +103,7 @@ final class LatestRunPointerTest extends TestCase {
 				'hash-b' => 'run-b',
 			),
 		);
-		$this->assert_pointer_row( 'a8csp_bgte_latest_reports', $expected );
+		$this->assert_pointer_row( 'a8csp_bgte_latest_runs-tests:reports', $expected );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
@@ -100,7 +113,7 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_distinct_hashes_evict_the_oldest_past_twenty(): void {
-		$pointer = new LatestRunPointer( 'exports', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'exports' ), $this->rows );
 
 		for ( $index = 0; $index <= 20; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
@@ -116,10 +129,10 @@ final class LatestRunPointerTest extends TestCase {
 				static fn ( int $index ): string => 'hash-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
 				\range( 1, 20 )
 			),
-			\array_keys( $this->by_hash_option( 'a8csp_bgte_latest_exports' ) )
+			\array_keys( $this->by_hash_option( 'a8csp_bgte_latest_runs-tests:exports' ) )
 		);
 
-		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_latest_exports'] ?? null );
+		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_latest_runs-tests:exports'] ?? null );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
@@ -129,13 +142,13 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_hash_repair_changes_the_global_pointer_when_absent_or_naming_the_displaced_run(): void {
-		$empty_pointer = new LatestRunPointer( 'empty-repairs', $this->rows );
+		$empty_pointer = new LatestRunPointer( self::identity( 'empty-repairs' ), $this->rows );
 		self::assertTrue( $empty_pointer->repair_for_hash( 'run-first-owner', 'hash-first' ) );
 
 		self::assertSame( 'run-first-owner', $empty_pointer->get_latest() );
 		self::assertSame( 'run-first-owner', $empty_pointer->get_latest_for_hash( 'hash-first' ) );
 
-		$pointer = new LatestRunPointer( 'repairs', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'repairs' ), $this->rows );
 		self::assertTrue( $pointer->record( 'run-old-a', 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-newest-b', 'hash-b' ) );
 
@@ -156,13 +169,13 @@ final class LatestRunPointerTest extends TestCase {
 				'hash-b' => 'run-owner-b',
 			),
 		);
-		$this->assert_pointer_row( 'a8csp_bgte_latest_repairs', $expected );
+		$this->assert_pointer_row( 'a8csp_bgte_latest_runs-tests:repairs', $expected );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
 	/** Two interleaved appends retain both writers while enforcing the twenty-identity cap. */
 	public function test_interleaved_record_appends_preserve_both_hashes_in_exact_capped_bytes(): void {
-		$key     = 'a8csp_bgte_latest_interleaved';
+		$key     = 'a8csp_bgte_latest_runs-tests:interleaved';
 		$by_hash = array();
 		for ( $index = 0; $index < 19; ++$index ) {
 			$suffix                       = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
@@ -175,8 +188,8 @@ final class LatestRunPointerTest extends TestCase {
 				'by_hash' => $by_hash,
 			)
 		);
-		$caller = new LatestRunPointer( 'interleaved', $this->rows );
-		$rival  = new LatestRunPointer( 'interleaved', $this->rows );
+		$caller = new LatestRunPointer( self::identity( 'interleaved' ), $this->rows );
+		$rival  = new LatestRunPointer( self::identity( 'interleaved' ), $this->rows );
 		$this->wpdb->before_next(
 			'update',
 			static function () use ( $rival ): void {
@@ -203,7 +216,7 @@ final class LatestRunPointerTest extends TestCase {
 
 	/** A lost exact-row update retries from fresh bytes and retains the rival identity. */
 	public function test_record_retries_a_lost_cas_and_preserves_the_rival_identity(): void {
-		$key    = 'a8csp_bgte_latest_latest-cas';
+		$key    = 'a8csp_bgte_latest_runs-tests:latest-cas';
 		$stored = array(
 			'all'     => 'run-a',
 			'by_hash' => array( 'hash-a' => 'run-a' ),
@@ -223,7 +236,7 @@ final class LatestRunPointerTest extends TestCase {
 				$wpdb->put( $key, $rival_raw );
 			}
 		);
-		$pointer = new LatestRunPointer( 'latest-cas', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'latest-cas' ), $this->rows );
 
 		self::assertTrue( $pointer->record( 'run-caller', 'hash-caller' ) );
 
@@ -250,25 +263,25 @@ final class LatestRunPointerTest extends TestCase {
 				$wpdb->last_error = 'scripted latest-pointer read failure';
 			}
 		);
-		$pointer = new LatestRunPointer( 'read-failure', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'read-failure' ), $this->rows );
 
 		self::assertFalse( $pointer->record( 'run-a', 'hash-a' ) );
 
-		self::assertArrayNotHasKey( 'a8csp_bgte_latest_read-failure', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgte_latest_runs-tests:read-failure', $this->wpdb->rows );
 		self::assertSame( array(), $this->write_queries() );
 		self::assertSame( array(), $this->option_calls() );
 	}
 
 	/** An unchanged row after a genuine update failure is not reported as a successful CAS. */
 	public function test_record_returns_false_when_a_failed_update_leaves_the_expected_row_unchanged(): void {
-		$key    = 'a8csp_bgte_latest_write-failure';
+		$key    = 'a8csp_bgte_latest_runs-tests:write-failure';
 		$stored = array(
 			'all'     => 'run-a',
 			'by_hash' => array( 'hash-a' => 'run-a' ),
 		);
 		$this->put_pointer( $key, $stored );
 		$this->wpdb->script_result( 'update', false );
-		$pointer = new LatestRunPointer( 'write-failure', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'write-failure' ), $this->rows );
 
 		self::assertFalse( $pointer->record( 'run-b', 'hash-b' ) );
 
@@ -279,9 +292,9 @@ final class LatestRunPointerTest extends TestCase {
 
 	/** A malformed existing row is replaced from its exact bytes with normalized pointer state. */
 	public function test_record_normalizes_a_malformed_authoritative_row(): void {
-		$key = 'a8csp_bgte_latest_malformed';
+		$key = 'a8csp_bgte_latest_runs-tests:malformed';
 		$this->wpdb->put( $key, 'not-a-serialized-pointer' );
-		$pointer = new LatestRunPointer( 'malformed', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'malformed' ), $this->rows );
 
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
 
@@ -297,13 +310,13 @@ final class LatestRunPointerTest extends TestCase {
 
 	/** Recording the already-current tail is confirmed without issuing a write. */
 	public function test_same_record_is_a_successful_no_op_without_a_write(): void {
-		$key    = 'a8csp_bgte_latest_no-op';
+		$key    = 'a8csp_bgte_latest_runs-tests:no-op';
 		$stored = array(
 			'all'     => 'run-a',
 			'by_hash' => array( 'hash-a' => 'run-a' ),
 		);
 		$this->put_pointer( $key, $stored );
-		$pointer = new LatestRunPointer( 'no-op', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'no-op' ), $this->rows );
 
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
 
@@ -314,7 +327,7 @@ final class LatestRunPointerTest extends TestCase {
 
 	/** Failed authoritative reads return no pointer and never fall back to a stale option-cache value. */
 	public function test_reads_return_null_without_writing_when_authoritative_reads_fail(): void {
-		$key    = 'a8csp_bgte_latest_failed-reads';
+		$key    = 'a8csp_bgte_latest_runs-tests:failed-reads';
 		$stored = array(
 			'all'     => 'run-authoritative',
 			'by_hash' => array( 'hash-a' => 'run-authoritative' ),
@@ -329,7 +342,7 @@ final class LatestRunPointerTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$pointer = new LatestRunPointer( 'failed-reads', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'failed-reads' ), $this->rows );
 		for ( $read = 0; $read < 2; ++$read ) {
 			$this->wpdb->before_next(
 				'select',
@@ -353,7 +366,7 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_existing_hash_refresh_changes_the_next_eviction_victim(): void {
-		$pointer = new LatestRunPointer( 'imports', $this->rows );
+		$pointer = new LatestRunPointer( self::identity( 'imports' ), $this->rows );
 
 		for ( $index = 0; $index < 20; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
@@ -375,9 +388,9 @@ final class LatestRunPointerTest extends TestCase {
 				),
 				array( 'hash-00', 'hash-20' )
 			),
-			\array_keys( $this->by_hash_option( 'a8csp_bgte_latest_imports' ) )
+			\array_keys( $this->by_hash_option( 'a8csp_bgte_latest_runs-tests:imports' ) )
 		);
-		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_latest_imports'] ?? null );
+		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_latest_runs-tests:imports'] ?? null );
 		self::assertSame( array(), $this->option_calls() );
 	}
 

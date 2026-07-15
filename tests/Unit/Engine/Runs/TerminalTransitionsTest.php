@@ -23,6 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -60,6 +61,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
+#[UsesClass( WorkRegistry::class )]
 final class TerminalTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -69,8 +71,10 @@ final class TerminalTransitionsTest extends TestCase {
 	);
 
 	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const IDENTITY  = self::OWNER . ':' . self::NAME;
 	private const NAME      = 'email-digest';
 	private const NOW       = 1_700_000_000;
+	private const OWNER     = 'runs-tests';
 	private const RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
@@ -135,11 +139,12 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->logger     = new RecordingLogger();
 		$this->randomizer = new RecordingRandomizer( 42 );
 		$this->task       = new RecordingTask( self::NAME );
-		$this->registry   = new TaskRegistry();
-		$this->registry->register( $this->task );
+		$work             = new WorkRegistry();
+		$this->registry   = new TaskRegistry( $work );
+		$this->registry->register( self::IDENTITY, $this->task );
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
-		$batches                    = new BatchRegistry();
+		$batches                    = new BatchRegistry( $work );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
@@ -186,11 +191,11 @@ final class TerminalTransitionsTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->logger->records );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
 				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -205,7 +210,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_drops_a_stale_sequence_before_every_side_effect(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ) );
@@ -245,10 +250,10 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_active_run_state_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$first     = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$this->action_seq(),
 			$run_store
@@ -265,7 +270,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		$duplicate = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$this->action_seq(),
 			$run_store
@@ -283,7 +288,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'debug',
 					'message' => 'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
 					'context' => array(
-						'task_name'  => self::NAME,
+						'task_name'  => self::IDENTITY,
 						'run_id'     => self::RUN_ID,
 						'action_seq' => 1,
 					),
@@ -300,10 +305,10 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_active_run_state_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$first     = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$this->action_seq(),
 			$run_store
@@ -316,7 +321,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		$reclaimed = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$this->action_seq(),
 			$run_store
@@ -337,11 +342,11 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_active_run_state_drops_a_stale_sequence_after_the_incumbent_advances(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
 		$incumbent = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$this->action_seq(),
 			$run_store,
@@ -360,7 +365,7 @@ final class TerminalTransitionsTest extends TestCase {
 				self::assertFalse(
 					$this->terminal_transitions->abort_unless_fence_owned(
 						'Task',
-						self::NAME,
+						self::IDENTITY,
 						self::RUN_ID,
 						$incumbent,
 						$run_store,
@@ -374,7 +379,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		$reclaimed = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$incumbent->action_seq,
 			$run_store,
@@ -393,7 +398,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_abort_unless_fence_owned_aborts_without_a_terminal_claim_when_heartbeat_is_indeterminate(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$before    = $run_store->inspect( self::RUN_ID );
 		if ( $before->is_failure() ) {
 			self::fail( 'The running state could not be inspected before the indeterminate fence.' );
@@ -404,7 +409,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$state            = $before_snapshot['state'];
 		$expected_run_raw = $before_snapshot['raw'];
 		$expected_lock    = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		$expected_history = $this->option( 'a8csp_bgte_history_' . self::NAME );
+		$expected_history = $this->option( 'a8csp_bgte_history_' . self::IDENTITY );
 		self::assertIsString( $expected_lock );
 
 		$this->logger->records                       = array();
@@ -420,7 +425,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		$must_abort = $this->terminal_transitions->abort_unless_fence_owned(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$state,
 			$run_store
@@ -439,7 +444,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( RunStatus::Running, $after_state->status );
 		self::assertSame( self::NOW, $after_state->heartbeat_at );
 		self::assertSame( $expected_lock, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
-		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_history_' . self::NAME ) );
+		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_history_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		foreach ( $this->wpdb->recorded_queries as $query ) {
@@ -452,7 +457,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'message' => 'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
 					'context' => array(
 						'key'       => $this->lock_option_name(),
-						'name'      => self::NAME,
+						'name'      => self::IDENTITY,
 						'args_hash' => self::ARGS_HASH,
 						'run_id'    => self::RUN_ID,
 					),
@@ -461,7 +466,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'debug',
 					'message' => 'Task ownership fence is indeterminate; the delivery aborts without a terminal transition.',
 					'context' => array(
-						'task_name' => self::NAME,
+						'task_name' => self::IDENTITY,
 						'run_id'    => self::RUN_ID,
 					),
 				),
@@ -477,7 +482,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_cancel_run_finishes_terminal_state_when_group_clear_throws(): void {
 		$this->prepare_run_action();
-		$run_store  = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store  = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$inspection = $run_store->inspect( self::RUN_ID );
 		if ( $inspection->is_failure() ) {
 			self::fail( 'The cancellable run snapshot could not be read.' );
@@ -490,7 +495,7 @@ final class TerminalTransitionsTest extends TestCase {
 		try {
 			$this->terminal_transitions->cancel_run(
 				'Task',
-				self::NAME,
+				self::IDENTITY,
 				self::RUN_ID,
 				$snapshot['state'],
 				$run_store,
@@ -513,12 +518,12 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/cancelled/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/cancelled/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/cancelled',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -548,7 +553,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( 0, $this->recorded_run_state( 'completed' )['chunk_retries'] );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 	}
 
 	/**
@@ -567,7 +572,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
-		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 95 );
 		$this->backend->calls = array();
 
@@ -578,12 +583,12 @@ final class TerminalTransitionsTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -594,7 +599,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'info',
 					'message' => 'Superseded task run after its ownership fence failed.',
 					'context' => array(
-						'task_name'     => self::NAME,
+						'task_name'     => self::IDENTITY,
 						'run_id'        => self::RUN_ID,
 						'latest_run_id' => 'run-newer',
 					),
@@ -611,7 +616,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_supersedes_a_run_that_lost_replacement_ownership(): void {
 		$this->prepare_run_action();
-		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
@@ -619,18 +624,18 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->task->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/superseded/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/superseded',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -641,7 +646,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'info',
 					'message' => 'Superseded task run after its ownership fence failed.',
 					'context' => array(
-						'task_name'     => self::NAME,
+						'task_name'     => self::IDENTITY,
 						'run_id'        => self::RUN_ID,
 						'latest_run_id' => 'run-newer',
 					),
@@ -652,7 +657,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				'run:superseded',
-				'hook:superseded/' . self::NAME,
+				'hook:superseded/' . self::IDENTITY,
 				'hook:superseded',
 				'run:superseded:hooks',
 				'history',
@@ -671,14 +676,14 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_keeps_the_lock_winner_when_pointer_commit_lags(): void {
 		$this->prepare_run_action();
-		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
 
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
 				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -688,7 +693,7 @@ final class TerminalTransitionsTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
@@ -708,7 +713,7 @@ final class TerminalTransitionsTest extends TestCase {
 			);
 		}
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -718,7 +723,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
 					'context' => array(
-						'task_name' => self::NAME,
+						'task_name' => self::IDENTITY,
 						'run_id'    => self::RUN_ID,
 					),
 				),
@@ -730,7 +735,7 @@ final class TerminalTransitionsTest extends TestCase {
 	/** Failed-run retention failure is logged without skipping terminal hooks or history. */
 	public function test_fail_run_logs_failed_run_retention_failure_and_continues(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
@@ -744,7 +749,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$error = new EngineError( 'Terminal failure.' );
 
 		$this->terminal_transitions->fail_run(
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$state,
 			$run_store,
@@ -754,10 +759,10 @@ final class TerminalTransitionsTest extends TestCase {
 			ApiErrorCode::ExecutionFailed
 		);
 
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -769,7 +774,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Failed run "00000000001700000000-0000000000000000042" could not be retained for manual retry.',
 					'context' => array(
-						'task_name' => self::NAME,
+						'task_name' => self::IDENTITY,
 						'run_id'    => self::RUN_ID,
 					),
 				),
@@ -781,7 +786,7 @@ final class TerminalTransitionsTest extends TestCase {
 	/** Terminal-history failure leaves a marked claim for reconciliation after active lock cleanup. */
 	public function test_complete_run_logs_terminal_history_failure_and_keeps_the_claim_for_replay(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
@@ -797,7 +802,7 @@ final class TerminalTransitionsTest extends TestCase {
 			}
 		);
 
-		$this->terminal_transitions->complete_run( self::NAME, self::RUN_ID, $state, $run_store );
+		$this->terminal_transitions->complete_run( self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
@@ -806,7 +811,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
 				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -817,7 +822,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Terminal run history could not be persisted; inspection data may be incomplete.',
 					'context' => array(
-						'name'   => self::NAME,
+						'name'   => self::IDENTITY,
 						'run_id' => self::RUN_ID,
 					),
 				),
@@ -829,7 +834,7 @@ final class TerminalTransitionsTest extends TestCase {
 	/** Only the exact terminal snapshot carrying every required effect marker may be deleted. */
 	public function test_finish_claimed_transition_requires_every_effect_and_the_exact_latest_raw(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal  = $running
@@ -841,7 +846,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		self::assertFalse(
 			$this->terminal_transitions->finish_claimed_transition(
-				self::NAME,
+				self::IDENTITY,
 				self::RUN_ID,
 				$terminal,
 				$claim_raw,
@@ -856,7 +861,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNotNull( $hooks );
 		self::assertFalse(
 			$this->terminal_transitions->finish_claimed_transition(
-				self::NAME,
+				self::IDENTITY,
 				self::RUN_ID,
 				$hooks['state'],
 				$hooks['raw'],
@@ -869,7 +874,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNotNull( $complete );
 		self::assertFalse(
 			$this->terminal_transitions->finish_claimed_transition(
-				self::NAME,
+				self::IDENTITY,
 				self::RUN_ID,
 				$complete['state'],
 				$hooks['raw'],
@@ -880,7 +885,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
 		self::assertTrue(
 			$this->terminal_transitions->finish_claimed_transition(
-				self::NAME,
+				self::IDENTITY,
 				self::RUN_ID,
 				$complete['state'],
 				$complete['raw'],
@@ -902,7 +907,7 @@ final class TerminalTransitionsTest extends TestCase {
 		for ( $index = 0; 21 > $index; ++$index ) {
 			$this->randomizer->value = 100 + $index;
 
-			$result = $this->dispatcher->enqueue( self::NAME, array( 'identity' => $index ) );
+			$result = $this->dispatcher->enqueue( self::IDENTITY, array( 'identity' => $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			$run_id = $result->value;
 			self::assertIsString( $run_id );
@@ -923,14 +928,14 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( array( array( 'identity' => 0 ) ), $this->task->calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
 				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		self::assertSame(
 			$run_ids[20],
-			( new LatestRunPointer( self::NAME, $this->rows ) )->get_latest(),
+			( new LatestRunPointer( self::IDENTITY, $this->rows ) )->get_latest(),
 			'Repairing the evicted owner identity must preserve the globally newest run'
 		);
 	}
@@ -958,7 +963,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -974,14 +979,14 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_abort_unless_fence_owned_persists_superseded_after_confirmed_foreign_owner(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
 		$must_abort = $this->terminal_transitions->abort_unless_fence_owned(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$state,
 			$run_store
@@ -993,7 +998,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( 'superseded', $this->recorded_run_state( 'superseded' )['status'] );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -1009,7 +1014,7 @@ final class TerminalTransitionsTest extends TestCase {
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_handle_run_action_does_not_execute_a_persisted_terminal_state( string $status ): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertIsString(
@@ -1032,7 +1037,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Task run is already terminal; allow the reconciliation sweep to finish its cleanup.',
 					'context' => array(
-						'task_name' => self::NAME,
+						'task_name' => self::IDENTITY,
 						'run_id'    => self::RUN_ID,
 						'status'    => $status,
 					),
@@ -1137,7 +1142,7 @@ final class TerminalTransitionsTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Task run state is missing or corrupt; allow the reconciliation sweep to release any remaining lock.',
 					'context' => array(
-						'task_name' => self::NAME,
+						'task_name' => self::IDENTITY,
 						'run_id'    => 'missing-run',
 					),
 				),
@@ -1157,7 +1162,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -1171,7 +1176,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertCount( 1, $this->wpdb->recorded_queries );
 		$query = $this->wpdb->recorded_queries[0];
 		self::assertStringStartsWith( 'SELECT `option_value` FROM ', $query );
-		self::assertStringContainsString( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id, $query );
+		self::assertStringContainsString( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, $query );
 		self::assertStringEndsWith( ' LIMIT 1', $query );
 	}
 
@@ -1183,7 +1188,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  int
 	 */
 	private function action_seq( string $run_id = self::RUN_ID ): int {
-		$state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id );
+		$state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id );
 		self::assertIsArray( $state );
 		$action_seq = $state['action_seq'] ?? null;
 		self::assertIsInt( $action_seq );
@@ -1197,7 +1202,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	private function prepare_run_action(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->clock->timestamp       = self::NOW + 90;
@@ -1219,10 +1224,10 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	private function handle_task_run_action( string $run_id, int $action_seq ): void {
-		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $this->terminal_transitions->active_run_state(
 			'Task',
-			self::NAME,
+			self::IDENTITY,
 			$run_id,
 			$action_seq,
 			$run_store
@@ -1236,7 +1241,7 @@ final class TerminalTransitionsTest extends TestCase {
 		} catch ( \Throwable $throwable ) {
 			$this->failure_lifecycle->handle_failed_attempt(
 				'Task',
-				self::NAME,
+				self::IDENTITY,
 				$run_id,
 				$state,
 				$run_store,
@@ -1244,7 +1249,7 @@ final class TerminalTransitionsTest extends TestCase {
 				fn (): RetryPolicy => $this->task->get_retry_policy(),
 				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $run_id, $run_store ): void {
 					$this->terminal_transitions->fail_run(
-						self::NAME,
+						self::IDENTITY,
 						$run_id,
 						$failure_state,
 						$run_store,
@@ -1260,11 +1265,11 @@ final class TerminalTransitionsTest extends TestCase {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::NAME, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
-		$this->terminal_transitions->complete_run( self::NAME, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_run( self::IDENTITY, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -1300,7 +1305,7 @@ final class TerminalTransitionsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
+			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
 		);
 	}
 
@@ -1412,11 +1417,11 @@ final class TerminalTransitionsTest extends TestCase {
 
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::NAME === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'failed-store';
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::NAME === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'history';
 					continue;
 				}
@@ -1458,9 +1463,9 @@ final class TerminalTransitionsTest extends TestCase {
 				$value = $args[1] ?? null;
 				self::assertIsArray( $value );
 				$labels[] = self::run_state_label( $value );
-			} elseif ( 'a8csp_bgte_failed_' . self::NAME === $option_name ) {
+			} elseif ( 'a8csp_bgte_failed_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::NAME === $option_name ) {
+			} elseif ( 'a8csp_bgte_history_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'history';
 			}
 		}
@@ -1495,7 +1500,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
+		return 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**

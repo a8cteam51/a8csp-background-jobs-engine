@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 
 /**
@@ -40,7 +41,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	private const ORPHAN_OWNER = 'integration-declarative-orphan';
 
 	/** Owner isolated to fingerprint replacement. */
-	private const FINGERPRINT_OWNER = 'integration-declarative-fingerprint';
+	private const FINGERPRINT_OWNER = 'integration-decl-fingerprint';
 
 	/** Owner isolated to identical redeclaration. */
 	private const NOOP_OWNER = 'integration-declarative-noop';
@@ -223,12 +224,12 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$owner_rows = $this->owner_registry_rows( self::ORPHAN_OWNER );
 		self::assertSame(
-			array( 'orphan-a' ),
+			array( WorkIdentity::compose( self::ORPHAN_OWNER, 'orphan-a' ) ),
 			\array_keys( $owner_rows ),
 			'Orphan pruning must retain only declarations present in the owner replacement set'
 		);
 		self::assertArrayNotHasKey(
-			'orphan-b',
+			WorkIdentity::compose( self::ORPHAN_OWNER, 'orphan-b' ),
 			$owner_rows,
 			'Orphan pruning must delete the missing declaration registry row'
 		);
@@ -456,10 +457,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function assert_sync_succeeds( string $owner, array $schedules ): void {
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before declarative sync runs' );
-
-		$result = $engine->schedules()->sync( $owner, $schedules );
+		$result = \a8csp_bgte( $owner )->schedules()->sync( $schedules );
 		self::assertInstanceOf( Success::class, $result, 'Declarative sync must return a checked success Result' );
 		self::assertTrue( true === $result->value, 'Declarative sync success must carry true' );
 	}
@@ -499,7 +497,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private function registration_row( string $owner, string $name ): array {
-		$row = $this->owner_registry_rows( $owner )[ $name ] ?? null;
+		$row = $this->owner_registry_rows( $owner )[ WorkIdentity::compose( $owner, $name, true ) ] ?? null;
 		self::assertIsArray( $row, 'Declarative sync must persist the requested registration row' );
 
 		return $row;

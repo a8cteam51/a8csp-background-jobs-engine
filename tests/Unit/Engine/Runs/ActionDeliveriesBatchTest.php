@@ -28,6 +28,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
@@ -68,6 +69,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( ScalarTree::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
+#[UsesClass( WorkRegistry::class )]
 final class ActionDeliveriesBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -77,8 +79,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	);
 
 	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const IDENTITY  = self::OWNER . ':' . self::NAME;
 	private const NAME      = 'catalog-sync';
 	private const NOW       = 1_700_000_000;
+	private const OWNER     = 'runs-tests';
 	private const RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
@@ -143,8 +147,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batch          = new RecordingBatch( self::NAME );
 		$this->logger         = new RecordingLogger();
 		$this->randomizer     = new RecordingRandomizer( 42 );
-		$this->batches        = new BatchRegistry();
-		$this->tasks          = new TaskRegistry();
+		$work                 = new WorkRegistry();
+		$this->batches        = new BatchRegistry( $work );
+		$this->tasks          = new TaskRegistry( $work );
 		$this->wpdb           = new WpdbLockSpy();
 		$this->rows           = new OptionRows( $this->wpdb );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $this->rows );
@@ -171,7 +176,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$failure_lifecycle,
 		);
 
-		$this->batches->register( $this->batch );
+		$this->batches->register( self::IDENTITY, $this->batch );
 		$this->dispatcher = new Dispatcher(
 			$this->tasks,
 			$this->batches,
@@ -253,7 +258,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$observed_run       = $this->run_state();
 		};
 		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
 			static function ( array $queue, array $start_args, string $run_id ) use ( &$filter_call ): array {
 				$filter_call = array(
 					'arity' => \func_num_args(),
@@ -278,7 +283,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertTrue( $generate_executing );
@@ -341,8 +346,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/continue',
-						'args'     => array( self::NAME, self::RUN_ID, 2 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::IDENTITY, self::RUN_ID, 2 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
 					),
@@ -353,12 +358,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/started/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/started/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/started',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -380,11 +385,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->before_next(
 			'enqueue_async',
 			function ( RecordingBackend $backend ): void {
-				$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, 2 );
+				$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, 2 );
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -400,13 +405,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( $state['heartbeat_at'], $this->lock()['heartbeat_at'] ?? null );
 
 		$calls_after_continue = $this->backend->calls;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, 2 );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, 2 );
 		self::assertSame( $calls_after_continue, $this->backend->calls );
 
 		$this->clock->timestamp = self::NOW + 60;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $first, 3 );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $first, 3 );
 		$calls_after_run = $this->backend->calls;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $first, 3 );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $first, 3 );
 
 		self::assertSame( $calls_after_run, $this->backend->calls );
 		self::assertCount( 1, $this->batch->process_calls );
@@ -428,19 +433,19 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->start_batch();
 		$this->backend->calls = array();
 		$this->set_action_throwable(
-			'a8csp_background_tasks/started/' . self::NAME,
+			'a8csp_background_tasks/started/' . self::IDENTITY,
 			new \RuntimeException( 'Started listener exploded.' )
 		);
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$failure = $this->batch->failure_calls[0]['error'];
-		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::IDENTITY, $failure->name );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'execution', $failure->stage );
@@ -449,9 +454,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $failure->failed_chunk );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started/' . self::IDENTITY,
 				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -470,7 +475,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_terminal_start_error(
 			'Background-work execution failed because RuntimeException was thrown.',
@@ -496,7 +501,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_terminal_start_error(
 			'Background-work execution failed because RuntimeException was thrown.',
@@ -524,7 +529,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$message = 'Batch queue chunk at index 1 must contain only null, scalar, or nested array values.';
 		self::assertCount( 1, $this->batch->failure_calls );
@@ -567,7 +572,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( $queue, $this->run_state()['queue'] );
 		self::assertSame( array(), $this->batch->failure_calls );
@@ -580,12 +585,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	public function test_handle_start_action_fails_terminally_for_a_non_array_filtered_queue(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
-		$this->set_filter_value( 'a8csp_background_tasks/queue/' . self::NAME, 'invalid queue' );
+		$this->set_filter_value( 'a8csp_background_tasks/queue/' . self::IDENTITY, 'invalid queue' );
 		$this->start_batch();
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_terminal_start_error(
 			'Batch queue filter returned a non-array value; return one argument array per chunk.',
@@ -603,7 +608,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$throwable          = new \DomainException( 'Queue filter credential secret.' );
 		$this->batch->queue = array( array( 'chunk' => 'must-not-persist' ) );
 		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
 			static function () use ( $throwable ): never {
 				throw $throwable;
 			}
@@ -612,7 +617,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_terminal_start_error(
 			'Background-work execution failed because DomainException was thrown.',
@@ -631,7 +636,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$private_marker     = 'filtered-private-payload';
 		$this->batch->queue = array( array( 'chunk' => 'generated' ) );
 		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
 			array(
 				array( 'chunk' => 'valid' ),
 				array( $private_marker => new \stdClass() ),
@@ -641,7 +646,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$message = 'Batch queue chunk at index 1 must contain only null, scalar, or nested array values.';
 		self::assertCount( 1, $this->batch->failure_calls );
@@ -662,11 +667,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$observed_state           = null;
 		$this->batch->on_generate = function ( array $start_args ) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
-			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+			self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 		};
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertIsArray( $observed_state );
@@ -685,14 +690,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_start_action_supersedes_when_throwing_queue_generation_loses_ownership(): void {
 		$this->batch->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
 		$this->batch->on_generate        = function ( array $start_args ): void {
-			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+			self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 		};
 		$this->start_batch();
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertSame( array(), $this->backend->calls );
@@ -707,13 +712,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_start_action_supersedes_when_started_listener_loses_ownership(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
 		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
 			function ( array $queue ): array {
 				$this->wpdb->before_next( 'update', static function ( WpdbLockSpy $wpdb ): void {} );
 				$this->wpdb->before_next(
 					'update',
 					function ( WpdbLockSpy $wpdb ): void {
-						self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+						self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 					}
 				);
@@ -725,18 +730,18 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started/' . self::IDENTITY,
 				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -752,13 +757,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_start_action_supersedes_when_throwing_started_listener_loses_ownership(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
 		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
 			function ( array $queue ): array {
 				$this->wpdb->before_next( 'update', static function ( WpdbLockSpy $wpdb ): void {} );
 				$this->wpdb->before_next(
 					'update',
 					function ( WpdbLockSpy $wpdb ): void {
-						self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+						self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 					}
 				);
@@ -769,23 +774,23 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->start_batch();
 		$this->backend->calls = array();
 		$this->set_action_throwable(
-			'a8csp_background_tasks/started/' . self::NAME,
+			'a8csp_background_tasks/started/' . self::IDENTITY,
 			new \RuntimeException( 'Started listener exploded.' )
 		);
 		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started/' . self::IDENTITY,
 				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -811,7 +816,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$state = $this->run_state();
 		self::assertSame( array( $first, $second ), $state['queue'] );
@@ -840,8 +845,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::NAME, self::RUN_ID, $first, 3 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::IDENTITY, self::RUN_ID, $first, 3 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
 					),
@@ -868,7 +873,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$state = $this->run_state();
 		self::assertSame( array(), $state['queue'] );
@@ -895,8 +900,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/cleanup',
-						'args'     => array( self::NAME, self::RUN_ID, 3 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::IDENTITY, self::RUN_ID, 3 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
 					),
@@ -958,7 +963,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
@@ -1000,7 +1005,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				'arity' => 3,
-				'args'  => array( 60, self::NAME, self::RUN_ID ),
+				'args'  => array( 60, self::IDENTITY, self::RUN_ID ),
 			),
 			$filter_call
 		);
@@ -1011,8 +1016,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp_background_tasks/continue',
 						'timestamp' => self::NOW + 195,
-						'args'      => array( self::NAME, self::RUN_ID, 4 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
+						'args'      => array( self::IDENTITY, self::RUN_ID, 4 ),
+						'group'     => self::IDENTITY . '|' . self::RUN_ID,
 						'priority'  => 10,
 					),
 				),
@@ -1058,7 +1063,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame( array( $chunk_args, $remaining ), $this->failed_run_state()['queue'] );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -1066,7 +1071,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$failure = $this->batch->failure_calls[0]['error'];
-		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::IDENTITY, $failure->name );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'execution', $failure->stage );
@@ -1107,7 +1112,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
 		$action_seq = $this->action_seq();
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $action_seq );
 
 		$state = $this->run_state();
 		self::assertSame( 'running', $state['status'] );
@@ -1123,7 +1128,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
 					'context' => array(
-						'batch_name' => self::NAME,
+						'batch_name' => self::IDENTITY,
 						'run_id'     => self::RUN_ID,
 					),
 				),
@@ -1133,7 +1138,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->clear_action_observations();
 		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$chunk_args,
 			$action_seq
@@ -1158,7 +1163,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $filtered_delay );
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -1167,8 +1172,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp_background_tasks/continue',
 						'timestamp' => self::NOW + 120 + $expected_delay,
-						'args'      => array( self::NAME, self::RUN_ID, 4 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
+						'args'      => array( self::IDENTITY, self::RUN_ID, 4 ),
+						'group'     => self::IDENTITY . '|' . self::RUN_ID,
 						'priority'  => 10,
 					),
 				),
@@ -1216,12 +1221,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
 			$context->enqueue( array( 'chunk' => 'discarded' ) );
-			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+			self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		};
 
 		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$chunk_args,
 			$this->action_seq()
@@ -1250,12 +1255,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			array $processed_args,
 			BatchContextInterface $context
 		): void {
-			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+			self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		};
 		$this->clock->timestamp         = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( array(), $this->backend->calls );
@@ -1281,7 +1286,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->results['schedule_single'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                    = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -1298,8 +1303,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'args' => array(
 					'hook'      => 'a8csp_background_tasks/continue',
 					'timestamp' => self::NOW + 180,
-					'args'      => array( self::NAME, self::RUN_ID, 4 ),
-					'group'     => self::NAME . '|' . self::RUN_ID,
+					'args'      => array( self::IDENTITY, self::RUN_ID, 4 ),
+					'group'     => self::IDENTITY . '|' . self::RUN_ID,
 					'priority'  => 10,
 				),
 			)
@@ -1328,7 +1333,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$this->assert_run_state_write_omits_pending( 'running', 4 );
 		self::assertSame(
@@ -1358,7 +1363,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
 			function ( int $default_delay, string $name, string $run_id ): int {
-				self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+				self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 
 				return 30;
@@ -1366,7 +1371,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_quiet_superseded_run();
@@ -1383,7 +1388,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
 			function ( int $default_delay, string $name, string $run_id ): int {
-				self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+				self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 
 				throw new \DomainException( 'Continue-delay filter exploded.' );
@@ -1391,7 +1396,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_quiet_superseded_run();
@@ -1424,7 +1429,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->randomizer->value        = 11;
 		$this->randomizer->calls        = array();
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$state = $this->run_state();
 		self::assertSame( 'running', $state['status'] );
@@ -1450,7 +1455,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( self::NOW + 131, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame(
 			array(
 				array(
@@ -1458,8 +1463,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'args' => array(
 						'hook'      => 'a8csp_background_tasks/run',
 						'timestamp' => self::NOW + 131,
-						'args'      => array( self::NAME, self::RUN_ID, $chunk_args, 4 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
+						'args'      => array( self::IDENTITY, self::RUN_ID, $chunk_args, 4 ),
+						'group'     => self::IDENTITY . '|' . self::RUN_ID,
 						'priority'  => 10,
 					),
 				),
@@ -1469,12 +1474,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/retrying/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/retrying/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS, 1, 11 ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/retrying',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, 1, 11 ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS, 1, 11 ),
 				),
 			),
 			$this->fired_actions()
@@ -1508,7 +1513,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->randomizer->value        = 11;
 
 		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
+			self::IDENTITY,
 			self::RUN_ID,
 			$chunk_args,
 			$this->action_seq()
@@ -1519,7 +1524,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 4, $expected_state['action_seq'] );
 		$this->clear_action_observations();
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, 2 );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, 2 );
 
 		self::assertSame( $expected_state, $this->run_state() );
 		self::assertSame( $expected_lock, $this->lock() );
@@ -1566,7 +1571,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->randomizer->value        = 5;
 		$this->randomizer->calls        = array();
 		$this->clock->timestamp         = self::NOW + 120;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_a, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_a, $this->action_seq() );
 
 		$observed_retries = array();
 
@@ -1582,7 +1587,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 125;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_a, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_a, $this->action_seq() );
 
 		self::assertSame( 0, $this->run_state()['chunk_retries'] );
 		self::assertSame( array( $chunk_b ), $this->run_state()['queue'] );
@@ -1590,10 +1595,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 185;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 190;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_b, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_b, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -1631,28 +1636,28 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertCount( 1, $this->batch->failure_calls );
 		self::assertSame(
-			'Batch "catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.',
+			'Batch "runs-tests:catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.',
 			$this->batch->failure_calls[0]['error']->summary
 		);
 		self::assertSame( 'scheduling', $this->batch->failure_calls[0]['error']->stage );
 		self::assertSame( ApiErrorCode::BackendRejected, $this->batch->failure_calls[0]['error']->code );
 		self::assertSame( $chunk_args, $this->batch->failure_calls[0]['error']->failed_chunk );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
 		self::assertIsArray( $failed_runs );
 		$failed_run = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
 		self::assertSame( 1, $failed_run['attempts'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/retrying/' . self::NAME,
+				'a8csp_background_tasks/retrying/' . self::IDENTITY,
 				'a8csp_background_tasks/retrying',
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -1670,11 +1675,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batch->process_throwable = new NonRetryableTaskException( 'Chunk input is permanently invalid.' );
 		$this->clock->timestamp         = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->batch->failure_calls );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
 		self::assertIsArray( $failed_runs );
 		$failed_run = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
@@ -1683,12 +1688,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/failed/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/failed/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS, $error ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/failed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, $error ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS, $error ),
 				),
 			),
 			$this->fired_actions()
@@ -1708,14 +1713,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batch->process_throwable = new \DomainException( 'Chunk failed.' );
 		$listener_throwable             = new \RuntimeException( 'Failed listener exploded.' );
 		$this->set_action_throwable(
-			'a8csp_background_tasks/failed/' . self::NAME,
+			'a8csp_background_tasks/failed/' . self::IDENTITY,
 			$listener_throwable
 		);
 		$this->clock->timestamp = self::NOW + 120;
 		$caught                 = null;
 
 		try {
-			$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+			$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
@@ -1747,7 +1752,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertCount( 1, $this->batch->failure_calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -1765,7 +1770,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'run:failed',
 				'batch:failure',
 				'run:failed',
-				'hook:failed/' . self::NAME,
+				'hook:failed/' . self::IDENTITY,
 				'hook:failed',
 				'history',
 				'run:failed',
@@ -1784,7 +1789,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_cleanup_action_fences_before_callback_and_preserves_hook_order(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
 		$this->clock->timestamp  = self::NOW + 120;
 		$observed_state          = null;
@@ -1792,7 +1797,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$observed_state = $this->option( $this->run_option_name() );
 		};
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_cleanup_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertIsArray( $observed_state );
 		self::assertSame( 'completed', $observed_state['status'] ?? null );
@@ -1810,12 +1815,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/completed/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/completed/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/completed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -1827,7 +1832,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'run:completed',
 				'batch:success',
 				'run:completed',
-				'hook:completed/' . self::NAME,
+				'hook:completed/' . self::IDENTITY,
 				'hook:completed',
 				'run:completed',
 				'history',
@@ -1843,7 +1848,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
@@ -1855,14 +1860,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_cleanup_action_completes_and_logs_when_success_callback_throws(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
 		// An Error carrying the non-retryable marker pins the catch to \Throwable with no marker special-casing.
 		$success_throwable              = new class( 'Success callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
 		$this->batch->success_throwable = $success_throwable;
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_cleanup_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame(
 			array(
@@ -1880,7 +1885,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'level'   => 'error',
 					'message' => 'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
 					'context' => array(
-						'batch_name' => self::NAME,
+						'batch_name' => self::IDENTITY,
 						'run_id'     => self::RUN_ID,
 						'exception'  => $success_throwable,
 					),
@@ -1891,12 +1896,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/completed/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/completed/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/completed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -1908,7 +1913,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'run:completed',
 				'batch:success',
 				'run:completed',
-				'hook:completed/' . self::NAME,
+				'hook:completed/' . self::IDENTITY,
 				'hook:completed',
 				'run:completed',
 				'history',
@@ -1920,7 +1925,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
@@ -1932,7 +1937,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_cleanup_action_completes_when_success_callback_starts_replacement(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
 		$this->clock->timestamp  = self::NOW + 120;
 		$replacement_result      = null;
@@ -1946,16 +1951,16 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			&$replacement_state,
 			&$replacement_lock
 		): void {
-			$replacement_result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+			$replacement_result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 			self::assertInstanceOf( Success::class, $replacement_result );
 			self::assertIsString( $replacement_result->value );
 			$replacement_state = $this->option(
-				'a8csp_bgte_run_' . self::NAME . '_' . $replacement_result->value
+				'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_result->value
 			);
 			$replacement_lock  = $this->lock();
 		};
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_cleanup_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertInstanceOf( Success::class, $replacement_result );
 		self::assertIsString( $replacement_result->value );
@@ -1967,7 +1972,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertIsArray( $replacement_state );
 		self::assertSame(
 			$replacement_state,
-			$this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $replacement_run_id )
+			$this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_run_id )
 		);
 		self::assertSame( 'running', $replacement_state['status'] ?? null );
 		self::assertFalse( $replacement_state['executing'] ?? null );
@@ -1975,7 +1980,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
 				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -2001,7 +2006,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
+			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
 		);
 	}
 
@@ -2013,26 +2018,26 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_duplicate_cleanup_delivery_fires_success_once(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 		$cleanup_seq = $this->action_seq();
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $cleanup_seq );
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $cleanup_seq );
+		$this->lifecycle_deliveries->handle_cleanup_action( self::IDENTITY, self::RUN_ID, $cleanup_seq );
+		$this->lifecycle_deliveries->handle_cleanup_action( self::IDENTITY, self::RUN_ID, $cleanup_seq );
 
 		self::assertCount( 1, $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
 				'a8csp_background_tasks/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		$this->assert_terminal_history( RunStatus::Completed );
 	}
 
@@ -2048,7 +2053,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                  = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$failed_state = $this->failed_run_state();
 		self::assertSame( $this->batch->queue, $failed_state['queue'] );
@@ -2059,8 +2064,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'verb' => 'enqueue_async',
 				'args' => array(
 					'hook'     => 'a8csp_background_tasks/continue',
-					'args'     => array( self::NAME, self::RUN_ID, 2 ),
-					'group'    => self::NAME . '|' . self::RUN_ID,
+					'args'     => array( self::IDENTITY, self::RUN_ID, 2 ),
+					'group'    => self::IDENTITY . '|' . self::RUN_ID,
 					'unique'   => false,
 					'priority' => 10,
 				),
@@ -2078,7 +2083,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                  = self::NOW + 90;
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( array( 'chunk' => 'first' ) ), $this->failed_run_state()['queue'] );
 		$this->assert_terminal_scheduling_failure(
@@ -2087,8 +2092,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'verb' => 'enqueue_async',
 				'args' => array(
 					'hook'     => 'a8csp_background_tasks/run',
-					'args'     => array( self::NAME, self::RUN_ID, array( 'chunk' => 'first' ), 3 ),
-					'group'    => self::NAME . '|' . self::RUN_ID,
+					'args'     => array( self::IDENTITY, self::RUN_ID, array( 'chunk' => 'first' ), 3 ),
+					'group'    => self::IDENTITY . '|' . self::RUN_ID,
 					'unique'   => false,
 					'priority' => 10,
 				),
@@ -2106,7 +2111,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->clock->timestamp                  = self::NOW + 90;
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->failed_run_state()['queue'] );
 		$this->assert_terminal_scheduling_failure(
@@ -2115,8 +2120,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'verb' => 'enqueue_async',
 				'args' => array(
 					'hook'     => 'a8csp_background_tasks/cleanup',
-					'args'     => array( self::NAME, self::RUN_ID, 3 ),
-					'group'    => self::NAME . '|' . self::RUN_ID,
+					'args'     => array( self::IDENTITY, self::RUN_ID, 3 ),
+					'group'    => self::IDENTITY . '|' . self::RUN_ID,
 					'unique'   => false,
 					'priority' => 10,
 				),
@@ -2131,12 +2136,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	public function test_handle_continue_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$this->prepare_started_batch( array( array( 'chunk' => 'first' ) ) );
-		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 90;
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$this->assert_quiet_superseded_run();
 		self::assertSame( array(), $this->backend->calls );
@@ -2150,12 +2155,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_run_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
-		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$this->assert_quiet_superseded_run();
 		self::assertSame( array(), $this->batch->process_calls );
@@ -2177,7 +2182,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private function prepare_scheduled_chunk( array $queue ): void {
 		$this->prepare_started_batch( $queue );
 		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 		$this->clear_action_observations();
 	}
 
@@ -2319,11 +2324,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::NAME === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'failed-store';
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::NAME === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'history';
 					continue;
 				}
@@ -2369,9 +2374,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				$status = $value['status'] ?? null;
 				self::assertIsString( $status );
 				$labels[] = 'run:' . $status;
-			} elseif ( 'a8csp_bgte_failed_' . self::NAME === $option_name ) {
+			} elseif ( 'a8csp_bgte_failed_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::NAME === $option_name ) {
+			} elseif ( 'a8csp_bgte_history_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'history';
 			}
 		}
@@ -2412,14 +2417,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$failure = $this->batch->failure_calls[0]['error'];
-		self::assertSame( self::NAME, $failure->name );
+		self::assertSame( self::IDENTITY, $failure->name );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'queue-generation', $failure->stage );
 		self::assertSame( $code, $failure->code );
 		self::assertSame( $message, $failure->summary );
 		self::assertNull( $failure->failed_chunk );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
 		self::assertIsArray( $failed_runs );
 		$failed_run = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
@@ -2432,7 +2437,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertArrayNotHasKey( 'failed_chunk', $stored_error );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -2457,7 +2462,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$failure = $this->batch->failure_calls[0]['error'];
 		self::assertSame(
 			\sprintf(
-				'Batch "catalog-sync" could not schedule the %s action: Restore the scheduler before retrying this batch.',
+				'Batch "runs-tests:catalog-sync" could not schedule the %s action: Restore the scheduler before retrying this batch.',
 				$stage
 			),
 			$failure->summary
@@ -2465,7 +2470,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 'scheduling', $failure->stage );
 		self::assertSame( ApiErrorCode::BackendRejected, $failure->code );
 		self::assertSame( 'run' === $stage ? array( 'chunk' => 'first' ) : null, $failure->failed_chunk );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
 		self::assertIsArray( $failed_runs );
 		$failed_run = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
@@ -2482,7 +2487,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		}
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_slice( \array_column( $this->fired_actions(), 'hook_name' ), -2 )
@@ -2498,18 +2503,18 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private function assert_quiet_superseded_run(): void {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
+					'hook_name' => 'a8csp_background_tasks/superseded/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_background_tasks/superseded',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
 			$this->fired_actions()
@@ -2561,7 +2566,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
+			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
 		);
 	}
 
@@ -2571,7 +2576,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  void
 	 */
 	private function start_batch(): void {
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 	}
@@ -2587,7 +2592,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batch->queue = $queue;
 		$this->start_batch();
 		$this->clock->timestamp = self::NOW + 30;
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		$this->backend->calls                        = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
@@ -2742,7 +2747,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -2771,7 +2776,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
+		$this->wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH, $raw );
 	}
 
 	/**
@@ -2780,7 +2785,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
 	private function lock(): ?array {
-		$name = 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
+		$name = 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
 		$raw  = $this->wpdb->rows[ $name ] ?? null;
 		if ( ! \is_string( $raw ) ) {
 			return null;

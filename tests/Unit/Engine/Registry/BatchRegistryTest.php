@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -31,38 +32,38 @@ final class BatchRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Registration retains the exact batch instance under its stable name.
+	 * Registration retains the exact batch instance under its complete identity.
 	 *
 	 * @return  void
 	 */
 	public function test_get_returns_the_registered_instance_and_null_for_an_unknown_name(): void {
 		$batch    = $this->batch( 'refresh_index-2' );
-		$registry = new BatchRegistry();
+		$registry = new BatchRegistry( new WorkRegistry() );
 
-		$registry->register( $batch );
+		$registry->register( 'consumer:refresh_index-2', $batch );
 
-		self::assertSame( $batch, $registry->get( 'refresh_index-2' ) );
-		self::assertNull( $registry->get( 'unknown' ) );
+		self::assertSame( $batch, $registry->get( 'consumer:refresh_index-2' ) );
+		self::assertNull( $registry->get( 'consumer:unknown' ) );
 	}
 
 	/**
-	 * Registration accepts the storage-safe boundary and names the shortening fix beyond it.
+	 * Registration accepts the shared local-name boundary and rejects a longer declaration.
 	 *
 	 * @return  void
 	 */
-	public function test_register_accepts_110_bytes_and_rejects_111_with_the_fix(): void {
-		$accepted = $this->batch( \str_repeat( 'a', 110 ) );
-		$registry = new BatchRegistry();
+	public function test_register_accepts_64_name_bytes_and_rejects_65(): void {
+		$accepted = $this->batch( \str_repeat( 'a', 64 ) );
+		$registry = new BatchRegistry( new WorkRegistry() );
 
-		$registry->register( $accepted );
-		self::assertSame( $accepted, $registry->get( \str_repeat( 'a', 110 ) ) );
+		$registry->register( 'consumer:' . \str_repeat( 'a', 64 ), $accepted );
+		self::assertSame( $accepted, $registry->get( 'consumer:' . \str_repeat( 'a', 64 ) ) );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs(
-			'Batch name must be at most 110 bytes; shorten the batch name.'
+			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
 		);
 
-		$registry->register( $this->batch( \str_repeat( 'a', 111 ) ) );
+		$registry->register( 'consumer:valid', $this->batch( \str_repeat( 'a', 65 ) ) );
 	}
 
 	/**
@@ -76,10 +77,10 @@ final class BatchRegistryTest extends TestCase {
 	public function test_register_rejects_invalid_names_with_the_fix( string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs(
-			'Batch name is invalid; return a non-empty name containing only lowercase letters, digits, underscores, and hyphens.'
+			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
 		);
 
-		( new BatchRegistry() )->register( $this->batch( $name ) );
+		( new BatchRegistry( new WorkRegistry() ) )->register( 'consumer:valid', $this->batch( $name ) );
 	}
 
 	/**
@@ -103,15 +104,15 @@ final class BatchRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_register_rejects_a_duplicate_name_with_the_fix(): void {
-		$registry = new BatchRegistry();
-		$registry->register( $this->batch( 'refresh-index' ) );
+		$registry = new BatchRegistry( new WorkRegistry() );
+		$registry->register( 'consumer:refresh-index', $this->batch( 'refresh-index' ) );
 
 		$this->expectException( \LogicException::class );
 		$this->expectExceptionMessageIs(
 			'Batch name is already registered; register each batch name exactly once.'
 		);
 
-		$registry->register( $this->batch( 'refresh-index' ) );
+		$registry->register( 'consumer:refresh-index', $this->batch( 'refresh-index' ) );
 	}
 
 	/**

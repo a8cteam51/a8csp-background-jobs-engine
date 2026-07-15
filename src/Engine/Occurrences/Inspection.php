@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -156,16 +157,21 @@ final readonly class Inspection {
 
 		$entries = array();
 		foreach ( $registrations as $registration_key => $registration ) {
-			[ $registration_owner, $name ] = \explode( ':', $registration_key, 2 );
+			$parts = WorkIdentity::parts( $registration_key );
+			if ( null === $parts ) {
+				continue;
+			}
+
+			$registration_owner = $parts[0];
 			if ( null !== $owner && $owner !== $registration_owner ) {
 				continue;
 			}
 
-			$schedule  = $this->schedules->get( $registration_key );
-			$entries[] = array(
+			$declaration = $this->schedules->get( $registration_key );
+			$entries[]   = array(
 				'owner'      => $registration_owner,
-				'name'       => $name,
-				'recurrence' => null === $schedule ? null : $schedule->recurrence->interval(),
+				'name'       => $registration_key,
+				'recurrence' => null === $declaration ? null : $declaration['schedule']->recurrence->interval(),
 				'next_due'   => $registration['next_due'],
 				'last_fired' => $registration['last_fired'],
 				'misfires'   => $registration['misfires'],
@@ -175,7 +181,7 @@ final readonly class Inspection {
 					array( $registration_key ),
 					$registration_key
 				),
-				'lock'       => $this->schedule_lock( $schedule, $observed_at ),
+				'lock'       => $this->schedule_lock( $declaration, $observed_at ),
 			);
 		}
 
@@ -212,7 +218,12 @@ final readonly class Inspection {
 		$page        = $this->option_rows->option_names_page(
 			$prefix,
 			\strlen( $prefix ) + self::RUN_ID_LENGTH,
-			self::LIVE_RUN_LIMIT
+			self::LIVE_RUN_LIMIT,
+			static function ( string $option_name ) use ( $name ): bool {
+				$identity = self::run_identity_from_option_name( $option_name );
+
+				return null !== $identity && $name === $identity['name'];
+			}
 		);
 		if ( null === $page ) {
 			return array(
@@ -286,16 +297,20 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedule|null $schedule    Current-request schedule declaration, when available.
-	 * @param   int           $observed_at Inspection timestamp.
+	 * @phpstan-param array{schedule: Schedule, task: string}|null $declaration
+	 *
+	 * @param   array|null $declaration Current-request schedule declaration, when available.
+	 * @param   int        $observed_at Inspection timestamp.
 	 *
 	 * @return  array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
 	 *          |array{state: 'held', run_id: string, stale: bool}
 	 */
-	private function schedule_lock( ?Schedule $schedule, int $observed_at ): array {
-		if ( null === $schedule ) {
+	private function schedule_lock( ?array $declaration, int $observed_at ): array {
+		if ( null === $declaration ) {
 			return array( 'state' => 'not_declared' );
 		}
+
+		$schedule = $declaration['schedule'];
 		if ( OverlapPolicy::Allow === $schedule->overlap ) {
 			return array( 'state' => 'overlap_allowed' );
 		}
@@ -313,7 +328,7 @@ final readonly class Inspection {
 		}
 
 		$args_hash = \hash( 'sha256', $encoded_args );
-		$inspected = $this->guard->inspect_persisted_lock( $schedule->task, $args_hash );
+		$inspected = $this->guard->inspect_persisted_lock( $declaration['task'], $args_hash );
 		if ( $inspected->is_failure() ) {
 			return array( 'state' => 'read_failed' );
 		}
@@ -328,7 +343,7 @@ final readonly class Inspection {
 			return array( 'state' => 'invalid' );
 		}
 
-		$staleness = $this->lock_windows->lock_staleness( $schedule->task, $lock['run_id'] );
+		$staleness = $this->lock_windows->lock_staleness( $declaration['task'], $lock['run_id'] );
 
 		return array(
 			'state'  => 'held',
@@ -338,7 +353,7 @@ final readonly class Inspection {
 	}
 
 	/**
-	 * Returns the uniquely declared work kind, or unknown when absent or ambiguous.
+	 * Returns the recorded work kind, or unknown when absent.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -348,13 +363,15 @@ final readonly class Inspection {
 	 * @return  'batch'|'task'|'unknown'
 	 */
 	private function work_kind( string $name ): string {
-		$batch = null !== $this->batches->get( $name );
-		$task  = null !== $this->tasks->get( $name );
-		if ( $batch === $task ) {
-			return 'unknown';
+		$kind = $this->tasks->kind( $name );
+		if ( 'task' === $kind ) {
+			return null === $this->tasks->get( $name ) ? 'unknown' : 'task';
+		}
+		if ( 'batch' === $kind ) {
+			return null === $this->batches->get( $name ) ? 'unknown' : 'batch';
 		}
 
-		return $batch ? 'batch' : 'task';
+		return 'unknown';
 	}
 
 	/**
@@ -371,11 +388,11 @@ final readonly class Inspection {
 	 */
 	public static function run_identity_from_option_name( string $option_name ): ?array {
 		$matched = \preg_match(
-			'/\A' . \preg_quote( self::RUN_OPTION_PREFIX, '/' ) . '(?<name>[a-z0-9_-]+)_(?<run_id>\d{20}-\d{19})\z/D',
+			'/\A' . \preg_quote( self::RUN_OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<run_id>\d{20}-\d{19})\z/D',
 			$option_name,
 			$matches
 		);
-		if ( 1 !== $matched ) {
+		if ( 1 !== $matched || null === WorkIdentity::parts( $matches['name'] ) ) {
 			return null;
 		}
 

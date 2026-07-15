@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\AbstractTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -22,14 +23,14 @@ final class MaintenanceTask extends AbstractTask {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Engine-reserved maintenance task identity.
+	 * Engine-reserved maintenance local name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const NAME = 'a8csp-bgte-maintenance';
+	public const NAME = 'maintenance';
 
 	/**
 	 * Prefix for execution-overlap lock options.
@@ -90,7 +91,7 @@ final class MaintenanceTask extends AbstractTask {
 	// region INHERITED METHODS
 
 	/**
-	 * Returns the engine-reserved maintenance task identity.
+	 * Returns the engine-reserved maintenance local name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -247,11 +248,12 @@ final class MaintenanceTask extends AbstractTask {
 	 */
 	private static function lock_identity( string $option_name ): ?array {
 		$matched = \preg_match(
-			'/\Aa8csp_bgte_lock_([a-z0-9_-]+)_([a-f0-9]{64})\z/',
+			'/\Aa8csp_bgte_lock_(.+)_([a-f0-9]{64})\z/',
 			$option_name,
 			$matches
 		);
-		if ( 1 !== $matched ) {
+		// A non-canonical key segment is not engine work; such rows are left for manual cleanup by design.
+		if ( 1 !== $matched || null === WorkIdentity::parts( $matches[1] ) ) {
 			return null;
 		}
 
@@ -270,11 +272,12 @@ final class MaintenanceTask extends AbstractTask {
 	 */
 	private static function run_identity( string $option_name ): ?array {
 		$matched = \preg_match(
-			'/\Aa8csp_bgte_run_([a-z0-9_-]+)_([0-9]{20}-[0-9]{19})\z/',
+			'/\Aa8csp_bgte_run_(.+)_([0-9]{20}-[0-9]{19})\z/',
 			$option_name,
 			$matches
 		);
-		if ( 1 !== $matched ) {
+		// A non-canonical key segment is not engine work; such rows are left for manual cleanup by design.
+		if ( 1 !== $matched || null === WorkIdentity::parts( $matches[1] ) ) {
 			return null;
 		}
 

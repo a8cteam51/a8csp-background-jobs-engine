@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -24,7 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
@@ -34,7 +33,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -62,6 +60,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
+#[UsesClass( WorkRegistry::class )]
 final class DispatcherBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -71,8 +70,10 @@ final class DispatcherBatchTest extends TestCase {
 	);
 
 	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const IDENTITY  = self::OWNER . ':' . self::NAME;
 	private const NAME      = 'catalog-sync';
 	private const NOW       = 1_700_000_000;
+	private const OWNER     = 'runs-tests';
 	private const RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
@@ -135,14 +136,15 @@ final class DispatcherBatchTest extends TestCase {
 		$this->batch          = new RecordingBatch( self::NAME );
 		$this->logger         = new RecordingLogger();
 		$this->randomizer     = new RecordingRandomizer( 42 );
-		$this->batches        = new BatchRegistry();
-		$this->tasks          = new TaskRegistry();
+		$work                 = new WorkRegistry();
+		$this->batches        = new BatchRegistry( $work );
+		$this->tasks          = new TaskRegistry( $work );
 		$this->wpdb           = new WpdbLockSpy();
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$this->batches->register( $this->batch );
+		$this->batches->register( self::IDENTITY, $this->batch );
 		$this->dispatcher = new Dispatcher(
 			$this->tasks,
 			$this->batches,
@@ -176,7 +178,7 @@ final class DispatcherBatchTest extends TestCase {
 				$scheduled_state = $this->option( $this->run_option_name() );
 			}
 		);
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true, priority: 23 );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -186,8 +188,8 @@ final class DispatcherBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/start',
-						'args'     => array( self::NAME, self::RUN_ID, 1 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'unique'   => true,
 						'priority' => 23,
 					),
@@ -229,13 +231,13 @@ final class DispatcherBatchTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_priorities' )]
 	public function test_start_batch_rejects_priority_outside_the_engine_range( int $priority ): void {
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, priority: $priority );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, priority: $priority );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
 			\sprintf(
-				'Batch "catalog-sync" priority %d is invalid; pass a value from 0 through 255.',
+				'Batch "runs-tests:catalog-sync" priority %d is invalid; pass a value from 0 through 255.',
 				$priority
 			),
 			$result->error->message
@@ -261,7 +263,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_batch_and_removes_the_failed_entry(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(
 				'failed-run',
@@ -270,7 +272,7 @@ final class DispatcherBatchTest extends TestCase {
 				2,
 				new EngineError( 'Chunk processing exploded.', \RuntimeException::class ),
 				new RunFailure(
-					name: self::NAME,
+					name: self::IDENTITY,
 					run_id: 'failed-run',
 					attempts: 2,
 					stage: 'execution',
@@ -280,7 +282,7 @@ final class DispatcherBatchTest extends TestCase {
 				)
 			)
 		);
-		$failed_key = 'a8csp_bgte_failed_' . self::NAME;
+		$failed_key = 'a8csp_bgte_failed_' . self::IDENTITY;
 		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
 		self::assertIsString( $failed_raw );
 		$failed_runs = RawOptionDecoder::decode( $failed_raw );
@@ -294,7 +296,7 @@ final class DispatcherBatchTest extends TestCase {
 		$this->clock->timestamp  = self::NOW + 100;
 		$new_run_id              = '00000000001700000100-0000000000000000043';
 
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->dispatcher->retry_failed( self::IDENTITY, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $new_run_id, $result->value );
@@ -315,8 +317,8 @@ final class DispatcherBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/start',
-						'args'     => array( self::NAME, $new_run_id, 1 ),
-						'group'    => self::NAME . '|' . $new_run_id,
+						'args'     => array( self::IDENTITY, $new_run_id, 1 ),
+						'group'    => self::IDENTITY . '|' . $new_run_id,
 						'unique'   => false,
 						'priority' => 10,
 					),
@@ -324,7 +326,7 @@ final class DispatcherBatchTest extends TestCase {
 			),
 			$this->backend->calls
 		);
-		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
+		$new_state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $new_run_id );
 		self::assertIsArray( $new_state );
 		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
 		self::assertSame( array(), $new_state['queue'] ?? null );
@@ -351,13 +353,13 @@ final class DispatcherBatchTest extends TestCase {
 		$failure                                 = $this->scheduling_failure_result();
 		$this->backend->results['enqueue_async'] = $failure;
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 
 		self::assertSame( $failure, $result );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_history_' . self::NAME ) );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->wpdb->rows );
+		self::assertNull( $this->option( 'a8csp_bgte_history_' . self::IDENTITY ) );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::IDENTITY, $this->wpdb->rows );
 		self::assertSame( array(), $this->batch->generate_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame( array(), $this->fired_actions() );
@@ -366,7 +368,7 @@ final class DispatcherBatchTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 	}
 
@@ -378,12 +380,12 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_rejects_a_unique_held_overlap_without_stopping_the_previous_run(): void {
 		$this->seed_running_lock();
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Batch "catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
+			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
 			$result->error->message
 		);
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
@@ -403,12 +405,12 @@ final class DispatcherBatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Batch "catalog-sync" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
+			'Batch "runs-tests:catalog-sync" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
 			$result->error->message
 		);
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
@@ -420,12 +422,12 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_rejects_a_unique_start_when_the_held_lock_no_longer_names_an_owner(): void {
 		$this->wpdb->script_result( 'insert', false );
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Batch "catalog-sync" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
+			'Batch "runs-tests:catalog-sync" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
 			$result->error->message
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -441,15 +443,15 @@ final class DispatcherBatchTest extends TestCase {
 		$this->seed_running_lock();
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
+		unset( $options[ 'a8csp_bgte_latest_' . self::IDENTITY ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Batch "catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
+			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
 			$result->error->message
 		);
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
@@ -466,18 +468,18 @@ final class DispatcherBatchTest extends TestCase {
 		$this->seed_running_lock();
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::NAME ] = array(
+		$options[ 'a8csp_bgte_latest_' . self::IDENTITY ] = array(
 			'all'     => 'run-stale',
 			'by_hash' => array( self::ARGS_HASH => 'run-stale' ),
 		);
-		$GLOBALS['a8csp_bgte_test_options']           = $options;
+		$GLOBALS['a8csp_bgte_test_options']               = $options;
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Batch "catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
+			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
 			$result->error->message
 		);
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
@@ -493,7 +495,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_replaces_a_held_incumbent(): void {
 		$this->seed_running_lock();
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -503,7 +505,7 @@ final class DispatcherBatchTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 		self::assertSame(
 			array(
@@ -511,8 +513,8 @@ final class DispatcherBatchTest extends TestCase {
 					'verb' => 'enqueue_async',
 					'args' => array(
 						'hook'     => 'a8csp_background_tasks/start',
-						'args'     => array( self::NAME, self::RUN_ID, 1 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
+						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'unique'   => false,
 						'priority' => 10,
 					),
@@ -532,10 +534,10 @@ final class DispatcherBatchTest extends TestCase {
 		$this->seed_running_lock();
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		unset( $options[ 'a8csp_bgte_latest_' . self::NAME ] );
+		unset( $options[ 'a8csp_bgte_latest_' . self::IDENTITY ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -545,7 +547,7 @@ final class DispatcherBatchTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 		self::assertCount( 1, $this->backend->calls );
 		self::assertIsArray( $this->option( $this->run_option_name() ) );
@@ -561,7 +563,7 @@ final class DispatcherBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $failure;
 		$this->seed_running_lock();
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 
 		self::assertSame( $failure, $result );
 		self::assertNull( $this->lock() );
@@ -571,7 +573,7 @@ final class DispatcherBatchTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 	}
 
@@ -587,7 +589,7 @@ final class DispatcherBatchTest extends TestCase {
 		$options[ $this->run_option_name() ] = array( 'collision' => true );
 		$GLOBALS['a8csp_bgte_test_options']  = $options;
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -595,7 +597,7 @@ final class DispatcherBatchTest extends TestCase {
 			\sprintf(
 				'Run "%1$s" for batch "%2$s" could not be persisted; remove the conflicting run option before retrying.',
 				self::RUN_ID,
-				self::NAME
+				self::IDENTITY
 			),
 			$result->error->message
 		);
@@ -605,7 +607,7 @@ final class DispatcherBatchTest extends TestCase {
 				'all'     => 'run-running',
 				'by_hash' => array( self::ARGS_HASH => 'run-running' ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
+			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
 		);
 		self::assertSame( array( 'collision' => true ), $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->backend->calls );
@@ -629,63 +631,21 @@ final class DispatcherBatchTest extends TestCase {
 					)
 				);
 				self::assertIsString( $raw );
-				$wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
+				$wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH, $raw );
 			}
 		);
 
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Batch "catalog-sync" lock ownership changed while the replacement was claiming it; retry the start against the current owner.',
+			'Batch "runs-tests:catalog-sync" lock ownership changed while the replacement was claiming it; retry the start against the current owner.',
 			$result->error->message
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Batch start rejects a name shared with a task before touching runtime boundaries.
-	 *
-	 * @return  void
-	 */
-	public function test_start_batch_rejects_a_name_resolvable_in_both_registries(): void {
-		$this->tasks->register( new RecordingTask( self::NAME ) );
-
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
-
-		$this->assert_ambiguous_name_failure( $result );
-		$this->assert_start_boundaries_untouched();
-	}
-
-	/**
-	 * Task enqueue rejects a name shared with a batch before touching runtime boundaries.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_rejects_a_name_resolvable_in_both_registries(): void {
-		$this->tasks->register( new RecordingTask( self::NAME ) );
-
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
-
-		$this->assert_ambiguous_name_failure( $result );
-		$this->assert_start_boundaries_untouched();
-	}
-
-	/**
-	 * Manual retry rejects and logs a name shared by a task and batch before reading failed state.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_rejects_a_name_resolvable_in_both_registries(): void {
-		$this->tasks->register( new RecordingTask( self::NAME ) );
-
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
-
-		$this->assert_ambiguous_name_failure( $result );
-		$this->assert_start_boundaries_untouched();
 	}
 
 	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
@@ -704,33 +664,6 @@ final class DispatcherBatchTest extends TestCase {
 				SchedulingErrorReason::ScheduleFailed,
 				'Restore the scheduler before retrying this batch.'
 			)
-		);
-	}
-
-	/**
-	 * Asserts the shared name-space failure identifies the required registration fix.
-	 *
-	 * @phpstan-param AbstractResult<mixed, ErrorInterface> $result
-	 *
-	 * @param   AbstractResult $result Rejected public operation.
-	 *
-	 * @return  void
-	 */
-	private function assert_ambiguous_name_failure( AbstractResult $result ): void {
-		$message = 'Background-work name "catalog-sync" is registered as both a task and a batch; rename one registration so each name identifies exactly one type.';
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( $message, $result->error->message );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => $message,
-					'context' => array( 'name' => self::NAME ),
-				),
-			),
-			$this->logger->records
 		);
 	}
 
@@ -754,7 +687,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -771,11 +704,11 @@ final class DispatcherBatchTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw_lock );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw_lock );
+		$this->wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH, $raw_lock );
 
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::NAME ] = array(
+		$options[ 'a8csp_bgte_latest_' . self::IDENTITY ] = array(
 			'all'     => 'run-running',
 			'by_hash' => array( self::ARGS_HASH => 'run-running' ),
 		);
@@ -789,7 +722,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
 	private function lock(): ?array {
-		$name = 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
+		$name = 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
 		$raw  = $this->wpdb->rows[ $name ] ?? null;
 		if ( ! \is_string( $raw ) ) {
 			return null;

@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -62,28 +63,20 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $owner     Stable consumer identifier.
-	 * @param   array<Schedule> $schedules Complete schedule declaration for the owner.
+	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $declarations
 	 *
-	 * @throws  \InvalidArgumentException When the owner, an entry, a registration key, or declaration uniqueness is invalid.
+	 * @param   string $owner        Stable consumer identifier captured by the owner-bound facade.
+	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
+	 *
+	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
-	public function sync( string $owner, array $schedules ): AbstractResult {
-		if ( 1 !== \preg_match( '/\A[a-z0-9_-]+\z/', $owner ) ) {
-			throw new \InvalidArgumentException(
-				'Schedule owner is invalid; pass a non-empty identifier containing only lowercase letters, digits, underscores, and hyphens.'
-			);
-		}
+	public function sync( string $owner, array $declarations ): AbstractResult {
+		WorkIdentity::validate_owner( $owner );
 
-		if ( 'a8csp-bgte' === $owner ) {
-			throw new \InvalidArgumentException(
-				'Schedule owner "a8csp-bgte" is reserved for engine maintenance; choose a consumer-specific owner identifier.'
-			);
-		}
-
-		return $this->sync_owner( $owner, $schedules );
+		return $this->sync_owner( $owner, $declarations );
 	}
 
 	/**
@@ -94,48 +87,64 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $owner     Stable consumer or engine identifier.
-	 * @param   array<Schedule> $schedules Complete schedule declaration for the owner.
+	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $declarations
 	 *
-	 * @throws  \InvalidArgumentException When an entry, registration key, or declaration uniqueness is invalid.
+	 * @param   string $owner        Stable consumer or engine identifier.
+	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
+	 *
+	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	public function sync_owner( string $owner, array $schedules ): AbstractResult {
+	public function sync_owner( string $owner, array $declarations ): AbstractResult {
+		WorkIdentity::validate_owner( $owner, true );
+
 		$declared = array();
-		foreach ( $schedules as $schedule ) {
+		foreach ( $declarations as $registration_key => $declaration ) {
+			if ( ! \is_string( $registration_key ) ) {
+				throw new \InvalidArgumentException(
+					'Schedule sync declaration keys must be canonical owner-qualified schedule identities.'
+				);
+			}
+
+			$registration_parts = WorkIdentity::parts( $registration_key );
+			if ( null === $registration_parts || $owner !== $registration_parts[0] ) {
+				throw new \InvalidArgumentException(
+					'Schedule sync declaration identities must be canonical and belong to the bound owner.'
+				);
+			}
+
+			$schedule = \is_array( $declaration ) ? ( $declaration['schedule'] ?? null ) : null;
 			if ( ! $schedule instanceof Schedule ) {
 				throw new \InvalidArgumentException(
 					'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).'
 				);
 			}
 
-			$registration_key_length = \strlen( $owner . ':' . $schedule->name );
-			if ( 255 < $registration_key_length ) {
-				// Exception values are diagnostic data, not rendered output.
-				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			if ( $schedule->name !== $registration_parts[1] ) {
 				throw new \InvalidArgumentException(
-					\sprintf(
-						'Schedule registration key is %d bytes; shorten the owner or schedule name so the combined "{owner}:{name}" identity is at most 255 bytes.',
-						$registration_key_length
-					)
+					'Schedule sync declaration identities must match their Schedule value-object names.'
 				);
-				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			}
 
-			if ( isset( $declared[ $schedule->name ] ) ) {
-				// Exception values are diagnostic data, not rendered output.
-				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			$task = $declaration['task'] ?? null;
+			if ( ! \is_string( $task ) ) {
 				throw new \InvalidArgumentException(
-					\sprintf(
-						'Schedule "%s" is declared more than once; pass each schedule name exactly once per owner.',
-						$schedule->name
-					)
+					'Schedule sync target identities must be canonical owner-qualified task identities.'
 				);
-				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			}
 
-			$declared[ $schedule->name ] = $schedule;
+			$task_parts = WorkIdentity::parts( $task );
+			if ( null === $task_parts || $owner !== $task_parts[0] || $schedule->task !== $task_parts[1] ) {
+				throw new \InvalidArgumentException(
+					'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object task names.'
+				);
+			}
+
+			$declared[ $registration_key ] = array(
+				'schedule' => $schedule,
+				'task'     => $task,
+			);
 		}
 
 		$registrations = $this->registry->registrations_for( $owner );
@@ -143,17 +152,18 @@ final readonly class Schedules {
 			return $this->registry_failure( $owner );
 		}
 
-		$existing         = $registrations->value;
-		$interval_by_name = array();
-		$next_due_by_name = array();
-		foreach ( $declared as $name => $schedule ) {
+		$existing             = $registrations->value;
+		$interval_by_identity = array();
+		$next_due_by_identity = array();
+		foreach ( $declared as $registration_key => $declaration ) {
+			$schedule = $declaration['schedule'];
 			$interval = $schedule->recurrence->interval();
 			if ( null === $interval ) {
 				return $this->cron_failure( $schedule );
 			}
 
-			$interval_by_name[ $name ] = $interval;
-			$current                   = $existing[ $name ] ?? null;
+			$interval_by_identity[ $registration_key ] = $interval;
+			$current                                   = $existing[ $registration_key ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
 				continue;
 			}
@@ -176,13 +186,13 @@ final readonly class Schedules {
 				);
 			}
 
-			$next_due_by_name[ $name ] = $next_due;
+			$next_due_by_identity[ $registration_key ] = $next_due;
 		}
 
 		$next = $existing;
-		foreach ( $declared as $name => $schedule ) {
-			$current          = $existing[ $name ] ?? null;
-			$registration_key = $owner . ':' . $name;
+		foreach ( $declared as $registration_key => $declaration ) {
+			$schedule = $declaration['schedule'];
+			$current  = $existing[ $registration_key ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
 				if ( $this->scheduler->is_scheduled(
 					'a8csp_background_tasks/schedule_due',
@@ -194,7 +204,7 @@ final readonly class Schedules {
 
 				$recreated = $this->scheduler->schedule_recurring(
 					'a8csp_background_tasks/schedule_due',
-					$interval_by_name[ $name ],
+					$interval_by_identity[ $registration_key ],
 					array( $registration_key ),
 					$current['next_due'],
 					$registration_key,
@@ -224,9 +234,9 @@ final readonly class Schedules {
 				}
 			}
 
-			$interval      = $interval_by_name[ $name ];
-			$next_due      = $next_due_by_name[ $name ];
-			$next[ $name ] = array(
+			$interval                  = $interval_by_identity[ $registration_key ];
+			$next_due                  = $next_due_by_identity[ $registration_key ];
+			$next[ $registration_key ] = array(
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => $next_due,
 				'last_fired'  => null,
@@ -254,9 +264,8 @@ final readonly class Schedules {
 			}
 		}
 
-		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $name ) {
-			$registration_key = $owner . ':' . $name;
-			$removed          = $this->scheduler->unschedule(
+		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $registration_key ) {
+			$removed = $this->scheduler->unschedule(
 				'a8csp_background_tasks/schedule_due',
 				array( $registration_key ),
 				$registration_key
@@ -265,7 +274,7 @@ final readonly class Schedules {
 				return $removed;
 			}
 
-			unset( $next[ $name ] );
+			unset( $next[ $registration_key ] );
 			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
 				return $this->registry_failure( $owner );
 			}
@@ -287,14 +296,21 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
-	 * @param   string $name  Stable schedule name.
+	 * @param   string $registration_key Complete owner-qualified schedule identity.
+	 *
+	 * @throws  \InvalidArgumentException When the schedule identity is not canonical.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
-	public function run_now( string $owner, string $name ): AbstractResult {
-		return $this->occurrence_delivery->run_now_under_lease( $owner, $name );
+	public function run_now( string $registration_key ): AbstractResult {
+		if ( null === WorkIdentity::parts( $registration_key ) ) {
+			throw new \InvalidArgumentException(
+				'Schedule identity is invalid; pass one canonical {owner}:{name} identity.'
+			);
+		}
+
+		return $this->occurrence_delivery->run_now_under_lease( $registration_key );
 	}
 
 	// endregion

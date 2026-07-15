@@ -477,7 +477,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Stable task or batch name.
+	 * @param   string                  $name       Complete owner-qualified task or batch identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
@@ -860,7 +860,7 @@ final readonly class TerminalTransitions {
 	private function fire_batch_callback( string $name, string $run_id, RunState $state, ?BatchInterface $batch, ?RunFailure $failure ): bool {
 		if ( null === $batch ) {
 			$this->logger->warning(
-				'Terminal batch callback was skipped because the batch is no longer registered unambiguously.',
+				'Terminal batch callback was skipped because the batch is not registered in this request.',
 				array(
 					'batch_name' => $name,
 					'run_id'     => $run_id,
@@ -1121,7 +1121,7 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param 'started'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event      Lifecycle event name.
-	 * @param   string                  $name       Stable task or batch name.
+	 * @param   string                  $name       Complete owner-qualified task or batch identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   RunFailure|null         $failure    Failure detail for a failed event.
