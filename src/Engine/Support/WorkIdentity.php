@@ -25,7 +25,7 @@ final class WorkIdentity {
 	 *
 	 * @var     int
 	 */
-	public const OWNER_MAX_BYTES = 32;
+	public const int OWNER_MAX_BYTES = 32;
 
 	/**
 	 * Local-name ceiling chosen with the owner ceiling so the longest composed identity leaves the
@@ -37,7 +37,7 @@ final class WorkIdentity {
 	 *
 	 * @var     int
 	 */
-	public const NAME_MAX_BYTES = 64;
+	public const int NAME_MAX_BYTES = 64;
 
 	/**
 	 * Longest `{owner}:{name}` identity admitted by the component ceilings.
@@ -47,7 +47,7 @@ final class WorkIdentity {
 	 *
 	 * @var     int
 	 */
-	public const IDENTITY_MAX_BYTES = self::OWNER_MAX_BYTES + 1 + self::NAME_MAX_BYTES;
+	public const int IDENTITY_MAX_BYTES = self::OWNER_MAX_BYTES + 1 + self::NAME_MAX_BYTES;
 
 	/**
 	 * Owner namespace retained exclusively for engine work.
@@ -57,7 +57,7 @@ final class WorkIdentity {
 	 *
 	 * @var     string
 	 */
-	public const ENGINE_OWNER = 'a8csp-bgte';
+	public const string ENGINE_OWNER = 'a8csp-bgte';
 
 	// endregion
 

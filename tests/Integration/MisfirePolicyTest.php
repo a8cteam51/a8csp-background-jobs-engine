@@ -119,7 +119,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::RUN_ONCE_TASK_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::RUN_ONCE_TASK );
-		$engine->tasks()->register( self::RUN_ONCE_TASK_IDENTITY, $task );
+		$engine->tasks->register( self::RUN_ONCE_TASK_IDENTITY, $task );
 		$schedule = new Schedule(
 			self::RUN_ONCE_SCHEDULE,
 			Recurrence::every( self::INTERVAL ),
@@ -127,7 +127,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			array( 'policy' => 'run-once' ),
 			OverlapPolicy::Skip
 		);
-		$this->assert_sync_success( $engine->schedules(), self::RUN_ONCE_OWNER, array( $schedule ) );
+		$this->assert_sync_success( $engine->schedules, self::RUN_ONCE_OWNER, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
 		$this->set_next_due( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE, $aged_due );
@@ -172,7 +172,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_schedules' );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::SKIP_TASK );
-		$engine->tasks()->register( self::SKIP_TASK_IDENTITY, $task );
+		$engine->tasks->register( self::SKIP_TASK_IDENTITY, $task );
 		$schedule = new Schedule(
 			self::SKIP_SCHEDULE,
 			Recurrence::every( self::INTERVAL ),
@@ -181,7 +181,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			OverlapPolicy::Skip,
 			CatchUpPolicy::Skip
 		);
-		$this->assert_sync_success( $engine->schedules(), self::SKIP_OWNER, array( $schedule ) );
+		$this->assert_sync_success( $engine->schedules, self::SKIP_OWNER, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
 		$this->set_next_due( self::SKIP_OWNER, self::SKIP_SCHEDULE, $aged_due );
@@ -245,8 +245,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine      = $this->build_engine( $clock, $logger );
 		$exact_task  = new RecordingTask( self::EXACT_TASK );
 		$beyond_task = new RecordingTask( self::BEYOND_TASK );
-		$engine->tasks()->register( self::EXACT_TASK_IDENTITY, $exact_task );
-		$engine->tasks()->register( self::BEYOND_TASK_IDENTITY, $beyond_task );
+		$engine->tasks->register( self::EXACT_TASK_IDENTITY, $exact_task );
+		$engine->tasks->register( self::BEYOND_TASK_IDENTITY, $beyond_task );
 		$exact  = new Schedule(
 			self::EXACT_SCHEDULE,
 			Recurrence::every( self::INTERVAL ),
@@ -259,7 +259,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			self::BEYOND_TASK,
 			catch_up: CatchUpPolicy::Skip
 		);
-		$this->assert_sync_success( $engine->schedules(), self::BOUNDARY_OWNER, array( $exact, $beyond ) );
+		$this->assert_sync_success( $engine->schedules, self::BOUNDARY_OWNER, array( $exact, $beyond ) );
 
 		$exact_due  = $now - self::INTERVAL;
 		$beyond_due = $exact_due - 1;

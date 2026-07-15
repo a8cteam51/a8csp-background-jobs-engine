@@ -41,7 +41,7 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @var     string
 	 */
-	public const INTENT_PREFIX = 'a8csp_bgte_cleanup_';
+	public const string INTENT_PREFIX = 'a8csp_bgte_cleanup_';
 
 	/**
 	 * Internal recurring-occurrence delivery hook.
@@ -51,7 +51,7 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @var     string
 	 */
-	public const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
+	public const string SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
 
 	// endregion
 

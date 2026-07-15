@@ -23,7 +23,7 @@ final class InvalidBatchChunkException extends \InvalidArgumentException {
 	 *
 	 * @var     string
 	 */
-	public const MESSAGE = 'Batch chunk arguments must contain only null, scalar, or nested array values.';
+	public const string MESSAGE = 'Batch chunk arguments must contain only null, scalar, or nested array values.';
 
 	// endregion
 

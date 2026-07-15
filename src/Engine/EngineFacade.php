@@ -34,9 +34,9 @@ final readonly class EngineFacade {
 	 * @param   Inspection $inspection Read-only run inspection.
 	 */
 	public function __construct(
-		private Tasks $tasks,
-		private Schedules $schedules,
-		private Batches $batches,
+		public Tasks $tasks,
+		public Schedules $schedules,
+		public Batches $batches,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
 	) {}
@@ -90,46 +90,6 @@ final readonly class EngineFacade {
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, string $run_id ): AbstractResult {
 		return $this->dispatcher->cancel( $name, $run_id );
-	}
-
-	// endregion
-
-	// region GETTERS
-
-	/**
-	 * Returns the task API.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  Tasks
-	 */
-	public function tasks(): Tasks {
-		return $this->tasks;
-	}
-
-	/**
-	 * Returns the schedule API.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  Schedules
-	 */
-	public function schedules(): Schedules {
-		return $this->schedules;
-	}
-
-	/**
-	 * Returns the batch API.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  Batches
-	 */
-	public function batches(): Batches {
-		return $this->batches;
 	}
 
 	// endregion

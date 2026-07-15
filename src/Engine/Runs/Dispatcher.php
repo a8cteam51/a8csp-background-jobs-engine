@@ -366,13 +366,10 @@ final readonly class Dispatcher {
 		}
 
 		$entries = $read->value;
-		$entry   = null;
-		foreach ( $entries as $candidate ) {
-			if ( $run_id === $candidate['run_id'] ) {
-				$entry = $candidate;
-				break;
-			}
-		}
+		$entry   = \array_find(
+			$entries,
+			static fn ( array $candidate ): bool => $run_id === $candidate['run_id']
+		);
 
 		if ( null === $entry ) {
 			$retained_run_ids = \array_column( $entries, 'run_id' );

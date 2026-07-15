@@ -38,7 +38,7 @@ final readonly class RunStore {
 	 *
 	 * @var     string
 	 */
-	public const OPTION_PREFIX = 'a8csp_bgte_run_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_run_';
 
 	/**
 	 * Maximum exact-row attempts before a contended terminal effect append fails safely.
@@ -539,13 +539,10 @@ final readonly class RunStore {
 			return false;
 		}
 
-		foreach ( $value['queue'] as $chunk ) {
-			if ( ! \is_array( $chunk ) || ! PortableArguments::is_valid( $chunk ) ) {
-				return false;
-			}
-		}
-
-		return true;
+		return \array_all(
+			$value['queue'],
+			static fn ( mixed $chunk ): bool => \is_array( $chunk ) && PortableArguments::is_valid( $chunk )
+		);
 	}
 
 	/**

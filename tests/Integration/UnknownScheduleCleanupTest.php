@@ -123,7 +123,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		$engine = Container::get_engine();
 		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
-		$synced = $engine->schedules()->sync_owner(
+		$synced = $engine->schedules->sync_owner(
 			'a8csp-bgte',
 			array(
 				self::MAINTENANCE_KEY => array(

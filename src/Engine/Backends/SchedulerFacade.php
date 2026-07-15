@@ -299,13 +299,10 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_scheduled( string $hook, array $args = array(), string $group = '' ): bool {
-		foreach ( $this->ready_backends() as $backend ) {
-			if ( $backend->is_scheduled( $hook, $args, $group ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return \array_any(
+			$this->ready_backends(),
+			static fn ( BackendInterface $backend ): bool => $backend->is_scheduled( $hook, $args, $group )
+		);
 	}
 
 	/**
@@ -348,13 +345,10 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_absent(): bool {
-		foreach ( $this->backends as $backend ) {
-			if ( ! $backend->is_absent() ) {
-				return false;
-			}
-		}
-
-		return true;
+		return \array_all(
+			$this->backends,
+			static fn ( BackendInterface $backend ): bool => $backend->is_absent()
+		);
 	}
 
 	/**
@@ -367,13 +361,10 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	public function supports_cron_expressions(): bool {
-		foreach ( $this->backends as $backend ) {
-			if ( $backend->is_ready() && $backend->supports_cron_expressions() ) {
-				return true;
-			}
-		}
-
-		return false;
+		return \array_any(
+			$this->backends,
+			static fn ( BackendInterface $backend ): bool => $backend->is_ready() && $backend->supports_cron_expressions()
+		);
 	}
 
 	/**
@@ -496,13 +487,10 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  bool
 	 */
 	private function snapshot_is_authoritative( array $ready_backends ): bool {
-		foreach ( $this->backends as $backend ) {
-			if ( ! \in_array( $backend, $ready_backends, true ) && ! $backend->is_absent() ) {
-				return false;
-			}
-		}
-
-		return true;
+		return \array_all(
+			$this->backends,
+			static fn ( BackendInterface $backend ): bool => \in_array( $backend, $ready_backends, true ) || $backend->is_absent()
+		);
 	}
 
 	/**

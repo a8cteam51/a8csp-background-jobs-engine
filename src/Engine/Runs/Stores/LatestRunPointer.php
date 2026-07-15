@@ -39,7 +39,7 @@ final readonly class LatestRunPointer {
 	 *
 	 * @var     string
 	 */
-	public const OPTION_PREFIX = 'a8csp_bgte_latest_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_latest_';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended write fails safely.

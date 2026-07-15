@@ -31,7 +31,7 @@ final readonly class OccurrenceLease {
 	 *
 	 * @var     string
 	 */
-	public const OPTION_PREFIX = 'a8csp_bgte_lease_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_lease_';
 
 	/**
 	 * Maximum lease age in seconds before a new occurrence may reclaim it.

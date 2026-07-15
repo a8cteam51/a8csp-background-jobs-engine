@@ -37,7 +37,7 @@ final class Container {
 	 * @return  void
 	 */
 	public static function boot(): void {
-		( new Component() )->initialize();
+		new Component()->initialize();
 	}
 
 	/**
@@ -69,27 +69,27 @@ final class Container {
 			new ApiTasks(
 				$identity,
 				static function ( string $name, TaskInterface $task ) use ( $engine ): void {
-					$engine->tasks()->register( $name, $task );
+					$engine->tasks->register( $name, $task );
 				},
 				static fn ( string $name, array $args, int $delay, ?string $dedup_key, int $priority ) => AdmissionErrorMapper::map(
-					$engine->tasks()->enqueue( $name, $args, $delay, $dedup_key, $priority )
+					$engine->tasks->enqueue( $name, $args, $delay, $dedup_key, $priority )
 				)
 			),
 			new ApiBatches(
 				$identity,
 				static function ( string $name, BatchInterface $batch ) use ( $engine ): void {
-					$engine->batches()->register( $name, $batch );
+					$engine->batches->register( $name, $batch );
 				},
 				static fn ( string $name, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map(
-					$engine->batches()->start( $name, $args, $existing, $priority )
+					$engine->batches->start( $name, $args, $existing, $priority )
 				)
 			),
 			new ApiSchedules(
 				$identity,
 				static fn ( array $declarations ) => AdmissionErrorMapper::map(
-					$engine->schedules()->sync( $owner, $declarations )
+					$engine->schedules->sync( $owner, $declarations )
 				),
-				static fn ( string $name ) => AdmissionErrorMapper::map( $engine->schedules()->run_now( $name ) )
+				static fn ( string $name ) => AdmissionErrorMapper::map( $engine->schedules->run_now( $name ) )
 			),
 			new ApiRuns(
 				$identity,

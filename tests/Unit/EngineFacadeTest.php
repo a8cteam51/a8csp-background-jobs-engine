@@ -177,10 +177,10 @@ final class EngineFacadeTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_accessors_return_the_same_api_objects(): void {
-		self::assertSame( $this->engine->tasks(), $this->engine->tasks() );
-		self::assertSame( $this->engine->schedules(), $this->engine->schedules() );
-		self::assertSame( $this->engine->batches(), $this->engine->batches() );
+	public function test_properties_retain_the_same_api_objects(): void {
+		self::assertSame( $this->engine->tasks, $this->engine->tasks );
+		self::assertSame( $this->engine->schedules, $this->engine->schedules );
+		self::assertSame( $this->engine->batches, $this->engine->batches );
 	}
 
 	/**
@@ -189,9 +189,9 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_register_then_enqueue_round_trips_through_the_task_facade(): void {
-		$this->engine->tasks()->register( self::TASK_IDENTITY, new RecordingTask( 'email-digest' ) );
+		$this->engine->tasks->register( self::TASK_IDENTITY, new RecordingTask( 'email-digest' ) );
 
-		$result = $this->engine->tasks()->enqueue(
+		$result = $this->engine->tasks->enqueue(
 			self::TASK_IDENTITY,
 			self::ARGS,
 			delay: 300,
@@ -238,9 +238,9 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_register_then_start_round_trips_through_the_batch_facade(): void {
-		$this->engine->batches()->register( self::BATCH_IDENTITY, new RecordingBatch( 'catalog-sync' ) );
+		$this->engine->batches->register( self::BATCH_IDENTITY, new RecordingBatch( 'catalog-sync' ) );
 
-		$result = $this->engine->batches()->start(
+		$result = $this->engine->batches->start(
 			self::BATCH_IDENTITY,
 			self::ARGS,
 			existing: ExistingRunPolicy::Reject,
@@ -277,7 +277,7 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->tasks()->enqueue( 'consumer-plugin:unknown', self::ARGS );
+		$result = $this->engine->tasks->enqueue( 'consumer-plugin:unknown', self::ARGS );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -294,14 +294,14 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cross_kind_collision_fails_during_engine_registration(): void {
-		$this->engine->tasks()->register( 'consumer-plugin:shared-work', new RecordingTask( 'shared-work' ) );
+		$this->engine->tasks->register( 'consumer-plugin:shared-work', new RecordingTask( 'shared-work' ) );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs(
 			'Background-work identity "consumer-plugin:shared-work" is already registered as a task; it cannot also be registered as a batch.'
 		);
 
-		$this->engine->batches()->register( 'consumer-plugin:shared-work', new RecordingBatch( 'shared-work' ) );
+		$this->engine->batches->register( 'consumer-plugin:shared-work', new RecordingBatch( 'shared-work' ) );
 	}
 
 	/**
@@ -366,7 +366,7 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_dispatches_the_engine_maintenance_identity(): void {
-		$this->engine->tasks()->register( self::MAINTENANCE_IDENTITY, new RecordingTask( MaintenanceTask::NAME ) );
+		$this->engine->tasks->register( self::MAINTENANCE_IDENTITY, new RecordingTask( MaintenanceTask::NAME ) );
 		$store = new FailedRunStore( self::MAINTENANCE_IDENTITY, new OptionRows( $this->wpdb ) );
 		self::assertTrue(
 			$store->record(

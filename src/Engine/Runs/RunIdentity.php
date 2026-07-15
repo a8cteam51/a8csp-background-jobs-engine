@@ -27,7 +27,7 @@ final class RunIdentity {
 	 *
 	 * @var     int
 	 */
-	public const TIME_DIGITS = 20;
+	public const int TIME_DIGITS = 20;
 
 	/**
 	 * Decimal width reserved for a run identifier's random suffix.
@@ -37,7 +37,7 @@ final class RunIdentity {
 	 *
 	 * @var     int
 	 */
-	public const RANDOM_DIGITS = 19;
+	public const int RANDOM_DIGITS = 19;
 
 	/**
 	 * Fixed character length of the canonical timestamp-randomness run identifier.
@@ -47,7 +47,7 @@ final class RunIdentity {
 	 *
 	 * @var     int
 	 */
-	public const LENGTH = self::TIME_DIGITS + 1 + self::RANDOM_DIGITS;
+	public const int LENGTH = self::TIME_DIGITS + 1 + self::RANDOM_DIGITS;
 
 	// endregion
 

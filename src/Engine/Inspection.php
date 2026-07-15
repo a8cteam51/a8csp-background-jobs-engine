@@ -134,13 +134,12 @@ final readonly class Inspection {
 			);
 		}
 
-		foreach ( \array_reverse( $entries ) as $entry ) {
-			if ( RunStatus::Completed->value === $entry['status'] ) {
-				return new Success( $entry['run_id'] );
-			}
-		}
-
-		return new Success( null );
+		return new Success(
+			\array_find(
+				\array_reverse( $entries ),
+				static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status']
+			)['run_id'] ?? null
+		);
 	}
 
 	/**

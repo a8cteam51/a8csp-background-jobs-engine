@@ -43,7 +43,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	public const CONTINUE_HOOK = 'a8csp_background_tasks/continue';
+	public const string CONTINUE_HOOK = 'a8csp_background_tasks/continue';
 
 	/**
 	 * Internal hook that reconciles a terminal batch run.
@@ -53,7 +53,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	public const CLEANUP_HOOK = 'a8csp_background_tasks/cleanup';
+	public const string CLEANUP_HOOK = 'a8csp_background_tasks/cleanup';
 
 	/**
 	 * Internal hook that executes task work or one batch chunk.
@@ -63,7 +63,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	public const RUN_HOOK = 'a8csp_background_tasks/run';
+	public const string RUN_HOOK = 'a8csp_background_tasks/run';
 
 	/**
 	 * Internal hook that generates and starts a batch queue.
@@ -73,7 +73,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	public const START_HOOK = 'a8csp_background_tasks/start';
+	public const string START_HOOK = 'a8csp_background_tasks/start';
 
 	// endregion
 

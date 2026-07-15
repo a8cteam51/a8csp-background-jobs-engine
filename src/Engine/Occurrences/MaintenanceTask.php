@@ -30,7 +30,7 @@ final class MaintenanceTask extends AbstractTask {
 	 *
 	 * @var     string
 	 */
-	public const NAME = 'maintenance';
+	public const string NAME = 'maintenance';
 
 	/**
 	 * Belt-and-braces grace before deleting a terminal run option.

@@ -533,7 +533,7 @@ final readonly class RunsCommand {
 		$option_rows     = new OptionRows( $wpdb );
 		$entries_by_name = array();
 		foreach ( $names as $name ) {
-			$entries = ( new FailedRunStore( $name, $option_rows ) )->all();
+			$entries = new FailedRunStore( $name, $option_rows )->all();
 			if ( $entries->is_failure() ) {
 				\WP_CLI::error(
 					\sprintf(
@@ -613,7 +613,7 @@ final readonly class RunsCommand {
 		$rows  = new OptionRows( $wpdb );
 		$count = 0;
 		foreach ( $names as $store_name ) {
-			$purged = ( new FailedRunStore( $store_name, $rows ) )->purge();
+			$purged = new FailedRunStore( $store_name, $rows )->purge();
 			if ( null === $purged ) {
 				\WP_CLI::error(
 					\sprintf(
