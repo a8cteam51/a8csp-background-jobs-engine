@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
@@ -52,6 +53,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -80,6 +82,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
+	private OptionRows $rows;
 	private BatchRegistry $batches;
 	private TaskRegistry $tasks;
 	private WpdbLockSpy $wpdb;
@@ -138,8 +141,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batches        = new BatchRegistry();
 		$this->tasks          = new TaskRegistry();
 		$this->wpdb           = new WpdbLockSpy();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$this->rows           = new OptionRows( $this->wpdb );
+		$guard                = new OverlapGuard( $this->clock, $this->logger, $this->rows );
+		$stores               = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
@@ -406,7 +410,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$observed_state           = null;
 		$this->batch->on_generate = function ( array $start_args ) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 		};
 
@@ -429,7 +433,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_start_action_supersedes_when_throwing_queue_generation_loses_ownership(): void {
 		$this->batch->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
 		$this->batch->on_generate        = function ( array $start_args ): void {
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 		};
 		$this->start_batch();
@@ -457,7 +461,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				$this->wpdb->before_next(
 					'update',
 					function ( WpdbLockSpy $wpdb ): void {
-						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 					}
 				);
@@ -502,7 +506,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				$this->wpdb->before_next(
 					'update',
 					function ( WpdbLockSpy $wpdb ): void {
-						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
 					}
 				);
@@ -817,7 +821,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
 			$context->enqueue( array( 'chunk' => 'discarded' ) );
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		};
 
@@ -851,7 +855,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			array $processed_args,
 			BatchContextInterface $context
 		): void {
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		};
 		$this->clock->timestamp         = self::NOW + 120;
@@ -956,7 +960,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
 			function ( int $default_delay, string $name, string $run_id ): int {
-				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 
 				return 30;
@@ -981,7 +985,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
 			function ( int $default_delay, string $name, string $run_id ): int {
-				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 
 				throw new \DomainException( 'Continue-delay filter exploded.' );
@@ -1662,7 +1666,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	public function test_handle_continue_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$this->prepare_started_batch( array( array( 'chunk' => 'first' ) ) );
-		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 90;
@@ -1681,7 +1685,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_run_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
-		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		$this->clear_action_observations();
 		$this->clock->timestamp = self::NOW + 120;
@@ -1809,6 +1813,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 						$labels[] = 'run:' . $status;
 					}
 
+					continue;
+				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'failed-store';
+					continue;
+				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'history';
 					continue;
 				}
 				$labels[] = 'lock:' . $operation;
@@ -2221,6 +2233,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 

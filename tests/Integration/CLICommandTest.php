@@ -611,16 +611,18 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertIsString(
 			$run_store->transition_state( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) )
 		);
-		$history = new RunHistory( self::CANCEL_NAME );
-		$history->record_started( self::CANONICAL_RUN_ID, self::args_hash( array() ) );
-		$history->record_terminal( 'integration-cli-history-failed', 'history-hash', RunStatus::Failed );
+		$history = new RunHistory( self::CANCEL_NAME, $rows );
+		self::assertTrue( $history->record_started( self::CANONICAL_RUN_ID, self::args_hash( array() ) ) );
+		self::assertTrue( $history->record_terminal( 'integration-cli-history-failed', 'history-hash', RunStatus::Failed ) );
 		$failed_store = new FailedRunStore( self::CANCEL_NAME, $rows );
-		$failed_store->record(
-			'integration-cli-history-failed',
-			self::FAILED_AT,
-			array(),
-			2,
-			new EngineError( 'CLI history failure.' )
+		self::assertTrue(
+			$failed_store->record(
+				'integration-cli-history-failed',
+				self::FAILED_AT,
+				array(),
+				2,
+				new EngineError( 'CLI history failure.' )
+			)
 		);
 
 		try {
@@ -1044,12 +1046,14 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private function seed_failed_run( string $name, ?OptionRows $rows = null ): FailedRunStore {
 		$store = new FailedRunStore( $name, $rows ?? self::option_rows() );
-		$store->record(
-			self::RUN_ID,
-			self::FAILED_AT,
-			array( 'account_id' => 42 ),
-			3,
-			new EngineError( 'CLI boundary failure.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				self::RUN_ID,
+				self::FAILED_AT,
+				array( 'account_id' => 42 ),
+				3,
+				new EngineError( 'CLI boundary failure.', \RuntimeException::class )
+			)
 		);
 
 		return $store;

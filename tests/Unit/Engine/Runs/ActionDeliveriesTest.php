@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
@@ -43,6 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -71,6 +73,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
+	private OptionRows $rows;
 	private RecordingTask $task;
 	private TaskRegistry $registry;
 	private WpdbLockSpy $wpdb;
@@ -129,9 +132,10 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->registry   = new TaskRegistry();
 		$this->registry->register( $this->task );
 		$this->wpdb           = new WpdbLockSpy();
+		$this->rows           = new OptionRows( $this->wpdb );
 		$batches              = new BatchRegistry();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $this->clock, $this->logger, $this->rows );
+		$stores               = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle    = new FailureLifecycle(
@@ -437,7 +441,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$observed_state        = null;
 		$this->task->on_handle = function ( array $args ) use ( &$observed_state ): void {
 			$observed_state = $this->option( $this->run_option_name() );
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		};
 
@@ -582,6 +586,14 @@ final class ActionDeliveriesTest extends TestCase {
 
 					continue;
 				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'failed-store';
+					continue;
+				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'history';
+					continue;
+				}
 				$labels[] = 'lock:' . $operation;
 				continue;
 			}
@@ -696,6 +708,13 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
@@ -44,6 +45,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
@@ -74,6 +76,7 @@ final class FailureLifecycleTest extends TestCase {
 	private FailureLifecycle $failure_lifecycle;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
+	private OptionRows $rows;
 	private RecordingTask $task;
 	private TerminalTransitions $terminal_transitions;
 	private TaskRegistry $registry;
@@ -133,9 +136,10 @@ final class FailureLifecycleTest extends TestCase {
 		$this->registry   = new TaskRegistry();
 		$this->registry->register( $this->task );
 		$this->wpdb                 = new WpdbLockSpy();
+		$this->rows                 = new OptionRows( $this->wpdb );
 		$batches                    = new BatchRegistry();
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores                     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
+		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->failure_lifecycle    = new FailureLifecycle(
@@ -174,7 +178,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable = new \RuntimeException( 'Task exploded.' );
 		$this->prepare_run_action();
 		$this->task->on_handle = function ( array $args ): void {
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+			self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		};
 
@@ -201,7 +205,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
-				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
 				return new RetryPolicy( max_attempts: 1 );
@@ -241,7 +245,7 @@ final class FailureLifecycleTest extends TestCase {
 				$this->wpdb->before_next(
 					'select',
 					function ( WpdbLockSpy $lock_spy ): void {
-						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 						$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 					}
 				);
@@ -515,7 +519,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::NAME,
 			function ( RetryPolicy $policy ): RetryPolicy {
-				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+				self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
 				throw new \DomainException( 'Retry policy filter exploded.' );
@@ -605,7 +609,7 @@ final class FailureLifecycleTest extends TestCase {
 				$this->wpdb->before_next(
 					'select',
 					function ( WpdbLockSpy $lock_spy ): void {
-						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+						self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 						$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 					}
 				);
@@ -944,6 +948,14 @@ final class FailureLifecycleTest extends TestCase {
 
 					continue;
 				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'failed-store';
+					continue;
+				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'history';
+					continue;
+				}
 				$labels[] = 'lock:' . $operation;
 				continue;
 			}
@@ -1058,6 +1070,13 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 

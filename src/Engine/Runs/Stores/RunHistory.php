@@ -28,6 +28,16 @@ final readonly class RunHistory {
 	private const DEFAULT_SIZE = 30;
 
 	/**
+	 * Maximum exact-row compare-and-swap attempts before a contended write fails safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const UPDATE_ATTEMPTS = 5;
+
+	/**
 	 * Prefix for run-history option names.
 	 *
 	 * @since   1.0.0
@@ -60,7 +70,7 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string          $name Stable task or batch name.
-	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, when inspection is required.
+	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, or null to resolve the global connection.
 	 */
 	public function __construct(
 		private string $name,
@@ -80,10 +90,13 @@ final readonly class RunHistory {
 	 * @param   string $run_id    Run identifier.
 	 * @param   string $args_hash Stable identity of the start arguments.
 	 *
-	 * @return  void
+	 * @throws  \LogicException When no authoritative database connection exists or serialization fails.
+	 *
+	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	public function record_started( string $run_id, string $args_hash ): void {
-		$this->record( $run_id, $args_hash );
+	#[\NoDiscard( 'a run-history persistence failure must be handled, not dropped' )]
+	public function record_started( string $run_id, string $args_hash ): bool {
+		return $this->record( $run_id, $args_hash );
 	}
 
 	/**
@@ -97,11 +110,13 @@ final readonly class RunHistory {
 	 * @param   RunStatus $status    Terminal run status.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
+	 * @throws  \LogicException           When no authoritative database connection exists or serialization fails.
 	 *
-	 * @return  void
+	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): void {
-		$this->record( $run_id, $args_hash, $status );
+	#[\NoDiscard( 'a run-history persistence failure must be handled, not dropped' )]
+	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): bool {
+		return $this->record( $run_id, $args_hash, $status );
 	}
 
 	/**
@@ -155,62 +170,96 @@ final readonly class RunHistory {
 	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
+	 * @throws  \LogicException           When no authoritative database connection exists or serialization fails.
 	 *
-	 * @return  void
+	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	private function record( string $run_id, string $args_hash, ?RunStatus $status = null ): void {
-		$history      = self::history_from_option( \get_option( $this->option_name(), null ) );
-		$hash_history = $history['by_hash'][ $args_hash ] ?? array(
-			'started'   => array(),
-			'completed' => array(),
-		);
-		if ( null === $status ) {
-			if (
-				\in_array( $run_id, $history['started'], true )
-				|| \in_array( $run_id, $hash_history['started'], true )
-			) {
-				return;
-			}
-
-			$history['started'][]      = $run_id;
-			$hash_history['started'][] = $run_id;
-		} else {
-			if ( RunStatus::Running === $status ) {
-				throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
-			}
-
-			if (
-				\in_array( $run_id, self::terminal_run_ids( $history['completed'] ), true )
-				|| \in_array( $run_id, self::terminal_run_ids( $hash_history['completed'] ), true )
-			) {
-				return;
-			}
-
-			$entry = array(
-				'run_id' => $run_id,
-				'status' => $status->value,
-			);
-
-			$history['completed'][]      = $entry;
-			$hash_history['completed'][] = $entry;
+	private function record( string $run_id, string $args_hash, ?RunStatus $status = null ): bool {
+		if ( RunStatus::Running === $status ) {
+			throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
 		}
 
-		// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
-		unset( $history['by_hash'][ $args_hash ] );
-		$history['by_hash'][ $args_hash ] = $hash_history;
-		$history['by_hash']               = \array_slice( $history['by_hash'], -self::MAX_HASH_BUCKETS, null, true );
+		$rows = $this->option_rows();
+		$key  = $this->option_name();
+		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
+			$selected = $rows->read( $key );
+			if ( $selected->is_failure() ) {
+				return false;
+			}
 
-		$size                 = $this->history_size();
-		$history['started']   = self::tail( $history['started'], $size );
-		$history['completed'] = self::tail( $history['completed'], $size );
-		foreach ( $history['by_hash'] as $hash => $buffers ) {
-			$history['by_hash'][ $hash ] = array(
-				'started'   => self::tail( $buffers['started'], $size ),
-				'completed' => self::tail( $buffers['completed'], $size ),
+			$expected_raw = $selected->value;
+			$history      = self::history_from_option(
+				null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw )
 			);
+			$hash_history = $history['by_hash'][ $args_hash ] ?? array(
+				'started'   => array(),
+				'completed' => array(),
+			);
+			if ( null === $status ) {
+				if (
+					\in_array( $run_id, $history['started'], true )
+					|| \in_array( $run_id, $hash_history['started'], true )
+				) {
+					return true;
+				}
+
+				$history['started'][]      = $run_id;
+				$hash_history['started'][] = $run_id;
+			} else {
+				if (
+					\in_array( $run_id, self::terminal_run_ids( $history['completed'] ), true )
+					|| \in_array( $run_id, self::terminal_run_ids( $hash_history['completed'] ), true )
+				) {
+					return true;
+				}
+
+				$entry = array(
+					'run_id' => $run_id,
+					'status' => $status->value,
+				);
+
+				$history['completed'][]      = $entry;
+				$hash_history['completed'][] = $entry;
+			}
+
+			// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
+			unset( $history['by_hash'][ $args_hash ] );
+			$history['by_hash'][ $args_hash ] = $hash_history;
+			$history['by_hash']               = \array_slice( $history['by_hash'], -self::MAX_HASH_BUCKETS, null, true );
+
+			$size                 = $this->history_size();
+			$history['started']   = self::tail( $history['started'], $size );
+			$history['completed'] = self::tail( $history['completed'], $size );
+			foreach ( $history['by_hash'] as $hash => $buffers ) {
+				$history['by_hash'][ $hash ] = array(
+					'started'   => self::tail( $buffers['started'], $size ),
+					'completed' => self::tail( $buffers['completed'], $size ),
+				);
+			}
+
+			$replacement_raw = self::serialize_history( $history );
+			if ( null === $expected_raw ) {
+				if ( $rows->insert( $key, $replacement_raw ) ) {
+					return true;
+				}
+
+				continue;
+			}
+
+			if ( $rows->replace( $key, $expected_raw, $replacement_raw ) ) {
+				return true;
+			}
+
+			$current = $rows->read( $key );
+			if ( $current->is_failure() ) {
+				return false;
+			}
+			if ( $current->value === $expected_raw ) {
+				return false;
+			}
 		}
 
-		\update_option( $this->option_name(), $history, false );
+		return false;
 	}
 
 	/**
@@ -240,6 +289,29 @@ final readonly class RunHistory {
 	}
 
 	/**
+	 * Returns authoritative option-row I/O from the injected seam or the global connection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When no authoritative database connection exists.
+	 *
+	 * @return  OptionRows
+	 */
+	private function option_rows(): OptionRows {
+		if ( null !== $this->rows ) {
+			return $this->rows;
+		}
+
+		$wpdb = $GLOBALS['wpdb'] ?? null;
+		if ( ! $wpdb instanceof \wpdb ) {
+			throw new \LogicException( 'Run-history inspection requires authoritative option-row I/O.' );
+		}
+
+		return new OptionRows( $wpdb );
+	}
+
+	/**
 	 * Returns validated history from the authoritative raw row without constructing serialized classes.
 	 *
 	 * @since   1.0.0
@@ -257,17 +329,7 @@ final readonly class RunHistory {
 	 * }|null Null when the authoritative row read fails.
 	 */
 	private function history_from_raw_row(): ?array {
-		$rows = $this->rows;
-		if ( null === $rows ) {
-			$wpdb = $GLOBALS['wpdb'] ?? null;
-			if ( ! $wpdb instanceof \wpdb ) {
-				throw new \LogicException( 'Run-history inspection requires authoritative option-row I/O.' );
-			}
-
-			$rows = new OptionRows( $wpdb );
-		}
-
-		$selected = $rows->read( $this->option_name() );
+		$selected = $this->option_rows()->read( $this->option_name() );
 		if ( $selected->is_failure() ) {
 			return null;
 		}
@@ -275,6 +337,27 @@ final readonly class RunHistory {
 		$raw = $selected->value;
 
 		return self::history_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) );
+	}
+
+	/**
+	 * Returns a history's exact WordPress option representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $history Complete history state.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the history to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize_history( array $history ): string {
+		$raw = \maybe_serialize( $history );
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'WordPress must serialize run history to a string.' );
+		}
+
+		return $raw;
 	}
 
 	/**

@@ -281,7 +281,15 @@ final readonly class Dispatcher {
 			return $state;
 		}
 
-		$latest_pointer->record( $run_id, $args_hash );
+		if ( ! $latest_pointer->record( $run_id, $args_hash ) ) {
+			$this->logger->warning(
+				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
+				array(
+					'batch_name' => $batch_name,
+					'run_id'     => $run_id,
+				)
+			);
+		}
 		$scheduled = $this->scheduler->enqueue_async(
 			'a8csp_background_tasks/start',
 			array( $batch_name, $run_id, $state->action_seq ),
@@ -296,7 +304,15 @@ final readonly class Dispatcher {
 			return $scheduled;
 		}
 
-		$this->stores->run_history( $batch_name )->record_started( $run_id, $args_hash );
+		if ( ! $this->stores->run_history( $batch_name )->record_started( $run_id, $args_hash ) ) {
+			$this->logger->warning(
+				'Started run history could not be persisted; inspection data may be incomplete.',
+				array(
+					'batch_name' => $batch_name,
+					'run_id'     => $run_id,
+				)
+			);
+		}
 
 		return new Success( $run_id );
 	}
@@ -374,8 +390,14 @@ final readonly class Dispatcher {
 		$result = null !== $task
 			? $this->enqueue( $name, $entry['start_args'] )
 			: $this->start_batch( $name, $entry['start_args'] );
-		if ( $result->is_success() ) {
-			$failed_store->remove( $run_id );
+		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
+			$this->logger->warning(
+				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				)
+			);
 		}
 
 		return $result;
@@ -725,7 +747,15 @@ final readonly class Dispatcher {
 			$state = $replacement;
 		}
 
-		$latest_pointer->record( $run_id, $args_hash );
+		if ( ! $latest_pointer->record( $run_id, $args_hash ) ) {
+			$this->logger->warning(
+				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
+				array(
+					'task_name' => $task_name,
+					'run_id'    => $run_id,
+				)
+			);
+		}
 		$action_args = array( $task_name, $run_id, $state->action_seq );
 		$group       = $task_name . '|' . $run_id;
 		$scheduled   = 0 === $delay
@@ -740,7 +770,15 @@ final readonly class Dispatcher {
 		}
 
 		$on_accepted?->__invoke();
-		$this->stores->run_history( $task_name )->record_started( $run_id, $args_hash );
+		if ( ! $this->stores->run_history( $task_name )->record_started( $run_id, $args_hash ) ) {
+			$this->logger->warning(
+				'Started run history could not be persisted; inspection data may be incomplete.',
+				array(
+					'task_name' => $task_name,
+					'run_id'    => $run_id,
+				)
+			);
+		}
 		try {
 			$this->terminal_transitions->fire_started( $task_name, $run_id, $args );
 		} catch ( \Throwable $throwable ) {

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
@@ -45,6 +46,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
@@ -395,13 +397,23 @@ final class EngineTest extends TestCase {
 	public function test_retry_failed_dispatches_the_engine_maintenance_identity(): void {
 		$this->engine->tasks()->register( new RecordingTask( MaintenanceTask::NAME ) );
 		$store = new FailedRunStore( MaintenanceTask::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-maintenance-run',
-			self::NOW - 1,
-			array(),
-			1,
-			new EngineError( 'Maintenance failed.' )
+		self::assertTrue(
+			$store->record(
+				'failed-maintenance-run',
+				self::NOW - 1,
+				array(),
+				1,
+				new EngineError( 'Maintenance failed.' )
+			)
 		);
+		$failed_key = 'a8csp_bgte_failed_' . MaintenanceTask::NAME;
+		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
+		self::assertIsString( $failed_raw );
+		$failed_runs = RawOptionDecoder::decode( $failed_raw );
+		self::assertIsArray( $failed_runs );
+		self::assertSame( array( 'failed-maintenance-run' ), \array_column( $failed_runs, 'run_id' ) );
+		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 
 		$result = $this->engine->retry_failed( MaintenanceTask::NAME, 'failed-maintenance-run' );
 
@@ -413,6 +425,11 @@ final class EngineTest extends TestCase {
 		}
 
 		self::assertSame( array(), $remaining->value );
+		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
+		self::assertIsString( $failed_raw );
+		self::assertSame( array(), RawOptionDecoder::decode( $failed_raw ) );
+		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
+		$this->assert_no_option_function_write_for( $failed_key );
 		self::assertSame(
 			array(
 				array(
@@ -428,6 +445,24 @@ final class EngineTest extends TestCase {
 			),
 			$this->backend->calls
 		);
+	}
+
+	/**
+	 * Asserts that no WordPress option function wrote one authoritative row.
+	 *
+	 * @param   string $key Option name.
+	 *
+	 * @return  void
+	 */
+	private function assert_no_option_function_write_for( string $key ): void {
+		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $calls );
+		foreach ( $calls as $call ) {
+			self::assertIsArray( $call );
+			$args = $call['args'] ?? null;
+			self::assertIsArray( $args );
+			self::assertNotSame( $key, $args[0] ?? null );
+		}
 	}
 
 	/**

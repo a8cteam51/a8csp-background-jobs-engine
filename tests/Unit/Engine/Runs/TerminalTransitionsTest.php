@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
@@ -43,6 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( LockWindows::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
@@ -73,6 +75,7 @@ final class TerminalTransitionsTest extends TestCase {
 	private FailureLifecycle $failure_lifecycle;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
+	private OptionRows $rows;
 	private RecordingTask $task;
 	private TerminalTransitions $terminal_transitions;
 	private TaskRegistry $registry;
@@ -132,9 +135,10 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->registry   = new TaskRegistry();
 		$this->registry->register( $this->task );
 		$this->wpdb                 = new WpdbLockSpy();
+		$this->rows                 = new OptionRows( $this->wpdb );
 		$batches                    = new BatchRegistry();
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores                     = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
+		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->failure_lifecycle    = new FailureLifecycle(
@@ -419,7 +423,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
-		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 95 );
 		$this->backend->calls = array();
 
@@ -463,7 +467,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_supersedes_a_run_that_lost_replacement_ownership(): void {
 		$this->prepare_run_action();
-		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
+		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
@@ -521,7 +525,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_keeps_the_lock_winner_when_pointer_commit_lags(): void {
 		$this->prepare_run_action();
-		( new LatestRunPointer( self::NAME ) )->record( 'run-losing-starter', self::ARGS_HASH );
+		self::assertTrue( ( new LatestRunPointer( self::NAME, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
 
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
@@ -544,6 +548,118 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->logger->records );
 		$this->assert_terminal_history( 'completed' );
+	}
+
+	/** A latest-pointer write failure is logged without rejecting an otherwise accepted run. */
+	public function test_enqueue_logs_a_latest_pointer_write_failure_and_continues(): void {
+		$this->wpdb->before_next( 'insert', static function (): void {} );
+		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
+			$this->wpdb->before_next(
+				'insert',
+				static function ( WpdbLockSpy $wpdb ): void {
+					$wpdb->script_result( 'insert', false );
+				}
+			);
+		}
+
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
+					'context' => array(
+						'task_name' => self::NAME,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/** Failed-run retention failure is logged without skipping terminal hooks or history. */
+	public function test_fail_run_logs_failed_run_retention_failure_and_continues(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $state );
+		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
+			$this->wpdb->before_next(
+				'insert',
+				static function ( WpdbLockSpy $wpdb ): void {
+					$wpdb->script_result( 'insert', false );
+				}
+			);
+		}
+		$error = new EngineError( 'Terminal failure.' );
+
+		$this->terminal_transitions->fail_run( self::NAME, self::RUN_ID, $state, $run_store, $error, 1 );
+
+		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history( 'failed' );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Failed run "00000000001700000000-0000000000000000042" could not be retained for manual retry.',
+					'context' => array(
+						'task_name' => self::NAME,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/** Terminal-history failure is logged after active state cleanup completes. */
+	public function test_complete_run_logs_terminal_history_failure_and_continues(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $state );
+		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		$this->terminal_transitions->complete_run( self::NAME, self::RUN_ID, $state, $run_store );
+
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Terminal run history could not be persisted; inspection data may be incomplete.',
+					'context' => array(
+						'name'   => self::NAME,
+						'run_id' => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -584,7 +700,7 @@ final class TerminalTransitionsTest extends TestCase {
 		);
 		self::assertSame(
 			$run_ids[20],
-			( new LatestRunPointer( self::NAME ) )->get_latest(),
+			( new LatestRunPointer( self::NAME, $this->rows ) )->get_latest(),
 			'Repairing the evicted owner identity must preserve the globally newest run'
 		);
 	}
@@ -811,7 +927,7 @@ final class TerminalTransitionsTest extends TestCase {
 	/**
 	 * Asserts that the terminal buffer records the run outcome.
 	 *
-	 * @phpstan-param 'completed'|'cancelled'|'superseded' $status
+	 * @phpstan-param 'completed'|'failed'|'cancelled'|'superseded' $status
 	 *
 	 * @param   string $status Expected terminal status.
 	 *
@@ -948,6 +1064,14 @@ final class TerminalTransitionsTest extends TestCase {
 
 					continue;
 				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'failed-store';
+					continue;
+				}
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::NAME === ( $event['key'] ?? null ) ) {
+					$labels[] = 'history';
+					continue;
+				}
 				$labels[] = 'lock:' . $operation;
 				continue;
 			}
@@ -1062,6 +1186,13 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 

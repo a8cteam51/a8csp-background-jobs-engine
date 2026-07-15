@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
@@ -40,6 +41,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( MaintenanceTask::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( StoreFactory::class )]
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -949,6 +951,16 @@ final class RunReconciliationTest extends TestCase {
 	private function options(): array {
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
+		foreach ( $this->wpdb->rows as $name => $raw ) {
+			self::assertIsString( $name );
+			self::assertIsString( $raw );
+			if (
+				\str_starts_with( $name, 'a8csp_bgte_failed_' )
+				|| \str_starts_with( $name, 'a8csp_bgte_history_' )
+			) {
+				$options[ $name ] = RawOptionDecoder::decode( $raw );
+			}
+		}
 
 		return $options;
 	}

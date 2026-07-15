@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
@@ -49,6 +50,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -242,13 +244,23 @@ final class DispatcherBatchTest extends TestCase {
 	 */
 	public function test_retry_failed_restarts_a_batch_and_removes_the_failed_entry(): void {
 		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Chunk processing exploded.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 1,
+				self::ARGS,
+				2,
+				new EngineError( 'Chunk processing exploded.', \RuntimeException::class )
+			)
 		);
+		$failed_key = 'a8csp_bgte_failed_' . self::NAME;
+		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
+		self::assertIsString( $failed_raw );
+		$failed_runs = RawOptionDecoder::decode( $failed_raw );
+		self::assertIsArray( $failed_runs );
+		self::assertSame( array( 'failed-run' ), \array_column( $failed_runs, 'run_id' ) );
+		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
+		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 		$this->randomizer->value = 43;
@@ -265,6 +277,11 @@ final class DispatcherBatchTest extends TestCase {
 		}
 
 		self::assertSame( array(), $remaining->value );
+		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
+		self::assertIsString( $failed_raw );
+		self::assertSame( array(), RawOptionDecoder::decode( $failed_raw ) );
+		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
+		$this->assert_no_option_function_write_for( $failed_key );
 		self::assertSame(
 			array(
 				array(
@@ -303,7 +320,7 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( 'a8csp_bgte_history_' . self::NAME ) );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->wpdb->rows );
 		self::assertSame( array(), $this->batch->generate_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
 		self::assertSame( array(), $this->fired_actions() );
@@ -761,6 +778,24 @@ final class DispatcherBatchTest extends TestCase {
 	}
 
 	/**
+	 * Asserts that no WordPress option function wrote one authoritative row.
+	 *
+	 * @param   string $key Option name.
+	 *
+	 * @return  void
+	 */
+	private function assert_no_option_function_write_for( string $key ): void {
+		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $calls );
+		foreach ( $calls as $call ) {
+			self::assertIsArray( $call );
+			$args = $call['args'] ?? null;
+			self::assertIsArray( $args );
+			self::assertNotSame( $key, $args[0] ?? null );
+		}
+	}
+
+	/**
 	 * Returns one persisted option value.
 	 *
 	 * @param   string $name Option name.
@@ -768,6 +803,11 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( \is_string( $raw ) ) {
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 

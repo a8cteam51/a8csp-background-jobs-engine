@@ -43,6 +43,16 @@ final readonly class FailedRunStore {
 	private const OPTION_PREFIX = 'a8csp_bgte_failed_';
 
 	/**
+	 * Maximum compare-and-swap attempts before a contended update fails safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const UPDATE_ATTEMPTS = 5;
+
+	/**
 	 * Maximum exact-delete attempts after concurrent writes change the selected row.
 	 *
 	 * @since   1.0.0
@@ -86,27 +96,53 @@ final readonly class FailedRunStore {
 	 * @param   int                     $attempts   Attempts consumed before failure.
 	 * @param   EngineError             $error      Persisted failure detail.
 	 *
-	 * @return  void
+	 * @return  bool True when the failed-run entry is confirmed persisted.
 	 */
-	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error ): void {
-		$read = $this->all();
-		if ( $read->is_failure() ) {
-			return;
+	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
+	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error ): bool {
+		$key = $this->option_name();
+		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
+			$read = $this->rows->read( $key );
+			if ( $read->is_failure() ) {
+				return false;
+			}
+
+			$expected_raw    = $read->value;
+			$entries         = self::entries_from_option( null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw ) );
+			$entries[]       = array(
+				'run_id'     => $run_id,
+				'failed_at'  => $failed_at,
+				'start_args' => $start_args,
+				'attempts'   => $attempts,
+				'error'      => array(
+					'class'   => $error->exception_class,
+					'message' => $error->message,
+				),
+			);
+			$replacement_raw = self::serialize_entries( \array_slice( $entries, -self::ENTRY_LIMIT ) );
+
+			if ( null === $expected_raw ) {
+				if ( $this->rows->insert( $key, $replacement_raw ) ) {
+					return true;
+				}
+
+				continue;
+			}
+
+			if ( $this->rows->replace( $key, $expected_raw, $replacement_raw ) ) {
+				return true;
+			}
+
+			$current = $this->rows->read( $key );
+			if ( $current->is_failure() ) {
+				return false;
+			}
+			if ( $expected_raw === $current->value ) {
+				return false;
+			}
 		}
 
-		$entries   = $read->value;
-		$entries[] = array(
-			'run_id'     => $run_id,
-			'failed_at'  => $failed_at,
-			'start_args' => $start_args,
-			'attempts'   => $attempts,
-			'error'      => array(
-				'class'   => $error->exception_class,
-				'message' => $error->message,
-			),
-		);
-
-		\update_option( $this->option_name(), \array_slice( $entries, -self::ENTRY_LIMIT ), false );
+		return false;
 	}
 
 	/**
@@ -145,27 +181,53 @@ final readonly class FailedRunStore {
 	 *
 	 * @param   string $run_id Run identifier.
 	 *
-	 * @return  void
+	 * @return  bool True when no retained entry has the requested run identifier.
 	 */
-	public function remove( string $run_id ): void {
-		$read = $this->all();
-		if ( $read->is_failure() ) {
-			return;
+	#[\NoDiscard( 'a failed-run removal outcome must be handled, not dropped' )]
+	public function remove( string $run_id ): bool {
+		$key = $this->option_name();
+		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
+			$read = $this->rows->read( $key );
+			if ( $read->is_failure() ) {
+				return false;
+			}
+
+			$expected_raw = $read->value;
+			if ( null === $expected_raw ) {
+				return true;
+			}
+
+			$entries   = self::entries_from_option( RawOptionDecoder::decode( $expected_raw ) );
+			$remaining = \array_values(
+				\array_filter(
+					$entries,
+					static fn ( array $entry ): bool => $run_id !== $entry['run_id']
+				)
+			);
+			if ( $entries === $remaining ) {
+				return true;
+			}
+
+			$replacement_raw = self::serialize_entries( \array_slice( $remaining, -self::ENTRY_LIMIT ) );
+			if ( $this->rows->replace( $key, $expected_raw, $replacement_raw ) ) {
+				return true;
+			}
+
+			$current = $this->rows->read( $key );
+			if ( $current->is_failure() ) {
+				return false;
+			}
+
+			$current_raw = $current->value;
+			if ( null === $current_raw ) {
+				return true;
+			}
+			if ( $expected_raw === $current_raw ) {
+				return false;
+			}
 		}
 
-		$entries   = $read->value;
-		$remaining = \array_values(
-			\array_filter(
-				$entries,
-				static fn ( array $entry ): bool => $run_id !== $entry['run_id']
-			)
-		);
-
-		if ( $entries === $remaining ) {
-			return;
-		}
-
-		\update_option( $this->option_name(), \array_slice( $remaining, -self::ENTRY_LIMIT ), false );
+		return false;
 	}
 
 	/**
@@ -222,6 +284,27 @@ final readonly class FailedRunStore {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns failed-run entries in their exact WordPress option representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array<array-key, mixed>> $entries Retained failed-run entries.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the entries to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize_entries( array $entries ): string {
+		$raw = \maybe_serialize( $entries );
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'WordPress must serialize failed-run entries to a string.' );
+		}
+
+		return $raw;
+	}
 
 	/**
 	 * Returns the failed-run option name.

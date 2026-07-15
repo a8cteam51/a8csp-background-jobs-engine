@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
@@ -44,6 +45,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
 #[UsesClass( RetryPolicy::class )]
@@ -301,9 +303,8 @@ final class DispatcherTest extends TestCase {
 		self::assertCount( 1, $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
+		$failed_runs = $this->failed_runs();
+		$failed_run  = $failed_runs[0] ?? null;
 		self::assertIsArray( $failed_run );
 		$stored_error = $failed_run['error'] ?? null;
 		self::assertIsArray( $stored_error );
@@ -692,13 +693,16 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_retry_failed_reenqueues_a_task_and_removes_the_failed_entry(): void {
 		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 1,
+				self::ARGS,
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
 		);
+		$this->assert_failed_run_storage_is_authoritative();
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 		$this->randomizer->value = 43;
@@ -736,6 +740,49 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
 	}
 
+	/** A failed retained-entry removal is logged without changing a successful retry outcome. */
+	public function test_retry_failed_logs_a_failed_retained_entry_removal_and_keeps_success(): void {
+		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 1,
+				self::ARGS,
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
+		);
+		$this->assert_failed_run_storage_is_authoritative();
+		$this->backend->calls    = array();
+		$this->randomizer->calls = array();
+		$this->randomizer->value = 43;
+		$this->clock->timestamp  = self::NOW + 100;
+		$this->wpdb->script_result( 'update', false );
+
+		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( '00000000001700000100-0000000000000000043', $result->value );
+		$remaining = $store->all();
+		if ( $remaining->is_failure() ) {
+			self::fail( $remaining->error->message );
+		}
+		self::assertSame( array( 'failed-run' ), \array_column( $remaining->value, 'run_id' ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Retried run "failed-run" could not be removed from retained failed-run data.',
+					'context' => array(
+						'name'   => self::NAME,
+						'run_id' => 'failed-run',
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
 	/**
 	 * Manual retry consumes the first retained entry when duplicates share a run identifier.
 	 *
@@ -743,20 +790,25 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_retry_failed_uses_the_first_entry_matching_the_run_identifier(): void {
 		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 2,
-			array( 'ordinal' => 'first' ),
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 2,
+				array( 'ordinal' => 'first' ),
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
 		);
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			array( 'ordinal' => 'second' ),
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 1,
+				array( 'ordinal' => 'second' ),
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
 		);
+		$this->assert_failed_run_storage_is_authoritative();
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 		$this->randomizer->value = 43;
@@ -779,14 +831,19 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_retry_failed_rejects_an_authoritative_store_read_failure(): void {
 		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 1,
+				self::ARGS,
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
 		);
-		$persisted               = $this->option( 'a8csp_bgte_failed_' . self::NAME );
+		$this->assert_failed_run_storage_is_authoritative();
+		$failed_key = 'a8csp_bgte_failed_' . self::NAME;
+		$persisted  = $this->wpdb->rows[ $failed_key ] ?? null;
+		self::assertIsString( $persisted );
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 		$this->wpdb->before_next(
@@ -801,7 +858,10 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertStringContainsString( 'scripted retry store read failure', $result->error->message );
-		self::assertSame( $persisted, $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
+		self::assertSame( $persisted, $this->wpdb->rows[ $failed_key ] ?? null );
+		self::assertIsArray( RawOptionDecoder::decode( $persisted ) );
+		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
+		$this->assert_no_failed_run_option_function_writes();
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( array(), $this->randomizer->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -814,13 +874,16 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_retry_failed_rejects_a_missing_entry_and_names_what_exists(): void {
 		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'retained-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'retained-run',
+				self::NOW - 1,
+				self::ARGS,
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
 		);
+		$this->assert_failed_run_storage_is_authoritative();
 		$this->backend->calls    = array();
 		$this->randomizer->calls = array();
 
@@ -849,13 +912,16 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_retry_failed_retains_the_task_entry_when_enqueue_fails(): void {
 		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
+		self::assertTrue(
+			$store->record(
+				'failed-run',
+				self::NOW - 1,
+				self::ARGS,
+				2,
+				new EngineError( 'Database unavailable.', \RuntimeException::class )
+			)
 		);
+		$this->assert_failed_run_storage_is_authoritative();
 		$expected = $store->all();
 		if ( $expected->is_failure() ) {
 			self::fail( $expected->error->message );
@@ -966,6 +1032,41 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Returns failed runs decoded from the authoritative raw option row.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private function failed_runs(): array {
+		$key = 'a8csp_bgte_failed_' . self::NAME;
+		$raw = $this->wpdb->rows[ $key ] ?? null;
+		self::assertIsString( $raw );
+		$value = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $value );
+		self::assertSame( 'off', $this->wpdb->autoload[ $key ] ?? null );
+		$this->assert_no_failed_run_option_function_writes();
+
+		return $value;
+	}
+
+	/** Asserts that failed-run persistence uses only the authoritative raw-storage seam. */
+	private function assert_failed_run_storage_is_authoritative(): void {
+		$this->failed_runs();
+	}
+
+	/** Asserts that no WordPress option function wrote the failed-run row. */
+	private function assert_no_failed_run_option_function_writes(): void {
+		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $calls );
+		$key = 'a8csp_bgte_failed_' . self::NAME;
+		foreach ( $calls as $call ) {
+			self::assertIsArray( $call );
+			$args = $call['args'] ?? null;
+			self::assertIsArray( $args );
+			self::assertNotSame( $key, $args[0] ?? null );
+		}
+	}
+
+	/**
 	 * Returns one persisted option value.
 	 *
 	 * @param   string $name Option name.
@@ -973,6 +1074,11 @@ final class DispatcherTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( \is_string( $raw ) ) {
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 

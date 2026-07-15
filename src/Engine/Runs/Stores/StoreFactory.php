@@ -62,7 +62,7 @@ final readonly class StoreFactory {
 	 * @return  LatestRunPointer
 	 */
 	public function latest_run_pointer( string $name ): LatestRunPointer {
-		return new LatestRunPointer( $name );
+		return new LatestRunPointer( $name, $this->rows );
 	}
 
 	/**

@@ -75,10 +75,10 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_records_started_and_terminal_with_the_literal_option_key(): void {
-		$history = new RunHistory( 'reports' );
+		$history = new RunHistory( 'reports', $this->rows );
 
-		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
+		self::assertTrue( $history->record_started( 'run-a', 'hash-a' ) );
+		self::assertTrue( $history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed ) );
 
 		self::assertSame(
 			array(
@@ -103,7 +103,7 @@ final class RunHistoryTest extends TestCase {
 			),
 			$this->option( 'a8csp_bgte_history_reports' )
 		);
-		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_history_reports' ) );
+		self::assertSame( 'off', $this->autoload_flag( 'a8csp_bgte_history_reports' ) );
 	}
 
 	/**
@@ -112,12 +112,12 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_repeated_writes_are_idempotent_in_global_and_per_hash_buffers(): void {
-		$history = new RunHistory( 'reports' );
+		$history = new RunHistory( 'reports', $this->rows );
 
-		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
+		self::assertTrue( $history->record_started( 'run-a', 'hash-a' ) );
+		self::assertTrue( $history->record_started( 'run-a', 'hash-a' ) );
+		self::assertTrue( $history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed ) );
+		self::assertTrue( $history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed ) );
 
 		self::assertSame(
 			array(
@@ -145,17 +145,228 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
+	 * Interleaved started writes retain both winners while capping the exact persisted buffers.
+	 *
+	 * @return  void
+	 */
+	public function test_interleaved_started_writes_preserve_both_appends_and_the_history_cap(): void {
+		$key              = 'a8csp_bgte_history_interleaved';
+		$started          = \array_map(
+			static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
+			\range( 1, 30 )
+		);
+		$stored           = array(
+			'started'   => $started,
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-a' => array(
+					'started'   => $started,
+					'completed' => array(),
+				),
+			),
+		);
+		$stored_raw       = \maybe_serialize( $stored );
+		$rival_history    = new RunHistory( 'interleaved', $this->rows );
+		$rival_recorded   = null;
+		$expected_started = array(
+			...\array_slice( $started, 2 ),
+			'run-rival',
+			'run-outer',
+		);
+		$expected         = array(
+			'started'   => $expected_started,
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-a' => array(
+					'started'   => $expected_started,
+					'completed' => array(),
+				),
+			),
+		);
+		$expected_raw     = \maybe_serialize( $expected );
+		self::assertIsString( $stored_raw );
+		self::assertIsString( $expected_raw );
+		$this->wpdb->put( $key, $stored_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function () use ( $rival_history, &$rival_recorded ): void {
+				$rival_recorded = $rival_history->record_started( 'run-rival', 'hash-a' );
+			}
+		);
+
+		$recorded = ( new RunHistory( 'interleaved', $this->rows ) )->record_started( 'run-outer', 'hash-a' );
+
+		self::assertTrue( $rival_recorded );
+		self::assertTrue( $recorded );
+		self::assertSame( $expected_raw, $this->wpdb->rows[ $key ] ?? null );
+		$decoded = RawOptionDecoder::decode( $this->wpdb->rows[ $key ] );
+		self::assertIsArray( $decoded );
+		$started = $decoded['started'] ?? null;
+		self::assertIsArray( $started );
+		self::assertCount( 30, $started );
+		$by_hash = $decoded['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		$hash_history = $by_hash['hash-a'] ?? null;
+		self::assertIsArray( $hash_history );
+		$hash_started = $hash_history['started'] ?? null;
+		self::assertIsArray( $hash_started );
+		self::assertCount( 30, $hash_started );
+	}
+
+	/**
+	 * A lost exact update retries from fresh bytes and retains the rival append.
+	 *
+	 * @return  void
+	 */
+	public function test_started_write_retries_a_lost_cas_and_preserves_the_rival_write(): void {
+		$key          = 'a8csp_bgte_history_lost-cas';
+		$stored       = array(
+			'started'   => array( 'run-existing' ),
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-a' => array(
+					'started'   => array( 'run-existing' ),
+					'completed' => array(),
+				),
+			),
+		);
+		$rival        = array(
+			'started'   => array( 'run-existing', 'run-rival' ),
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-a'     => array(
+					'started'   => array( 'run-existing' ),
+					'completed' => array(),
+				),
+				'hash-rival' => array(
+					'started'   => array( 'run-rival' ),
+					'completed' => array(),
+				),
+			),
+		);
+		$expected     = array(
+			'started'   => array( 'run-existing', 'run-rival', 'run-outer' ),
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-rival' => array(
+					'started'   => array( 'run-rival' ),
+					'completed' => array(),
+				),
+				'hash-a'     => array(
+					'started'   => array( 'run-existing', 'run-outer' ),
+					'completed' => array(),
+				),
+			),
+		);
+		$stored_raw   = \maybe_serialize( $stored );
+		$rival_raw    = \maybe_serialize( $rival );
+		$expected_raw = \maybe_serialize( $expected );
+		self::assertIsString( $stored_raw );
+		self::assertIsString( $rival_raw );
+		self::assertIsString( $expected_raw );
+		$this->wpdb->put( $key, $stored_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $key, $rival_raw ): void {
+				$wpdb->put( $key, $rival_raw );
+			}
+		);
+
+		$recorded = ( new RunHistory( 'lost-cas', $this->rows ) )->record_started( 'run-outer', 'hash-a' );
+
+		self::assertTrue( $recorded );
+		self::assertSame( $expected_raw, $this->wpdb->rows[ $key ] ?? null );
+		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * A failed authoritative read aborts without attempting any option-row write.
+	 *
+	 * @return  void
+	 */
+	public function test_started_write_returns_false_without_writing_after_an_authoritative_read_failure(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted run-history read failure';
+			}
+		);
+
+		$recorded = ( new RunHistory( 'read-failure', $this->rows ) )->record_started( 'run-a', 'hash-a' );
+
+		self::assertFalse( $recorded );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * A failed exact update whose raw precondition remains current is a persistence failure.
+	 *
+	 * @return  void
+	 */
+	public function test_started_write_returns_false_when_a_failed_update_leaves_the_raw_row_unchanged(): void {
+		$key        = 'a8csp_bgte_history_update-failure';
+		$stored     = array(
+			'started'   => array( 'run-existing' ),
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-a' => array(
+					'started'   => array( 'run-existing' ),
+					'completed' => array(),
+				),
+			),
+		);
+		$stored_raw = \maybe_serialize( $stored );
+		self::assertIsString( $stored_raw );
+		$this->wpdb->put( $key, $stored_raw );
+		$this->wpdb->script_result( 'update', false );
+
+		$recorded = ( new RunHistory( 'update-failure', $this->rows ) )->record_started( 'run-new', 'hash-a' );
+
+		self::assertFalse( $recorded );
+		self::assertSame( $stored_raw, $this->wpdb->rows[ $key ] ?? null );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * A duplicate started identifier is confirmed without rewriting the exact row.
+	 *
+	 * @return  void
+	 */
+	public function test_duplicate_started_identifier_returns_true_without_writing(): void {
+		$key        = 'a8csp_bgte_history_duplicate';
+		$stored     = array(
+			'started'   => array( 'run-a' ),
+			'completed' => array(),
+			'by_hash'   => array(
+				'hash-a' => array(
+					'started'   => array( 'run-a' ),
+					'completed' => array(),
+				),
+			),
+		);
+		$stored_raw = \maybe_serialize( $stored );
+		self::assertIsString( $stored_raw );
+		$this->wpdb->put( $key, $stored_raw );
+
+		$recorded = ( new RunHistory( 'duplicate', $this->rows ) )->record_started( 'run-a', 'hash-a' );
+
+		self::assertTrue( $recorded );
+		self::assertSame( $stored_raw, $this->wpdb->rows[ $key ] ?? null );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
 	 * Global and per-hash buffers retain the newest thirty entries.
 	 *
 	 * @return  void
 	 */
 	public function test_ring_buffers_evict_the_oldest_entry_past_thirty(): void {
-		$history = new RunHistory( 'exports' );
+		$history = new RunHistory( 'exports', $this->rows );
 
 		for ( $index = 0; $index <= 30; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
-			$history->record_started( 'started-' . $suffix, 'hash-a' );
-			$history->record_terminal( 'completed-' . $suffix, 'hash-a', RunStatus::Completed );
+			self::assertTrue( $history->record_started( 'started-' . $suffix, 'hash-a' ) );
+			self::assertTrue( $history->record_terminal( 'completed-' . $suffix, 'hash-a', RunStatus::Completed ) );
 		}
 
 		$expected_started   = \array_map(
@@ -193,17 +404,17 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_history_size_filter_is_applied_at_write(): void {
-		$history = new RunHistory( 'imports' );
+		$history = new RunHistory( 'imports', $this->rows );
 
 		for ( $index = 0; $index < 3; ++$index ) {
-			$history->record_started( 'started-a' . $index, 'hash-a' );
-			$history->record_started( 'started-b' . $index, 'hash-b' );
-			$history->record_terminal( 'completed-a' . $index, 'hash-a', RunStatus::Completed );
-			$history->record_terminal( 'completed-b' . $index, 'hash-b', RunStatus::Completed );
+			self::assertTrue( $history->record_started( 'started-a' . $index, 'hash-a' ) );
+			self::assertTrue( $history->record_started( 'started-b' . $index, 'hash-b' ) );
+			self::assertTrue( $history->record_terminal( 'completed-a' . $index, 'hash-a', RunStatus::Completed ) );
+			self::assertTrue( $history->record_terminal( 'completed-b' . $index, 'hash-b', RunStatus::Completed ) );
 		}
 
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp_background_tasks/history_size' => 2 );
-		$history->record_started( 'started-a3', 'hash-a' );
+		self::assertTrue( $history->record_started( 'started-a3', 'hash-a' ) );
 
 		$option = $this->option( 'a8csp_bgte_history_imports' );
 		self::assertSame(
@@ -260,14 +471,14 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_by_hash_buffers_are_isolated_and_newest_last(): void {
-		$history = new RunHistory( 'isolation' );
+		$history = new RunHistory( 'isolation', $this->rows );
 
-		$history->record_started( 'started-a1', 'hash-a' );
-		$history->record_started( 'started-b1', 'hash-b' );
-		$history->record_started( 'started-a2', 'hash-a' );
-		$history->record_terminal( 'completed-b1', 'hash-b', RunStatus::Failed );
-		$history->record_terminal( 'completed-a1', 'hash-a', RunStatus::Superseded );
-		$history->record_terminal( 'completed-b2', 'hash-b', RunStatus::Cancelled );
+		self::assertTrue( $history->record_started( 'started-a1', 'hash-a' ) );
+		self::assertTrue( $history->record_started( 'started-b1', 'hash-b' ) );
+		self::assertTrue( $history->record_started( 'started-a2', 'hash-a' ) );
+		self::assertTrue( $history->record_terminal( 'completed-b1', 'hash-b', RunStatus::Failed ) );
+		self::assertTrue( $history->record_terminal( 'completed-a1', 'hash-a', RunStatus::Superseded ) );
+		self::assertTrue( $history->record_terminal( 'completed-b2', 'hash-b', RunStatus::Cancelled ) );
 
 		self::assertSame(
 			array(
@@ -325,9 +536,9 @@ final class RunHistoryTest extends TestCase {
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_record_terminal_persists_every_terminal_status( string $status ): void {
 		$name    = 'status-' . $status;
-		$history = new RunHistory( $name );
+		$history = new RunHistory( $name, $this->rows );
 
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::from( $status ) );
+		self::assertTrue( $history->record_terminal( 'run-a', 'hash-a', RunStatus::from( $status ) ) );
 
 		$entry = array(
 			'run_id' => 'run-a',
@@ -368,12 +579,12 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_record_terminal_rejects_a_running_status(): void {
-		$history = new RunHistory( 'running' );
+		$history = new RunHistory( 'running', $this->rows );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Run history records only terminal outcomes.' );
 
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Running );
+		(void) $history->record_terminal( 'run-a', 'hash-a', RunStatus::Running );
 	}
 
 	/**
@@ -382,8 +593,9 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_read_exposures_skip_malformed_rows_without_writing(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_history_inspection' => array(
+		$this->put_option(
+			'a8csp_bgte_history_inspection',
+			array(
 				'started'   => array( 'started-a', 42, 'started-b', false ),
 				'completed' => array(
 					array(
@@ -401,7 +613,7 @@ final class RunHistoryTest extends TestCase {
 					array( 'run_id' => 'missing-status' ),
 				),
 				'by_hash'   => array(),
-			),
+			)
 		);
 
 		$history = new RunHistory( 'inspection', $this->rows );
@@ -549,8 +761,9 @@ final class RunHistoryTest extends TestCase {
 			'legacy-run',
 		);
 
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_history_decode' => array(
+		$this->put_option(
+			'a8csp_bgte_history_decode',
+			array(
 				'started'   => array( 'existing-run', 42 ),
 				'completed' => $persisted_entries,
 				'by_hash'   => array(
@@ -560,12 +773,12 @@ final class RunHistoryTest extends TestCase {
 					),
 					'broken' => 'not-a-buffer',
 				),
-			),
+			)
 		);
 
-		$history = new RunHistory( 'decode' );
+		$history = new RunHistory( 'decode', $this->rows );
 
-		$history->record_started( 'new-run', 'hash-a' );
+		self::assertTrue( $history->record_started( 'new-run', 'hash-a' ) );
 
 		self::assertSame(
 			array(
@@ -589,15 +802,15 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_hash_buckets_evict_the_least_recently_recorded_identity_past_twenty(): void {
-		$history = new RunHistory( 'sync' );
+		$history = new RunHistory( 'sync', $this->rows );
 
 		foreach ( \range( 1, 20 ) as $index ) {
-			$history->record_started( "run-{$index}", "hash-{$index}" );
+			self::assertTrue( $history->record_started( "run-{$index}", "hash-{$index}" ) );
 		}
 
 		// Re-record the oldest identity so eviction targets hash-2, not hash-1.
-		$history->record_started( 'run-1b', 'hash-1' );
-		$history->record_started( 'run-21', 'hash-21' );
+		self::assertTrue( $history->record_started( 'run-1b', 'hash-1' ) );
+		self::assertTrue( $history->record_started( 'run-21', 'hash-21' ) );
 
 		$expected_by_hash = array();
 		foreach ( \range( 3, 20 ) as $index ) {
@@ -633,17 +846,32 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
-	 * Returns one stored option value.
+	 * Seeds one authoritative raw option row with autoload disabled.
+	 *
+	 * @param   string $option_name Option name.
+	 * @param   mixed  $value       Decoded option value.
+	 *
+	 * @return  void
+	 */
+	private function put_option( string $option_name, mixed $value ): void {
+		$raw = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+
+		$this->wpdb->put( $option_name, $raw, 'off' );
+	}
+
+	/**
+	 * Returns one decoded authoritative raw option value.
 	 *
 	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
 	 */
 	private function option( string $option_name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
+		$raw = $this->wpdb->rows[ $option_name ] ?? null;
+		self::assertIsString( $raw );
 
-		return $options[ $option_name ] ?? null;
+		return RawOptionDecoder::decode( $raw );
 	}
 
 	/**
@@ -651,13 +879,10 @@ final class RunHistoryTest extends TestCase {
 	 *
 	 * @param   string $option_name Option name.
 	 *
-	 * @return  mixed
+	 * @return  string|null
 	 */
-	private function autoload_flag( string $option_name ): mixed {
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? null;
-		self::assertIsArray( $autoload_flags );
-
-		return $autoload_flags[ $option_name ] ?? null;
+	private function autoload_flag( string $option_name ): ?string {
+		return $this->wpdb->autoload[ $option_name ] ?? null;
 	}
 
 	/**
@@ -666,24 +891,42 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_all_option_writes_disable_autoload(): void {
-		foreach ( $this->option_calls() as $call ) {
-			if ( 'add_option' === $call['function'] ) {
-				self::assertSame( false, $call['args'][3] );
-			} elseif ( 'update_option' === $call['function'] ) {
-				self::assertSame( false, $call['args'][2] );
-			}
+		self::assertNotSame( array(), $this->wpdb->autoload );
+
+		foreach ( $this->wpdb->autoload as $autoload ) {
+			self::assertSame( 'off', $autoload );
 		}
 	}
 
 	/**
-	 * Returns every recorded option-function call.
+	 * Returns recorded INSERT, UPDATE, and DELETE statements.
 	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
+	 * @return  list<string>
 	 */
-	private function option_calls(): array {
-		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
+	private function write_queries(): array {
+		return \array_values(
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' )
+					|| \str_starts_with( $query, 'UPDATE ' )
+					|| \str_starts_with( $query, 'DELETE ' )
+			)
+		);
+	}
 
-		return $calls;
+	/**
+	 * Returns recorded statements carrying one literal prefix.
+	 *
+	 * @param   string $prefix Query prefix.
+	 *
+	 * @return  list<string>
+	 */
+	private function queries_starting_with( string $prefix ): array {
+		return \array_values(
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, $prefix )
+			)
+		);
 	}
 }

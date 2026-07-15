@@ -156,8 +156,14 @@ final readonly class TerminalTransitions {
 		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
-		if ( $run_id !== $latest_run_id ) {
-			$latest_pointer->repair_for_hash( $run_id, $state->args_hash );
+		if ( $run_id !== $latest_run_id && ! $latest_pointer->repair_for_hash( $run_id, $state->args_hash ) ) {
+			$this->logger->warning(
+				'Latest-run pointer repair failed; discovery metadata may remain stale.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				)
+			);
 		}
 
 		return $state;
@@ -323,13 +329,22 @@ final readonly class TerminalTransitions {
 		if ( null === $terminal_raw ) {
 			return;
 		}
-		$this->stores->failed_run_store( $batch_name )->record(
+		$retained = $this->stores->failed_run_store( $batch_name )->record(
 			$run_id,
 			$this->clock->now()->getTimestamp(),
 			$state->start_args,
 			$attempts ?? RunState::increment_attempts_safely( $state->chunk_retries ),
 			$error
 		);
+		if ( ! $retained ) {
+			$this->logger->warning(
+				\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
+				array(
+					'batch_name' => $batch_name,
+					'run_id'     => $run_id,
+				)
+			);
+		}
 
 		try {
 			try {
@@ -370,13 +385,22 @@ final readonly class TerminalTransitions {
 			$terminal_state,
 			$run_store,
 			function () use ( $attempts_used, $error, $run_id, $state, $task_name ): void {
-				$this->stores->failed_run_store( $task_name )->record(
+				$retained = $this->stores->failed_run_store( $task_name )->record(
 					$run_id,
 					$this->clock->now()->getTimestamp(),
 					$state->start_args,
 					$attempts_used,
 					$error
 				);
+				if ( ! $retained ) {
+					$this->logger->warning(
+						\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
+						array(
+							'task_name' => $task_name,
+							'run_id'    => $run_id,
+						)
+					);
+				}
 			},
 			false,
 			'failed',
@@ -554,7 +578,15 @@ final readonly class TerminalTransitions {
 			return false;
 		}
 
-		$this->stores->run_history( $name )->record_terminal( $run_id, $state->args_hash, $state->status );
+		if ( ! $this->stores->run_history( $name )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
+			$this->logger->warning(
+				'Terminal run history could not be persisted; inspection data may be incomplete.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				)
+			);
+		}
 
 		return true;
 	}

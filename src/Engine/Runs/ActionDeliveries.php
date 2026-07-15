@@ -727,13 +727,22 @@ final readonly class ActionDeliveries {
 			$terminal_state,
 			$run_store,
 			function () use ( $error, $name, $run_id, $state ): void {
-				$this->stores->failed_run_store( $name )->record(
+				$retained = $this->stores->failed_run_store( $name )->record(
 					$run_id,
 					$this->clock->now()->getTimestamp(),
 					$state->start_args,
 					RunState::increment_attempts_safely( $state->chunk_retries ),
 					$error
 				);
+				if ( ! $retained ) {
+					$this->logger->warning(
+						\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
+						array(
+							'name'   => $name,
+							'run_id' => $run_id,
+						)
+					);
+				}
 			},
 			false,
 			'failed',

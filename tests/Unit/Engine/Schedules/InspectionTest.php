@@ -383,17 +383,19 @@ final class InspectionTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
 		$history = $this->stores->run_history( 'catalog-sync' );
-		$history->record_started( 'run-completed', 'hash-completed' );
-		$history->record_started( 'run-failed', 'hash-failed' );
-		$history->record_started( $live_id, 'hash-live' );
-		$history->record_terminal( 'run-completed', 'hash-completed', RunStatus::Completed );
-		$history->record_terminal( 'run-failed', 'hash-failed', RunStatus::Failed );
-		$this->stores->failed_run_store( 'catalog-sync' )->record(
-			'run-failed',
-			self::NOW - 1,
-			array(),
-			2,
-			new EngineError( 'Retained failure.' )
+		self::assertTrue( $history->record_started( 'run-completed', 'hash-completed' ) );
+		self::assertTrue( $history->record_started( 'run-failed', 'hash-failed' ) );
+		self::assertTrue( $history->record_started( $live_id, 'hash-live' ) );
+		self::assertTrue( $history->record_terminal( 'run-completed', 'hash-completed', RunStatus::Completed ) );
+		self::assertTrue( $history->record_terminal( 'run-failed', 'hash-failed', RunStatus::Failed ) );
+		self::assertTrue(
+			$this->stores->failed_run_store( 'catalog-sync' )->record(
+				'run-failed',
+				self::NOW - 1,
+				array(),
+				2,
+				new EngineError( 'Retained failure.' )
+			)
 		);
 
 		$snapshot = $this->inspection->runs( 'catalog-sync' );

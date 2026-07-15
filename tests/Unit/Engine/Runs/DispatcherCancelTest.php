@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\Schedulin
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
@@ -39,6 +40,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Dispatcher::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( LockWindows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( RunHistory::class )]
@@ -748,6 +750,11 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->wpdb->rows[ $name ] ?? null;
+		if ( \is_string( $raw ) ) {
+			return RawOptionDecoder::decode( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 
