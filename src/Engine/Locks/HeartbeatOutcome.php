@@ -15,9 +15,17 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
 enum HeartbeatOutcome: string {
 	// region FIELDS AND CONSTANTS
 
-	case Owned         = 'owned';
-	case Lost          = 'lost';
-	case Stale         = 'stale';
+	case Owned = 'owned';
+	case Lost  = 'lost';
+
+	/**
+	 * The lock generation differs from the delivery generation observed by the caller.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	case GenerationMismatch = 'generation_mismatch';
+
 	case Indeterminate = 'indeterminate';
 
 	// endregion

@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ClearanceResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendClearance;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( SchedulerFacade::class )]
 #[UsesClass( BackendInterface::class )]
 #[UsesClass( WPCronBackend::class )]
-#[UsesClass( ClearanceResult::class )]
+#[UsesClass( BackendClearance::class )]
 #[UsesClass( Success::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]

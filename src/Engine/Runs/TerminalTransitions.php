@@ -491,10 +491,10 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Aborts a delivery when its owner-scoped heartbeat is lost, stale, or indeterminate.
+	 * Aborts a delivery when its owner-scoped heartbeat is lost, generation-mismatched, or indeterminate.
 	 *
 	 * Confirmed loss attempts a Superseded transition and always aborts the delivery; a rival terminal
-	 * compare-and-swap can prevent that transition from being claimed. A stale delivery generation or
+	 * compare-and-swap can prevent that transition from being claimed. A mismatched delivery generation or
 	 * indeterminate authoritative read leaves the running state untouched for a later delivery or the
 	 * staleness sweep to resolve.
 	 *
@@ -518,7 +518,7 @@ final readonly class TerminalTransitions {
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
 		}
-		if ( HeartbeatOutcome::Stale === $outcome ) {
+		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
 			return true;
 		}
 

@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -229,7 +230,7 @@ final readonly class Dispatcher {
 			$run_id,
 			$this->lock_windows->lock_staleness( $batch_name, $run_id )
 		);
-		if ( ClaimResult::Held === $claim && ExistingRunPolicy::Reject === $existing ) {
+		if ( LockClaimOutcome::Held === $claim && ExistingRunPolicy::Reject === $existing ) {
 			$owner = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
 			if ( $owner->is_failure() ) {
 				return new Failure(
@@ -700,7 +701,7 @@ final readonly class Dispatcher {
 			$run_id,
 			$this->lock_windows->lock_staleness( $task_name, $run_id )
 		);
-		if ( ClaimResult::Held === $claim && OverlapPolicy::Skip === $overlap ) {
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Skip === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
 			if ( $owner->is_failure() ) {
 				return new Failure(
@@ -737,7 +738,7 @@ final readonly class Dispatcher {
 			);
 		}
 
-		if ( ClaimResult::Held === $claim && OverlapPolicy::Allow === $overlap ) {
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
 			return new Failure(
 				new EngineError(
 					\sprintf(
@@ -775,7 +776,7 @@ final readonly class Dispatcher {
 		if ( 0 < $delay ) {
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $scheduled_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost, HeartbeatOutcome::Stale => new EngineError(
+				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError(
 					\sprintf(
 						'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
 						$task_name
@@ -901,16 +902,16 @@ final readonly class Dispatcher {
 	 * @param   array<array-key, mixed>       $args      Start arguments.
 	 * @param   string                        $args_hash Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue     Initial run queue.
-	 * @param   ClaimResult                   $claim     Initial lock-claim outcome.
+	 * @param   LockClaimOutcome              $claim     Initial lock-claim outcome.
 	 * @param   RunStore                      $run_store Active-run store.
 	 * @param   array                         $pending   Durable successor delivery.
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, ClaimResult $claim, RunStore $run_store, array $pending ): RunState|Failure {
+	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, array $pending ): RunState|Failure {
 		$state = $run_store->create( $run_id, $args, $args_hash, $queue, $pending );
 		if ( null === $state ) {
-			if ( ClaimResult::Held !== $claim ) {
+			if ( LockClaimOutcome::Held !== $claim ) {
 				$this->overlap_guard->release( $name, $args_hash, $run_id );
 			}
 
@@ -932,7 +933,7 @@ final readonly class Dispatcher {
 			);
 		}
 
-		if ( ClaimResult::Held !== $claim ) {
+		if ( LockClaimOutcome::Held !== $claim ) {
 			return $state;
 		}
 

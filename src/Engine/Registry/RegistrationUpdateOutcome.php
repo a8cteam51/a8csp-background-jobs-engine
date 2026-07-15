@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry;
 
 \defined( 'ABSPATH' ) || exit;
 

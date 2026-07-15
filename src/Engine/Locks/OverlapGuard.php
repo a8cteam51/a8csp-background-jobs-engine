@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
@@ -95,25 +94,25 @@ final readonly class OverlapGuard {
 	 * @param   string $run_id           Claiming run identifier.
 	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
 	 *
-	 * @return  ClaimResult
+	 * @return  LockClaimOutcome
 	 */
-	public function claim( string $name, string $args_hash, string $run_id, int $staleness_window ): ClaimResult {
+	public function claim( string $name, string $args_hash, string $run_id, int $staleness_window ): LockClaimOutcome {
 		$key      = $this->option_name( $name, $args_hash );
 		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
 		if ( $this->rows->insert( $key, self::serialize( $new_lock ) ) ) {
-			return ClaimResult::Claimed;
+			return LockClaimOutcome::Claimed;
 		}
 
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			return ClaimResult::Held;
+			return LockClaimOutcome::Held;
 		}
 
 		$raw = $selected->value;
 		if ( null === $raw ) {
-			return ClaimResult::Held;
+			return LockClaimOutcome::Held;
 		}
 
 		$lock = self::parse( $raw );
@@ -126,14 +125,14 @@ final readonly class OverlapGuard {
 		}
 
 		if ( $run_id !== $lock['run_id'] ) {
-			return ClaimResult::Held;
+			return LockClaimOutcome::Held;
 		}
 
 		$lock['heartbeat_at'] = $now;
 
 		return $this->rows->replace( $key, $raw, self::serialize( $lock ) )
-			? ClaimResult::Claimed
-			: ClaimResult::Held;
+			? LockClaimOutcome::Claimed
+			: LockClaimOutcome::Held;
 	}
 
 	/**
@@ -236,7 +235,7 @@ final readonly class OverlapGuard {
 			return HeartbeatOutcome::Lost;
 		}
 		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
-			return HeartbeatOutcome::Stale;
+			return HeartbeatOutcome::GenerationMismatch;
 		}
 
 		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
@@ -246,7 +245,7 @@ final readonly class OverlapGuard {
 			return HeartbeatOutcome::Owned;
 		}
 
-		return null !== $expected_heartbeat_at ? HeartbeatOutcome::Stale : HeartbeatOutcome::Lost;
+		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
 	}
 
 	/**
@@ -645,11 +644,11 @@ final readonly class OverlapGuard {
 	 * @param   string                                                         $args_hash Stable single-flight identity.
 	 * @param   string                                                         $run_id    Claiming run identifier.
 	 *
-	 * @return  ClaimResult
+	 * @return  LockClaimOutcome
 	 */
-	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $name, string $args_hash, string $run_id ): ClaimResult {
+	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $name, string $args_hash, string $run_id ): LockClaimOutcome {
 		if ( ! $this->rows->delete( $key, $raw ) || ! $this->rows->insert( $key, self::serialize( $new_lock ) ) ) {
-			return ClaimResult::Held;
+			return LockClaimOutcome::Held;
 		}
 
 		if ( null === $old_lock ) {
@@ -675,7 +674,7 @@ final readonly class OverlapGuard {
 			);
 		}
 
-		return ClaimResult::Reclaimed;
+		return LockClaimOutcome::Reclaimed;
 	}
 
 	/**

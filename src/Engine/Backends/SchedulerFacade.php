@@ -100,13 +100,13 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
 	 * @param   string      $group Backend grouping label.
 	 *
-	 * @return  ClearanceResult
+	 * @return  BackendClearance
 	 */
 	#[\NoDiscard( 'a convergence clear result must be handled, not dropped' )]
-	public function unschedule_for_convergence( string $hook, array $args = array(), string $group = '' ): ClearanceResult {
+	public function unschedule_for_convergence( string $hook, array $args = array(), string $group = '' ): BackendClearance {
 		$ready_backends = $this->ready_backends();
 
-		return new ClearanceResult(
+		return new BackendClearance(
 			$this->unschedule_snapshot( $ready_backends, $hook, $args, $group ),
 			$this->snapshot_is_authoritative( $ready_backends )
 		);

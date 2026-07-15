@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class ClearanceResult {
+final readonly class BackendClearance {
 	// region MAGIC METHODS
 
 	/**

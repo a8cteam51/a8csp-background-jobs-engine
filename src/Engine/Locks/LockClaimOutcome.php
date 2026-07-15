@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,7 +12,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
  * @since   1.0.0
  * @version 1.0.0
  */
-enum ClaimResult: string {
+enum LockClaimOutcome: string {
 	// region FIELDS AND CONSTANTS
 
 	case Claimed   = 'claimed';
