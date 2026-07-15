@@ -18,10 +18,7 @@ final class FixedClockTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_non_utc_instant_retains_the_same_epoch_integer(): void {
-		$instant = new \DateTimeImmutable(
-			'2026-07-12 14:30:00',
-			new \DateTimeZone( 'Pacific/Auckland' )
-		);
+		$instant = new \DateTimeImmutable( '2026-07-12 14:30:00', new \DateTimeZone( 'Pacific/Auckland' ) );
 
 		$clock = new FixedClock( $instant );
 

@@ -396,10 +396,7 @@ final readonly class RunsCommand {
 			default:
 				return array(
 					'action'  => 'error',
-					'message' => \sprintf(
-						'Failed-run action "%s" is invalid; use list, retry, or purge.',
-						$action
-					),
+					'message' => \sprintf( 'Failed-run action "%s" is invalid; use list, retry, or purge.', $action ),
 				);
 		}
 	}
@@ -463,13 +460,7 @@ final readonly class RunsCommand {
 			return;
 		}
 
-		\WP_CLI::success(
-			\sprintf(
-				'Cancelled run %1$s of "%2$s".',
-				$run_id,
-				$name
-			)
-		);
+		\WP_CLI::success( \sprintf( 'Cancelled run %1$s of "%2$s".', $run_id, $name ) );
 	}
 
 	/**
@@ -535,12 +526,7 @@ final readonly class RunsCommand {
 		foreach ( $names as $name ) {
 			$entries = new FailedRunStore( $name, $option_rows )->all();
 			if ( $entries->is_failure() ) {
-				\WP_CLI::error(
-					\sprintf(
-						'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.',
-						$name
-					)
-				);
+				\WP_CLI::error( \sprintf( 'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.', $name ) );
 				return;
 			}
 
@@ -574,14 +560,7 @@ final readonly class RunsCommand {
 			return;
 		}
 
-		\WP_CLI::success(
-			\sprintf(
-				'Retried failed run "%1$s" for "%2$s" as new run "%3$s".',
-				$run_id,
-				$name,
-				$result->value
-			)
-		);
+		\WP_CLI::success( \sprintf( 'Retried failed run "%1$s" for "%2$s" as new run "%3$s".', $run_id, $name, $result->value ) );
 	}
 
 	/**
@@ -615,12 +594,7 @@ final readonly class RunsCommand {
 		foreach ( $names as $store_name ) {
 			$purged = new FailedRunStore( $store_name, $rows )->purge();
 			if ( null === $purged ) {
-				\WP_CLI::error(
-					\sprintf(
-						'Failed-run store "%s" could not be purged; resolve its database error or concurrent writes and try again.',
-						$store_name
-					)
-				);
+				\WP_CLI::error( \sprintf( 'Failed-run store "%s" could not be purged; resolve its database error or concurrent writes and try again.', $store_name ) );
 				return;
 			}
 
@@ -628,14 +602,7 @@ final readonly class RunsCommand {
 		}
 
 		$scope = null === $name ? 'across all names' : \sprintf( 'for "%s"', $name );
-		\WP_CLI::success(
-			\sprintf(
-				'Purged %1$d failed run%2$s %3$s.',
-				$count,
-				1 === $count ? '' : 's',
-				$scope
-			)
-		);
+		\WP_CLI::success( \sprintf( 'Purged %1$d failed run%2$s %3$s.', $count, 1 === $count ? '' : 's', $scope ) );
 	}
 
 	/**
@@ -654,13 +621,7 @@ final readonly class RunsCommand {
 		 *
 		 * @var \wpdb $wpdb
 		 */
-		$option_names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC',
-				$wpdb->options,
-				$wpdb->esc_like( FailedRunStore::OPTION_PREFIX ) . '%'
-			)
-		);
+		$option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( FailedRunStore::OPTION_PREFIX ) . '%' ) );
 		if ( '' !== $wpdb->last_error ) {
 			return null;
 		}

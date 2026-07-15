@@ -110,11 +110,7 @@ final class MaintenanceTask extends AbstractTask {
 			}
 
 			try {
-				$reconciled = $this->reconciliation->reconcile_run(
-					$identity['name'],
-					$identity['run_id'],
-					self::TERMINAL_GRACE
-				);
+				$reconciled = $this->reconciliation->reconcile_run( $identity['name'], $identity['run_id'], self::TERMINAL_GRACE );
 			} catch ( \Throwable $throwable ) {
 				$deferred_lock_names[ $identity['name'] ] = true;
 				$this->logger->warning(
@@ -190,11 +186,7 @@ final class MaintenanceTask extends AbstractTask {
 				}
 
 				$run_id = $lock['run_id'];
-				$this->reconciliation->reconcile_orphaned_lock(
-					$name,
-					$args_hash,
-					$run_id
-				);
+				$this->reconciliation->reconcile_orphaned_lock( $name, $args_hash, $run_id );
 			} catch ( \Throwable $throwable ) {
 				$this->logger->warning(
 					'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',

@@ -60,12 +60,7 @@ final class ConsumerTest extends TestCase {
 		$tasks     = new Tasks( $identity, static function (): void {}, static fn (): Success => new Success( 'task-run' ) );
 		$batches   = new Batches( $identity, static function (): void {}, static fn (): Success => new Success( 'batch-run' ) );
 		$schedules = new Schedules( $identity, static fn (): Success => new Success( true ), static fn (): Success => new Success( 'schedule-run' ) );
-		$runs      = new Runs(
-			$identity,
-			static fn (): Success => new Success( 'retry-run' ),
-			static fn (): Success => new Success( 'cancelled-run' ),
-			static fn (): Success => new Success( null )
-		);
+		$runs      = new Runs( $identity, static fn (): Success => new Success( 'retry-run' ), static fn (): Success => new Success( 'cancelled-run' ), static fn (): Success => new Success( null ) );
 		$consumer  = new Consumer( 'consumer-plugin', $tasks, $batches, $schedules, $runs );
 
 		self::assertSame( $tasks, $consumer->tasks() );
@@ -287,10 +282,7 @@ final class ConsumerTest extends TestCase {
 			}
 		);
 
-		self::assert_invalid_argument(
-			static fn () => $tasks->enqueue( 'sync', $args, $delay, priority: $priority ),
-			$message
-		);
+		self::assert_invalid_argument( static fn () => $tasks->enqueue( 'sync', $args, $delay, priority: $priority ), $message );
 		self::assertFalse( $delegated );
 	}
 
@@ -358,10 +350,7 @@ final class ConsumerTest extends TestCase {
 		);
 
 		if ( ! $accepted ) {
-			self::assert_invalid_argument(
-				static fn () => $tasks->enqueue( 'sync', dedup_key: $dedup_key ),
-				'Task "sync" deduplication key must contain 1 to 64 bytes when provided.'
-			);
+			self::assert_invalid_argument( static fn () => $tasks->enqueue( 'sync', dedup_key: $dedup_key ), 'Task "sync" deduplication key must contain 1 to 64 bytes when provided.' );
 			self::assertSame( array(), $calls );
 
 			return;
@@ -370,10 +359,7 @@ final class ConsumerTest extends TestCase {
 		$result = $tasks->enqueue( 'sync', dedup_key: $dedup_key );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame(
-			array( array( 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ),
-			$calls
-		);
+		self::assertSame( array( array( 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ), $calls );
 	}
 
 	/**
@@ -424,10 +410,7 @@ final class ConsumerTest extends TestCase {
 			}
 		);
 
-		self::assert_invalid_argument(
-			static fn () => $batches->start( 'sync', $args, priority: $priority ),
-			$message
-		);
+		self::assert_invalid_argument( static fn () => $batches->start( 'sync', $args, priority: $priority ), $message );
 		self::assertFalse( $delegated );
 	}
 
@@ -541,10 +524,7 @@ final class ConsumerTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private static function parameter_names( string $class_name, string $method ): array {
-		return \array_map(
-			static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(),
-			( new \ReflectionMethod( $class_name, $method ) )->getParameters()
-		);
+		return \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), ( new \ReflectionMethod( $class_name, $method ) )->getParameters() );
 	}
 
 	/**

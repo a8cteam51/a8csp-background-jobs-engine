@@ -57,9 +57,7 @@ final class TaskRegistryTest extends TestCase {
 		self::assertSame( $accepted, $registry->get( 'consumer:' . \str_repeat( 'a', 64 ) ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		$registry->register( 'consumer:valid', $this->task( \str_repeat( 'a', 65 ) ) );
 	}
@@ -74,9 +72,7 @@ final class TaskRegistryTest extends TestCase {
 	#[DataProvider( 'invalid_names' )]
 	public function test_register_rejects_invalid_names_with_the_fix( string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		( new TaskRegistry( new WorkRegistry() ) )->register( 'consumer:valid', $this->task( $name ) );
 	}
@@ -106,9 +102,7 @@ final class TaskRegistryTest extends TestCase {
 		$registry->register( 'consumer:refresh-index', $this->task( 'refresh-index' ) );
 
 		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs(
-			'Task name is already registered; register each task name exactly once.'
-		);
+		$this->expectExceptionMessageIs( 'Task name is already registered; register each task name exactly once.' );
 
 		$registry->register( 'consumer:refresh-index', $this->task( 'refresh-index' ) );
 	}

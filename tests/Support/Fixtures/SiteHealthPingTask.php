@@ -87,9 +87,7 @@ final class SiteHealthPingTask implements TaskInterface {
 		// WordPress caps transient names at 172 characters; a longer name is a permanent input
 		// defect, so it escapes the retry ladder instead of burning attempts.
 		if ( ! \is_string( $transient ) || 1 !== \preg_match( '/\A[a-z0-9_]{1,172}\z/', $transient ) ) {
-			throw new NonRetryableTaskException(
-				'Site-health ping arguments require a lowercase transient key of at most 172 characters; pass the consumer storage key when dispatching the task.'
-			);
+			throw new NonRetryableTaskException( 'Site-health ping arguments require a lowercase transient key of at most 172 characters; pass the consumer storage key when dispatching the task.' );
 		}
 
 		$snapshot = array(
@@ -99,9 +97,7 @@ final class SiteHealthPingTask implements TaskInterface {
 		);
 		$saved    = \set_transient( $transient, $snapshot, 0 );
 		if ( ! $saved && \get_transient( $transient ) !== $snapshot ) {
-			throw new \RuntimeException(
-				\sprintf( 'WordPress could not persist the site-health snapshot in transient "%s".', $transient )
-			);
+			throw new \RuntimeException( \sprintf( 'WordPress could not persist the site-health snapshot in transient "%s".', $transient ) );
 		}
 	}
 
@@ -115,12 +111,7 @@ final class SiteHealthPingTask implements TaskInterface {
 	 */
 	#[\Override]
 	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy(
-			max_attempts: 3,
-			base_delay: 30,
-			multiplier: 2,
-			max_delay: 5 * \MINUTE_IN_SECONDS
-		);
+		return new RetryPolicy( max_attempts: 3, base_delay: 30, multiplier: 2, max_delay: 5 * \MINUTE_IN_SECONDS );
 	}
 
 	// endregion.

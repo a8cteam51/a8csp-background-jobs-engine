@@ -85,10 +85,7 @@ if ( ! \function_exists( 'as_enqueue_async_action' ) ) {
 	 * @return  int
 	 */
 	function as_enqueue_async_action( $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call(
-			'as_enqueue_async_action',
-			array( $hook, $args, $group, $unique, $priority )
-		);
+		a8csp_bgte_test_record_as_call( 'as_enqueue_async_action', array( $hook, $args, $group, $unique, $priority ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_enqueue_async_action', 1 );
 		if ( ! \is_int( $result ) ) {
@@ -113,10 +110,7 @@ if ( ! \function_exists( 'as_schedule_single_action' ) ) {
 	 * @return  int
 	 */
 	function as_schedule_single_action( $timestamp, $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call(
-			'as_schedule_single_action',
-			array( $timestamp, $hook, $args, $group, $unique, $priority )
-		);
+		a8csp_bgte_test_record_as_call( 'as_schedule_single_action', array( $timestamp, $hook, $args, $group, $unique, $priority ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_schedule_single_action', 1 );
 		if ( ! \is_int( $result ) ) {
@@ -142,10 +136,7 @@ if ( ! \function_exists( 'as_schedule_recurring_action' ) ) {
 	 * @return  int
 	 */
 	function as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call(
-			'as_schedule_recurring_action',
-			array( $timestamp, $interval_in_seconds, $hook, $args, $group, $unique, $priority )
-		);
+		a8csp_bgte_test_record_as_call( 'as_schedule_recurring_action', array( $timestamp, $interval_in_seconds, $hook, $args, $group, $unique, $priority ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_schedule_recurring_action', 1 );
 		if ( ! \is_int( $result ) ) {

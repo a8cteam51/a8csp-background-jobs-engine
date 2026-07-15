@@ -73,12 +73,7 @@ final class HookLogger extends AbstractLogger {
 		} catch ( \Throwable $throwable ) {
 			try {
 				$breadcrumb = \strtr(
-					\sprintf(
-						'a8csp-background-tasks-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]',
-						'a8csp_background_tasks/log',
-						$rendered_level,
-						\get_debug_type( $throwable )
-					),
+					\sprintf( 'a8csp-background-tasks-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]', 'a8csp_background_tasks/log', $rendered_level, \get_debug_type( $throwable ) ),
 					array(
 						"\0" => '\\0',
 						"\r" => '\\r',

@@ -47,30 +47,17 @@ final class WorkRegistry {
 	 */
 	public function claim( string $identity, string $kind ): void {
 		if ( null === WorkIdentity::parts( $identity ) ) {
-			throw new \InvalidArgumentException(
-				'Background-work identity is invalid; pass one canonical {owner}:{name} identity.'
-			);
+			throw new \InvalidArgumentException( 'Background-work identity is invalid; pass one canonical {owner}:{name} identity.' );
 		}
 
 		$existing = $this->kinds[ $identity ] ?? null;
 		if ( $kind === $existing ) {
-			throw new \LogicException(
-				'task' === $kind
-					? 'Task name is already registered; register each task name exactly once.'
-					: 'Batch name is already registered; register each batch name exactly once.'
-			);
+			throw new \LogicException( 'task' === $kind ? 'Task name is already registered; register each task name exactly once.' : 'Batch name is already registered; register each batch name exactly once.' );
 		}
 		if ( null !== $existing ) {
 			// Exception values are diagnostic data, not rendered output.
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.',
-					$identity,
-					$existing,
-					$kind
-				)
-			);
+			throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', $identity, $existing, $kind ) );
 			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 

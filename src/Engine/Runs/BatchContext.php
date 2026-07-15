@@ -135,11 +135,7 @@ final class BatchContext implements BatchContextInterface {
 	 * @return  list<array<array-key, mixed>>
 	 */
 	public function get_queue(): array {
-		return \array_merge(
-			\array_reverse( $this->prepended ),
-			$this->queue,
-			$this->appended
-		);
+		return \array_merge( \array_reverse( $this->prepended ), $this->queue, $this->appended );
 	}
 
 	/**

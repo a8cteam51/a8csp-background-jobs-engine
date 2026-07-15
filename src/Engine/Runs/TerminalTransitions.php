@@ -185,10 +185,7 @@ final readonly class TerminalTransitions {
 
 		if (
 			$state->executing
-			&& ! $this->lock_windows->heartbeat_is_stale(
-				$state->heartbeat_at,
-				$this->lock_windows->lock_staleness( $name, $run_id )
-			)
+			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->lock_staleness( $name, $run_id ) )
 		) {
 			$this->logger->debug(
 				'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
@@ -245,11 +242,7 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function complete_run( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$terminal_state = $state
-			->with_failed_attempts( 0 )
-			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
+		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 
 		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task' );
 	}
@@ -271,10 +264,7 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function complete_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$terminal_state = $state
-			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
+		$terminal_state = $state->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 
 		$this->claim_and_execute_terminal_transition( $batch_name, $run_id, $state, $terminal_state, $run_store, 'Batch', $batch );
 	}
@@ -303,17 +293,8 @@ final readonly class TerminalTransitions {
 	 * @return  bool Whether the cancellation transition was claimed.
 	 */
 	public function cancel_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
-		$terminal_state = $state
-			->with_status( RunStatus::Cancelled )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
-		$terminal_raw   = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw,
-		);
+		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
 		if ( null === $terminal_raw ) {
 			return false;
 		}
@@ -346,19 +327,7 @@ final readonly class TerminalTransitions {
 	 */
 	public function fail_unregistered_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_failed_attempts( $attempts )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null )
-			->with_error(
-				self::error_detail(
-					$error,
-					'execution',
-					ApiErrorCode::UnknownWork,
-					self::failed_chunk_for_state( $work_type, $state )
-				)
-			);
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, 'execution', ApiErrorCode::UnknownWork, self::failed_chunk_for_state( $work_type, $state ) ) );
 
 		$this->claim_and_execute_terminal_transition( $name, $run_id, $state, $terminal_state, $run_store, $work_type );
 	}
@@ -389,12 +358,7 @@ final readonly class TerminalTransitions {
 	 */
 	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->failed_attempts );
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_failed_attempts( $attempts )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null )
-			->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
 		$this->claim_and_execute_terminal_transition( $batch_name, $run_id, $state, $terminal_state, $run_store, 'Batch', $batch, $expected_raw );
 	}
@@ -421,12 +385,7 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_failed_attempts( $attempts_used )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null )
-			->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts_used )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
 		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task', null, $expected_raw );
 	}
@@ -535,17 +494,8 @@ final readonly class TerminalTransitions {
 			return true;
 		}
 
-		$latest_run_id = $this->stores
-			->latest_run_pointer( $name )
-			->get_latest_for_hash( $state->args_hash );
-		$this->supersede_run(
-			$name,
-			$run_id,
-			$latest_run_id,
-			$state,
-			$run_store,
-			$work_type
-		);
+		$latest_run_id = $this->stores->latest_run_pointer( $name )->get_latest_for_hash( $state->args_hash );
+		$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
 
 		return true;
 	}
@@ -567,17 +517,8 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function supersede_run( string $name, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, string $work_type, ?string $expected_raw = null ): void {
-		$terminal_state = $state
-			->with_status( RunStatus::Superseded )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
-		$terminal_raw   = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw
-		);
+		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return;
 		}
@@ -820,14 +761,7 @@ final readonly class TerminalTransitions {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
 
-		$retained = $this->stores->failed_run_store( $name )->record(
-			$run_id,
-			$state->heartbeat_at,
-			$state->start_args,
-			$failure_detail['failure']->attempts,
-			$failure_detail['error'],
-			$failure_detail['failure']
-		);
+		$retained = $this->stores->failed_run_store( $name )->record( $run_id, $state->heartbeat_at, $state->start_args, $failure_detail['failure']->attempts, $failure_detail['error'], $failure_detail['failure'] );
 		if ( $retained ) {
 			return true;
 		}
@@ -998,25 +932,11 @@ final readonly class TerminalTransitions {
 			)
 		);
 
-		$error = new EngineError(
-			\sprintf(
-				'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.',
-				$run_id,
-				$name
-			)
-		);
+		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, $name ) );
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure(
-				name: $name,
-				run_id: $run_id,
-				attempts: RunState::increment_attempts_safely( $state->failed_attempts ),
-				stage: 'crash-reclaim',
-				code: ApiErrorCode::StorageFailure,
-				summary: $error->message,
-				failed_chunk: self::failed_chunk_for_state( $work_type, $state ),
-			),
+			'failure' => new RunFailure( name: $name, run_id: $run_id, attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: 'crash-reclaim', code: ApiErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
 		);
 	}
 

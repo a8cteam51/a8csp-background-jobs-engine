@@ -46,9 +46,7 @@ final class HookNameLiteralsTest extends TestCase {
 	 */
 	public function test_hook_names_are_literal_in_production_source(): void {
 		$strings = '';
-		$files   = new \RecursiveIteratorIterator(
-			new \RecursiveDirectoryIterator( \dirname( __DIR__, 2 ) . '/src', \FilesystemIterator::SKIP_DOTS )
-		);
+		$files   = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( \dirname( __DIR__, 2 ) . '/src', \FilesystemIterator::SKIP_DOTS ) );
 
 		foreach ( $files as $file ) {
 			if ( ! $file instanceof \SplFileInfo || ! $file->isFile() || 'php' !== $file->getExtension() ) {
@@ -68,10 +66,7 @@ final class HookNameLiteralsTest extends TestCase {
 		}
 
 		foreach ( self::HOOK_LITERALS as $name => $literal ) {
-			self::assertTrue(
-				\str_contains( $strings, "'" . $literal . "'" ) || \str_contains( $strings, '"' . $literal . '"' ),
-				\sprintf( 'Hook %s is not a production string literal.', $name )
-			);
+			self::assertTrue( \str_contains( $strings, "'" . $literal . "'" ) || \str_contains( $strings, '"' . $literal . '"' ), \sprintf( 'Hook %s is not a production string literal.', $name ) );
 		}
 	}
 }

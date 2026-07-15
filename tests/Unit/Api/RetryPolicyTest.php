@@ -124,12 +124,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_accepts_all_constructor_boundaries(): void {
-		$policy = new RetryPolicy(
-			max_attempts: 1,
-			base_delay: 1,
-			multiplier: 1,
-			max_delay: 1,
-		);
+		$policy = new RetryPolicy( max_attempts: 1, base_delay: 1, multiplier: 1, max_delay: 1, );
 
 		self::assertSame( 1, $policy->max_attempts );
 		self::assertSame( 1, $policy->base_delay );
@@ -143,9 +138,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_rejects_attempt_zero(): void {
-		$this->expect_invalid_argument_with_message(
-			'Retry delay requires $attempt to be the one-indexed just-failed attempt number in the range 1 <= $attempt < max_attempts so a next attempt exists.'
-		);
+		$this->expect_invalid_argument_with_message( 'Retry delay requires $attempt to be the one-indexed just-failed attempt number in the range 1 <= $attempt < max_attempts so a next attempt exists.' );
 
 		$policy = new RetryPolicy( max_attempts: 3 );
 
@@ -158,9 +151,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_rejects_the_maximum_attempt(): void {
-		$this->expect_invalid_argument_with_message(
-			'Retry delay requires $attempt to be the one-indexed just-failed attempt number in the range 1 <= $attempt < max_attempts so a next attempt exists.'
-		);
+		$this->expect_invalid_argument_with_message( 'Retry delay requires $attempt to be the one-indexed just-failed attempt number in the range 1 <= $attempt < max_attempts so a next attempt exists.' );
 
 		$policy = new RetryPolicy( max_attempts: 3 );
 
@@ -173,12 +164,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_delay_math_reaches_and_remains_at_the_cap(): void {
-		$policy   = new RetryPolicy(
-			max_attempts: 6,
-			base_delay: 10,
-			multiplier: 3,
-			max_delay: 100,
-		);
+		$policy   = new RetryPolicy( max_attempts: 6, base_delay: 10, multiplier: 3, max_delay: 100, );
 		$ceilings = array();
 
 		for ( $attempt = 1; $attempt < $policy->max_attempts; ++$attempt ) {
@@ -194,12 +180,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_multiplier_one_keeps_the_ceiling_constant(): void {
-		$policy = new RetryPolicy(
-			max_attempts: 4,
-			base_delay: 7,
-			multiplier: 1,
-			max_delay: 100,
-		);
+		$policy = new RetryPolicy( max_attempts: 4, base_delay: 7, multiplier: 1, max_delay: 100, );
 
 		self::assertSame( 7, $policy->delay_ceiling_for_attempt( 1 ) );
 		self::assertSame( 7, $policy->delay_ceiling_for_attempt( 2 ) );
@@ -212,12 +193,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_delay_ceiling_can_land_exactly_on_the_cap(): void {
-		$policy = new RetryPolicy(
-			max_attempts: 4,
-			base_delay: 10,
-			multiplier: 3,
-			max_delay: 90,
-		);
+		$policy = new RetryPolicy( max_attempts: 4, base_delay: 10, multiplier: 3, max_delay: 90, );
 
 		self::assertSame( 90, $policy->delay_ceiling_for_attempt( 3 ) );
 	}
@@ -228,12 +204,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_delay_ceiling_remains_below_a_non_divisible_cap(): void {
-		$policy = new RetryPolicy(
-			max_attempts: 3,
-			base_delay: 33,
-			multiplier: 3,
-			max_delay: 100,
-		);
+		$policy = new RetryPolicy( max_attempts: 3, base_delay: 33, multiplier: 3, max_delay: 100, );
 
 		self::assertSame( 99, $policy->delay_ceiling_for_attempt( 2 ) );
 	}
@@ -244,12 +215,7 @@ final class RetryPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_large_attempt_saturates_with_an_integer_ceiling(): void {
-		$policy = new RetryPolicy(
-			max_attempts: \PHP_INT_MAX,
-			base_delay: 2,
-			multiplier: \PHP_INT_MAX,
-			max_delay: \PHP_INT_MAX,
-		);
+		$policy = new RetryPolicy( max_attempts: \PHP_INT_MAX, base_delay: 2, multiplier: \PHP_INT_MAX, max_delay: \PHP_INT_MAX, );
 
 		self::assertSame( \PHP_INT_MAX, $policy->delay_ceiling_for_attempt( \PHP_INT_MAX - 1 ) );
 	}

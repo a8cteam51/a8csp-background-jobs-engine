@@ -164,10 +164,7 @@ final class RunHistoryTest extends TestCase {
 	 */
 	public function test_interleaved_started_writes_preserve_both_appends_and_the_history_cap(): void {
 		$key              = 'a8csp_bgte_history_runs-tests:interleaved';
-		$started          = \array_map(
-			static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-			\range( 1, 30 )
-		);
+		$started          = \array_map( static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), \range( 1, 30 ) );
 		$stored           = array(
 			'started'  => $started,
 			'terminal' => array(),
@@ -382,10 +379,7 @@ final class RunHistoryTest extends TestCase {
 			self::assertTrue( $history->record_terminal( 'completed-' . $suffix, 'hash-a', RunStatus::Completed ) );
 		}
 
-		$expected_started  = \array_map(
-			static fn ( int $index ): string => 'started-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-			\range( 1, 30 )
-		);
+		$expected_started  = \array_map( static fn ( int $index ): string => 'started-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), \range( 1, 30 ) );
 		$expected_terminal = \array_map(
 			static fn ( int $index ): array => array(
 				'run_id' => 'completed-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
@@ -844,10 +838,7 @@ final class RunHistoryTest extends TestCase {
 		self::assertSame(
 			array(
 				'started'  => array(
-					...\array_map(
-						static fn ( int $index ): string => "run-{$index}",
-						\range( 1, 20 )
-					),
+					...\array_map( static fn ( int $index ): string => "run-{$index}", \range( 1, 20 ) ),
 					'run-1b',
 					'run-21',
 				),
@@ -917,14 +908,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function write_queries(): array {
-		return \array_values(
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' )
-					|| \str_starts_with( $query, 'UPDATE ' )
-					|| \str_starts_with( $query, 'DELETE ' )
-			)
-		);
+		return \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'UPDATE ' ) || \str_starts_with( $query, 'DELETE ' ) ) );
 	}
 
 	/**
@@ -935,11 +919,6 @@ final class RunHistoryTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function queries_starting_with( string $prefix ): array {
-		return \array_values(
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, $prefix )
-			)
-		);
+		return \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, $prefix ) ) );
 	}
 }

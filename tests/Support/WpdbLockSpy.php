@@ -295,15 +295,7 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
-		$names = \array_values(
-			\array_filter(
-				$names,
-				static fn ( mixed $name ): bool => \is_string( $name )
-					&& \str_starts_with( $name, $prefix )
-					&& ( null === $total_length || \strlen( $name ) === $total_length )
-					&& ( null === $cursor || 0 < \strcmp( $name, $cursor ) )
-			)
-		);
+		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \str_starts_with( $name, $prefix ) && ( null === $total_length || \strlen( $name ) === $total_length ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
 		\sort( $names, \SORT_STRING );
 
 		return null === $limit ? $names : \array_slice( $names, 0, $limit );
@@ -359,14 +351,7 @@ final class WpdbLockSpy extends \wpdb {
 
 		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
 
-		return (string) \count(
-			\array_filter(
-				$names,
-				static fn ( mixed $name ): bool => \is_string( $name )
-					&& \strlen( $name ) === $total_length
-					&& \str_starts_with( $name, $prefix )
-			)
-		);
+		return (string) \count( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \strlen( $name ) === $total_length && \str_starts_with( $name, $prefix ) ) );
 	}
 
 	/**

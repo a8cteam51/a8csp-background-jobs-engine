@@ -88,11 +88,7 @@ add_filter(
 
 		$release_is_usable = \is_string( $release_tag ) && \is_string( $release_url ) && \is_string( $release_asset );
 		if ( isset( $response ) ) {
-			set_transient(
-				'a8csp_bgte_github_latest_release',
-				$release_is_usable ? $latest_release_info : array(),
-				$release_is_usable ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS
-			);
+			set_transient( 'a8csp_bgte_github_latest_release', $release_is_usable ? $latest_release_info : array(), $release_is_usable ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS );
 		}
 
 		if ( ! $release_is_usable ) {

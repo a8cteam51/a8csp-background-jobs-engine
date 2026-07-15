@@ -33,11 +33,7 @@ final class ApiErrorTest extends TestCase {
 	 */
 	public function test_carries_the_public_admission_failure_contract(): void {
 		$context = array( 'run_id' => 'run-incumbent' );
-		$error   = new ApiError(
-			ApiErrorCode::OverlapHeld,
-			'The work is already running.',
-			$context
-		);
+		$error   = new ApiError( ApiErrorCode::OverlapHeld, 'The work is already running.', $context );
 
 		self::assertInstanceOf( ErrorInterface::class, $error );
 		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );

@@ -170,12 +170,7 @@ final readonly class RunOutput {
 			return null;
 		}
 
-		return \sprintf(
-			'Showing first %1$d matching run rows; %2$d more %3$s not inspected.',
-			$scanned,
-			$uninspected,
-			1 === $uninspected ? 'was' : 'were'
-		);
+		return \sprintf( 'Showing first %1$d matching run rows; %2$d more %3$s not inspected.', $scanned, $uninspected, 1 === $uninspected ? 'was' : 'were' );
 	}
 
 	/**
@@ -230,10 +225,7 @@ final readonly class RunOutput {
 		$live_rows           = self::live_rows_from_entries( $snapshot['live'], $snapshot['observed_at'] );
 		$history_unavailable = null === $snapshot['history'];
 		$history_rows        = $history_unavailable ? array() : self::history_rows_from_entries( $snapshot['history'] );
-		$truncation          = self::truncation_message(
-			$snapshot['live_scanned'],
-			$snapshot['live_uninspected']
-		);
+		$truncation          = self::truncation_message( $snapshot['live_scanned'], $snapshot['live_uninspected'] );
 		if (
 			array() === $live_rows
 			&& array() === $history_rows
@@ -262,10 +254,7 @@ final readonly class RunOutput {
 				break;
 			case 'json':
 			case 'yaml':
-				\WP_CLI::print_value(
-					\array_merge( $live_rows, $history_rows ),
-					array( 'format' => $format )
-				);
+				\WP_CLI::print_value( \array_merge( $live_rows, $history_rows ), array( 'format' => $format ) );
 				break;
 		}
 

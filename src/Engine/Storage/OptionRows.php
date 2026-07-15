@@ -74,14 +74,7 @@ final readonly class OptionRows {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$result = $wpdb->query(
-			$wpdb->prepare(
-				"INSERT IGNORE INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'off') /* LOCK */",
-				$wpdb->options,
-				$key,
-				$raw
-			) ?? ''
-		);
+		$result = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'off') /* LOCK */", $wpdb->options, $key, $raw ) ?? '' );
 		$this->purge_cache( $key );
 
 		return 1 === $result;
@@ -104,14 +97,7 @@ final readonly class OptionRows {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$row = $wpdb->get_row(
-			$wpdb->prepare(
-				'SELECT `option_value` FROM %i WHERE `option_name` = %s LIMIT 1',
-				$wpdb->options,
-				$key
-			),
-			\ARRAY_A
-		);
+		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s LIMIT 1', $wpdb->options, $key ), \ARRAY_A );
 		if ( $this->last_read_failed() ) {
 			return new Failure(
 				new EngineError(
@@ -147,21 +133,9 @@ final readonly class OptionRows {
 	public function option_names( string $prefix ): AbstractResult {
 		$this->assert_site();
 		$wpdb  = $this->wpdb;
-		$names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC',
-				$wpdb->options,
-				$wpdb->esc_like( $prefix ) . '%'
-			)
-		);
+		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ) );
 		if ( $this->last_read_failed() ) {
-			return new Failure(
-				new EngineError(
-					'Authoritative option-name read failed; repair WordPress option reads and retry.',
-					reason: EngineErrorReason::StorageFailure,
-					context: array( 'storage_error' => $wpdb->last_error ),
-				)
-			);
+			return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
 		}
 
 		$typed = array();
@@ -204,25 +178,8 @@ final readonly class OptionRows {
 
 		do {
 			$candidates = null === $cursor
-				? $wpdb->get_col(
-					$wpdb->prepare(
-						'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d ORDER BY BINARY `option_name` ASC LIMIT %d',
-						$wpdb->options,
-						$pattern,
-						$total_length,
-						$limit
-					)
-				)
-				: $wpdb->get_col(
-					$wpdb->prepare(
-						'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d',
-						$wpdb->options,
-						$pattern,
-						$total_length,
-						$cursor,
-						$limit
-					)
-				);
+				? $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $limit ) )
+				: $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $cursor, $limit ) );
 			if ( $this->last_read_failed() ) {
 				return null;
 			}
@@ -286,15 +243,7 @@ final readonly class OptionRows {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$result = $wpdb->query(
-			$wpdb->prepare(
-				'UPDATE %i SET `option_value` = %s WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s',
-				$wpdb->options,
-				$replacement_raw,
-				$key,
-				$expected_raw
-			) ?? ''
-		);
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `option_value` = %s WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s', $wpdb->options, $replacement_raw, $key, $expected_raw ) ?? '' );
 		$this->purge_cache( $key );
 		if ( 1 === $result ) {
 			return true;
@@ -330,14 +279,7 @@ final readonly class OptionRows {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$result = $wpdb->query(
-			$wpdb->prepare(
-				'DELETE FROM %i WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s',
-				$wpdb->options,
-				$key,
-				$expected_raw
-			) ?? ''
-		);
+		$result = $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s', $wpdb->options, $key, $expected_raw ) ?? '' );
 		$this->purge_cache( $key );
 
 		return 1 === $result;
@@ -388,9 +330,7 @@ final readonly class OptionRows {
 			return;
 		}
 
-		throw new \LogicException(
-			'Do not reuse OptionRows after switch_to_blog(); construct a new site-bound instance after switching.'
-		);
+		throw new \LogicException( 'Do not reuse OptionRows after switch_to_blog(); construct a new site-bound instance after switching.' );
 	}
 
 	/**

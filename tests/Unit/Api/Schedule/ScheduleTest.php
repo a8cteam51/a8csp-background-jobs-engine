@@ -44,12 +44,7 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_retains_the_complete_definition_and_defaults(): void {
 		$recurrence = Recurrence::every( 300 );
-		$schedule   = new Schedule(
-			name: 'refresh_index-2',
-			recurrence: $recurrence,
-			task: 'refresh-index',
-			args: array( 'site_id' => 7 ),
-		);
+		$schedule   = new Schedule( name: 'refresh_index-2', recurrence: $recurrence, task: 'refresh-index', args: array( 'site_id' => 7 ), );
 
 		self::assertSame( 'refresh_index-2', $schedule->name );
 		self::assertSame( $recurrence, $schedule->recurrence );
@@ -70,9 +65,7 @@ final class ScheduleTest extends TestCase {
 	#[DataProvider( 'invalid_names' )]
 	public function test_constructor_rejects_invalid_names_with_the_fix( string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
 	}
@@ -88,9 +81,7 @@ final class ScheduleTest extends TestCase {
 		self::assertSame( \str_repeat( 'a', 64 ), $accepted->name );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		new Schedule( \str_repeat( 'a', 65 ), Recurrence::every( 300 ), 'refresh-index' );
 	}
@@ -117,9 +108,7 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_rejects_an_invalid_target_task_name(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		new Schedule( 'nightly', Recurrence::every( 300 ), 'Refresh Index' );
 	}
@@ -131,9 +120,7 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_rejects_a_negative_priority_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Schedule "nightly" priority -1 is invalid; pass a value from 0 through 255.'
-		);
+		$this->expectExceptionMessageIs( 'Schedule "nightly" priority -1 is invalid; pass a value from 0 through 255.' );
 
 		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: -1 );
 	}
@@ -145,9 +132,7 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_rejects_a_priority_above_255_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Schedule "nightly" priority 256 is invalid; pass a value from 0 through 255.'
-		);
+		$this->expectExceptionMessageIs( 'Schedule "nightly" priority 256 is invalid; pass a value from 0 through 255.' );
 
 		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: 256 );
 	}
@@ -169,9 +154,7 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_rejects_non_scalar_arguments_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.'
-		);
+		$this->expectExceptionMessageIs( 'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.' );
 
 		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( new \stdClass() ) );
 	}
@@ -183,9 +166,7 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_rejects_non_finite_arguments_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.'
-		);
+		$this->expectExceptionMessageIs( 'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.' );
 
 		new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( \INF ) );
 	}
@@ -242,11 +223,6 @@ final class ScheduleTest extends TestCase {
 	 * @return  Schedule
 	 */
 	private function schedule(): Schedule {
-		return new Schedule(
-			name: 'nightly',
-			recurrence: Recurrence::every( 300 ),
-			task: 'refresh-index',
-			args: array( 'site_id' => 7 ),
-		);
+		return new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), task: 'refresh-index', args: array( 'site_id' => 7 ), );
 	}
 }

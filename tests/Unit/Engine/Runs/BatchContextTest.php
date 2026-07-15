@@ -91,10 +91,7 @@ final class BatchContextTest extends TestCase {
 		}
 
 		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
-		self::assertSame(
-			'Batch chunk arguments must contain only null, scalar, or nested array values.',
-			$caught->getMessage()
-		);
+		self::assertSame( 'Batch chunk arguments must contain only null, scalar, or nested array values.', $caught->getMessage() );
 		self::assertSame( $initial, $context->get_queue() );
 	}
 
@@ -115,10 +112,7 @@ final class BatchContextTest extends TestCase {
 		}
 
 		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
-		self::assertSame(
-			'Batch chunk arguments must contain only null, scalar, or nested array values.',
-			$caught->getMessage()
-		);
+		self::assertSame( 'Batch chunk arguments must contain only null, scalar, or nested array values.', $caught->getMessage() );
 		self::assertSame( $initial, $context->get_queue() );
 	}
 }

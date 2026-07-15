@@ -47,12 +47,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgte_failed_' . self::IDENTITY );
 
-		$retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 1,
-			multiplier: 1,
-			max_delay: 1
-		);
+		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 1, multiplier: 1, max_delay: 1 );
 		/** @var list<array{arity: int, policy: RetryPolicy}> $retry_policy_calls */
 		$retry_policy_calls = array();
 		\add_filter(
@@ -164,35 +159,15 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$delay = $named_retrying[0][3] ?? null;
 		self::assertIsInt( $delay );
 		self::assertContains( $delay, array( 0, 1 ), 'Full jitter must stay within the filtered one-second ceiling' );
-		self::assertSame(
-			array( array( $failed_run_id, $args, 1, $delay ) ),
-			$named_retrying,
-			'The identity-specific retrying hook must pin the failed attempt number and jittered delay'
-		);
-		self::assertSame(
-			array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ),
-			$generic_retrying,
-			'The generic retrying hook must prepend the task name to the same payload'
-		);
+		self::assertSame( array( array( $failed_run_id, $args, 1, $delay ) ), $named_retrying, 'The identity-specific retrying hook must pin the failed attempt number and jittered delay' );
+		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retrying, 'The generic retrying hook must prepend the task name to the same payload' );
 
 		$store = $this->action_scheduler_store();
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( $initial_action_id ),
-			'Action Scheduler must complete the first action after the engine handles its failure'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ), 'Action Scheduler must complete the first action after the engine handles its failure' );
 		$retry_action_id = $this->assert_pending_retry_action( $failed_run_id, $failed_group );
 		$scheduled_at    = $store->get_date( $retry_action_id )->getTimestamp();
-		self::assertGreaterThanOrEqual(
-			$first_attempt_before + $delay,
-			$scheduled_at,
-			'The retry timestamp must not precede the attempt timestamp plus its jittered delay'
-		);
-		self::assertLessThanOrEqual(
-			$first_attempt_after + $delay,
-			$scheduled_at,
-			'The retry timestamp must not exceed the completed attempt timestamp plus its jittered delay'
-		);
+		self::assertGreaterThanOrEqual( $first_attempt_before + $delay, $scheduled_at, 'The retry timestamp must not precede the attempt timestamp plus its jittered delay' );
+		self::assertLessThanOrEqual( $first_attempt_after + $delay, $scheduled_at, 'The retry timestamp must not exceed the completed attempt timestamp plus its jittered delay' );
 
 		$args_hash = self::args_hash( $args );
 		$run_state = \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, null );
@@ -242,21 +217,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame(
-			array( array( $failed_run_id, $args, $failure ) ),
-			$recorded_named_failed,
-			'The identity-specific failed hook must receive run ID, start arguments, and terminal error'
-		);
-		self::assertSame(
-			array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ),
-			$recorded_generic_failed,
-			'The generic failed hook must prepend the task name to the same terminal payload'
-		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( $retry_action_id ),
-			'Action Scheduler must complete the retry action after terminal engine handling'
-		);
+		self::assertSame( array( array( $failed_run_id, $args, $failure ) ), $recorded_named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and terminal error' );
+		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ), $recorded_generic_failed, 'The generic failed hook must prepend the task name to the same terminal payload' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $retry_action_id ), 'Action Scheduler must complete the retry action after terminal engine handling' );
 		self::assertSame(
 			array( $initial_action_id, $retry_action_id ),
 			$store->query_actions(
@@ -269,25 +232,15 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			'Retry exhaustion must leave exactly the initial and retry Action Scheduler rows'
 		);
 
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, false ),
-			'Terminal retry exhaustion must delete the active run option'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
-			'Terminal retry exhaustion must release the overlap lock'
-		);
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, false ), 'Terminal retry exhaustion must delete the active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal retry exhaustion must release the overlap lock' );
 
 		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
 		self::assertIsArray( $failed_entries );
 		self::assertCount( 1, $failed_entries, 'Retry exhaustion must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;
 		self::assertIsArray( $failed_entry );
-		self::assertSame(
-			array( 'run_id', 'failed_at', 'start_args', 'attempts', 'error' ),
-			\array_keys( $failed_entry ),
-			'The failed entry must contain exactly the manual-retry fields'
-		);
+		self::assertSame( array( 'run_id', 'failed_at', 'start_args', 'attempts', 'error' ), \array_keys( $failed_entry ), 'The failed entry must contain exactly the manual-retry fields' );
 		self::assertSame( $failed_run_id, $failed_entry['run_id'] ?? null );
 		self::assertIsInt( $failed_entry['failed_at'] ?? null );
 		self::assertSame( $args, $failed_entry['start_args'] ?? null );
@@ -310,58 +263,22 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( array( $args, $args ), $task->calls, 'Manual retry must not invoke the task inline' );
 		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
 		self::assertIsArray( $remaining_failed_entries );
-		self::assertSame(
-			array(),
-			$remaining_failed_entries,
-			'Manual retry must remove the consumed failed entry after fresh enqueue succeeds'
-		);
+		self::assertSame( array(), $remaining_failed_entries, 'Manual retry must remove the consumed failed entry after fresh enqueue succeeds' );
 
 		$successful_group     = self::IDENTITY . '|' . $successful_run_id;
-		$successful_action_id = $this->assert_pending_task_action(
-			self::IDENTITY,
-			$successful_run_id,
-			$successful_group
-		);
+		$successful_action_id = $this->assert_pending_task_action( self::IDENTITY, $successful_run_id, $successful_group );
 		$task->throwable      = null;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the manually retried task' );
 
 		self::assertSame( array( $args, $args, $args ), $task->calls, 'The manually retried task must succeed on its third fixture invocation' );
-		self::assertSame(
-			array( array( $successful_run_id, $args ) ),
-			$named_completed,
-			'The identity-specific completed hook must receive the fresh run ID and original arguments'
-		);
-		self::assertSame(
-			array( array( self::IDENTITY, $successful_run_id, $args ) ),
-			$generic_completed,
-			'The generic completed hook must prepend the task name to the same fresh-run payload'
-		);
-		self::assertSame(
-			array( array( $failed_run_id, $args, 1, $delay ) ),
-			$named_retrying,
-			'The successful manual retry must not repeat the identity-specific retrying hook'
-		);
-		self::assertSame(
-			array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ),
-			$generic_retrying,
-			'The successful manual retry must not repeat the generic retrying hook'
-		);
-		self::assertSame(
-			$recorded_named_failed,
-			$named_failed,
-			'The successful manual retry must not repeat the identity-specific failed hook'
-		);
-		self::assertSame(
-			$recorded_generic_failed,
-			$generic_failed,
-			'The successful manual retry must not repeat the generic failed hook'
-		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( $successful_action_id ),
-			'Action Scheduler must complete the manually retried task action'
-		);
+		self::assertSame( array( array( $successful_run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive the fresh run ID and original arguments' );
+		self::assertSame( array( array( self::IDENTITY, $successful_run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the task name to the same fresh-run payload' );
+		self::assertSame( array( array( $failed_run_id, $args, 1, $delay ) ), $named_retrying, 'The successful manual retry must not repeat the identity-specific retrying hook' );
+		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retrying, 'The successful manual retry must not repeat the generic retrying hook' );
+		self::assertSame( $recorded_named_failed, $named_failed, 'The successful manual retry must not repeat the identity-specific failed hook' );
+		self::assertSame( $recorded_generic_failed, $generic_failed, 'The successful manual retry must not repeat the generic failed hook' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $successful_action_id ), 'Action Scheduler must complete the manually retried task action' );
 		self::assertSame(
 			array( $initial_action_id, $retry_action_id, $successful_action_id ),
 			$store->query_actions(
@@ -373,14 +290,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			),
 			'The complete retry round-trip must leave exactly its three Action Scheduler rows'
 		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $successful_run_id, false ),
-			'The successful manual retry must delete its active run option'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
-			'The successful manual retry must release its overlap lock'
-		);
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $successful_run_id, false ), 'The successful manual retry must delete its active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'The successful manual retry must release its overlap lock' );
 		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
 		self::assertIsArray( $remaining_failed_entries );
 		self::assertSame( array(), $remaining_failed_entries );
@@ -488,11 +399,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$claim     = $store->stake_claim( 1, $cutoff );
 
 		try {
-			self::assertSame(
-				array( (int) $action_id ),
-				$claim->get_actions(),
-				'The future cutoff must claim exactly the pending retry action'
-			);
+			self::assertSame( array( (int) $action_id ), $claim->get_actions(), 'The future cutoff must claim exactly the pending retry action' );
 
 			$runner = \ActionScheduler::runner();
 			self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );

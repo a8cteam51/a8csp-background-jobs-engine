@@ -41,9 +41,6 @@ final class OverlapPolicyTest extends TestCase {
 			),
 			$policies
 		);
-		self::assertSame(
-			array( 'allow', 'skip', 'replace' ),
-			\array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, $policies )
-		);
+		self::assertSame( array( 'allow', 'skip', 'replace' ), \array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, $policies ) );
 	}
 }

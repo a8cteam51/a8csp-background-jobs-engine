@@ -49,9 +49,7 @@ trait OptionIsolationTrait {
 	 */
 	protected function expect_option( string $name ): void {
 		if ( ! \str_starts_with( $name, self::ENGINE_OPTION_PREFIX ) ) {
-			throw new \InvalidArgumentException(
-				'Expected integration leftovers must use the a8csp_bgte_ option prefix.'
-			);
+			throw new \InvalidArgumentException( 'Expected integration leftovers must use the a8csp_bgte_ option prefix.' );
 		}
 
 		$this->expected_engine_options[ $name ] = true;
@@ -114,14 +112,7 @@ trait OptionIsolationTrait {
 		global $wpdb;
 
 		/** @var \wpdb $wpdb */
-		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				'SELECT `option_name`, `autoload` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC',
-				$wpdb->options,
-				$wpdb->esc_like( self::ENGINE_OPTION_PREFIX ) . '%'
-			),
-			\ARRAY_A
-		);
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `autoload` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( self::ENGINE_OPTION_PREFIX ) . '%' ), \ARRAY_A );
 		if ( ! \is_array( $rows ) ) {
 			return array();
 		}
@@ -157,13 +148,7 @@ trait OptionIsolationTrait {
 		global $wpdb;
 
 		/** @var \wpdb $wpdb */
-		$option_names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-				$wpdb->options,
-				$wpdb->esc_like( self::ENGINE_OPTION_PREFIX ) . '%'
-			)
-		);
+		$option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $wpdb->esc_like( self::ENGINE_OPTION_PREFIX ) . '%' ) );
 
 		foreach ( $option_names as $option_name ) {
 			if ( \is_string( $option_name ) ) {

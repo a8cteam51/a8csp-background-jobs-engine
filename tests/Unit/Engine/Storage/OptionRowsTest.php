@@ -86,10 +86,7 @@ final class OptionRowsTest extends TestCase {
 		$result = ( new OptionRows( $wpdb ) )->option_names( $prefix );
 		self::assertFalse( $result->is_failure() );
 		self::assertSame( array( $expected ), $result->value );
-		self::assertStringContainsString(
-			"LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'",
-			$wpdb->recorded_queries[0]
-		);
+		self::assertStringContainsString( "LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'", $wpdb->recorded_queries[0] );
 	}
 
 	/** A bounded page keysets past rejected candidates and counts only accepted names. */
@@ -103,15 +100,7 @@ final class OptionRowsTest extends TestCase {
 		$wpdb->put( $first_valid, 'first-run-row' );
 		$wpdb->put( $second_valid, 'second-run-row' );
 
-		$page = ( new OptionRows( $wpdb ) )->option_names_page(
-			$prefix,
-			\strlen( $first_valid ),
-			1,
-			static fn ( string $name ): bool => 1 === \preg_match(
-				'/\A\d{20}-\d{19}\z/D',
-				\substr( $name, \strlen( $prefix ) )
-			)
-		);
+		$page = ( new OptionRows( $wpdb ) )->option_names_page( $prefix, \strlen( $first_valid ), 1, static fn ( string $name ): bool => 1 === \preg_match( '/\A\d{20}-\d{19}\z/D', \substr( $name, \strlen( $prefix ) ) ) );
 
 		self::assertSame(
 			array(
@@ -475,10 +464,7 @@ final class OptionRowsTest extends TestCase {
 	private static function assert_cache_purge(): void {
 		/** @var list<array{function: string, args: list<mixed>}> $calls */
 		$calls = $GLOBALS['a8csp_bgte_test_cache_calls'];
-		self::assertSame(
-			array( 'wp_cache_delete', 'wp_cache_get', 'wp_cache_set' ),
-			\array_column( $calls, 'function' )
-		);
+		self::assertSame( array( 'wp_cache_delete', 'wp_cache_get', 'wp_cache_set' ), \array_column( $calls, 'function' ) );
 		self::assertSame( array( self::KEY, 'options' ), $calls[0]['args'] );
 		self::assertSame( array( 'notoptions', 'options', false ), $calls[1]['args'] );
 		self::assertSame( array( 'notoptions', array( 'other' => true ), 'options', 0 ), $calls[2]['args'] );

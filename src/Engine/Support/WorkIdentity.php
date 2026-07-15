@@ -83,9 +83,7 @@ final class WorkIdentity {
 
 		$identity = $owner . ':' . $name;
 		if ( self::IDENTITY_MAX_BYTES < \strlen( $identity ) ) {
-			throw new \InvalidArgumentException(
-				'Background-work identity must be at most 97 bytes; shorten the owner or name.'
-			);
+			throw new \InvalidArgumentException( 'Background-work identity must be at most 97 bytes; shorten the owner or name.' );
 		}
 
 		return $identity;
@@ -109,15 +107,11 @@ final class WorkIdentity {
 			1 !== \preg_match( '/\A[a-z0-9][a-z0-9-]*\z/D', $owner )
 			|| self::OWNER_MAX_BYTES < \strlen( $owner )
 		) {
-			throw new \InvalidArgumentException(
-				'Background-work owner is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.'
-			);
+			throw new \InvalidArgumentException( 'Background-work owner is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.' );
 		}
 
 		if ( ! $allow_engine_reserved && \str_starts_with( $owner, self::ENGINE_OWNER ) ) {
-			throw new \InvalidArgumentException(
-				'Background-work owner uses the engine-reserved "a8csp-bgte" prefix; use the consumer plugin slug.'
-			);
+			throw new \InvalidArgumentException( 'Background-work owner uses the engine-reserved "a8csp-bgte" prefix; use the consumer plugin slug.' );
 		}
 	}
 
@@ -138,9 +132,7 @@ final class WorkIdentity {
 			1 !== \preg_match( '/\A[a-z0-9_-]+\z/D', $name )
 			|| self::NAME_MAX_BYTES < \strlen( $name )
 		) {
-			throw new \InvalidArgumentException(
-				'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-			);
+			throw new \InvalidArgumentException( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 		}
 	}
 

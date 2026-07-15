@@ -93,11 +93,7 @@ final class ErrorLogSink {
 
 		if ( array() !== $context ) {
 			try {
-				$encoded_context = \wp_json_encode(
-					self::normalize_context( $context ),
-					\JSON_THROW_ON_ERROR,
-					self::MAX_CONTEXT_ARRAY_DEPTH + 1
-				);
+				$encoded_context = \wp_json_encode( self::normalize_context( $context ), \JSON_THROW_ON_ERROR, self::MAX_CONTEXT_ARRAY_DEPTH + 1 );
 			} catch ( \Throwable ) {
 				$encoded_context = false;
 			}

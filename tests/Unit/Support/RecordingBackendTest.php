@@ -103,16 +103,10 @@ final class RecordingBackendTest extends TestCase {
 	 */
 	public function test_write_results_are_scripted_independently(): void {
 		$backend   = new RecordingBackend();
-		$recurring = new Failure(
-			new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use a positive interval.' )
-		);
-		$single    = new Failure(
-			new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' )
-		);
+		$recurring = new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use a positive interval.' ) );
+		$single    = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' ) );
 		$async     = new Success( true );
-		$clear     = new Failure(
-			new SchedulingError( SchedulingErrorReason::UnsupportedGroup, 'Drop the unsupported group.' )
-		);
+		$clear     = new Failure( new SchedulingError( SchedulingErrorReason::UnsupportedGroup, 'Drop the unsupported group.' ) );
 
 		$backend->results = array(
 			'schedule_recurring' => $recurring,
@@ -170,11 +164,7 @@ final class RecordingBackendTest extends TestCase {
 		foreach ( $types as $type ) {
 			$reflection = new \ReflectionClass( $type );
 			foreach ( $verbs as $verb ) {
-				self::assertCount(
-					1,
-					$reflection->getMethod( $verb )->getAttributes( \NoDiscard::class ),
-					\sprintf( '%s::%s() must declare NoDiscard directly.', $type, $verb )
-				);
+				self::assertCount( 1, $reflection->getMethod( $verb )->getAttributes( \NoDiscard::class ), \sprintf( '%s::%s() must declare NoDiscard directly.', $type, $verb ) );
 			}
 		}
 	}

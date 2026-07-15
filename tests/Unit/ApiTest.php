@@ -90,9 +90,7 @@ final class ApiTest extends TestCase {
 	 */
 	public function test_access_before_init_throws_with_the_earliest_safe_hook(): void {
 		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs(
-			'The background tasks consumer is available from the init hook; call a8csp_bgte() from an init callback or later.'
-		);
+		$this->expectExceptionMessageIs( 'The background tasks consumer is available from the init hook; call a8csp_bgte() from an init callback or later.' );
 
 		\a8csp_bgte( 'consumer-plugin' );
 	}
@@ -245,9 +243,7 @@ final class ApiTest extends TestCase {
 
 	/** Schedule sync maps an unsupported backend capability to the public admission error. */
 	public function test_schedule_sync_maps_its_internal_failure_at_the_facade_boundary(): void {
-		$result = $this->consumer()->schedules()->sync(
-			array( new Schedule( 'calendar', Recurrence::cron( '0 0 * * *' ), 'task' ) )
-		);
+		$result = $this->consumer()->schedules()->sync( array( new Schedule( 'calendar', Recurrence::cron( '0 0 * * *' ), 'task' ) ) );
 
 		self::assert_api_failure( $result, ApiErrorCode::UnsupportedOperation, array( 'schedule' ) );
 	}

@@ -129,12 +129,7 @@ final class UninstallWpdbSpy {
 		/** @var array<string, mixed> $options */
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
 
-		return \array_values(
-			\array_filter(
-				\array_keys( $options ),
-				static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' )
-			)
-		);
+		return \array_values( \array_filter( \array_keys( $options ), static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
 	}
 
 	// endregion.
@@ -214,10 +209,7 @@ final class UninstallTest extends TestCase {
 		$option_calls      = $this->option_calls();
 		$first_option_call = $option_calls[0] ?? null;
 		self::assertIsArray( $first_option_call );
-		self::assertSame(
-			array( 'a8csp_bgte_schedules' ),
-			$first_option_call['args'] ?? null
-		);
+		self::assertSame( array( 'a8csp_bgte_schedules' ), $first_option_call['args'] ?? null );
 		self::assertArrayHasKey( self::NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
 		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::NEAR_MISS ] );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
@@ -250,11 +242,7 @@ final class UninstallTest extends TestCase {
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
 			'The action delete must be scoped to exactly the five engine hooks'
 		);
-		self::assertStringContainsString(
-			'NOT IN (SELECT `group_id` FROM %i)',
-			$wpdb->write_queries[2],
-			'Group deletion must keep any group still referenced by surviving actions'
-		);
+		self::assertStringContainsString( 'NOT IN (SELECT `group_id` FROM %i)', $wpdb->write_queries[2], 'Group deletion must keep any group still referenced by surviving actions' );
 	}
 
 	/**
@@ -285,11 +273,7 @@ final class UninstallTest extends TestCase {
 
 		$wpdb = $GLOBALS['wpdb'];
 		self::assertInstanceOf( UninstallWpdbSpy::class, $wpdb );
-		self::assertSame(
-			array(),
-			$wpdb->write_queries,
-			'An incomplete Action Scheduler schema must leave every store row untouched'
-		);
+		self::assertSame( array(), $wpdb->write_queries, 'An incomplete Action Scheduler schema must leave every store row untouched' );
 	}
 
 	/**
@@ -415,12 +399,7 @@ final class UninstallTest extends TestCase {
 	 * @return  list<array{query: string, args: list<mixed>}>
 	 */
 	private static function prepared_matching( UninstallWpdbSpy $wpdb, string $marker ): array {
-		return \array_values(
-			\array_filter(
-				$wpdb->prepared,
-				static fn ( array $entry ): bool => \str_contains( $entry['query'], $marker )
-			)
-		);
+		return \array_values( \array_filter( $wpdb->prepared, static fn ( array $entry ): bool => \str_contains( $entry['query'], $marker ) ) );
 	}
 
 	// endregion.

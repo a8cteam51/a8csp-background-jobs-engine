@@ -94,13 +94,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @param   callable|null $did_action_probe      Action-fire-count predicate for runtime facts.
 	 */
 	public function __construct( ?callable $readiness_probe = null, ?callable $function_exists_probe = null, ?callable $did_action_probe = null ) {
-		$this->function_exists_probe = \Closure::fromCallable(
-			$function_exists_probe ?? static fn ( string $function_name ): bool => \function_exists( $function_name )
-		);
+		$this->function_exists_probe = \Closure::fromCallable( $function_exists_probe ?? static fn ( string $function_name ): bool => \function_exists( $function_name ) );
 
-		$this->did_action_probe = \Closure::fromCallable(
-			$did_action_probe ?? static fn ( string $hook ): int => \function_exists( 'did_action' ) ? \did_action( $hook ) : 0
-		);
+		$this->did_action_probe = \Closure::fromCallable( $did_action_probe ?? static fn ( string $hook ): int => \function_exists( 'did_action' ) ? \did_action( $hook ) : 0 );
 
 		$this->readiness_probe = null === $readiness_probe
 			? fn (): bool => self::facts_are_ready( $this->readiness_facts() )
@@ -127,13 +123,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		}
 
 		if ( 1 > $interval ) {
-			return new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::InvalidTimeInput,
-					'Action Scheduler requires recurring intervals of at least one second.',
-					array( 'interval' => $interval ),
-				)
-			);
+			return new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Action Scheduler requires recurring intervals of at least one second.', array( 'interval' => $interval ), ) );
 		}
 
 		$function_failure = $this->missing_function_failure( 'as_next_scheduled_action' );
@@ -152,23 +142,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			return $function_failure;
 		}
 
-		$action_id = \as_schedule_recurring_action(
-			$first_run_timestamp ?? \time(),
-			$interval,
-			$hook,
-			$args,
-			$group,
-			true,
-			$priority
-		);
+		$action_id = \as_schedule_recurring_action( $first_run_timestamp ?? \time(), $interval, $hook, $args, $group, true, $priority );
 
-		return $this->result_for_unique_action_id(
-			$action_id,
-			$hook,
-			$args,
-			$group,
-			'as_schedule_recurring_action'
-		);
+		return $this->result_for_unique_action_id( $action_id, $hook, $args, $group, 'as_schedule_recurring_action' );
 	}
 
 	/**
@@ -232,13 +208,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 
 		$action_id = \as_enqueue_async_action( $hook, $args, $group, true, $priority );
 
-		return $this->result_for_unique_action_id(
-			$action_id,
-			$hook,
-			$args,
-			$group,
-			'as_enqueue_async_action'
-		);
+		return $this->result_for_unique_action_id( $action_id, $hook, $args, $group, 'as_enqueue_async_action' );
 	}
 
 	/**
@@ -273,16 +243,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 
 		$postcheck_args = '' === $hook && array() === $args && '' !== $group ? null : $args;
 		if ( \as_has_scheduled_action( $hook, $postcheck_args, $group ) ) {
-			return new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::ScheduleFailed,
-					\sprintf(
-						'Action Scheduler still reports a matching pending or in-progress action for hook "%s"; retry after any running action finishes.',
-						$hook
-					),
-					array( 'hook' => $hook ),
-				)
-			);
+			return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'Action Scheduler still reports a matching pending or in-progress action for hook "%s"; retry after any running action finishes.', $hook ), array( 'hook' => $hook ), ) );
 		}
 
 		return new Success( true );
@@ -335,16 +296,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 				'ids'
 			);
 			if ( array() !== $remaining ) {
-				return new Failure(
-					new SchedulingError(
-						SchedulingErrorReason::ScheduleFailed,
-						\sprintf(
-							'Action Scheduler still reports a pending action for hook "%s"; retry after the queue store accepts cancellation.',
-							$hook
-						),
-						array( 'hook' => $hook ),
-					)
-				);
+				return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'Action Scheduler still reports a pending action for hook "%s"; retry after the queue store accepts cancellation.', $hook ), array( 'hook' => $hook ), ) );
 			}
 		}
 
@@ -410,10 +362,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_absent(): bool {
-		return ! \array_any(
-			self::REQUIRED_FUNCTIONS,
-			fn ( string $function_name ): bool => ( $this->function_exists_probe )( $function_name )
-		);
+		return ! \array_any( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => ( $this->function_exists_probe )( $function_name ) );
 	}
 
 	/**
@@ -453,10 +402,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}
 	 */
 	private function readiness_facts(): array {
-		$functions_exist = \array_all(
-			self::REQUIRED_FUNCTIONS,
-			fn ( string $function_name ): bool => ( $this->function_exists_probe )( $function_name )
-		);
+		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => ( $this->function_exists_probe )( $function_name ) );
 
 		return array(
 			'action_scheduler_functions_exist' => $functions_exist,
@@ -520,18 +466,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 
 		$message = null === $missing_function
 			? 'Action Scheduler is not ready; load or activate Action Scheduler, then call this scheduling operation after action_scheduler_init fires.'
-			: \sprintf(
-				'Action Scheduler function "%s" is unavailable; load or activate a complete Action Scheduler API, then retry after action_scheduler_init fires.',
-				$missing_function
-			);
+			: \sprintf( 'Action Scheduler function "%s" is unavailable; load or activate a complete Action Scheduler API, then retry after action_scheduler_init fires.', $missing_function );
 
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::BackendNotReady,
-				$message,
-				$context,
-			)
-		);
+		return new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, $message, $context, ) );
 	}
 
 	/**
@@ -563,13 +500,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			}
 		}
 
-		return $this->result_for_action_id(
-			$action_id,
-			$hook,
-			$function_name,
-			$diagnostic_facts,
-			$failure_cause
-		);
+		return $this->result_for_action_id( $action_id, $hook, $function_name, $diagnostic_facts, $failure_cause );
 	}
 
 	/**
@@ -596,11 +527,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		if ( null !== $failure_cause ) {
 			$cause = $failure_cause;
 		} elseif ( 0 > $action_id ) {
-			$cause = \sprintf(
-				'%1$s returned negative action ID %2$d; only a positive ID confirms that Action Scheduler persisted the action.',
-				$function_name,
-				$action_id
-			);
+			$cause = \sprintf( '%1$s returned negative action ID %2$d; only a positive ID confirms that Action Scheduler persisted the action.', $function_name, $action_id );
 		} elseif ( ! $facts['action_scheduler_functions_exist'] ) {
 			$cause = 'the Action Scheduler function table is unavailable; load or activate Action Scheduler before retrying.';
 		} elseif ( ! $facts['wp_init_fired'] ) {
@@ -608,10 +535,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		} elseif ( ! $facts['action_scheduler_init_fired'] ) {
 			$cause = 'action_scheduler_init has not fired; load Action Scheduler early enough to initialize, then retry after that action.';
 		} else {
-			$cause = \sprintf(
-				'the Action Scheduler store rejected the action; inspect the PHP error log for a store or database exception, or a %s filter returning zero.',
-				'pre_' . $function_name
-			);
+			$cause = \sprintf( 'the Action Scheduler store rejected the action; inspect the PHP error log for a store or database exception, or a %s filter returning zero.', 'pre_' . $function_name );
 		}
 
 		return new Failure(

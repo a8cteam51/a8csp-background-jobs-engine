@@ -136,18 +136,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally(
-				$contract,
-				$name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::retry_policy( $work_type, $name, $retry_policy_failure ),
-				$attempts_used,
-				'execution',
-				ApiErrorCode::ExecutionFailed,
-				$chunk_args
-			);
+			$this->fail_terminally( $contract, $name, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $name, $retry_policy_failure ), $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -162,34 +151,14 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		$retry_failure = $this->reschedule_retry(
-			$work_type,
-			$name,
-			$run_id,
-			$state,
-			$run_store,
-			$policy,
-			$attempts_used,
-			$chunk_args
-		);
+		$retry_failure = $this->reschedule_retry( $work_type, $name, $run_id, $state, $run_store, $policy, $attempts_used, $chunk_args );
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
 			if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
 				return;
 			}
 
-			$this->fail_terminally(
-				$contract,
-				$name,
-				$run_id,
-				$retry_state,
-				$run_store,
-				$retry_failure['error'],
-				$attempts_used,
-				$retry_failure['stage'],
-				$retry_failure['code'],
-				$chunk_args
-			);
+			$this->fail_terminally( $contract, $name, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $chunk_args );
 		}
 	}
 
@@ -214,33 +183,12 @@ final readonly class FailureLifecycle {
 	 */
 	private function fail_terminally( TaskInterface|BatchInterface $contract, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $chunk_args ): void {
 		if ( $contract instanceof BatchInterface ) {
-			$this->terminal_transitions->fail_batch(
-				$contract,
-				$name,
-				$run_id,
-				$state,
-				$run_store,
-				$error,
-				$stage,
-				$code,
-				$chunk_args,
-				$attempts_used
-			);
+			$this->terminal_transitions->fail_batch( $contract, $name, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
 
 			return;
 		}
 
-		$this->terminal_transitions->fail_run(
-			$name,
-			$run_id,
-			$state,
-			$run_store,
-			$error,
-			$attempts_used,
-			$stage,
-			$code,
-			$chunk_args
-		);
+		$this->terminal_transitions->fail_run( $name, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
 	}
 
 	/**
@@ -255,10 +203,7 @@ final readonly class FailureLifecycle {
 	 * @return  RetryPolicy
 	 */
 	private function retry_policy( string $identity, RetryPolicy $contract_policy ): RetryPolicy {
-		$filtered_policy = \apply_filters(
-			'a8csp_background_tasks/retry_policy/' . $identity,
-			$contract_policy
-		);
+		$filtered_policy = \apply_filters( 'a8csp_background_tasks/retry_policy/' . $identity, $contract_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
 		}
@@ -299,13 +244,7 @@ final readonly class FailureLifecycle {
 			if ( $delay > \PHP_INT_MAX - $now ) {
 				return array(
 					'state' => $state,
-					'error' => new EngineError(
-						\sprintf(
-							'%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.',
-							$work_type,
-							$name
-						)
-					),
+					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $work_type, $name ) ),
 					'stage' => 'scheduling',
 					'code'  => ApiErrorCode::BackendRejected,
 				);
@@ -325,12 +264,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$replacement = $state
-				->with_failed_attempts( $attempt )
-				->with_heartbeat_at( $fire_at )
-				->with_action_seq( $state->action_seq + 1 )
-				->with_executing( false )
-				->with_pending( PendingAction::single( 'run', $fire_at, 10 ) );
+			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::single( 'run', $fire_at, 10 ) );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -382,13 +316,7 @@ final readonly class FailureLifecycle {
 			}
 			$action_args[] = $state->action_seq;
 
-			$scheduled = $this->scheduler->schedule_single(
-				'a8csp_background_tasks/run',
-				$fire_at,
-				$action_args,
-				$name . '|' . $run_id,
-				10
-			);
+			$scheduled = $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $fire_at, $action_args, $name . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,
@@ -425,22 +353,9 @@ final readonly class FailureLifecycle {
 	 */
 	private function fire_retrying_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
 		try {
-			\do_action(
-				'a8csp_background_tasks/retrying/' . $identity,
-				$run_id,
-				$start_args,
-				$attempt,
-				$delay
-			);
+			\do_action( 'a8csp_background_tasks/retrying/' . $identity, $run_id, $start_args, $attempt, $delay );
 		} finally {
-			\do_action(
-				'a8csp_background_tasks/retrying',
-				$identity,
-				$run_id,
-				$start_args,
-				$attempt,
-				$delay
-			);
+			\do_action( 'a8csp_background_tasks/retrying', $identity, $run_id, $start_args, $attempt, $delay );
 		}
 	}
 

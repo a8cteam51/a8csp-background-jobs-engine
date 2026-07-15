@@ -65,11 +65,7 @@ final class RunIdentity {
 	 * @return  string
 	 */
 	public static function generate( int $timestamp, RandomizerInterface $randomizer ): string {
-		return \sprintf(
-			'%0' . self::TIME_DIGITS . 'd-%0' . self::RANDOM_DIGITS . 'd',
-			$timestamp,
-			$randomizer->int( 0, \PHP_INT_MAX )
-		);
+		return \sprintf( '%0' . self::TIME_DIGITS . 'd-%0' . self::RANDOM_DIGITS . 'd', $timestamp, $randomizer->int( 0, \PHP_INT_MAX ) );
 	}
 
 	/**
@@ -140,11 +136,7 @@ final class RunIdentity {
 	 * @return  array{name: string, run_id: string}|null
 	 */
 	public static function from_option_name( string $option_name ): ?array {
-		$matched = \preg_match(
-			'/\A' . \preg_quote( self::option_prefix(), '/' ) . '(?<name>.+)_(?<run_id>' . self::pattern() . ')\z/D',
-			$option_name,
-			$matches
-		);
+		$matched = \preg_match( '/\A' . \preg_quote( self::option_prefix(), '/' ) . '(?<name>.+)_(?<run_id>' . self::pattern() . ')\z/D', $option_name, $matches );
 		if (
 			1 !== $matched
 			|| null === WorkIdentity::parts( $matches['name'] )

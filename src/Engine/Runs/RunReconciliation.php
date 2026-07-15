@@ -107,12 +107,7 @@ final readonly class RunReconciliation {
 			);
 		}
 
-		if ( ! $this->overlap_guard->delete_stale_owned_lock(
-			$name,
-			$args_hash,
-			$run_id,
-			$this->lock_windows->lock_staleness( $name, $run_id )
-		) ) {
+		if ( ! $this->overlap_guard->delete_stale_owned_lock( $name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $name, $run_id ) ) ) {
 			return;
 		}
 
@@ -185,38 +180,13 @@ final readonly class RunReconciliation {
 			}
 
 			if ( $state->executing ) {
-				return $this->reconcile_executing_run(
-					$name,
-					$run_id,
-					$state,
-					$run_store,
-					$snapshot['raw'],
-					$fence,
-					$batch,
-					$work_type
-				);
+				return $this->reconcile_executing_run( $name, $run_id, $state, $run_store, $snapshot['raw'], $fence, $batch, $work_type );
 			}
 
-			return $this->reconcile_non_executing_run(
-				$name,
-				$run_id,
-				$state,
-				$run_store,
-				$snapshot['raw'],
-				$staleness,
-				$batch,
-				$work_type
-			);
+			return $this->reconcile_non_executing_run( $name, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $batch, $work_type );
 		}
 
-		return $this->reconcile_terminal_run(
-			$name,
-			$run_id,
-			$state,
-			$run_store,
-			$snapshot['raw'],
-			$terminal_grace
-		);
+		return $this->reconcile_terminal_run( $name, $run_id, $state, $run_store, $snapshot['raw'], $terminal_grace );
 	}
 
 	/**
@@ -279,12 +249,7 @@ final readonly class RunReconciliation {
 		}
 
 		if ( null === $state->pending ) {
-			$fence = $this->overlap_guard->fence_abandoned_run(
-				$name,
-				$state->args_hash,
-				$run_id,
-				$staleness
-			);
+			$fence = $this->overlap_guard->fence_abandoned_run( $name, $state->args_hash, $run_id, $staleness );
 			if (
 				MaintenanceFenceOutcome::Owned === $fence
 				|| MaintenanceFenceOutcome::Indeterminate === $fence
@@ -304,14 +269,7 @@ final readonly class RunReconciliation {
 				)
 			);
 		} else {
-			$redrive_fence = $this->overlap_guard->prepare_run_redrive_fence(
-				$name,
-				$state->args_hash,
-				$run_id,
-				$state->created_at,
-				$state->heartbeat_at,
-				$staleness
-			);
+			$redrive_fence = $this->overlap_guard->prepare_run_redrive_fence( $name, $state->args_hash, $run_id, $state->created_at, $state->heartbeat_at, $staleness );
 			if (
 				RedriveFenceOutcome::Live === $redrive_fence
 				|| RedriveFenceOutcome::Indeterminate === $redrive_fence
@@ -417,32 +375,9 @@ final readonly class RunReconciliation {
 			? ( $state->queue[0] ?? null )
 			: null;
 		if ( null !== $batch ) {
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$name,
-				$run_id,
-				$state,
-				$run_store,
-				$error,
-				'crash-reclaim',
-				ApiErrorCode::ExecutionFailed,
-				$failed_chunk,
-				$attempts,
-				$expected_raw
-			);
+			$this->terminal_transitions->fail_batch( $batch, $name, $run_id, $state, $run_store, $error, 'crash-reclaim', ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
-			$this->terminal_transitions->fail_run(
-				$name,
-				$run_id,
-				$state,
-				$run_store,
-				$error,
-				$attempts,
-				'crash-reclaim',
-				ApiErrorCode::ExecutionFailed,
-				null,
-				$expected_raw
-			);
+			$this->terminal_transitions->fail_run( $name, $run_id, $state, $run_store, $error, $attempts, 'crash-reclaim', ApiErrorCode::ExecutionFailed, null, $expected_raw );
 		}
 
 		return new Success( null );
@@ -464,18 +399,8 @@ final readonly class RunReconciliation {
 	 * @return  AbstractResult<null, EngineError>
 	 */
 	private function supersede_transferred_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $work_type, string $expected_raw ): AbstractResult {
-		$latest_run_id = $this->stores
-			->latest_run_pointer( $name )
-			->get_latest_for_hash( $state->args_hash );
-		$this->terminal_transitions->supersede_run(
-			$name,
-			$run_id,
-			$latest_run_id,
-			$state,
-			$run_store,
-			$work_type,
-			$expected_raw
-		);
+		$latest_run_id = $this->stores->latest_run_pointer( $name )->get_latest_for_hash( $state->args_hash );
+		$this->terminal_transitions->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type, $expected_raw );
 
 		return new Success( null );
 	}
@@ -515,12 +440,7 @@ final readonly class RunReconciliation {
 		$hook   = 'a8csp_background_tasks/' . $pending->stage;
 		$group  = $name . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {
-			return $this->scheduler->enqueue_async(
-				$hook,
-				$args,
-				$group,
-				$pending->priority
-			);
+			return $this->scheduler->enqueue_async( $hook, $args, $group, $pending->priority );
 		}
 
 		$fire_at = $pending->fire_at;
@@ -528,13 +448,7 @@ final readonly class RunReconciliation {
 			throw new \LogicException( 'Pending single-action redrive requires an integer fire time.' );
 		}
 
-		return $this->scheduler->schedule_single(
-			$hook,
-			\max( $this->clock->now()->getTimestamp(), $fire_at ),
-			$args,
-			$group,
-			$pending->priority
-		);
+		return $this->scheduler->schedule_single( $hook, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );
 	}
 
 	/**
@@ -549,13 +463,7 @@ final readonly class RunReconciliation {
 	 * @return  EngineError
 	 */
 	private function crash_reclaim_error( string $name, string $run_id ): EngineError {
-		return new EngineError(
-			\sprintf(
-				'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.',
-				$run_id,
-				$name
-			)
-		);
+		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.', $run_id, $name ) );
 	}
 
 	// endregion

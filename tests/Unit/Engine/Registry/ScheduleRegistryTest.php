@@ -351,11 +351,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced      = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			self::qualified_registrations( 'owner-a', $state )
-		);
+		$replaced      = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
 		$persisted_raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
 		self::assertIsString( $persisted_raw );
 		$persisted = RawOptionDecoder::decode( $persisted_raw );
@@ -376,10 +372,7 @@ final class ScheduleRegistryTest extends TestCase {
 			$persisted
 		);
 		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_schedules'] ?? null );
-		self::assertSame(
-			self::declarations( 'owner-a', $schedule )['owner-a:nightly'],
-			$registry->get( 'owner-a:nightly' )
-		);
+		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->get( 'owner-a:nightly' ) );
 		self::assertNull( $registry->get( 'owner-b:hourly' ) );
 		self::assertCount( 2, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
@@ -405,24 +398,14 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			self::qualified_registrations( 'owner-a', $state )
-		);
+		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
 
 		$raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
 		self::assertIsString( $raw );
-		self::assertSame(
-			array( 'owner-a' => self::qualified_registrations( 'owner-a', $state ) ),
-			RawOptionDecoder::decode( $raw )
-		);
+		self::assertSame( array( 'owner-a' => self::qualified_registrations( 'owner-a', $state ) ), RawOptionDecoder::decode( $raw ) );
 		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_schedules'] ?? null );
 		self::assertTrue( $replaced );
-		self::assertSame(
-			self::declarations( 'owner-a', $schedule )['owner-a:nightly'],
-			$registry->get( 'owner-a:nightly' )
-		);
+		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->get( 'owner-a:nightly' ) );
 		self::assertCount( 2, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
 		self::assertStringStartsWith( 'INSERT IGNORE ', $this->wpdb->recorded_queries[1] );
@@ -515,11 +498,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			self::qualified_registrations( 'owner-a', $state )
-		);
+		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
 
 		self::assertFalse( $replaced );
 		self::assertSame( $stored, self::stored_registry() );
@@ -578,11 +557,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			self::qualified_registrations( 'owner-a', $state )
-		);
+		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
 
 		self::assertFalse( $replaced );
 		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -627,11 +602,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$schedule                                 = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$registry                                 = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			$requested
-		);
+		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), $requested );
 
 		$expected            = $concurrent;
 		$expected['owner-a'] = $requested;
@@ -650,10 +621,7 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertIsString( $persisted_owner_b_raw );
 		self::assertSame( $expected_owner_b_raw, $persisted_owner_b_raw );
 		self::assertStringContainsString( $expected_owner_b_raw, $persisted_raw );
-		self::assertSame(
-			self::declarations( 'owner-a', $schedule )['owner-a:nightly'],
-			$registry->get( 'owner-a:nightly' )
-		);
+		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->get( 'owner-a:nightly' ) );
 		self::assertCount( 5, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
 		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
@@ -690,11 +658,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$schedule = new Schedule( 'hourly', Recurrence::every( 3600 ), 'sync-hourly' );
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-b',
-			self::declarations( 'owner-b', $schedule ),
-			$owner_b
-		);
+		$replaced = $registry->replace_owner( 'owner-b', self::declarations( 'owner-b', $schedule ), $owner_b );
 
 		$expected_raw  = \maybe_serialize( array( 'owner-b' => $owner_b ) );
 		$persisted_raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
@@ -705,10 +669,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$persisted = RawOptionDecoder::decode( $persisted_raw );
 		self::assertIsArray( $persisted );
 		self::assertArrayNotHasKey( 'owner-a', $persisted );
-		self::assertSame(
-			self::declarations( 'owner-b', $schedule )['owner-b:hourly'],
-			$registry->get( 'owner-b:hourly' )
-		);
+		self::assertSame( self::declarations( 'owner-b', $schedule )['owner-b:hourly'], $registry->get( 'owner-b:hourly' ) );
 		self::assertCount( 5, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
 		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
@@ -754,11 +715,7 @@ final class ScheduleRegistryTest extends TestCase {
 			}
 		);
 
-		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner(
-			'owner-a',
-			array(),
-			$requested
-		);
+		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), $requested );
 
 		$persisted = self::stored_registry();
 		self::assertTrue( $replaced );
@@ -857,18 +814,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			array()
-		);
+		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), array() );
 
 		self::assertTrue( $replaced );
 		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', self::test_options() );
-		self::assertSame(
-			self::declarations( 'owner-a', $schedule )['owner-a:nightly'],
-			$registry->get( 'owner-a:nightly' )
-		);
+		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->get( 'owner-a:nightly' ) );
 		self::assertCount( 3, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
 		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
@@ -917,11 +867,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$schedule                                 = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$registry                                 = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			$requested
-		);
+		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), $requested );
 
 		$persisted = self::stored_registry();
 		$owner_b   = $persisted['owner-b'] ?? null;
@@ -934,23 +880,9 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertNull( $registry->get( 'owner-a:nightly' ) );
 		self::assertCount( 15, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[14] );
-		$updates = \array_values(
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
-			)
-		);
+		$updates = \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
 		self::assertCount( 5, $updates );
-		self::assertSame(
-			array(),
-			\array_values(
-				\array_filter(
-					$this->wpdb->recorded_queries,
-					static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' )
-						|| \str_starts_with( $query, 'DELETE ' )
-				)
-			)
-		);
+		self::assertSame( array(), \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'DELETE ' ) ) ) );
 	}
 
 	/**
@@ -972,11 +904,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $registry['owner-a']['owner-a:nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -1015,11 +943,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $registry['owner-a']['owner-a:nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -1056,11 +980,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
 		$stored = self::stored_registry();
@@ -1088,11 +1008,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly['misfires']   = 2;
 		$nightly['skips']      = 3;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		$registry['owner-a']['owner-a:nightly'] = $nightly;
 		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
@@ -1122,11 +1038,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $observed['owner-a']['owner-a:nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
 		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -1165,11 +1077,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $observed['owner-a']['owner-a:nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
 		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -1178,13 +1086,7 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
 		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
-		self::assertCount(
-			1,
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
-			)
-		);
+		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
 	}
 
 	/**
@@ -1198,11 +1100,7 @@ final class ScheduleRegistryTest extends TestCase {
 		self::store_registry( $registry );
 		$nightly = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
 		$stored = self::stored_registry();
@@ -1232,11 +1130,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$nightly = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Pruned, $outcome );
 		$stored = self::stored_registry();
@@ -1256,11 +1150,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		$stored = self::stored_registry();
@@ -1280,11 +1170,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->wpdb->put( 'a8csp_bgte_schedules', 'not-serialized' );
 		$nightly = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
-			'owner-a:nightly',
-			$nightly['fingerprint'],
-			$nightly
-		);
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		self::assertSame( 'not-serialized', $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );

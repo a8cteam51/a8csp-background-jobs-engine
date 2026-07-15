@@ -99,26 +99,14 @@ final readonly class Tasks {
 		if ( 0 > $delay ) {
 			// Exception values are diagnostic data, not rendered output.
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Task "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.',
-					$name,
-					$delay
-				)
-			);
+			throw new \InvalidArgumentException( \sprintf( 'Task "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) );
 			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
 		if ( null !== $dedup_key && ( '' === $dedup_key || self::MAX_DEDUP_KEY_BYTES < \strlen( $dedup_key ) ) ) {
 			// Exception values are diagnostic data, not rendered output.
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Task "%1$s" deduplication key must contain 1 to %2$d bytes when provided.',
-					$name,
-					self::MAX_DEDUP_KEY_BYTES
-				)
-			);
+			throw new \InvalidArgumentException( \sprintf( 'Task "%1$s" deduplication key must contain 1 to %2$d bytes when provided.', $name, self::MAX_DEDUP_KEY_BYTES ) );
 			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 

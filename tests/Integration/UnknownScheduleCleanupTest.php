@@ -80,15 +80,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			3
 		);
 
-		$action_id = \as_schedule_recurring_action(
-			\time() - 1,
-			300,
-			self::HOOK,
-			array( self::KEY ),
-			self::KEY,
-			true,
-			10
-		);
+		$action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
 		self::assertGreaterThan( 0, $action_id );
 
 		self::assertSame( 1, $this->run_next_due_action() );
@@ -134,14 +126,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			'a8csp-bgte',
 			array(
 				self::MAINTENANCE_KEY => array(
-					'schedule' => new Schedule(
-						MaintenanceTask::NAME,
-						Recurrence::every( \HOUR_IN_SECONDS ),
-						MaintenanceTask::NAME,
-						array(),
-						OverlapPolicy::Skip,
-						CatchUpPolicy::RunOnce
-					),
+					'schedule' => new Schedule( MaintenanceTask::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceTask::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce ),
 					'task'     => self::MAINTENANCE_KEY,
 				),
 			)
@@ -159,24 +144,14 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		$maintenance_owner[ self::MAINTENANCE_KEY ] = $maintenance_registration;
 		$registry['a8csp-bgte']                     = $maintenance_owner;
-		self::assertTrue(
-			\update_option( 'a8csp_bgte_schedules', $registry, false ),
-			'The maintenance occurrence must be due before its live delivery fires'
-		);
+		self::assertTrue( \update_option( 'a8csp_bgte_schedules', $registry, false ), 'The maintenance occurrence must be due before its live delivery fires' );
 
 		\do_action( self::HOOK, self::MAINTENANCE_KEY );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance task' );
 
-		self::assertFalse(
-			\as_has_scheduled_action( self::HOOK, array( self::KEY ), self::KEY ),
-			'The maintenance sweep must verify that the unknown recurring chain is clear'
-		);
+		self::assertFalse( \as_has_scheduled_action( self::HOOK, array( self::KEY ), self::KEY ), 'The maintenance sweep must verify that the unknown recurring chain is clear' );
 		$missing_intent = new \stdClass();
-		self::assertSame(
-			$missing_intent,
-			\get_option( $intent_option, $missing_intent ),
-			'The authoritative verified-clear must consume the observed cleanup intent'
-		);
+		self::assertSame( $missing_intent, \get_option( $intent_option, $missing_intent ), 'The authoritative verified-clear must consume the observed cleanup intent' );
 		self::assertSame(
 			array(),
 			$store->query_actions(
@@ -201,15 +176,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_IDENTITY );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
-		$unknown_action_id = \as_schedule_recurring_action(
-			\time() - 1,
-			300,
-			self::HOOK,
-			array( self::KEY ),
-			self::KEY,
-			true,
-			10
-		);
+		$unknown_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
 		self::assertGreaterThan( 0, $unknown_action_id );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the unknown occurrence' );
 
@@ -225,22 +192,11 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$task     = new RecordingTask( self::REDECLARED_TASK );
 		$consumer->tasks()->register( $task );
-		$schedule = new Schedule(
-			self::SCHEDULE,
-			Recurrence::every( 300 ),
-			self::REDECLARED_TASK,
-			array( 'generation' => 'redeclared' ),
-			OverlapPolicy::Skip,
-			CatchUpPolicy::RunOnce
-		);
+		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_TASK, array( 'generation' => 'redeclared' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
 		$synced   = $consumer->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_CANCELED,
-			$store->get_status( $unknown_successor_id ),
-			'Redeclaration must cancel the stale unknown-chain successor before creating its live chain'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $unknown_successor_id ), 'Redeclaration must cancel the stale unknown-chain successor before creating its live chain' );
 
 		$live_action_ids = $this->pending_schedule_action_ids( self::KEY );
 		self::assertCount( 1, $live_action_ids, 'Redeclaration must persist exactly one live Action Scheduler occurrence' );
@@ -249,25 +205,13 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$live_scheduled_at = $store->get_date( $live_action_id );
 		self::assertInstanceOf( \DateTime::class, $live_scheduled_at );
 		$registry_next_due = $this->registration_next_due( self::OWNER, self::SCHEDULE );
-		self::assertSame(
-			$registry_next_due,
-			$live_scheduled_at->getTimestamp(),
-			'The live Action Scheduler occurrence must use the redeclared registration next-due token'
-		);
+		self::assertSame( $registry_next_due, $live_scheduled_at->getTimestamp(), 'The live Action Scheduler occurrence must use the redeclared registration next-due token' );
 
 		$this->cleanup_intents()->converge_pending_intents();
 
 		$missing_intent = new \stdClass();
-		self::assertSame(
-			$missing_intent,
-			\get_option( $intent_option, $missing_intent ),
-			'The sweep must consume the intent after finding the live registration'
-		);
-		self::assertSame(
-			array( $live_action_id ),
-			$this->pending_schedule_action_ids( self::KEY ),
-			'The sweep must retain the exact redeclared Action Scheduler occurrence'
-		);
+		self::assertSame( $missing_intent, \get_option( $intent_option, $missing_intent ), 'The sweep must consume the intent after finding the live registration' );
+		self::assertSame( array( $live_action_id ), $this->pending_schedule_action_ids( self::KEY ), 'The sweep must retain the exact redeclared Action Scheduler occurrence' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $live_action_id ) );
 		$scheduled_at_after_sweep = $store->get_date( $live_action_id );
 		self::assertInstanceOf( \DateTime::class, $scheduled_at_after_sweep );
@@ -279,24 +223,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
 		$runner->process_action( (int) $live_action_id, 'Integration Test' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $live_action_id ) );
-		self::assertGreaterThan(
-			\time(),
-			$this->registration_next_due( self::OWNER, self::SCHEDULE ),
-			'The retained occurrence must advance the live registration when delivered'
-		);
-		self::assertCount(
-			1,
-			$this->pending_schedule_action_ids( self::KEY ),
-			'The retained recurring action must create its live successor after delivery'
-		);
-		self::assertSame(
-			1,
-			$this->run_matching_due_action(
-				static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run' === $hook
-					&& self::REDECLARED_IDENTITY === ( $args[0] ?? null )
-			),
-			'The retained schedule occurrence must dispatch its declared task'
-		);
+		self::assertGreaterThan( \time(), $this->registration_next_due( self::OWNER, self::SCHEDULE ), 'The retained occurrence must advance the live registration when delivered' );
+		self::assertCount( 1, $this->pending_schedule_action_ids( self::KEY ), 'The retained recurring action must create its live successor after delivery' );
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared task' );
 		self::assertSame( array( array( 'generation' => 'redeclared' ) ), $task->calls );
 	}
 
@@ -320,33 +249,15 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			3
 		);
 
-		$scheduled = ( new WPCronBackend() )->schedule_recurring(
-			self::HOOK,
-			300,
-			array( self::WP_CRON_KEY ),
-			\time() - 1,
-			self::WP_CRON_KEY
-		);
+		$scheduled = ( new WPCronBackend() )->schedule_recurring( self::HOOK, 300, array( self::WP_CRON_KEY ), \time() - 1, self::WP_CRON_KEY );
 		self::assertInstanceOf( Success::class, $scheduled, 'WP-Cron must persist the unknown recurring occurrence' );
-		self::assertCount(
-			1,
-			$this->wordpress_cron_events( self::HOOK, array( self::WP_CRON_KEY ) ),
-			'The degraded fixture must begin with one unknown WP-Cron chain'
-		);
+		self::assertCount( 1, $this->wordpress_cron_events( self::HOOK, array( self::WP_CRON_KEY ) ), 'The degraded fixture must begin with one unknown WP-Cron chain' );
 
 		self::assertSame( 1, $this->run_next_due_cron_event(), 'WP-Cron must deliver the unknown occurrence' );
 
 		$missing_intent = new \stdClass();
-		self::assertSame(
-			$missing_intent,
-			\get_option( $intent_option, $missing_intent ),
-			'The authoritative WP-Cron-only clear must consume the intent inline'
-		);
-		self::assertSame(
-			array(),
-			$this->wordpress_cron_events( self::HOOK, array( self::WP_CRON_KEY ) ),
-			'The inline clear must remove the recurring WP-Cron successor'
-		);
+		self::assertSame( $missing_intent, \get_option( $intent_option, $missing_intent ), 'The authoritative WP-Cron-only clear must consume the intent inline' );
+		self::assertSame( array(), $this->wordpress_cron_events( self::HOOK, array( self::WP_CRON_KEY ) ), 'The inline clear must remove the recurring WP-Cron successor' );
 		self::assertContains(
 			array(
 				'warning',
@@ -373,15 +284,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		$cleanup_intents = $this->cleanup_intents();
 
-		$action_id = \as_schedule_recurring_action(
-			\time() - 1,
-			300,
-			self::HOOK,
-			array( self::KEY ),
-			self::KEY,
-			true,
-			10
-		);
+		$action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
 		self::assertGreaterThan( 0, $action_id );
 
 		$store                         = $this->action_scheduler_store();
@@ -412,11 +315,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			++$completed_hook_calls;
 			$gap_status                    = $store->get_status( (string) $completed_action_id );
 			$gap_intent_before_convergence = \get_option( $intent_option, $missing_intent );
-			$gap_chain_present             = \as_has_scheduled_action(
-				self::HOOK,
-				array( self::KEY ),
-				self::KEY
-			);
+			$gap_chain_present             = \as_has_scheduled_action( self::HOOK, array( self::KEY ), self::KEY );
 			$cleanup_intents->converge_pending_intents();
 			$gap_intent_after_convergence = \get_option( $intent_option, $missing_intent );
 			$gap_pending_ids              = $store->query_actions(
@@ -582,10 +481,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$registration['next_due'] = $next_due;
 		$owner_rows[ $identity ]  = $registration;
 		$registry[ $owner ]       = $owner_rows;
-		self::assertTrue(
-			\update_option( 'a8csp_bgte_schedules', $registry, false ),
-			'The live redeclaration must be due before its retained occurrence fires'
-		);
+		self::assertTrue( \update_option( 'a8csp_bgte_schedules', $registry, false ), 'The live redeclaration must be due before its retained occurrence fires' );
 	}
 
 	// endregion.

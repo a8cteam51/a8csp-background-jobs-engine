@@ -146,28 +146,9 @@ final class DispatcherCancelTest extends TestCase {
 		$option_rows                = new OptionRows( $this->wpdb );
 		$this->stores               = new StoreFactory( $this->clock, $option_rows );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions(
-			$guard,
-			$this->stores,
-			$this->clock,
-			$lock_windows,
-			$this->logger
-		);
-		$scheduler                  = new SchedulerFacade(
-			array( $this->primary_backend, $this->secondary_backend )
-		);
-		$this->dispatcher           = new Dispatcher(
-			$this->tasks,
-			$this->batches,
-			$scheduler,
-			$guard,
-			$this->stores,
-			$this->clock,
-			new RecordingRandomizer( 42 ),
-			$this->logger,
-			$lock_windows,
-			$this->terminal_transitions,
-		);
+		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger );
+		$scheduler                  = new SchedulerFacade( array( $this->primary_backend, $this->secondary_backend ) );
+		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $scheduler, $guard, $this->stores, $this->clock, new RecordingRandomizer( 42 ), $this->logger, $lock_windows, $this->terminal_transitions, );
 	}
 
 	// endregion.
@@ -187,12 +168,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_finishes_after_a_group_clear_failure(): void {
 		$run_id = $this->enqueue_task();
 
-		$this->primary_backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the preferred backend before retrying the clear.'
-			)
-		);
+		$this->primary_backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the preferred backend before retrying the clear.' ) );
 
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
@@ -203,10 +179,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_a_missing_run(): void {
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, 'missing-run' );
 
-		$this->assert_engine_failure(
-			$result,
-			'Run "missing-run" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.'
-		);
+		$this->assert_engine_failure( $result, 'Run "missing-run" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.' );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
 
@@ -216,40 +189,26 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, 'corrupt-run' );
 
-		$this->assert_engine_failure(
-			$result,
-			'Run "corrupt-run" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.'
-		);
+		$this->assert_engine_failure( $result, 'Run "corrupt-run" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.' );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
 
 	/** A retained terminal snapshot reports its exact outcome without attempting another transition. */
 	public function test_cancel_rejects_an_already_terminal_run(): void {
 		$run_id = $this->enqueue_task();
-		$this->replace_state(
-			self::TASK_IDENTITY,
-			$run_id,
-			static fn ( RunState $state ): RunState => $state->with_status( RunStatus::Completed )
-		);
+		$this->replace_state( self::TASK_IDENTITY, $run_id, static fn ( RunState $state ): RunState => $state->with_status( RunStatus::Completed ) );
 		$this->reset_observations();
 
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_engine_failure(
-			$result,
-			'Run "00000000001700000000-0000000000000000042" is already terminal (completed); a finished run cannot be cancelled.'
-		);
+		$this->assert_engine_failure( $result, 'Run "00000000001700000000-0000000000000000042" is already terminal (completed); a finished run cannot be cancelled.' );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
 
 	/** An executing marker refuses cancellation before the terminal compare-and-swap. */
 	public function test_cancel_rejects_an_executing_run_before_any_write(): void {
 		$run_id = $this->enqueue_task();
-		$this->replace_state(
-			self::TASK_IDENTITY,
-			$run_id,
-			static fn ( RunState $state ): RunState => $state->with_executing( true )
-		);
+		$this->replace_state( self::TASK_IDENTITY, $run_id, static fn ( RunState $state ): RunState => $state->with_executing( true ) );
 		$this->reset_observations();
 
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
@@ -265,20 +224,13 @@ final class DispatcherCancelTest extends TestCase {
 		$this->wpdb->before_next(
 			'update',
 			function (): void {
-				$this->replace_state(
-					self::TASK_IDENTITY,
-					self::RUN_ID,
-					static fn ( RunState $state ): RunState => $state->with_heartbeat_at( self::NOW + 1 )
-				);
+				$this->replace_state( self::TASK_IDENTITY, self::RUN_ID, static fn ( RunState $state ): RunState => $state->with_heartbeat_at( self::NOW + 1 ) );
 			}
 		);
 
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_engine_failure(
-			$result,
-			'Run "00000000001700000000-0000000000000000042" changed state while the cancel was in flight; re-inspect the run before retrying.'
-		);
+		$this->assert_engine_failure( $result, 'Run "00000000001700000000-0000000000000000042" changed state while the cancel was in flight; re-inspect the run before retrying.' );
 		$state = $this->run_state( self::TASK_IDENTITY, $run_id );
 		self::assertSame( self::NOW + 1, $state->heartbeat_at );
 		self::assertFalse( $state->executing );
@@ -293,13 +245,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->wpdb->before_next(
 			'update',
 			function () use ( &$admitted, $run_id, $run_store ): void {
-				$admitted = $this->terminal_transitions->active_run_state(
-					'Task',
-					self::TASK_IDENTITY,
-					$run_id,
-					1,
-					$run_store
-				);
+				$admitted = $this->terminal_transitions->active_run_state( 'Task', self::TASK_IDENTITY, $run_id, 1, $run_store );
 			}
 		);
 
@@ -326,13 +272,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$admitted = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::TASK_IDENTITY,
-			$run_id,
-			1,
-			$run_store
-		);
+		$admitted = $this->terminal_transitions->active_run_state( 'Task', self::TASK_IDENTITY, $run_id, 1, $run_store );
 
 		self::assertNull( $admitted );
 		self::assertInstanceOf( Success::class, $cancel_result );
@@ -344,10 +284,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_an_unregistered_name_with_cancel_wording(): void {
 		$result = $this->dispatcher->cancel( self::UNKNOWN_IDENTITY, 'run-1' );
 
-		$this->assert_engine_failure(
-			$result,
-			'Background-work "runs-tests:unknown" is not registered; register the matching task or batch before cancelling its run.'
-		);
+		$this->assert_engine_failure( $result, 'Background-work "runs-tests:unknown" is not registered; register the matching task or batch before cancelling its run.' );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
 
@@ -366,19 +303,12 @@ final class DispatcherCancelTest extends TestCase {
 	/** A zero-chunk batch preserves its pending cleanup and success callback. */
 	public function test_cancel_rejects_a_zero_chunk_batch_pending_cleanup(): void {
 		$run_id = $this->start_batch();
-		$this->replace_state(
-			self::BATCH_IDENTITY,
-			$run_id,
-			static fn ( RunState $state ): RunState => $state->with_action_seq( 2 )
-		);
+		$this->replace_state( self::BATCH_IDENTITY, $run_id, static fn ( RunState $state ): RunState => $state->with_action_seq( 2 ) );
 		$this->reset_observations();
 
 		$result = $this->dispatcher->cancel( self::BATCH_IDENTITY, $run_id );
 
-		$this->assert_engine_failure(
-			$result,
-			'Run "00000000001700000000-0000000000000000042" has no chunks left to process; the pending cleanup completes it.'
-		);
+		$this->assert_engine_failure( $result, 'Run "00000000001700000000-0000000000000000042" has no chunks left to process; the pending cleanup completes it.' );
 		self::assertSame( array(), $this->run_state( self::BATCH_IDENTITY, $run_id )->queue );
 		$this->assert_no_scheduler_or_hook_effects();
 	}
@@ -387,14 +317,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_accepts_a_batch_between_chunks(): void {
 		$run_id = $this->start_batch();
 		$chunk  = array( 'chunk' => 'next' );
-		$this->replace_state(
-			self::BATCH_IDENTITY,
-			$run_id,
-			static fn ( RunState $state ): RunState => $state
-				->with_queue( array( $chunk ) )
-				->with_action_seq( 3 )
-				->with_executing( false )
-		);
+		$this->replace_state( self::BATCH_IDENTITY, $run_id, static fn ( RunState $state ): RunState => $state->with_queue( array( $chunk ) )->with_action_seq( 3 )->with_executing( false ) );
 		$this->reset_observations();
 
 		$result = $this->dispatcher->cancel( self::BATCH_IDENTITY, $run_id );
@@ -405,15 +328,7 @@ final class DispatcherCancelTest extends TestCase {
 	/** A task retry state clears its executing marker and remains cancellable during backoff. */
 	public function test_cancel_accepts_a_task_in_retry_backoff(): void {
 		$run_id = $this->enqueue_task();
-		$state  = $this->replace_state(
-			self::TASK_IDENTITY,
-			$run_id,
-			static fn ( RunState $current ): RunState => $current
-				->with_failed_attempts( 1 )
-				->with_heartbeat_at( self::NOW + 30 )
-				->with_action_seq( 2 )
-				->with_executing( false )
-		);
+		$state  = $this->replace_state( self::TASK_IDENTITY, $run_id, static fn ( RunState $current ): RunState => $current->with_failed_attempts( 1 )->with_heartbeat_at( self::NOW + 30 )->with_action_seq( 2 )->with_executing( false ) );
 		self::assertSame( 1, $state->failed_attempts );
 		self::assertSame( self::NOW + 30, $state->heartbeat_at );
 		self::assertFalse( $state->executing );
@@ -433,10 +348,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$second = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_engine_failure(
-			$second,
-			'Run "00000000001700000000-0000000000000000042" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.'
-		);
+		$this->assert_engine_failure( $second, 'Run "00000000001700000000-0000000000000000042" for background-work "runs-tests:email-digest" is not retained; nothing remains to cancel.' );
 		$this->assert_no_scheduler_or_hook_effects();
 		$this->assert_cancelled_history( self::TASK_IDENTITY, $run_id );
 	}
@@ -453,10 +365,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->dispatcher->cancel( self::TASK_IDENTITY, $run_id );
 
-		$this->assert_engine_failure(
-			$result,
-			\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, self::TASK_IDENTITY )
-		);
+		$this->assert_engine_failure( $result, \sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, self::TASK_IDENTITY ) );
 		$this->assert_no_scheduler_or_hook_effects();
 		self::assertNotNull( $this->option( $this->run_option_name( self::TASK_IDENTITY, $run_id ) ) );
 	}
@@ -612,13 +521,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_executing_failure( AbstractResult $result, string $run_id ): void {
-		$this->assert_engine_failure(
-			$result,
-			\sprintf(
-				'Run "%s" is executing; a run in flight completes or fails on its own.',
-				$run_id
-			)
-		);
+		$this->assert_engine_failure( $result, \sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ) );
 	}
 
 	/**

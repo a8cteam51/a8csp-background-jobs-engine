@@ -347,12 +347,7 @@ final class RecordingBackend implements BackendInterface {
 	 */
 	private function result_for( string $verb ): AbstractResult {
 		if ( array() !== $this->readiness_results && ! $this->is_ready() ) {
-			return new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::BackendNotReady,
-					'Select another ready backend before retrying the scheduling write.'
-				)
-			);
+			return new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Select another ready backend before retrying the scheduling write.' ) );
 		}
 
 		return $this->results[ $verb ] ?? new Success( true );

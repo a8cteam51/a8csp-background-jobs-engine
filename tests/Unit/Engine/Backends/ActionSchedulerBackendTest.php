@@ -100,14 +100,8 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_absence_distinguishes_no_runtime_from_a_partial_runtime(): void {
-		$absent  = new ActionSchedulerBackend(
-			static fn (): bool => false,
-			static fn ( string $function_name ): bool => false,
-		);
-		$partial = new ActionSchedulerBackend(
-			static fn (): bool => false,
-			static fn ( string $function_name ): bool => 'as_enqueue_async_action' === $function_name,
-		);
+		$absent  = new ActionSchedulerBackend( static fn (): bool => false, static fn ( string $function_name ): bool => false, );
+		$partial = new ActionSchedulerBackend( static fn (): bool => false, static fn ( string $function_name ): bool => 'as_enqueue_async_action' === $function_name, );
 
 		self::assertTrue( $absent->is_absent() );
 		self::assertFalse( $partial->is_absent() );
@@ -176,16 +170,9 @@ final class ActionSchedulerBackendTest extends TestCase {
 				'as_has_scheduled_action'  => array( false ),
 			);
 
-			$backend = new ActionSchedulerBackend(
-				static fn (): bool => true,
-				static fn ( string $candidate ): bool => $function_name !== $candidate,
-				static fn ( string $hook ): int => 1,
-			);
+			$backend = new ActionSchedulerBackend( static fn (): bool => true, static fn ( string $candidate ): bool => $function_name !== $candidate, static fn ( string $hook ): int => 1, );
 
-			$error = $this->assert_failure_reason(
-				$write( $backend ),
-				SchedulingErrorReason::BackendNotReady
-			);
+			$error = $this->assert_failure_reason( $write( $backend ), SchedulingErrorReason::BackendNotReady );
 
 			self::assertStringContainsString( $function_name, $error->message );
 			self::assertSame( $function_name, $error->context['missing_function'] );
@@ -199,11 +186,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_timed_writes_require_the_next_scheduled_action_function(): void {
-		$backend = new ActionSchedulerBackend(
-			static fn (): bool => true,
-			static fn ( string $function_name ): bool => 'as_next_scheduled_action' !== $function_name,
-			static fn ( string $hook ): int => 1,
-		);
+		$backend = new ActionSchedulerBackend( static fn (): bool => true, static fn ( string $function_name ): bool => 'as_next_scheduled_action' !== $function_name, static fn ( string $hook ): int => 1, );
 
 		$writes = array(
 			static fn (): AbstractResult => $backend->schedule_recurring( self::HOOK, 300 ),
@@ -227,10 +210,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		$backend = $this->backend( self::READY_FACTS );
 
 		foreach ( array( 0, -1 ) as $interval ) {
-			$error = $this->assert_failure_reason(
-				$backend->schedule_recurring( self::HOOK, $interval ),
-				SchedulingErrorReason::InvalidTimeInput
-			);
+			$error = $this->assert_failure_reason( $backend->schedule_recurring( self::HOOK, $interval ), SchedulingErrorReason::InvalidTimeInput );
 
 			self::assertSame( array( 'interval' => $interval ), $error->context );
 			self::assertStringContainsString( 'at least one second', $error->message );
@@ -261,10 +241,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 				array( self::HOOK, array( 'a' ), 'reports' ),
 				array( self::HOOK, array( 'b' ), 'imports' ),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->as_calls( 'as_next_scheduled_action' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->as_calls( 'as_next_scheduled_action' ) )
 		);
 		self::assertSame( array(), $this->as_calls( 'as_schedule_recurring_action' ) );
 		self::assertSame( array(), $this->as_calls( 'as_schedule_single_action' ) );
@@ -314,18 +291,9 @@ final class ActionSchedulerBackendTest extends TestCase {
 		self::assertInstanceOf( Success::class, $recurring );
 		self::assertInstanceOf( Success::class, $single );
 		self::assertInstanceOf( Success::class, $async );
-		self::assertSame(
-			array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', true, 247 ),
-			$this->as_calls( 'as_schedule_recurring_action' )[0]['args']
-		);
-		self::assertSame(
-			array( 1_700_000_100, self::HOOK, array( 'b' ), 'imports', false, 246 ),
-			$this->as_calls( 'as_schedule_single_action' )[0]['args']
-		);
-		self::assertSame(
-			array( self::HOOK, array( 'c' ), 'exports', true, 245 ),
-			$this->as_calls( 'as_enqueue_async_action' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', true, 247 ), $this->as_calls( 'as_schedule_recurring_action' )[0]['args'] );
+		self::assertSame( array( 1_700_000_100, self::HOOK, array( 'b' ), 'imports', false, 246 ), $this->as_calls( 'as_schedule_single_action' )[0]['args'] );
+		self::assertSame( array( self::HOOK, array( 'c' ), 'exports', true, 245 ), $this->as_calls( 'as_enqueue_async_action' )[0]['args'] );
 	}
 
 	/**
@@ -340,25 +308,12 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_has_scheduled_action'      => array( true ),
 		);
 
-		$result = $this->backend( self::READY_FACTS )->schedule_recurring(
-			self::HOOK,
-			300,
-			array( 'a' ),
-			1_700_000_000,
-			'reports',
-			247
-		);
+		$result = $this->backend( self::READY_FACTS )->schedule_recurring( self::HOOK, 300, array( 'a' ), 1_700_000_000, 'reports', 247 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', true, 247 ),
-			$this->as_calls( 'as_schedule_recurring_action' )[0]['args']
-		);
-		self::assertSame(
-			array( self::HOOK, array( 'a' ), 'reports' ),
-			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, 300, self::HOOK, array( 'a' ), 'reports', true, 247 ), $this->as_calls( 'as_schedule_recurring_action' )[0]['args'] );
+		self::assertSame( array( self::HOOK, array( 'a' ), 'reports' ), $this->as_calls( 'as_has_scheduled_action' )[0]['args'] );
 	}
 
 	/**
@@ -396,10 +351,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 				$function_name             => array( 0 ),
 			);
 
-			$error = $this->assert_failure_reason(
-				$write( $this->backend( self::READY_FACTS ) ),
-				SchedulingErrorReason::ScheduleFailed
-			);
+			$error = $this->assert_failure_reason( $write( $this->backend( self::READY_FACTS ) ), SchedulingErrorReason::ScheduleFailed );
 
 			self::assertStringContainsString( 'store rejected the action', $error->message );
 			self::assertSame( $function_name, $error->context['action_scheduler_function'] );
@@ -426,10 +378,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 				$function_name             => array( -1 ),
 			);
 
-			$error = $this->assert_failure_reason(
-				$write( $this->backend( self::READY_FACTS ) ),
-				SchedulingErrorReason::ScheduleFailed
-			);
+			$error = $this->assert_failure_reason( $write( $this->backend( self::READY_FACTS ) ), SchedulingErrorReason::ScheduleFailed );
 
 			self::assertStringContainsString( 'negative action ID', $error->message );
 			self::assertSame( $function_name, $error->context['action_scheduler_function'] );
@@ -454,10 +403,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$backend = $this->backend_with_diagnostic_facts( $facts );
 
-		$error = $this->assert_failure_reason(
-			$backend->schedule_single( self::HOOK, 1_700_000_000 ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( $backend->schedule_single( self::HOOK, 1_700_000_000 ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( $expected_message, $error->message );
 		self::assertSame( self::HOOK, $error->context['hook'] );
@@ -523,10 +469,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$backend = $this->backend_with_diagnostic_facts( $after_enqueue );
 
-		$error = $this->assert_failure_reason(
-			$backend->enqueue_async( self::HOOK, group: 'reports' ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( $backend->enqueue_async( self::HOOK, group: 'reports' ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( 'function table is unavailable', $error->message );
 		self::assertFalse( $error->context['action_scheduler_functions_exist'] );
@@ -543,23 +486,12 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_has_scheduled_action' => array( true ),
 		);
 
-		$result = $this->backend( self::READY_FACTS )->enqueue_async(
-			self::HOOK,
-			array( 'a' ),
-			'reports',
-			247
-		);
+		$result = $this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, array( 'a' ), 'reports', 247 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( self::HOOK, array( 'a' ), 'reports', true, 247 ),
-			$this->as_calls( 'as_enqueue_async_action' )[0]['args']
-		);
-		self::assertSame(
-			array( self::HOOK, array( 'a' ), 'reports' ),
-			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
-		);
+		self::assertSame( array( self::HOOK, array( 'a' ), 'reports', true, 247 ), $this->as_calls( 'as_enqueue_async_action' )[0]['args'] );
+		self::assertSame( array( self::HOOK, array( 'a' ), 'reports' ), $this->as_calls( 'as_has_scheduled_action' )[0]['args'] );
 	}
 
 	/**
@@ -573,10 +505,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_has_scheduled_action' => array( true ),
 		);
 
-		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( $this->backend( self::READY_FACTS )->enqueue_async( self::HOOK ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( 'ambiguous between a duplicate and a store failure', $error->message );
 		self::assertStringContainsString( 'non-empty group for verifiable uniqueness', $error->message );
@@ -594,10 +523,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_has_scheduled_action' => array( false ),
 		);
 
-		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, group: 'reports' ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( $this->backend( self::READY_FACTS )->enqueue_async( self::HOOK, group: 'reports' ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( 'store rejected the action', $error->message );
 	}
@@ -616,14 +542,8 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( self::HOOK, array( 'a' ), 'reports' ),
-			$this->as_calls( 'as_unschedule_all_actions' )[0]['args']
-		);
-		self::assertSame(
-			array( self::HOOK, array( 'a' ), 'reports' ),
-			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
-		);
+		self::assertSame( array( self::HOOK, array( 'a' ), 'reports' ), $this->as_calls( 'as_unschedule_all_actions' )[0]['args'] );
+		self::assertSame( array( self::HOOK, array( 'a' ), 'reports' ), $this->as_calls( 'as_has_scheduled_action' )[0]['args'] );
 	}
 
 	/**
@@ -640,14 +560,8 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( '', array(), 'reports|run-22' ),
-			$this->as_calls( 'as_unschedule_all_actions' )[0]['args']
-		);
-		self::assertSame(
-			array( '', null, 'reports|run-22' ),
-			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
-		);
+		self::assertSame( array( '', array(), 'reports|run-22' ), $this->as_calls( 'as_unschedule_all_actions' )[0]['args'] );
+		self::assertSame( array( '', null, 'reports|run-22' ), $this->as_calls( 'as_has_scheduled_action' )[0]['args'] );
 	}
 
 	/**
@@ -660,20 +574,11 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_has_scheduled_action' => array( true ),
 		);
 
-		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->unschedule( '', array(), 'reports|run-22' ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( $this->backend( self::READY_FACTS )->unschedule( '', array(), 'reports|run-22' ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( 'pending or in-progress action', $error->message );
-		self::assertSame(
-			array( '', array(), 'reports|run-22' ),
-			$this->as_calls( 'as_unschedule_all_actions' )[0]['args']
-		);
-		self::assertSame(
-			array( '', null, 'reports|run-22' ),
-			$this->as_calls( 'as_has_scheduled_action' )[0]['args']
-		);
+		self::assertSame( array( '', array(), 'reports|run-22' ), $this->as_calls( 'as_unschedule_all_actions' )[0]['args'] );
+		self::assertSame( array( '', null, 'reports|run-22' ), $this->as_calls( 'as_has_scheduled_action' )[0]['args'] );
 	}
 
 	/**
@@ -686,10 +591,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_has_scheduled_action' => array( true ),
 		);
 
-		$error = $this->assert_failure_reason(
-			$this->backend( self::READY_FACTS )->unschedule( self::HOOK, array( 'a' ), 'reports' ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( $this->backend( self::READY_FACTS )->unschedule( self::HOOK, array( 'a' ), 'reports' ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( self::HOOK, $error->message );
 		self::assertStringContainsString( 'pending or in-progress action', $error->message );
@@ -711,9 +613,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			),
 		);
 
-		$result = $this->backend( self::READY_FACTS )->unschedule_hooks(
-			array( self::HOOK, 'a8csp_bgte_sibling_hook' )
-		);
+		$result = $this->backend( self::READY_FACTS )->unschedule_hooks( array( self::HOOK, 'a8csp_bgte_sibling_hook' ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( 3, $result->value );
@@ -722,10 +622,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 				array( self::HOOK, array(), '' ),
 				array( 'a8csp_bgte_sibling_hook', array(), '' ),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->as_calls( 'as_unschedule_all_actions' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->as_calls( 'as_unschedule_all_actions' ) )
 		);
 		self::assertSame(
 			array(
@@ -766,10 +663,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 					'ids',
 				),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->as_calls( 'as_get_scheduled_actions' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->as_calls( 'as_get_scheduled_actions' ) )
 		);
 	}
 
@@ -799,13 +693,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		self::assertFalse( $backend->is_scheduled( self::HOOK, array( 'c' ), 'exports' ) );
 		self::assertNull( $backend->get_next_scheduled( self::HOOK, array( 'c' ), 'exports' ) );
 
-		self::assertSame(
-			array( 'reports', 'reports', 'imports', 'imports', 'exports', 'exports' ),
-			\array_map(
-				static fn ( array $call ): mixed => $call['args'][2],
-				$this->as_calls( 'as_next_scheduled_action' )
-			)
-		);
+		self::assertSame( array( 'reports', 'reports', 'imports', 'imports', 'exports', 'exports' ), \array_map( static fn ( array $call ): mixed => $call['args'][2], $this->as_calls( 'as_next_scheduled_action' ) ) );
 	}
 
 	/**
@@ -927,11 +815,6 @@ final class ActionSchedulerBackendTest extends TestCase {
 			return $calls;
 		}
 
-		return \array_values(
-			\array_filter(
-				$calls,
-				static fn ( array $call ): bool => $function_name === $call['function']
-			)
-		);
+		return \array_values( \array_filter( $calls, static fn ( array $call ): bool => $function_name === $call['function'] ) );
 	}
 }

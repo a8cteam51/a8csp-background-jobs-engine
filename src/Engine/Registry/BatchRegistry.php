@@ -67,9 +67,7 @@ final class BatchRegistry {
 		WorkIdentity::validate_name( $name );
 		$parts = WorkIdentity::parts( $identity );
 		if ( null === $parts || $name !== $parts[1] ) {
-			throw new \InvalidArgumentException(
-				'Batch identity must be canonical and end with the batch\'s declared local name.'
-			);
+			throw new \InvalidArgumentException( 'Batch identity must be canonical and end with the batch\'s declared local name.' );
 		}
 
 		$this->work->claim( $identity, 'batch' );

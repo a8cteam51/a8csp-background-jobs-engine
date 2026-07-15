@@ -111,10 +111,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertTrue( $observed_state['executing'] ?? false, 'The admitted delivery must persist its executing marker' );
 		self::assertInstanceOf( Failure::class, $cancel_result );
 		self::assertInstanceOf( ApiError::class, $cancel_result->error );
-		self::assertSame(
-			\sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ),
-			$cancel_result->error->message
-		);
+		self::assertSame( \sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ), $cancel_result->error->message );
 		self::assertSame( array( $args ), $task->calls, 'Refusal must leave the admitted task invocation intact' );
 		self::assertSame( array( (int) $action_id ), $completed_action_ids );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_id ) );
@@ -139,12 +136,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$args               = array( 'account_id' => 42 );
 		$task               = new RecordingTask( self::BACKOFF_NAME );
 		$task->throwable    = new \RuntimeException( 'Retry after the upstream recovers.' );
-		$task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 300,
-			multiplier: 1,
-			max_delay: 300
-		);
+		$task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 );
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
@@ -161,11 +153,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ) );
-		$retry_action_id = $this->assert_sole_pending_action(
-			'a8csp_background_tasks/run',
-			$group,
-			array( self::BACKOFF_IDENTITY, $run_id, 2 )
-		);
+		$retry_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/run', $group, array( self::BACKOFF_IDENTITY, $run_id, 2 ) );
 		$run_state       = \get_option( 'a8csp_bgte_run_' . self::BACKOFF_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
@@ -232,11 +220,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( array( $first_chunk, $next_chunk ), $pre_run_state['queue'] ?? null );
 		self::assertSame( 3, $pre_run_state['action_seq'] ?? null );
 		self::assertFalse( $pre_run_state['executing'] ?? true, 'The queued RUN must retain a cancellable head' );
-		$this->assert_sole_pending_action(
-			'a8csp_background_tasks/run',
-			$group,
-			array( self::BATCH_IDENTITY, $run_id, $first_chunk, 3 )
-		);
+		$this->assert_sole_pending_action( 'a8csp_background_tasks/run', $group, array( self::BATCH_IDENTITY, $run_id, $first_chunk, 3 ) );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk' );
 
@@ -245,11 +229,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
 		self::assertSame( 4, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
-		$continue_action_id = $this->assert_sole_pending_action(
-			'a8csp_background_tasks/continue',
-			$group,
-			array( self::BATCH_IDENTITY, $run_id, 4 )
-		);
+		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/continue', $group, array( self::BATCH_IDENTITY, $run_id, 4 ) );
 
 		$cancelled = $consumer->runs()->cancel( self::BATCH_NAME, $run_id );
 
@@ -327,15 +307,7 @@ final class CancellationTest extends IntegrationTestCase {
 			),
 			'The sibling group must retain its pending action'
 		);
-		self::assertSame(
-			1,
-			$this->run_matching_due_action(
-				static fn ( string $hook, array $action_args ): bool =>
-					'a8csp_background_tasks/run' === $hook
-					&& ( $action_args[1] ?? null ) === $run_b
-			),
-			'Action Scheduler must execute the surviving sibling'
-		);
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_background_tasks/run' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
 
 		self::assertSame( array( $args_b ), $task->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
@@ -421,31 +393,13 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( $run_id, $cancelled->value );
 
 		if ( null !== $action_id ) {
-			self::assertSame(
-				\ActionScheduler_Store::STATUS_CANCELED,
-				$this->action_scheduler_store()->get_status( $action_id )
-			);
+			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id ) );
 			self::assertSame( array(), $raw_deliveries );
 		} else {
-			self::assertSame(
-				$cron_before,
-				$this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args ),
-				'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation'
-			);
-			self::assertSame(
-				1,
-				$this->run_matching_due_cron_event(
-					static fn ( string $hook, array $event_args ): bool =>
-						'a8csp_background_tasks/run' === $hook
-						&& $event_args === $action_args
-				),
-				'The surviving WP-Cron single must reach the shared run-admission hook once'
-			);
+			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
+			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_background_tasks/run' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the shared run-admission hook once' );
 			self::assertSame( array( $action_args ), $raw_deliveries );
-			self::assertSame(
-				array(),
-				$this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args )
-			);
+			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args ) );
 		}
 
 		self::assertSame( array(), $task->calls, 'A surviving backend delivery must not invoke cancelled user work' );

@@ -45,9 +45,7 @@ final readonly class Recurrence {
 	 */
 	public static function every( int $seconds ): self {
 		if ( 1 > $seconds ) {
-			throw new \InvalidArgumentException(
-				'Recurrence interval must be positive; pass a value of at least one second.'
-			);
+			throw new \InvalidArgumentException( 'Recurrence interval must be positive; pass a value of at least one second.' );
 		}
 
 		return new self( 'every', $seconds );
@@ -69,9 +67,7 @@ final readonly class Recurrence {
 	 */
 	public static function cron( string $expression ): self {
 		if ( '' === \trim( $expression ) ) {
-			throw new \InvalidArgumentException(
-				'Recurrence cron expression must not be empty; pass a non-empty calendar expression.'
-			);
+			throw new \InvalidArgumentException( 'Recurrence cron expression must not be empty; pass a non-empty calendar expression.' );
 		}
 
 		return new self( 'cron', $expression );

@@ -132,10 +132,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 			),
 			( $this->update_callback() )( false, $this->plugin_data( '1.0.0-beta.1' ), self::PLUGIN_FILE )
 		);
-		self::assertSame(
-			array( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10' ),
-			$GLOBALS['a8csp_bgte_test_remote_requests']
-		);
+		self::assertSame( array( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10' ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
 		self::assertSame(
 			array(
 				array(

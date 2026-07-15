@@ -125,21 +125,10 @@ final readonly class Inspection {
 	public function last_completed_run( string $name ): AbstractResult {
 		$entries = $this->stores->run_history( $name )->terminal_entries();
 		if ( null === $entries ) {
-			return new Failure(
-				new EngineError(
-					'Authoritative option-row read failed; repair WordPress option reads and retry.',
-					reason: EngineErrorReason::StorageFailure,
-					context: array( 'option_name' => RunHistory::OPTION_PREFIX . $name ),
-				)
-			);
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $name ), ) );
 		}
 
-		return new Success(
-			\array_find(
-				\array_reverse( $entries ),
-				static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status']
-			)['run_id'] ?? null
-		);
+		return new Success( \array_find( \array_reverse( $entries ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] )['run_id'] ?? null );
 	}
 
 	/**
@@ -185,11 +174,7 @@ final readonly class Inspection {
 				'last_fired' => $registration['last_fired'],
 				'misfires'   => $registration['misfires'],
 				'skips'      => $registration['skips'],
-				'scheduled'  => $this->scheduler->is_scheduled(
-					OccurrenceDelivery::SCHEDULE_HOOK,
-					array( $registration_key ),
-					$registration_key
-				),
+				'scheduled'  => $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ),
 				'lock'       => $this->schedule_lock( $declaration, $observed_at ),
 			);
 		}
@@ -325,10 +310,7 @@ final readonly class Inspection {
 		}
 
 		try {
-			$encoded_args = \wp_json_encode(
-				$schedule->args,
-				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
-			);
+			$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
 		} catch ( \JsonException ) {
 			return array( 'state' => 'invalid' );
 		}

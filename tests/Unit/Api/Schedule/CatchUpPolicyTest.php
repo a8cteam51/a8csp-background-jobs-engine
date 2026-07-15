@@ -33,13 +33,7 @@ final class CatchUpPolicyTest extends TestCase {
 	public function test_cases_and_backing_values_are_exact(): void {
 		$policies = CatchUpPolicy::cases();
 
-		self::assertSame(
-			array( CatchUpPolicy::RunOnce, CatchUpPolicy::Skip ),
-			$policies
-		);
-		self::assertSame(
-			array( 'run_once', 'skip' ),
-			\array_map( static fn ( CatchUpPolicy $policy ): string => $policy->value, $policies )
-		);
+		self::assertSame( array( CatchUpPolicy::RunOnce, CatchUpPolicy::Skip ), $policies );
+		self::assertSame( array( 'run_once', 'skip' ), \array_map( static fn ( CatchUpPolicy $policy ): string => $policy->value, $policies ) );
 	}
 }

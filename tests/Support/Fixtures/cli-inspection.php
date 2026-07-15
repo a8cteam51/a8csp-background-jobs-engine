@@ -17,12 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 		$consumer->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
 		$result = $consumer->schedules()->sync(
 			array(
-				new Schedule(
-					'inspection-schedule',
-					Recurrence::every( 300 ),
-					'integration-cli-inspection-task',
-					array( 'source' => 'schedule' )
-				),
+				new Schedule( 'inspection-schedule', Recurrence::every( 300 ), 'integration-cli-inspection-task', array( 'source' => 'schedule' ) ),
 			)
 		);
 		if ( $result->is_failure() ) {

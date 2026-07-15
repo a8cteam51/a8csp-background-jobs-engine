@@ -136,61 +136,12 @@ final class RunReconciliationTest extends TestCase {
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle          = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$this->terminal_transitions
-		);
-		$this->lifecycle_deliveries = new ActionDeliveries(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$this->stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$this->terminal_transitions,
-			$failure_lifecycle
-		);
-		$this->dispatcher           = new Dispatcher(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$guard,
-			$this->stores,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$lock_windows,
-			$this->terminal_transitions,
-		);
-		$reconciliation             = new RunReconciliation(
-			$guard,
-			$this->stores,
-			$this->clock,
-			$this->logger,
-			$lock_windows,
-			$this->terminal_transitions,
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-		);
-		$cleanup_intents            = new CleanupIntents(
-			new ScheduleRegistry( $option_rows ),
-			new SchedulerFacade( array( $this->backend ) ),
-			$option_rows,
-			$this->clock,
-			$this->logger
-		);
-		$this->maintenance          = new MaintenanceTask(
-			$option_rows,
-			$reconciliation,
-			$guard,
-			$cleanup_intents,
-			$this->logger
-		);
+		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $failure_lifecycle );
+		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, );
+		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->tasks, $this->batches, $this->backend, );
+		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
+		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
 	// endregion.
@@ -639,13 +590,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $pending_before );
 
 		$this->clock->timestamp                   = self::NOW + 901;
-		$this->backend->results['enqueue_async']  = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before redriving.',
-				array( 'consumer_payload' => self::ARGS )
-			)
-		);
+		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redriving.', array( 'consumer_payload' => self::ARGS ) ) );
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
@@ -703,12 +648,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$this->clock->timestamp                  = self::NOW + 901;
 		$replacement_run_id                      = '00000000001700000001-0000000000000000043';
-		$this->backend->results['enqueue_async'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Rejection resolves after ownership transfers.'
-			)
-		);
+		$this->backend->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Rejection resolves after ownership transfers.' ) );
 		$this->backend->before_next(
 			'enqueue_async',
 			function () use ( $replacement_run_id ): void {
@@ -755,12 +695,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$this->clock->timestamp                  = self::NOW + 901;
 		$replacement_run_id                      = '00000000001700000001-0000000000000000043';
-		$this->backend->results['enqueue_async'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Rejection resolves before the terminal fence transfers.'
-			)
-		);
+		$this->backend->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Rejection resolves before the terminal fence transfers.' ) );
 		$this->backend->before_next(
 			'enqueue_async',
 			function () use ( $replacement_run_id ): void {
@@ -1263,10 +1198,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'crash-reclaim', $failure->stage );
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
-		self::assertStringContainsString(
-			'maintenance crash-reclaim path',
-			$failure->summary
-		);
+		self::assertStringContainsString( 'maintenance crash-reclaim path', $failure->summary );
 		self::assertNull( $failure->failed_chunk );
 		$actions = $this->fired_actions();
 		$options = $this->options();
@@ -1416,10 +1348,7 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertArrayNotHasKey( $run_name, $this->options() );
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
-		self::assertSame(
-			array( 'warning', 'warning' ),
-			\array_column( $this->logger->records, 'level' )
-		);
+		self::assertSame( array( 'warning', 'warning' ), \array_column( $this->logger->records, 'level' ) );
 	}
 
 	/**
@@ -1629,11 +1558,7 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		$failed  = $options[ 'a8csp_bgte_failed_' . $name ] ?? null;
 		self::assertIsArray( $failed );
-		$expected_summary = \sprintf(
-			'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.',
-			self::RUN_ID,
-			$name
-		);
+		$expected_summary = \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', self::RUN_ID, $name );
 		self::assertSame(
 			array(
 				array(
@@ -1674,24 +1599,7 @@ final class RunReconciliationTest extends TestCase {
 		$name  = self::identity( 'partially-effected-batch' );
 		$batch = new RecordingBatch( 'partially-effected-batch' );
 		$this->batches->register( $name, $batch );
-		self::assertTrue(
-			$this->stores->failed_run_store( $name )->record(
-				self::RUN_ID,
-				self::NOW - 3_601,
-				self::ARGS,
-				2,
-				new EngineError( 'Persisted batch failure.', \RuntimeException::class ),
-				new RunFailure(
-					name: $name,
-					run_id: self::RUN_ID,
-					attempts: 2,
-					stage: 'execution',
-					code: ApiErrorCode::ExecutionFailed,
-					summary: 'Persisted batch failure.',
-					failed_chunk: null,
-				)
-			)
-		);
+		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted batch failure.', \RuntimeException::class ), new RunFailure( name: $name, run_id: self::RUN_ID, attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Persisted batch failure.', failed_chunk: null, ) ) );
 		$failed_option = 'a8csp_bgte_failed_' . $name;
 		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
 		self::assertIsString( $failed_raw );
@@ -1752,17 +1660,7 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsArray( $snapshot );
 			$state = $snapshot['state'];
 			self::assertNotNull( $state );
-			self::assertTrue(
-				$this->terminal_transitions->replay_terminal_run(
-					$name,
-					self::RUN_ID,
-					$state,
-					$snapshot['raw'],
-					$run_store,
-					'Batch',
-					$batch
-				)
-			);
+			self::assertTrue( $this->terminal_transitions->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch ) );
 
 			throw new \RuntimeException( 'Original callback worker resumed after rival cleanup.' );
 		};
@@ -1776,15 +1674,7 @@ final class RunReconciliationTest extends TestCase {
 		$caught = null;
 
 		try {
-			$this->terminal_transitions->replay_terminal_run(
-				$name,
-				self::RUN_ID,
-				$state,
-				$snapshot['raw'],
-				$run_store,
-				'Batch',
-				$batch
-			);
+			$this->terminal_transitions->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch );
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
@@ -1914,16 +1804,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = $snapshot['state'];
 		self::assertNotNull( $state );
 
-		self::assertFalse(
-			$this->terminal_transitions->finish_claimed_transition(
-				self::IDENTITY,
-				self::RUN_ID,
-				$state,
-				$snapshot['raw'],
-				$run_store,
-				'Task'
-			)
-		);
+		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Task' ) );
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 
 		$this->maintenance->handle( array() );
@@ -2128,10 +2009,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $message, $failure->summary );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame(
-			array( self::IDENTITY, ...( $actions[0]['args'] ?? array() ) ),
-			$actions[1]['args'] ?? null
-		);
+		self::assertSame( array( self::IDENTITY, ...( $actions[0]['args'] ?? array() ) ), $actions[1]['args'] ?? null );
 		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(

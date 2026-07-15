@@ -65,9 +65,7 @@ final readonly class RetryPolicy {
 	 */
 	public function delay_ceiling_for_attempt( int $attempt ): int {
 		if ( 1 > $attempt || $attempt >= $this->max_attempts ) {
-			throw new \InvalidArgumentException(
-				'Retry delay requires $attempt to be the one-indexed just-failed attempt number in the range 1 <= $attempt < max_attempts so a next attempt exists.'
-			);
+			throw new \InvalidArgumentException( 'Retry delay requires $attempt to be the one-indexed just-failed attempt number in the range 1 <= $attempt < max_attempts so a next attempt exists.' );
 		}
 
 		$ceiling = $this->base_delay;

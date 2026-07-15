@@ -113,10 +113,7 @@ final class LockWindowsTest extends TestCase {
 		int $expected_staleness
 	): void {
 		if ( null !== $staleness_filter ) {
-			$this->set_filter_value(
-				'a8csp_background_tasks/lock_staleness/' . self::NAME,
-				$staleness_filter
-			);
+			$this->set_filter_value( 'a8csp_background_tasks/lock_staleness/' . self::NAME, $staleness_filter );
 		}
 		if ( null !== $continue_filter ) {
 			$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $continue_filter );
@@ -161,10 +158,7 @@ final class LockWindowsTest extends TestCase {
 	 */
 	#[DataProvider( 'execution_lease_values' )]
 	public function test_execution_lease_resolves_declared_runtime( ?int $declared, int $expected_lease ): void {
-		self::assertSame(
-			$expected_lease,
-			$this->lock_windows->execution_lease( $declared )
-		);
+		self::assertSame( $expected_lease, $this->lock_windows->execution_lease( $declared ) );
 	}
 
 	/**

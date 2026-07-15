@@ -126,12 +126,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$this->delivery = $this->new_delivery( $this->registry );
-		$this->api      = new Schedules(
-			$this->registry,
-			$this->backend,
-			$this->clock,
-			$this->delivery
-		);
+		$this->api      = new Schedules( $this->registry, $this->backend, $this->clock, $this->delivery );
 	}
 
 	// endregion.
@@ -164,14 +159,7 @@ final class ScheduleExecutionTest extends TestCase {
 			$this->registration()
 		);
 		$lease_key = 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY );
-		self::assertCount(
-			1,
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'DELETE ' )
-					&& \str_contains( $query, $lease_key )
-			)
-		);
+		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'DELETE ' ) && \str_contains( $query, $lease_key ) ) );
 	}
 
 	/**
@@ -192,10 +180,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertArrayNotHasKey(
-			'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ),
-			$this->wpdb->rows
-		);
+		self::assertArrayNotHasKey( 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ), $this->wpdb->rows );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 	}
 
@@ -220,10 +205,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['last_fired'] ?? null );
-		self::assertSame(
-			'Stale schedule occurrence redelivery dropped after its next-due token advanced.',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Stale schedule occurrence redelivery dropped after its next-due token advanced.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -269,10 +251,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['last_fired'] ?? null );
-		self::assertSame(
-			'Schedule occurrence could not enqueue its target task: {error}',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Schedule occurrence could not enqueue its target task: {error}', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -447,10 +426,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame(
-			'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -493,15 +469,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_stale_request_declaration_does_not_dispatch_a_replaced_registration(): void {
 		$this->sync_schedule( $this->schedule() );
 		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
-		$current     = new Schedule(
-			self::NAME,
-			Recurrence::every( 600 ),
-			self::TASK,
-			self::ARGS,
-			OverlapPolicy::Allow,
-			CatchUpPolicy::RunOnce,
-			23
-		);
+		$current     = new Schedule( self::NAME, Recurrence::every( 600 ), self::TASK, self::ARGS, OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 23 );
 		$result      = $current_api->sync( self::OWNER, self::declarations( self::OWNER, $current ) );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
@@ -549,14 +517,8 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
-		self::assertSame(
-			'Schedule occurrence state could not be persisted: {error}',
-			$this->logger->records[0]['message'] ?? null
-		);
-		self::assertSame(
-			'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
-			$this->logger->records[0]['context']['error'] ?? null
-		);
+		self::assertSame( 'Schedule occurrence state could not be persisted: {error}', $this->logger->records[0]['message'] ?? null );
+		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $this->logger->records[0]['context']['error'] ?? null );
 	}
 
 	/**
@@ -591,10 +553,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame(
-			'Schedule registration pruned concurrently; delivery state discarded.',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Schedule registration pruned concurrently; delivery state discarded.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -605,15 +564,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_post_acceptance_persist_preserves_a_concurrently_synchronized_definition(): void {
 		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
 		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
-		$current     = new Schedule(
-			self::NAME,
-			Recurrence::every( 600 ),
-			self::TASK,
-			self::ARGS,
-			OverlapPolicy::Allow,
-			CatchUpPolicy::RunOnce,
-			23
-		);
+		$current     = new Schedule( self::NAME, Recurrence::every( 600 ), self::TASK, self::ARGS, OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 23 );
 		$current_raw = null;
 		$this->wpdb->before_next(
 			'update',
@@ -635,10 +586,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertContains( 'enqueue_async', \array_column( $this->backend->calls, 'verb' ) );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame(
-			'Schedule registration superseded concurrently; delivery state discarded.',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Schedule registration superseded concurrently; delivery state discarded.', $this->logger->records[0]['message'] ?? null );
 		self::assertSame(
 			array(
 				'owner'            => self::OWNER,
@@ -656,12 +604,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_dispatch_failure_preserves_occurrence_timing(): void {
 		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
 		$before                                  = $this->registration();
-		$this->backend->results['enqueue_async'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before retrying.'
-			)
-		);
+		$this->backend->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying.' ) );
 		$this->clock->timestamp                  = self::NOW + self::INTERVAL;
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
@@ -677,12 +620,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	public function test_run_now_accepts_a_persisted_chainless_registration_in_the_same_request(): void {
 		$schedule = $this->schedule();
-		$failure  = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the scheduler store before retrying schedule sync.'
-			)
-		);
+		$failure  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the scheduler store before retrying schedule sync.' ) );
 
 		$this->backend->results['schedule_recurring'] = $failure;
 
@@ -690,10 +628,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertSame( $failure, $synced );
 		self::assertSame( $schedule->fingerprint(), $this->registration()['fingerprint'] ?? null );
-		self::assertSame(
-			array( 'is_scheduled', 'schedule_recurring' ),
-			\array_column( $this->backend->calls, 'verb' )
-		);
+		self::assertSame( array( 'is_scheduled', 'schedule_recurring' ), \array_column( $this->backend->calls, 'verb' ) );
 
 		unset( $this->backend->results['schedule_recurring'] );
 		$this->backend->calls = array();
@@ -742,10 +677,7 @@ final class ScheduleExecutionTest extends TestCase {
 			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => function () use ( &$observed ): void {
 				$observed = array(
 					'last_fired' => $this->registration()['last_fired'] ?? null,
-					'lease_held' => \array_key_exists(
-						'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ),
-						$this->wpdb->rows
-					),
+					'lease_held' => \array_key_exists( 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ), $this->wpdb->rows ),
 				);
 			},
 		);
@@ -829,15 +761,7 @@ final class ScheduleExecutionTest extends TestCase {
 		OverlapPolicy $overlap = OverlapPolicy::Skip,
 		CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce
 	): Schedule {
-		return new Schedule(
-			self::NAME,
-			Recurrence::every( self::INTERVAL ),
-			self::TASK,
-			self::ARGS,
-			$overlap,
-			$catch_up,
-			23
-		);
+		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::TASK, self::ARGS, $overlap, $catch_up, 23 );
 	}
 
 	/**
@@ -887,12 +811,7 @@ final class ScheduleExecutionTest extends TestCase {
 	private function new_api( ScheduleRegistry $registry ): Schedules {
 		$delivery = $this->new_delivery( $registry );
 
-		return new Schedules(
-			$registry,
-			$this->backend,
-			$this->clock,
-			$delivery
-		);
+		return new Schedules( $registry, $this->backend, $this->clock, $delivery );
 	}
 
 	/**
@@ -913,36 +832,12 @@ final class ScheduleExecutionTest extends TestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$dispatcher           = new Dispatcher(
-			$tasks,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$dispatcher           = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, );
 
 		$scheduler     ??= new SchedulerFacade( array( $this->backend ) );
-		$cleanup_intents = new CleanupIntents(
-			$registry,
-			$scheduler,
-			new OptionRows( $this->wpdb ),
-			$this->clock,
-			$this->logger
-		);
+		$cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
-		return new OccurrenceDelivery(
-			$registry,
-			$dispatcher,
-			new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
-			$cleanup_intents,
-			$this->clock,
-			$this->logger
-		);
+		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $cleanup_intents, $this->clock, $this->logger );
 	}
 
 	/**
@@ -1051,15 +946,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */
 	private function misfired_actions(): array {
-		return \array_values(
-			\array_filter(
-				$this->fired_actions(),
-				static fn ( array $action ): bool => \str_starts_with(
-					$action['hook_name'],
-					'a8csp_background_tasks/misfired'
-				)
-			)
-		);
+		return \array_values( \array_filter( $this->fired_actions(), static fn ( array $action ): bool => \str_starts_with( $action['hook_name'], 'a8csp_background_tasks/misfired' ) ) );
 	}
 
 	// endregion.

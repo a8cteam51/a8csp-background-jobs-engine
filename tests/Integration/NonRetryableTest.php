@@ -112,10 +112,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 
 		$failure = $named_failed[0][2] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
-		$expected_message = \sprintf(
-			'Background-work execution failed because %s was thrown.',
-			NonRetryableTaskException::class
-		);
+		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableTaskException::class );
 		self::assertSame( self::IDENTITY, $failure->name );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
@@ -123,23 +120,11 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $expected_message, $failure->summary );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame(
-			array( array( $run_id, $args, $failure ) ),
-			$named_failed,
-			'The identity-specific failed hook must receive run ID, start arguments, and run failure'
-		);
-		self::assertSame(
-			array( array( self::IDENTITY, $run_id, $args, $failure ) ),
-			$generic_failed,
-			'The generic failed hook must prepend the task name to the same failure payload'
-		);
+		self::assertSame( array( array( $run_id, $args, $failure ) ), $named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and run failure' );
+		self::assertSame( array( array( self::IDENTITY, $run_id, $args, $failure ) ), $generic_failed, 'The generic failed hook must prepend the task name to the same failure payload' );
 
 		$store = $this->action_scheduler_store();
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( $action_id ),
-			'Action Scheduler must complete the terminally handled task action'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_id ), 'Action Scheduler must complete the terminally handled task action' );
 		self::assertSame(
 			array( $action_id ),
 			$store->query_actions(
@@ -153,14 +138,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		);
 
 		$args_hash = self::args_hash( $args );
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ),
-			'Terminal non-retryable failure must delete the active run option'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
-			'Terminal non-retryable failure must release the overlap lock'
-		);
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ), 'Terminal non-retryable failure must delete the active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal non-retryable failure must release the overlap lock' );
 		self::assertSame(
 			array(
 				'all'     => $run_id,
@@ -199,11 +178,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertCount( 1, $failed_entries, 'A non-retryable failure must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;
 		self::assertIsArray( $failed_entry );
-		self::assertSame(
-			array( 'run_id', 'failed_at', 'start_args', 'attempts', 'error' ),
-			\array_keys( $failed_entry ),
-			'The failed entry must contain exactly the manual-retry fields'
-		);
+		self::assertSame( array( 'run_id', 'failed_at', 'start_args', 'attempts', 'error' ), \array_keys( $failed_entry ), 'The failed entry must contain exactly the manual-retry fields' );
 		self::assertSame( $run_id, $failed_entry['run_id'] ?? null );
 		self::assertIsInt( $failed_entry['failed_at'] ?? null );
 		self::assertSame( $args, $failed_entry['start_args'] ?? null );

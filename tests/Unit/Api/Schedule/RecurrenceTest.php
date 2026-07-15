@@ -74,9 +74,7 @@ final class RecurrenceTest extends TestCase {
 	#[DataProvider( 'empty_cron_expressions' )]
 	public function test_cron_rejects_an_empty_expression( string $expression ): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Recurrence cron expression must not be empty; pass a non-empty calendar expression.'
-		);
+		$this->expectExceptionMessageIs( 'Recurrence cron expression must not be empty; pass a non-empty calendar expression.' );
 
 		Recurrence::cron( $expression );
 	}
@@ -100,9 +98,7 @@ final class RecurrenceTest extends TestCase {
 	 */
 	public function test_every_rejects_zero_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Recurrence interval must be positive; pass a value of at least one second.'
-		);
+		$this->expectExceptionMessageIs( 'Recurrence interval must be positive; pass a value of at least one second.' );
 
 		Recurrence::every( 0 );
 	}
@@ -114,9 +110,7 @@ final class RecurrenceTest extends TestCase {
 	 */
 	public function test_every_rejects_a_negative_interval_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Recurrence interval must be positive; pass a value of at least one second.'
-		);
+		$this->expectExceptionMessageIs( 'Recurrence interval must be positive; pass a value of at least one second.' );
 
 		Recurrence::every( -1 );
 	}

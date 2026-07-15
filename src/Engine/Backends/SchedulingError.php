@@ -52,14 +52,7 @@ final readonly class SchedulingError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function registry_read_failure( string $owner ): self {
-		return new self(
-			SchedulingErrorReason::StorageFailure,
-			\sprintf(
-				'Schedule registry state for owner "%s" could not be read; repair WordPress option reads and retry.',
-				$owner
-			),
-			array( 'owner' => $owner ),
-		);
+		return new self( SchedulingErrorReason::StorageFailure, \sprintf( 'Schedule registry state for owner "%s" could not be read; repair WordPress option reads and retry.', $owner ), array( 'owner' => $owner ), );
 	}
 
 	/**
@@ -73,14 +66,7 @@ final readonly class SchedulingError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function registry_persist_failure( string $owner ): self {
-		return new self(
-			SchedulingErrorReason::StorageFailure,
-			\sprintf(
-				'Schedule registry state for owner "%s" could not be persisted; repair WordPress option writes and retry synchronization.',
-				$owner
-			),
-			array( 'owner' => $owner ),
-		);
+		return new self( SchedulingErrorReason::StorageFailure, \sprintf( 'Schedule registry state for owner "%s" could not be persisted; repair WordPress option writes and retry synchronization.', $owner ), array( 'owner' => $owner ), );
 	}
 
 	// endregion

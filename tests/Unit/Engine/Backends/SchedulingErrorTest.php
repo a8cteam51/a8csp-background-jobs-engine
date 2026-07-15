@@ -36,11 +36,7 @@ final class SchedulingErrorTest extends TestCase {
 			'backend' => 'action_scheduler',
 			'attempt' => 2,
 		);
-		$error   = new SchedulingError(
-			SchedulingErrorReason::ScheduleFailed,
-			'Retry after the backend becomes available.',
-			$context
-		);
+		$error   = new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context );
 
 		self::assertSame( SchedulingErrorReason::ScheduleFailed, $error->reason );
 		self::assertSame( 'Retry after the backend becomes available.', $error->message );
@@ -53,10 +49,7 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_context_defaults_to_an_empty_array(): void {
-		$error = new SchedulingError(
-			SchedulingErrorReason::BackendNotReady,
-			'Load a supported scheduling backend.'
-		);
+		$error = new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' );
 
 		self::assertSame( array(), $error->context );
 	}
@@ -70,10 +63,7 @@ final class SchedulingErrorTest extends TestCase {
 		$error = SchedulingError::registry_read_failure( 'owner-a' );
 
 		self::assertSame( SchedulingErrorReason::StorageFailure, $error->reason );
-		self::assertSame(
-			'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.',
-			$error->message
-		);
+		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $error->context );
 	}
 
@@ -86,10 +76,7 @@ final class SchedulingErrorTest extends TestCase {
 		$error = SchedulingError::registry_persist_failure( 'owner-a' );
 
 		self::assertSame( SchedulingErrorReason::StorageFailure, $error->reason );
-		self::assertSame(
-			'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.',
-			$error->message
-		);
+		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $error->context );
 	}
 

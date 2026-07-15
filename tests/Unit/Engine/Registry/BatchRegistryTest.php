@@ -59,9 +59,7 @@ final class BatchRegistryTest extends TestCase {
 		self::assertSame( $accepted, $registry->get( 'consumer:' . \str_repeat( 'a', 64 ) ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		$registry->register( 'consumer:valid', $this->batch( \str_repeat( 'a', 65 ) ) );
 	}
@@ -76,9 +74,7 @@ final class BatchRegistryTest extends TestCase {
 	#[DataProvider( 'invalid_names' )]
 	public function test_register_rejects_invalid_names_with_the_fix( string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		( new BatchRegistry( new WorkRegistry() ) )->register( 'consumer:valid', $this->batch( $name ) );
 	}
@@ -108,9 +104,7 @@ final class BatchRegistryTest extends TestCase {
 		$registry->register( 'consumer:refresh-index', $this->batch( 'refresh-index' ) );
 
 		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs(
-			'Batch name is already registered; register each batch name exactly once.'
-		);
+		$this->expectExceptionMessageIs( 'Batch name is already registered; register each batch name exactly once.' );
 
 		$registry->register( 'consumer:refresh-index', $this->batch( 'refresh-index' ) );
 	}

@@ -138,11 +138,7 @@ final class ResetCommandTest extends TestCase {
 			OccurrenceDelivery::SCHEDULE_HOOK => 2,
 		);
 
-		$command = new ResetCommand(
-			new OptionRows( $wpdb ),
-			new SchedulerFacade( array( $first_backend, $last_backend ) ),
-			$this->reset_output()
-		);
+		$command = new ResetCommand( new OptionRows( $wpdb ), new SchedulerFacade( array( $first_backend, $last_backend ) ), $this->reset_output() );
 
 		$this->confirmation = false;
 		$command->reset( array(), array( 'yes' => true ) );
@@ -173,11 +169,7 @@ final class ResetCommandTest extends TestCase {
 
 		$backend->pending_actions = array( ActionDeliveries::RUN_HOOK => 2 );
 
-		$command = new ResetCommand(
-			new OptionRows( $wpdb ),
-			new SchedulerFacade( array( $backend ) ),
-			$this->reset_output()
-		);
+		$command = new ResetCommand( new OptionRows( $wpdb ), new SchedulerFacade( array( $backend ) ), $this->reset_output() );
 
 		$before_rows        = $wpdb->rows;
 		$this->confirmation = false;
@@ -208,11 +200,7 @@ final class ResetCommandTest extends TestCase {
 		$backend->ready           = false;
 		$backend->pending_actions = array( ActionDeliveries::RUN_HOOK => 2 );
 
-		$command = new ResetCommand(
-			new OptionRows( $wpdb ),
-			new SchedulerFacade( array( $backend ) ),
-			$this->reset_output()
-		);
+		$command = new ResetCommand( new OptionRows( $wpdb ), new SchedulerFacade( array( $backend ) ), $this->reset_output() );
 
 		$before_rows = $wpdb->rows;
 
@@ -235,10 +223,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_request_parser_accepts_only_the_documented_yes_flag(): void {
 		self::assertSame( array( 'action' => 'reset' ), ResetCommand::request_from_args( array(), array() ) );
-		self::assertSame(
-			array( 'action' => 'reset' ),
-			ResetCommand::request_from_args( array(), array( 'yes' => true ) )
-		);
+		self::assertSame( array( 'action' => 'reset' ), ResetCommand::request_from_args( array(), array( 'yes' => true ) ) );
 		self::assertSame(
 			array(
 				'action'  => 'error',

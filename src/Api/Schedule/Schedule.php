@@ -74,15 +74,11 @@ final readonly class Schedule {
 				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
 			);
 		} catch ( \JsonException ) {
-			throw new \InvalidArgumentException(
-				'Schedule definition must be JSON-encodable; pass valid UTF-8 task and recurrence strings.'
-			);
+			throw new \InvalidArgumentException( 'Schedule definition must be JSON-encodable; pass valid UTF-8 task and recurrence strings.' );
 		}
 
 		if ( ! \is_string( $encoded ) ) {
-			throw new \InvalidArgumentException(
-				'Schedule definition must be JSON-encodable; pass valid UTF-8 task and recurrence strings.'
-			);
+			throw new \InvalidArgumentException( 'Schedule definition must be JSON-encodable; pass valid UTF-8 task and recurrence strings.' );
 		}
 
 		$this->fingerprint = \hash( 'sha256', $encoded );

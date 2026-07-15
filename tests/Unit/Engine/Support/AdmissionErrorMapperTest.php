@@ -48,15 +48,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	#[DataProvider( 'engine_failure_mappings' )]
 	public function test_maps_every_engine_failure_reason( string $reason, string $expected_code ): void {
 		$context = array( 'run_id' => 'run-7' );
-		$result  = AdmissionErrorMapper::map(
-			new Failure(
-				new EngineError(
-					message: 'Engine-authored corrective detail.',
-					reason: EngineErrorReason::from( $reason ),
-					context: $context,
-				)
-			)
-		);
+		$result  = AdmissionErrorMapper::map( new Failure( new EngineError( message: 'Engine-authored corrective detail.', reason: EngineErrorReason::from( $reason ), context: $context, ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -126,15 +118,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	#[DataProvider( 'scheduling_failure_mappings' )]
 	public function test_maps_every_scheduling_failure_reason( string $reason, string $expected_code ): void {
 		$context = array( 'hook' => 'a8csp_background_tasks/run' );
-		$result  = AdmissionErrorMapper::map(
-			new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::from( $reason ),
-					'Engine-authored scheduling detail.',
-					$context
-				)
-			)
-		);
+		$result  = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', $context ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );

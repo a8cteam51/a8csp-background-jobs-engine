@@ -129,53 +129,13 @@ final class EngineFacadeTest extends TestCase {
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 
-		$dispatcher = new Dispatcher(
-			$tasks,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$clock,
-			$randomizer,
-			$logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, );
 		$registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
-		$delivery   = new OccurrenceDelivery(
-			$registry,
-			$dispatcher,
-			new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ),
-			new CleanupIntents(
-				$registry,
-				new SchedulerFacade( array( $this->backend ) ),
-				new OptionRows( $this->wpdb ),
-				$clock,
-				$logger
-			),
-			$clock,
-			$logger
-		);
+		$delivery   = new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ), new CleanupIntents( $registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $clock, $logger ), $clock, $logger );
 		$schedules  = new Schedules( $registry, $this->backend, $clock, $delivery );
-		$inspection = new Inspection(
-			$registry,
-			$tasks,
-			$batches,
-			new SchedulerFacade( array( $this->backend ) ),
-			$guard,
-			$stores,
-			new OptionRows( $this->wpdb ),
-			$lock_windows,
-			$clock
-		);
+		$inspection = new Inspection( $registry, $tasks, $batches, new SchedulerFacade( array( $this->backend ) ), $guard, $stores, new OptionRows( $this->wpdb ), $lock_windows, $clock );
 
-		$this->engine = new EngineFacade(
-			new Tasks( $tasks, $dispatcher ),
-			$schedules,
-			new Batches( $batches, $dispatcher ),
-			$dispatcher,
-			$inspection,
-		);
+		$this->engine = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedules, new Batches( $batches, $dispatcher ), $dispatcher, $inspection, );
 	}
 
 	/**
@@ -197,13 +157,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_register_then_enqueue_round_trips_through_the_task_facade(): void {
 		$this->engine->tasks->register( self::TASK_IDENTITY, new RecordingTask( 'email-digest' ) );
 
-		$result = $this->engine->tasks->enqueue(
-			self::TASK_IDENTITY,
-			self::ARGS,
-			delay: 300,
-			dedup_key: 'site-7-full',
-			priority: 5
-		);
+		$result = $this->engine->tasks->enqueue( self::TASK_IDENTITY, self::ARGS, delay: 300, dedup_key: 'site-7-full', priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -246,12 +200,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_register_then_start_round_trips_through_the_batch_facade(): void {
 		$this->engine->batches->register( self::BATCH_IDENTITY, new RecordingBatch( 'catalog-sync' ) );
 
-		$result = $this->engine->batches->start(
-			self::BATCH_IDENTITY,
-			self::ARGS,
-			existing: ExistingRunPolicy::Reject,
-			priority: 23
-		);
+		$result = $this->engine->batches->start( self::BATCH_IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -287,10 +236,7 @@ final class EngineFacadeTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Task "consumer-plugin:unknown" is not registered; register it before enqueueing.',
-			$result->error->message
-		);
+		self::assertSame( 'Task "consumer-plugin:unknown" is not registered; register it before enqueueing.', $result->error->message );
 		self::assertSame( array(), $this->backend->calls );
 	}
 
@@ -303,9 +249,7 @@ final class EngineFacadeTest extends TestCase {
 		$this->engine->tasks->register( 'consumer-plugin:shared-work', new RecordingTask( 'shared-work' ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work identity "consumer-plugin:shared-work" is already registered as a task; it cannot also be registered as a batch.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work identity "consumer-plugin:shared-work" is already registered as a task; it cannot also be registered as a batch.' );
 
 		$this->engine->batches->register( 'consumer-plugin:shared-work', new RecordingBatch( 'shared-work' ) );
 	}
@@ -342,10 +286,7 @@ final class EngineFacadeTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before cancelling its run.',
-			$result->error->message
-		);
+		self::assertSame( 'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before cancelling its run.', $result->error->message );
 		self::assertSame( array(), $this->backend->calls );
 	}
 
@@ -359,10 +300,7 @@ final class EngineFacadeTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.',
-			$result->error->message
-		);
+		self::assertSame( 'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.', $result->error->message );
 		self::assertSame( array(), $this->backend->calls );
 	}
 
@@ -374,24 +312,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_retry_failed_dispatches_the_engine_maintenance_identity(): void {
 		$this->engine->tasks->register( self::MAINTENANCE_IDENTITY, new RecordingTask( MaintenanceTask::NAME ) );
 		$store = new FailedRunStore( self::MAINTENANCE_IDENTITY, new OptionRows( $this->wpdb ) );
-		self::assertTrue(
-			$store->record(
-				'failed-maintenance-run',
-				self::NOW - 1,
-				array(),
-				1,
-				new EngineError( 'Maintenance failed.' ),
-				new RunFailure(
-					name: self::MAINTENANCE_IDENTITY,
-					run_id: 'failed-maintenance-run',
-					attempts: 1,
-					stage: 'execution',
-					code: ApiErrorCode::ExecutionFailed,
-					summary: 'Maintenance failed.',
-					failed_chunk: null,
-				)
-			)
-		);
+		self::assertTrue( $store->record( 'failed-maintenance-run', self::NOW - 1, array(), 1, new EngineError( 'Maintenance failed.' ), new RunFailure( name: self::MAINTENANCE_IDENTITY, run_id: 'failed-maintenance-run', attempts: 1, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Maintenance failed.', failed_chunk: null, ) ) );
 		$failed_key = 'a8csp_bgte_failed_' . self::MAINTENANCE_IDENTITY;
 		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
 		self::assertIsString( $failed_raw );

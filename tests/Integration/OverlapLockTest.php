@@ -60,12 +60,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the rejecting incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the rejecting incumbent first chunk' );
-		$first_action_id = $this->assert_pending_chunk_action(
-			self::SKIP_IDENTITY,
-			$run_a,
-			$group_a,
-			array( 'chunk' => 'one' )
-		);
+		$first_action_id = $this->assert_pending_chunk_action( self::SKIP_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
@@ -75,20 +70,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::OverlapHeld, $result->error->code );
 		self::assertSame( array( 'run_id' => $run_a ), $result->error->context );
-		self::assertSame(
-			\sprintf(
-				'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',
-				self::SKIP_IDENTITY,
-				$run_a
-			),
-			$result->error->message,
-			'The rejected held-lock failure must identify the incumbent run exactly'
-		);
-		self::assertSame(
-			$action_count_before,
-			(int) $store->query_actions( array(), 'count' ),
-			'A rejected start must not create an Action Scheduler row'
-		);
+		self::assertSame( \sprintf( 'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', self::SKIP_IDENTITY, $run_a ), $result->error->message, 'The rejected held-lock failure must identify the incumbent run exactly' );
+		self::assertSame( $action_count_before, (int) $store->query_actions( array(), 'count' ), 'A rejected start must not create an Action Scheduler row' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_a, $lock['run_id'] ?? null, 'A rejected start must preserve the incumbent lock owner' );
@@ -116,32 +99,15 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent first chunk' );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( $first_action_id ),
-			'Action Scheduler must complete the incumbent first chunk action'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $first_action_id ), 'Action Scheduler must complete the incumbent first chunk action' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the incumbent second chunk' );
-		$second_action_id = $this->assert_pending_chunk_action(
-			self::SKIP_IDENTITY,
-			$run_a,
-			$group_a,
-			array( 'chunk' => 'two' )
-		);
+		$second_action_id = $this->assert_pending_chunk_action( self::SKIP_IDENTITY, $run_a, $group_a, array( 'chunk' => 'two' ) );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent second chunk' );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( $second_action_id ),
-			'Action Scheduler must complete the incumbent second chunk action'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $second_action_id ), 'Action Scheduler must complete the incumbent second chunk action' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete incumbent cleanup' );
 
-		self::assertSame(
-			array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ),
-			\array_column( $batch->process_calls, 'chunk_args' ),
-			'The accepted incumbent must process both chunks after the rejected start'
-		);
+		self::assertSame( array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ), \array_column( $batch->process_calls, 'chunk_args' ), 'The accepted incumbent must process both chunks after the rejected start' );
 		self::assertSame(
 			array(
 				array(
@@ -217,20 +183,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the crash-simulated incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the crash-simulated incumbent chunk' );
-		$run_a_action_id = $this->assert_pending_chunk_action(
-			self::RECLAIM_IDENTITY,
-			$run_a,
-			$group_a,
-			array( 'chunk' => 'one' )
-		);
+		$run_a_action_id = $this->assert_pending_chunk_action( self::RECLAIM_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$aged_lock = \get_option( $lock_name, null );
 		self::assertIsArray( $aged_lock );
 		$aged_lock['heartbeat_at'] = \time() - ( 15 * \MINUTE_IN_SECONDS ) - 1;
-		self::assertTrue(
-			\update_option( $lock_name, $aged_lock, false ),
-			'The crash simulation must age the persisted heartbeat beyond the default stale window'
-		);
+		self::assertTrue( \update_option( $lock_name, $aged_lock, false ), 'The crash simulation must age the persisted heartbeat beyond the default stale window' );
 
 		$run_b   = $this->start_batch( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
@@ -259,43 +217,18 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the orphaned incumbent chunk after reclaim' );
 		self::assertSame( array(), $batch->process_calls, 'The orphaned incumbent must stop before chunk execution' );
-		self::assertSame(
-			array( array( $run_a, $start_args ) ),
-			$named_superseded,
-			'The identity-specific superseded hook must receive the reclaimed incumbent payload once'
-		);
-		self::assertSame(
-			array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ),
-			$generic_superseded,
-			'The generic superseded hook must prepend the reclaimed batch name once'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ),
-			'The orphaned incumbent delivery must delete its active run option'
-		);
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The identity-specific superseded hook must receive the reclaimed incumbent payload once' );
+		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The generic superseded hook must prepend the reclaimed batch name once' );
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ), 'The orphaned incumbent delivery must delete its active run option' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Orphan cleanup must preserve the reclaimed lock owner' );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$this->action_scheduler_store()->get_status( $run_a_action_id ),
-			'Action Scheduler must complete the quietly superseded orphan delivery'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $run_a_action_id ), 'Action Scheduler must complete the quietly superseded orphan delivery' );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the reclaimed run queue' );
-		$this->drive_generated_batch_to_completion(
-			$batch,
-			self::RECLAIM_IDENTITY,
-			$run_b,
-			$group_b,
-			array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) )
-		);
+		$this->drive_generated_batch_to_completion( $batch, self::RECLAIM_IDENTITY, $run_b, $group_b, array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ) );
 
-		self::assertSame(
-			array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ),
-			\array_column( $batch->process_calls, 'chunk_args' ),
-			'Only the reclaimed run must process the batch chunks'
-		);
+		self::assertSame( array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ), \array_column( $batch->process_calls, 'chunk_args' ), 'Only the reclaimed run must process the batch chunks' );
 		self::assertSame(
 			array(
 				array(
@@ -307,16 +240,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'The reclaimed run must complete normally'
 		);
 		self::assertSame( array(), $batch->failure_calls, 'Stale reclaim must not invoke the batch failure callback' );
-		self::assertSame(
-			array( array( $run_a, $start_args ) ),
-			$named_superseded,
-			'Reclaimed-run completion must not repeat the identity-specific superseded hook'
-		);
-		self::assertSame(
-			array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ),
-			$generic_superseded,
-			'Reclaimed-run completion must not repeat the generic superseded hook'
-		);
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Reclaimed-run completion must not repeat the identity-specific superseded hook' );
+		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Reclaimed-run completion must not repeat the generic superseded hook' );
 		self::assertSame(
 			array(
 				array(
@@ -408,12 +333,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function filter_continue_delay_to_zero(): void {
-		\add_filter(
-			'a8csp_background_tasks/continue_delay',
-			static fn ( int $delay, string $name, string $run_id ): int => 0,
-			10,
-			3
-		);
+		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 	}
 
 	/**
@@ -454,33 +374,17 @@ final class OverlapLockTest extends IntegrationTestCase {
 		foreach ( $expected_chunks as $expected_chunk ) {
 			$process_call_count = \count( $batch->process_calls );
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose one accepted chunk' );
-			self::assertCount(
-				$process_call_count,
-				$batch->process_calls,
-				'An accepted continue action must not process its exposed chunk inline'
-			);
+			self::assertCount( $process_call_count, $batch->process_calls, 'An accepted continue action must not process its exposed chunk inline' );
 			$action_id = $this->assert_pending_chunk_action( $name, $run_id, $group, $expected_chunk );
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one accepted chunk' );
 			self::assertCount( $process_call_count + 1, $batch->process_calls, 'An accepted run action must process one chunk' );
-			self::assertSame(
-				$expected_chunk,
-				$batch->process_calls[ $process_call_count ]['chunk_args'] ?? null,
-				'An accepted run action must process the chunk exposed by its continue action'
-			);
-			self::assertSame(
-				\ActionScheduler_Store::STATUS_COMPLETE,
-				$this->action_scheduler_store()->get_status( $action_id ),
-				'Action Scheduler must complete the accepted chunk action'
-			);
+			self::assertSame( $expected_chunk, $batch->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'An accepted run action must process the chunk exposed by its continue action' );
+			self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $action_id ), 'Action Scheduler must complete the accepted chunk action' );
 		}
 
 		$process_calls_before = $batch->process_calls;
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the accepted run drained queue' );
-		self::assertSame(
-			$process_calls_before,
-			$batch->process_calls,
-			'The drained-queue continue action must not execute chunk work'
-		);
+		self::assertSame( $process_calls_before, $batch->process_calls, 'The drained-queue continue action must not execute chunk work' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute accepted run cleanup' );
 	}
 

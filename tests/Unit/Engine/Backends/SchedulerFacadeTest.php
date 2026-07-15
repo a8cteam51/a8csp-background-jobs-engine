@@ -69,9 +69,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 */
 	public function test_constructor_rejects_an_empty_backend_list_with_the_fix(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.'
-		);
+		$this->expectExceptionMessageIs( 'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.' );
 
 		new SchedulerFacade( array() );
 	}
@@ -141,9 +139,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$ready_supported->cron_supported   = true;
 		$unused                            = new RecordingBackend();
 
-		$facade = new SchedulerFacade(
-			array( $unready_supported, $ready_unsupported, $ready_supported, $unused )
-		);
+		$facade = new SchedulerFacade( array( $unready_supported, $ready_unsupported, $ready_supported, $unused ) );
 
 		self::assertTrue( $facade->supports_cron_expressions() );
 		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready_supported ) );
@@ -214,14 +210,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		$first->results['schedule_recurring'] = $expected;
 
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_recurring(
-			self::HOOK,
-			300,
-			array( 'run-17' ),
-			1_700_000_000,
-			'reports',
-			20
-		);
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_recurring( self::HOOK, 300, array( 'run-17' ), 1_700_000_000, 'reports', 20 );
 
 		self::assertSame( $expected, $result );
 		self::assertSame(
@@ -261,13 +250,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		$second->results['schedule_single'] = $expected;
 
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single(
-			self::HOOK,
-			1_700_000_000,
-			array( 'run-18' ),
-			'imports',
-			30
-		);
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single( self::HOOK, 1_700_000_000, array( 'run-18' ), 'imports', 30 );
 
 		self::assertSame( $expected, $result );
 		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
@@ -294,12 +277,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$preferred->ready = false;
 		$args             = array( 'run-19' );
 
-		$result = ( new SchedulerFacade( array( $preferred, new WPCronBackend() ) ) )->enqueue_async(
-			self::HOOK,
-			$args,
-			'reports|run-19',
-			40
-		);
+		$result = ( new SchedulerFacade( array( $preferred, new WPCronBackend() ) ) )->enqueue_async( self::HOOK, $args, 'reports|run-19', 40 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
@@ -315,24 +293,14 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_write_falls_back_to_the_last_backend_when_none_are_ready(): void {
 		$first    = new RecordingBackend();
 		$last     = new RecordingBackend();
-		$expected = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::BackendNotReady,
-				'Load the baseline scheduler before enqueueing the hook.'
-			)
-		);
+		$expected = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load the baseline scheduler before enqueueing the hook.' ) );
 
 		$first->ready = false;
 		$last->ready  = false;
 
 		$last->results['enqueue_async'] = $expected;
 
-		$result = ( new SchedulerFacade( array( $first, $last ) ) )->enqueue_async(
-			self::HOOK,
-			array( 'run-19' ),
-			'exports',
-			40
-		);
+		$result = ( new SchedulerFacade( array( $first, $last ) ) )->enqueue_async( self::HOOK, array( 'run-19' ), 'exports', 40 );
 
 		self::assertSame( $expected, $result );
 		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
@@ -361,12 +329,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		$second->results['enqueue_async'] = $expected;
 
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->enqueue_async(
-			self::HOOK,
-			array( 'run-20' ),
-			'exports',
-			40
-		);
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->enqueue_async( self::HOOK, array( 'run-20' ), 'exports', 40 );
 
 		self::assertSame( $expected, $result );
 		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), $this->call_verbs( $first ) );
@@ -393,12 +356,7 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_write_returns_every_non_readiness_failure_unchanged( string $reason_value ): void {
 		$first    = new RecordingBackend();
 		$second   = new RecordingBackend();
-		$expected = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::from( $reason_value ),
-				'Correct the rejected scheduling request before retrying.'
-			)
-		);
+		$expected = new Failure( new SchedulingError( SchedulingErrorReason::from( $reason_value ), 'Correct the rejected scheduling request before retrying.' ) );
 
 		$first->results['enqueue_async'] = $expected;
 
@@ -417,26 +375,13 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_write_returns_the_last_failure_when_every_backend_declines(): void {
 		$first        = new RecordingBackend();
 		$second       = new RecordingBackend();
-		$first_result = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::BackendNotReady,
-				'Initialize the first backend before retrying the write.'
-			)
-		);
-		$last_result  = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::BackendNotReady,
-				'Initialize the fallback backend before retrying the write.'
-			)
-		);
+		$first_result = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Initialize the first backend before retrying the write.' ) );
+		$last_result  = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Initialize the fallback backend before retrying the write.' ) );
 
 		$first->results['schedule_single']  = $first_result;
 		$second->results['schedule_single'] = $last_result;
 
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single(
-			self::HOOK,
-			1_700_000_000
-		);
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single( self::HOOK, 1_700_000_000 );
 
 		self::assertSame( $last_result, $result );
 		self::assertSame( array( 'is_ready', 'schedule_single' ), $this->call_verbs( $first ) );
@@ -453,11 +398,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$second            = new RecordingBackend();
 		$second->scheduled = true;
 
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->is_scheduled(
-			self::HOOK,
-			array( 'run-20' ),
-			'reports'
-		);
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->is_scheduled( self::HOOK, array( 'run-20' ), 'reports' );
 
 		self::assertTrue( $result );
 		self::assertSame( array( 'is_ready', 'is_scheduled' ), $this->call_verbs( $first ) );
@@ -485,11 +426,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$third                 = new RecordingBackend();
 		$third->next_scheduled = 1_700_000_100;
 
-		$result = ( new SchedulerFacade( array( $first, $second, $third ) ) )->get_next_scheduled(
-			self::HOOK,
-			array( 'run-21' ),
-			'imports'
-		);
+		$result = ( new SchedulerFacade( array( $first, $second, $third ) ) )->get_next_scheduled( self::HOOK, array( 'run-21' ), 'imports' );
 
 		self::assertSame( 1_700_000_100, $result );
 		foreach ( array( $first, $second, $third ) as $backend ) {
@@ -535,10 +472,7 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertFalse( $facade->is_scheduled( self::HOOK ) );
 		self::assertNull( $facade->get_next_scheduled( self::HOOK ) );
 		self::assertSame( array( 'is_ready', 'is_ready' ), $this->call_verbs( $unready ) );
-		self::assertSame(
-			array( 'is_ready', 'is_scheduled', 'is_ready', 'get_next_scheduled' ),
-			$this->call_verbs( $ready )
-		);
+		self::assertSame( array( 'is_ready', 'is_scheduled', 'is_ready', 'get_next_scheduled' ), $this->call_verbs( $ready ) );
 	}
 
 	/**
@@ -552,11 +486,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$second         = new RecordingBackend();
 		$unready->ready = false;
 
-		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )->unschedule(
-			self::HOOK,
-			array( 'run-22' ),
-			'cleanup'
-		);
+		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )->unschedule( self::HOOK, array( 'run-22' ), 'cleanup' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
@@ -585,8 +515,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$second         = new RecordingBackend();
 		$unready->ready = false;
 
-		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )
-			->unschedule_group( 'reports|run-22' );
+		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )->unschedule_group( 'reports|run-22' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
@@ -619,22 +548,14 @@ final class SchedulerFacadeTest extends TestCase {
 			'a8csp_bgte_unrelated_hook' => 4,
 		);
 
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->unschedule_hooks(
-			array( self::HOOK, 'a8csp_bgte_sibling_hook' )
-		);
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->unschedule_hooks( array( self::HOOK, 'a8csp_bgte_sibling_hook' ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( 6, $result->value );
 		self::assertSame( array(), $first->pending_actions );
 		self::assertSame( array( 'a8csp_bgte_unrelated_hook' => 4 ), $second->pending_actions );
-		self::assertSame(
-			array( 'is_ready', 'unschedule_hooks' ),
-			$this->call_verbs( $first )
-		);
-		self::assertSame(
-			array( 'is_ready', 'unschedule_hooks' ),
-			$this->call_verbs( $second )
-		);
+		self::assertSame( array( 'is_ready', 'unschedule_hooks' ), $this->call_verbs( $first ) );
+		self::assertSame( array( 'is_ready', 'unschedule_hooks' ), $this->call_verbs( $second ) );
 	}
 
 	/**
@@ -668,18 +589,8 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_unschedule_returns_the_first_failure_after_clearing_remaining_ready_backends(): void {
 		$first          = new RecordingBackend();
 		$second         = new RecordingBackend();
-		$first_failure  = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the first backend schedule and retry the clear.'
-			)
-		);
-		$second_failure = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the second backend schedule and retry the clear.'
-			)
-		);
+		$first_failure  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the first backend schedule and retry the clear.' ) );
+		$second_failure = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the second backend schedule and retry the clear.' ) );
 
 		$first->results['unschedule']  = $first_failure;
 		$second->results['unschedule'] = $second_failure;
@@ -700,12 +611,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$first    = new RecordingBackend();
 		$second   = new RecordingBackend();
 		$third    = new RecordingBackend();
-		$expected = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the second backend schedule and retry the clear.'
-			)
-		);
+		$expected = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the second backend schedule and retry the clear.' ) );
 
 		$second->results['unschedule'] = $expected;
 
@@ -725,12 +631,7 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_unschedule_falls_back_to_the_last_backend_when_none_are_ready(): void {
 		$first    = new RecordingBackend();
 		$last     = new RecordingBackend();
-		$expected = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::BackendNotReady,
-				'Load the baseline scheduler before clearing the hook.'
-			)
-		);
+		$expected = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load the baseline scheduler before clearing the hook.' ) );
 
 		$first->ready = false;
 		$last->ready  = false;
@@ -771,17 +672,14 @@ final class SchedulerFacadeTest extends TestCase {
 		$absent->absent = true;
 		$ready          = new RecordingBackend();
 
-		$authoritative = ( new SchedulerFacade( array( $absent, $ready ) ) )->unschedule_for_convergence(
-			self::HOOK
-		);
+		$authoritative = ( new SchedulerFacade( array( $absent, $ready ) ) )->unschedule_for_convergence( self::HOOK );
 
 		self::assertTrue( $authoritative->authoritative );
 		self::assertInstanceOf( Success::class, $authoritative->result );
 
 		$transitioning                    = new RecordingBackend();
 		$transitioning->readiness_results = array( false, true );
-		$not_authoritative                = ( new SchedulerFacade( array( $transitioning, $ready ) ) )
-			->unschedule_for_convergence( self::HOOK );
+		$not_authoritative                = ( new SchedulerFacade( array( $transitioning, $ready ) ) )->unschedule_for_convergence( self::HOOK );
 
 		self::assertFalse( $not_authoritative->authoritative );
 		self::assertTrue( $transitioning->is_ready() );
@@ -818,10 +716,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$result  = $this->invoke_guarded_write( $facade, $verb, $this->args_with_json_length( 8_001 ) );
 		$error   = $this->assert_invalid_payload( $result );
 
-		self::assertSame(
-			'Scheduling hook "a8csp_bgte_test_hook" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.',
-			$error->message
-		);
+		self::assertSame( 'Scheduling hook "a8csp_bgte_test_hook" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.', $error->message );
 		self::assertSame( array(), $backend->calls );
 	}
 
@@ -854,10 +749,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 */
 	public function test_args_guard_rejects_a_nested_closure(): void {
 		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
-			self::HOOK,
-			array( array( static fn (): string => 'not portable' ) )
-		);
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, array( array( static fn (): string => 'not portable' ) ) );
 		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
@@ -874,10 +766,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$resource = \STDIN;
 
 		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
-			self::HOOK,
-			array( array( $resource ) )
-		);
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, array( array( $resource ) ) );
 		$error   = $this->assert_invalid_payload( $result );
 
 		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
@@ -914,10 +803,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		try {
 			$backend = new RecordingBackend();
-			$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
-				self::HOOK,
-				array( $recursive )
-			);
+			$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, array( $recursive ) );
 			$error   = $this->assert_invalid_payload( $result );
 
 			self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
@@ -962,11 +848,7 @@ final class SchedulerFacadeTest extends TestCase {
 	#[DataProvider( 'non_positive_timestamp_provider' )]
 	public function test_schedule_recurring_rejects_a_non_positive_first_run_timestamp( int $timestamp ): void {
 		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_recurring(
-			self::HOOK,
-			300,
-			first_run_timestamp: $timestamp
-		);
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_recurring( self::HOOK, 300, first_run_timestamp: $timestamp );
 		$error   = $this->assert_invalid_time_input( $result );
 
 		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
@@ -1014,11 +896,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 */
 	public function test_args_guard_rejects_unencodable_arguments_before_routing(): void {
 		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_single(
-			self::HOOK,
-			1_700_000_000,
-			array( \INF )
-		);
+		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_single( self::HOOK, 1_700_000_000, array( \INF ) );
 
 		$this->assert_invalid_payload( $result );
 		self::assertSame( array(), $backend->calls );

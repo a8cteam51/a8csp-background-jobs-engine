@@ -85,32 +85,11 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		parent::setUp();
 
 		$foreign_cron_at = \time() + 2 * \HOUR_IN_SECONDS;
-		$cron_scheduled  = \wp_schedule_event(
-			$foreign_cron_at,
-			'hourly',
-			self::FOREIGN_CRON_HOOK,
-			self::FOREIGN_CRON_ARGS,
-			true
-		);
-		self::assertTrue(
-			true === $cron_scheduled,
-			'The foreign-safety fixture must persist its built-in WP-Cron occurrence'
-		);
+		$cron_scheduled  = \wp_schedule_event( $foreign_cron_at, 'hourly', self::FOREIGN_CRON_HOOK, self::FOREIGN_CRON_ARGS, true );
+		self::assertTrue( true === $cron_scheduled, 'The foreign-safety fixture must persist its built-in WP-Cron occurrence' );
 
-		$foreign_action_id = \as_schedule_recurring_action(
-			$foreign_cron_at + \MINUTE_IN_SECONDS,
-			17 * \MINUTE_IN_SECONDS,
-			self::FOREIGN_ACTION_HOOK,
-			self::FOREIGN_ACTION_ARGS,
-			self::FOREIGN_ACTION_GROUP,
-			false,
-			73
-		);
-		self::assertGreaterThan(
-			0,
-			$foreign_action_id,
-			'The foreign-safety fixture must persist its raw Action Scheduler occurrence'
-		);
+		$foreign_action_id = \as_schedule_recurring_action( $foreign_cron_at + \MINUTE_IN_SECONDS, 17 * \MINUTE_IN_SECONDS, self::FOREIGN_ACTION_HOOK, self::FOREIGN_ACTION_ARGS, self::FOREIGN_ACTION_GROUP, false, 73 );
+		self::assertGreaterThan( 0, $foreign_action_id, 'The foreign-safety fixture must persist its raw Action Scheduler occurrence' );
 		$this->foreign_action_id = (string) $foreign_action_id;
 
 		$cron = \get_option( 'cron', array() );
@@ -137,26 +116,14 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 */
 	protected function tearDown(): void {
 		try {
-			self::assertSame(
-				0,
-				$this->cron_option_writes,
-				'Declarative sync must never write the cron option, not even rewriting identical state'
-			);
+			self::assertSame( 0, $this->cron_option_writes, 'Declarative sync must never write the cron option, not even rewriting identical state' );
 			if ( null !== $this->foreign_cron_snapshot ) {
-				self::assertSame(
-					$this->foreign_cron_snapshot,
-					\get_option( 'cron', array() ),
-					'Declarative sync must leave the complete foreign WP-Cron option unchanged'
-				);
+				self::assertSame( $this->foreign_cron_snapshot, \get_option( 'cron', array() ), 'Declarative sync must leave the complete foreign WP-Cron option unchanged' );
 			}
 		} finally {
 			try {
 				if ( null !== $this->foreign_action_id && null !== $this->foreign_action_snapshot ) {
-					self::assertSame(
-						$this->foreign_action_snapshot,
-						$this->action_snapshot( $this->foreign_action_id ),
-						'Declarative sync must leave every public field of the foreign Action Scheduler occurrence unchanged'
-					);
+					self::assertSame( $this->foreign_action_snapshot, $this->action_snapshot( $this->foreign_action_id ), 'Declarative sync must leave every public field of the foreign Action Scheduler occurrence unchanged' );
 				}
 			} finally {
 				parent::tearDown();
@@ -176,16 +143,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_owner_sync_prunes_an_orphan_registration_and_occurrence(): void {
 		$this->expect_option( self::REGISTRY_OPTION );
 
-		$schedule_a = new Schedule(
-			'orphan-a',
-			Recurrence::every( 300 ),
-			'integration-declarative-orphan-task-a'
-		);
-		$schedule_b = new Schedule(
-			'orphan-b',
-			Recurrence::every( 600 ),
-			'integration-declarative-orphan-task-b'
-		);
+		$schedule_a = new Schedule( 'orphan-a', Recurrence::every( 300 ), 'integration-declarative-orphan-task-a' );
+		$schedule_b = new Schedule( 'orphan-b', Recurrence::every( 600 ), 'integration-declarative-orphan-task-b' );
 		$this->assert_sync_succeeds( self::ORPHAN_OWNER, array( $schedule_a, $schedule_b ) );
 
 		$registration_key_a = self::ORPHAN_OWNER . ':orphan-a';
@@ -193,46 +152,18 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		$retained_action_id = $this->sole_pending_schedule_action_id( $registration_key_a );
 		$retained_snapshot  = $this->action_snapshot( $retained_action_id );
 		$orphan_action_id   = $this->sole_pending_schedule_action_id( $registration_key_b );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_PENDING,
-			$this->action_scheduler_store()->get_status( $orphan_action_id ),
-			'The orphan candidate must begin as a pending occurrence'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $this->action_scheduler_store()->get_status( $orphan_action_id ), 'The orphan candidate must begin as a pending occurrence' );
 
 		$this->assert_sync_succeeds( self::ORPHAN_OWNER, array( $schedule_a ) );
 
-		self::assertSame(
-			array( $retained_action_id ),
-			$this->pending_schedule_action_ids( $registration_key_a ),
-			'Orphan pruning must retain the declared sibling backend occurrence'
-		);
-		self::assertSame(
-			$retained_snapshot,
-			$this->action_snapshot( $retained_action_id ),
-			'Orphan pruning must leave every public field of the declared sibling occurrence untouched'
-		);
-		self::assertSame(
-			array(),
-			$this->pending_schedule_action_ids( $registration_key_b ),
-			'Orphan pruning must remove the missing declaration from the pending backend store'
-		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_CANCELED,
-			$this->action_scheduler_store()->get_status( $orphan_action_id ),
-			'Orphan pruning must cancel the exact missing backend occurrence'
-		);
+		self::assertSame( array( $retained_action_id ), $this->pending_schedule_action_ids( $registration_key_a ), 'Orphan pruning must retain the declared sibling backend occurrence' );
+		self::assertSame( $retained_snapshot, $this->action_snapshot( $retained_action_id ), 'Orphan pruning must leave every public field of the declared sibling occurrence untouched' );
+		self::assertSame( array(), $this->pending_schedule_action_ids( $registration_key_b ), 'Orphan pruning must remove the missing declaration from the pending backend store' );
+		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $orphan_action_id ), 'Orphan pruning must cancel the exact missing backend occurrence' );
 
 		$owner_rows = $this->owner_registry_rows( self::ORPHAN_OWNER );
-		self::assertSame(
-			array( WorkIdentity::compose( self::ORPHAN_OWNER, 'orphan-a' ) ),
-			\array_keys( $owner_rows ),
-			'Orphan pruning must retain only declarations present in the owner replacement set'
-		);
-		self::assertArrayNotHasKey(
-			WorkIdentity::compose( self::ORPHAN_OWNER, 'orphan-b' ),
-			$owner_rows,
-			'Orphan pruning must delete the missing declaration registry row'
-		);
+		self::assertSame( array( WorkIdentity::compose( self::ORPHAN_OWNER, 'orphan-a' ) ), \array_keys( $owner_rows ), 'Orphan pruning must retain only declarations present in the owner replacement set' );
+		self::assertArrayNotHasKey( WorkIdentity::compose( self::ORPHAN_OWNER, 'orphan-b' ), $owner_rows, 'Orphan pruning must delete the missing declaration registry row' );
 	}
 
 	/**
@@ -243,24 +174,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_fingerprint_change_reschedules_the_occurrence(): void {
 		$this->expect_option( self::REGISTRY_OPTION );
 
-		$original    = new Schedule(
-			'fingerprint',
-			Recurrence::every( 300 ),
-			'integration-declarative-fingerprint-task',
-			array( 'mode' => 'original' ),
-			OverlapPolicy::Skip,
-			CatchUpPolicy::RunOnce,
-			21
-		);
-		$replacement = new Schedule(
-			'fingerprint',
-			Recurrence::every( 900 ),
-			'integration-declarative-fingerprint-task',
-			array( 'mode' => 'replacement' ),
-			OverlapPolicy::Replace,
-			CatchUpPolicy::Skip,
-			22
-		);
+		$original    = new Schedule( 'fingerprint', Recurrence::every( 300 ), 'integration-declarative-fingerprint-task', array( 'mode' => 'original' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 21 );
+		$replacement = new Schedule( 'fingerprint', Recurrence::every( 900 ), 'integration-declarative-fingerprint-task', array( 'mode' => 'replacement' ), OverlapPolicy::Replace, CatchUpPolicy::Skip, 22 );
 		$this->assert_sync_succeeds( self::FINGERPRINT_OWNER, array( $original ) );
 
 		$registration_key   = self::FINGERPRINT_OWNER . ':fingerprint';
@@ -270,50 +185,18 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$this->assert_sync_succeeds( self::FINGERPRINT_OWNER, array( $replacement ) );
 
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_CANCELED,
-			$this->action_scheduler_store()->get_status( $original_action_id ),
-			'Fingerprint replacement must cancel the exact superseded occurrence'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $original_action_id ), 'Fingerprint replacement must cancel the exact superseded occurrence' );
 		$replacement_action_id = $this->sole_pending_schedule_action_id( $registration_key );
-		self::assertNotSame(
-			$original_action_id,
-			$replacement_action_id,
-			'Fingerprint replacement must persist a distinct backend occurrence'
-		);
+		self::assertNotSame( $original_action_id, $replacement_action_id, 'Fingerprint replacement must persist a distinct backend occurrence' );
 
 		$replacement_row = $this->registration_row( self::FINGERPRINT_OWNER, 'fingerprint' );
-		self::assertSame(
-			$replacement->fingerprint(),
-			$replacement_row['fingerprint'] ?? null,
-			'Fingerprint replacement must persist the complete changed definition identity'
-		);
-		self::assertNotSame(
-			$original_row['fingerprint'] ?? null,
-			$replacement_row['fingerprint'] ?? null,
-			'Changed recurrence, arguments, and policies must produce a new persisted fingerprint'
-		);
-		self::assertNotSame(
-			$original_row['next_due'] ?? null,
-			$replacement_row['next_due'] ?? null,
-			'Fingerprint replacement must schedule from the changed recurrence'
-		);
+		self::assertSame( $replacement->fingerprint(), $replacement_row['fingerprint'] ?? null, 'Fingerprint replacement must persist the complete changed definition identity' );
+		self::assertNotSame( $original_row['fingerprint'] ?? null, $replacement_row['fingerprint'] ?? null, 'Changed recurrence, arguments, and policies must produce a new persisted fingerprint' );
+		self::assertNotSame( $original_row['next_due'] ?? null, $replacement_row['next_due'] ?? null, 'Fingerprint replacement must schedule from the changed recurrence' );
 		$replacement_snapshot = $this->action_snapshot( $replacement_action_id );
-		self::assertSame(
-			$replacement_row['next_due'] ?? null,
-			$replacement_snapshot['store_scheduled_at'],
-			'The replacement backend occurrence must use the persisted next-due timestamp'
-		);
-		self::assertSame(
-			900,
-			$replacement_snapshot['recurrence'],
-			'The replacement backend occurrence must recur on the changed recurrence'
-		);
-		self::assertSame(
-			22,
-			$replacement_snapshot['priority'],
-			'The replacement backend occurrence must carry the changed advisory priority'
-		);
+		self::assertSame( $replacement_row['next_due'] ?? null, $replacement_snapshot['store_scheduled_at'], 'The replacement backend occurrence must use the persisted next-due timestamp' );
+		self::assertSame( 900, $replacement_snapshot['recurrence'], 'The replacement backend occurrence must recur on the changed recurrence' );
+		self::assertSame( 22, $replacement_snapshot['priority'], 'The replacement backend occurrence must carry the changed advisory priority' );
 	}
 
 	/**
@@ -324,15 +207,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_identical_redeclaration_is_an_exact_noop(): void {
 		$this->expect_option( self::REGISTRY_OPTION );
 
-		$declaration = new Schedule(
-			'noop',
-			Recurrence::every( 420 ),
-			'integration-declarative-noop-task',
-			array( 'scope' => 'stable' ),
-			OverlapPolicy::Allow,
-			CatchUpPolicy::RunOnce,
-			42
-		);
+		$declaration = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-task', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $declaration ) );
 
 		$registration_key  = self::NOOP_OWNER . ':noop';
@@ -342,37 +217,13 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertIsArray( $registry_snapshot );
 		$next_due = $this->registration_row( self::NOOP_OWNER, 'noop' )['next_due'] ?? null;
 
-		$identical = new Schedule(
-			'noop',
-			Recurrence::every( 420 ),
-			'integration-declarative-noop-task',
-			array( 'scope' => 'stable' ),
-			OverlapPolicy::Allow,
-			CatchUpPolicy::RunOnce,
-			42
-		);
+		$identical = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-task', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $identical ) );
 
-		self::assertSame(
-			array( $action_id ),
-			$this->pending_schedule_action_ids( $registration_key ),
-			'Identical redeclaration must retain the exact pending action ID'
-		);
-		self::assertSame(
-			$action_snapshot,
-			$this->action_snapshot( $action_id ),
-			'Identical redeclaration must leave every public backend occurrence field untouched'
-		);
-		self::assertSame(
-			$next_due,
-			$this->registration_row( self::NOOP_OWNER, 'noop' )['next_due'] ?? null,
-			'Identical redeclaration must retain the exact next-due timestamp'
-		);
-		self::assertSame(
-			$registry_snapshot,
-			\get_option( self::REGISTRY_OPTION, array() ),
-			'Identical redeclaration must leave the complete registry option untouched'
-		);
+		self::assertSame( array( $action_id ), $this->pending_schedule_action_ids( $registration_key ), 'Identical redeclaration must retain the exact pending action ID' );
+		self::assertSame( $action_snapshot, $this->action_snapshot( $action_id ), 'Identical redeclaration must leave every public backend occurrence field untouched' );
+		self::assertSame( $next_due, $this->registration_row( self::NOOP_OWNER, 'noop' )['next_due'] ?? null, 'Identical redeclaration must retain the exact next-due timestamp' );
+		self::assertSame( $registry_snapshot, \get_option( self::REGISTRY_OPTION, array() ), 'Identical redeclaration must leave the complete registry option untouched' );
 	}
 
 	/**
@@ -383,20 +234,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_orphan_detection_is_scoped_to_the_synced_owner(): void {
 		$this->expect_option( self::REGISTRY_OPTION );
 
-		$schedule_a = new Schedule(
-			'scoped-a',
-			Recurrence::every( 360 ),
-			'integration-declarative-scoped-task-a'
-		);
-		$schedule_b = new Schedule(
-			'scoped-b',
-			Recurrence::every( 720 ),
-			'integration-declarative-scoped-task-b',
-			array( 'owner' => 'b' ),
-			OverlapPolicy::Skip,
-			CatchUpPolicy::Skip,
-			64
-		);
+		$schedule_a = new Schedule( 'scoped-a', Recurrence::every( 360 ), 'integration-declarative-scoped-task-a' );
+		$schedule_b = new Schedule( 'scoped-b', Recurrence::every( 720 ), 'integration-declarative-scoped-task-b', array( 'owner' => 'b' ), OverlapPolicy::Skip, CatchUpPolicy::Skip, 64 );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_A, array( $schedule_a ) );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_B, array( $schedule_b ) );
 
@@ -410,36 +249,12 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_A, array() );
 
 		$registry = $this->registry();
-		self::assertArrayNotHasKey(
-			self::SCOPED_OWNER_A,
-			$registry,
-			'Empty owner sync must prune only the synchronized owner registry branch'
-		);
-		self::assertSame(
-			$owner_b_snapshot,
-			$registry[ self::SCOPED_OWNER_B ] ?? null,
-			'One owner sync must leave the other owner registry branch exactly unchanged'
-		);
-		self::assertSame(
-			array( $action_id_b ),
-			$this->pending_schedule_action_ids( $registration_key_b ),
-			'One owner sync must retain the other owner pending action ID'
-		);
-		self::assertSame(
-			$action_b_snapshot,
-			$this->action_snapshot( $action_id_b ),
-			'One owner sync must leave every public field of the other owner occurrence untouched'
-		);
-		self::assertSame(
-			array(),
-			$this->pending_schedule_action_ids( $registration_key_a ),
-			'Empty owner sync must remove its own pending occurrence'
-		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_CANCELED,
-			$this->action_scheduler_store()->get_status( $action_id_a ),
-			'Empty owner sync must cancel its own exact occurrence'
-		);
+		self::assertArrayNotHasKey( self::SCOPED_OWNER_A, $registry, 'Empty owner sync must prune only the synchronized owner registry branch' );
+		self::assertSame( $owner_b_snapshot, $registry[ self::SCOPED_OWNER_B ] ?? null, 'One owner sync must leave the other owner registry branch exactly unchanged' );
+		self::assertSame( array( $action_id_b ), $this->pending_schedule_action_ids( $registration_key_b ), 'One owner sync must retain the other owner pending action ID' );
+		self::assertSame( $action_b_snapshot, $this->action_snapshot( $action_id_b ), 'One owner sync must leave every public field of the other owner occurrence untouched' );
+		self::assertSame( array(), $this->pending_schedule_action_ids( $registration_key_a ), 'Empty owner sync must remove its own pending occurrence' );
+		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id_a ), 'Empty owner sync must cancel its own exact occurrence' );
 	}
 
 	// endregion.
@@ -541,11 +356,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 */
 	private function sole_pending_schedule_action_id( string $registration_key ): string {
 		$action_ids = $this->pending_schedule_action_ids( $registration_key );
-		self::assertCount(
-			1,
-			$action_ids,
-			'The synchronized registration must own exactly one pending backend occurrence'
-		);
+		self::assertCount( 1, $action_ids, 'The synchronized registration must own exactly one pending backend occurrence' );
 		$action_id = $action_ids[0] ?? null;
 		self::assertIsString( $action_id );
 

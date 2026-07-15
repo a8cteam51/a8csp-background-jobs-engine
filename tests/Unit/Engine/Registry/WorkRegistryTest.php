@@ -44,9 +44,7 @@ final class WorkRegistryTest extends TestCase {
 		$tasks->register( 'consumer:sync', new RecordingTask( 'sync' ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work identity "consumer:sync" is already registered as a task; it cannot also be registered as a batch.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a task; it cannot also be registered as a batch.' );
 
 		$batches->register( 'consumer:sync', new RecordingBatch( 'sync' ) );
 	}
@@ -63,9 +61,7 @@ final class WorkRegistryTest extends TestCase {
 		$batches->register( 'consumer:sync', new RecordingBatch( 'sync' ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs(
-			'Background-work identity "consumer:sync" is already registered as a batch; it cannot also be registered as a task.'
-		);
+		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a batch; it cannot also be registered as a task.' );
 
 		$tasks->register( 'consumer:sync', new RecordingTask( 'sync' ) );
 	}

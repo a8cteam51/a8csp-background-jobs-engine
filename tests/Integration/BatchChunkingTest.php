@@ -117,60 +117,27 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			$process_call_count   = \count( $process_calls_before );
 
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one queue-advance action' );
-			self::assertSame(
-				$process_calls_before,
-				$batch->process_calls,
-				'A CONTINUE action must leave the process ledger unchanged; dispatch the visible chunk through its RUN action'
-			);
-			$run_action_ids[] = $this->assert_pending_chunk_action(
-				self::IDENTITY,
-				$run_id,
-				$group,
-				$expected_chunk
-			);
+			self::assertSame( $process_calls_before, $batch->process_calls, 'A CONTINUE action must leave the process ledger unchanged; dispatch the visible chunk through its RUN action' );
+			$run_action_ids[] = $this->assert_pending_chunk_action( self::IDENTITY, $run_id, $group, $expected_chunk );
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one visible chunk action' );
 			self::assertCount( $process_call_count + 1, $batch->process_calls, 'A RUN action must process exactly one batch chunk' );
-			self::assertSame(
-				$expected_chunk,
-				$batch->process_calls[ $process_call_count ]['chunk_args'] ?? null,
-				'A RUN action must process the chunk exposed by the preceding CONTINUE action'
-			);
+			self::assertSame( $expected_chunk, $batch->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'A RUN action must process the chunk exposed by the preceding CONTINUE action' );
 		}
 
 		$process_calls_before = $batch->process_calls;
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue' );
-		self::assertSame(
-			$process_calls_before,
-			$batch->process_calls,
-			'A drained-queue CONTINUE action must leave the process ledger unchanged; dispatch chunks only through RUN actions'
-		);
+		self::assertSame( $process_calls_before, $batch->process_calls, 'A drained-queue CONTINUE action must leave the process ledger unchanged; dispatch chunks only through RUN actions' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute terminal batch cleanup' );
-		self::assertSame(
-			\array_fill( 0, 6, array( 60, self::IDENTITY, $run_id ) ),
-			$continue_delay_calls,
-			'The zero-delay filter must receive its default, batch name, and run ID for the lock and every chunk'
-		);
+		self::assertSame( \array_fill( 0, 6, array( 60, self::IDENTITY, $run_id ) ), $continue_delay_calls, 'The zero-delay filter must receive its default, batch name, and run ID for the lock and every chunk' );
 
-		self::assertSame(
-			$expected_chunks,
-			\array_column( $batch->process_calls, 'chunk_args' ),
-			'Batch chunks must run in generated, prepended, remaining, and appended order'
-		);
+		self::assertSame( $expected_chunks, \array_column( $batch->process_calls, 'chunk_args' ), 'Batch chunks must run in generated, prepended, remaining, and appended order' );
 		foreach ( $batch->process_calls as $process_call ) {
 			self::assertSame( $run_id, $process_call['context']->get_run_id() );
 			self::assertSame( $start_args, $process_call['context']->get_start_args() );
 		}
-		self::assertCount(
-			5,
-			\array_unique( $run_action_ids ),
-			'Every processed chunk must have its own Action Scheduler row'
-		);
+		self::assertCount( 5, \array_unique( $run_action_ids ), 'Every processed chunk must have its own Action Scheduler row' );
 		foreach ( $run_action_ids as $action_id ) {
-			self::assertSame(
-				\ActionScheduler_Store::STATUS_COMPLETE,
-				$this->action_scheduler_store()->get_status( $action_id ),
-				'Action Scheduler must complete every per-chunk run action'
-			);
+			self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $action_id ), 'Action Scheduler must complete every per-chunk run action' );
 		}
 
 		self::assertSame(
@@ -201,18 +168,9 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		);
 
 		$args_hash = self::args_hash( $start_args );
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ),
-			'Terminal batch success must delete the active run option'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ),
-			'Terminal batch success must release the overlap lock'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_failed_' . self::IDENTITY, false ),
-			'Terminal batch success must not create a failed-run row'
-		);
+		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ), 'Terminal batch success must delete the active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal batch success must release the overlap lock' );
+		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, false ), 'Terminal batch success must not create a failed-run row' );
 		self::assertSame(
 			array(
 				'all'     => $run_id,

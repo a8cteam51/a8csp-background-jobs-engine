@@ -76,9 +76,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	public function __construct( array $backends ) {
 		if ( array() === $backends ) {
-			throw new \InvalidArgumentException(
-				'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.'
-			);
+			throw new \InvalidArgumentException( 'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.' );
 		}
 
 		$this->backends = \array_values( $backends );
@@ -106,10 +104,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	public function unschedule_for_convergence( string $hook, array $args = array(), string $group = '' ): BackendClearance {
 		$ready_backends = $this->ready_backends();
 
-		return new BackendClearance(
-			$this->unschedule_snapshot( $ready_backends, $hook, $args, $group ),
-			$this->snapshot_is_authoritative( $ready_backends )
-		);
+		return new BackendClearance( $this->unschedule_snapshot( $ready_backends, $hook, $args, $group ), $this->snapshot_is_authoritative( $ready_backends ) );
 	}
 
 	/**
@@ -145,12 +140,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	public function unschedule_hooks( array $hooks ): AbstractResult {
 		$ready_backends = $this->ready_backends();
 		if ( ! $this->snapshot_is_authoritative( $ready_backends ) ) {
-			return new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::BackendNotReady,
-					'Every present scheduling backend must be ready before hook-wide clearance; initialize the dormant backend and retry.'
-				)
-			);
+			return new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Every present scheduling backend must be ready before hook-wide clearance; initialize the dormant backend and retry.' ) );
 		}
 
 		$count         = 0;
@@ -206,16 +196,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 			return $payload_failure;
 		}
 
-		return $this->write(
-			static fn ( BackendInterface $backend ): AbstractResult => $backend->schedule_recurring(
-				$hook,
-				$interval,
-				$args,
-				$first_run_timestamp,
-				$group,
-				$priority
-			)
-		);
+		return $this->write( static fn ( BackendInterface $backend ): AbstractResult => $backend->schedule_recurring( $hook, $interval, $args, $first_run_timestamp, $group, $priority ) );
 	}
 
 	/**
@@ -238,15 +219,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 			return $payload_failure;
 		}
 
-		return $this->write(
-			static fn ( BackendInterface $backend ): AbstractResult => $backend->schedule_single(
-				$hook,
-				$timestamp,
-				$args,
-				$group,
-				$priority
-			)
-		);
+		return $this->write( static fn ( BackendInterface $backend ): AbstractResult => $backend->schedule_single( $hook, $timestamp, $args, $group, $priority ) );
 	}
 
 	/**
@@ -265,14 +238,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 			return $payload_failure;
 		}
 
-		return $this->write(
-			static fn ( BackendInterface $backend ): AbstractResult => $backend->enqueue_async(
-				$hook,
-				$args,
-				$group,
-				$priority
-			)
-		);
+		return $this->write( static fn ( BackendInterface $backend ): AbstractResult => $backend->enqueue_async( $hook, $args, $group, $priority ) );
 	}
 
 	/**
@@ -299,10 +265,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_scheduled( string $hook, array $args = array(), string $group = '' ): bool {
-		return \array_any(
-			$this->ready_backends(),
-			static fn ( BackendInterface $backend ): bool => $backend->is_scheduled( $hook, $args, $group )
-		);
+		return \array_any( $this->ready_backends(), static fn ( BackendInterface $backend ): bool => $backend->is_scheduled( $hook, $args, $group ) );
 	}
 
 	/**
@@ -345,10 +308,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_absent(): bool {
-		return \array_all(
-			$this->backends,
-			static fn ( BackendInterface $backend ): bool => $backend->is_absent()
-		);
+		return \array_all( $this->backends, static fn ( BackendInterface $backend ): bool => $backend->is_absent() );
 	}
 
 	/**
@@ -361,10 +321,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	#[\Override]
 	public function supports_cron_expressions(): bool {
-		return \array_any(
-			$this->backends,
-			static fn ( BackendInterface $backend ): bool => $backend->is_ready() && $backend->supports_cron_expressions()
-		);
+		return \array_any( $this->backends, static fn ( BackendInterface $backend ): bool => $backend->is_ready() && $backend->supports_cron_expressions() );
 	}
 
 	/**
@@ -487,10 +444,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  bool
 	 */
 	private function snapshot_is_authoritative( array $ready_backends ): bool {
-		return \array_all(
-			$this->backends,
-			static fn ( BackendInterface $backend ): bool => \in_array( $backend, $ready_backends, true ) || $backend->is_absent()
-		);
+		return \array_all( $this->backends, static fn ( BackendInterface $backend ): bool => \in_array( $backend, $ready_backends, true ) || $backend->is_absent() );
 	}
 
 	/**
@@ -506,17 +460,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  Failure<SchedulingError>
 	 */
 	private function timestamp_failure( string $hook, string $field, int $timestamp ): Failure {
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::InvalidTimeInput,
-				\sprintf(
-					'Scheduling hook "%1$s" requires %2$s in positive UNIX seconds; pass a timestamp of at least 1.',
-					$hook,
-					'first_run_timestamp' === $field ? 'the first-run timestamp' : 'the run timestamp'
-				),
-				array( $field => $timestamp ),
-			)
-		);
+		return new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, \sprintf( 'Scheduling hook "%1$s" requires %2$s in positive UNIX seconds; pass a timestamp of at least 1.', $hook, 'first_run_timestamp' === $field ? 'the first-run timestamp' : 'the run timestamp' ), array( $field => $timestamp ), ) );
 	}
 
 	/**
@@ -535,11 +479,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 			return new Failure(
 				new SchedulingError(
 					SchedulingErrorReason::InvalidPayload,
-					\sprintf(
-						'Scheduling hook "%1$s" arguments must be a tree of scalars and arrays; store objects by identifier and keep nesting within %2$d levels.',
-						$hook,
-						self::MAX_ARGUMENTS_JSON_DEPTH
-					),
+					\sprintf( 'Scheduling hook "%1$s" arguments must be a tree of scalars and arrays; store objects by identifier and keep nesting within %2$d levels.', $hook, self::MAX_ARGUMENTS_JSON_DEPTH ),
 					array(
 						'hook'          => $hook,
 						'maximum_depth' => self::MAX_ARGUMENTS_JSON_DEPTH,
@@ -556,11 +496,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 		return new Failure(
 			new SchedulingError(
 				SchedulingErrorReason::InvalidPayload,
-				\sprintf(
-					'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-byte limit; pass identifying keys and load bulk data from storage inside the handler.',
-					$hook,
-					self::MAX_ARGUMENTS_JSON_LENGTH
-				),
+				\sprintf( 'Scheduling hook "%1$s" has arguments that cannot be JSON-encoded within the %2$d-byte limit; pass identifying keys and load bulk data from storage inside the handler.', $hook, self::MAX_ARGUMENTS_JSON_LENGTH ),
 				array(
 					'hook'                => $hook,
 					'maximum_json_length' => self::MAX_ARGUMENTS_JSON_LENGTH,

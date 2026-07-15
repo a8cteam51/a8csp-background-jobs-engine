@@ -46,11 +46,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
 		$this->clock                            = new FixedClock( self::NOW );
 		$this->wpdb                             = new WpdbLockSpy();
-		$this->lease                            = new OccurrenceLease(
-			new OptionRows( $this->wpdb ),
-			$this->clock,
-			new RecordingRandomizer( 42 )
-		);
+		$this->lease                            = new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) );
 	}
 
 	/** An absent lease is exclusively inserted and released by exact raw value. */
@@ -111,13 +107,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertNull( $this->lease->claim( self::KEY ) );
 		self::assertSame( 1, $incumbent_read_failures );
 		self::assertSame( $raw, $this->wpdb->rows[ self::option_name() ] );
-		self::assertSame(
-			array(),
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
-			)
-		);
+		self::assertSame( array(), \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
 	}
 
 	/** A malformed lease can be recovered without a blind delete window. */

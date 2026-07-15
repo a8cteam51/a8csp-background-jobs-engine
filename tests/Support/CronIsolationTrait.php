@@ -79,9 +79,7 @@ trait CronIsolationTrait {
 	 * @return  int Number of events processed.
 	 */
 	protected function run_next_due_cron_event(): int {
-		return $this->run_matching_due_cron_event(
-			static fn ( string $hook, array $args ): bool => true
-		);
+		return $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => true );
 	}
 
 	/**
@@ -132,14 +130,8 @@ trait CronIsolationTrait {
 					$unscheduled = \wp_unschedule_event( $timestamp, $hook, $args, true );
 					\do_action_ref_array( $hook, $args );
 
-					self::assertTrue(
-						true === $rescheduled,
-						'The WP-Cron drive must persist the recurring successor before dispatching the due occurrence'
-					);
-					self::assertTrue(
-						true === $unscheduled,
-						'The WP-Cron drive must clear the exact due occurrence before invoking its hook'
-					);
+					self::assertTrue( true === $rescheduled, 'The WP-Cron drive must persist the recurring successor before dispatching the due occurrence' );
+					self::assertTrue( true === $unscheduled, 'The WP-Cron drive must clear the exact due occurrence before invoking its hook' );
 
 					return 1;
 				}

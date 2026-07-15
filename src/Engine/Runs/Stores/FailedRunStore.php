@@ -225,12 +225,7 @@ final readonly class FailedRunStore {
 			}
 
 			$entries   = self::entries_from_option( RawOptionDecoder::decode( $expected_raw ) );
-			$remaining = \array_values(
-				\array_filter(
-					$entries,
-					static fn ( array $entry ): bool => $run_id !== $entry['run_id']
-				)
-			);
+			$remaining = \array_values( \array_filter( $entries, static fn ( array $entry ): bool => $run_id !== $entry['run_id'] ) );
 			if ( $entries === $remaining ) {
 				return true;
 			}

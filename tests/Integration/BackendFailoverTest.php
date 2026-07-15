@@ -41,13 +41,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		$action_scheduler_at    = \time() + 2 * \HOUR_IN_SECONDS;
 		$wp_cron_at             = $action_scheduler_at + \MINUTE_IN_SECONDS;
 
-		$scheduled = $scheduler->schedule_single(
-			self::HOOK,
-			$action_scheduler_at,
-			$action_scheduler_args,
-			self::ACTION_SCHEDULER_GROUP,
-			20
-		);
+		$scheduled = $scheduler->schedule_single( self::HOOK, $action_scheduler_at, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP, 20 );
 		self::assertInstanceOf( Success::class, $scheduled, 'The ready preferred backend must accept the occurrence' );
 		self::assertTrue( $scheduled->value );
 
@@ -74,27 +68,13 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		self::assertSame( self::ACTION_SCHEDULER_GROUP, $action->get_group() );
 		self::assertSame( $action_scheduler_at, $store->get_date( $action_id )->getTimestamp() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
-		self::assertSame(
-			array(),
-			$this->wordpress_cron_events( self::HOOK, $action_scheduler_args ),
-			'The ready preferred-backend write must not create a WP-Cron duplicate'
-		);
+		self::assertSame( array(), $this->wordpress_cron_events( self::HOOK, $action_scheduler_args ), 'The ready preferred-backend write must not create a WP-Cron duplicate' );
 
 		$action_scheduler_ready = false;
 
-		self::assertFalse(
-			$scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ),
-			'A not-ready backend occurrence must remain dormant to facade reads'
-		);
-		self::assertNull(
-			$scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ),
-			'A not-ready backend timestamp must remain dormant to facade reads'
-		);
-		$dormant_clear = $scheduler->unschedule(
-			self::HOOK,
-			$action_scheduler_args,
-			self::ACTION_SCHEDULER_GROUP
-		);
+		self::assertFalse( $scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'A not-ready backend occurrence must remain dormant to facade reads' );
+		self::assertNull( $scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'A not-ready backend timestamp must remain dormant to facade reads' );
+		$dormant_clear = $scheduler->unschedule( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP );
 		self::assertInstanceOf( Success::class, $dormant_clear, 'Clearing currently-ready backends must succeed' );
 		self::assertTrue( $dormant_clear->value );
 		self::assertSame(
@@ -113,13 +93,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		self::assertSame( $action_scheduler_at, $store->get_date( $action_id )->getTimestamp() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
 
-		$fallback_scheduled = $scheduler->schedule_single(
-			self::HOOK,
-			$wp_cron_at,
-			$wp_cron_args,
-			self::WP_CRON_GROUP,
-			30
-		);
+		$fallback_scheduled = $scheduler->schedule_single( self::HOOK, $wp_cron_at, $wp_cron_args, self::WP_CRON_GROUP, 30 );
 		self::assertInstanceOf( Success::class, $fallback_scheduled, 'The ready fallback must accept a new occurrence' );
 		self::assertTrue( $fallback_scheduled->value );
 		$wp_cron_events = $this->wordpress_cron_events( self::HOOK, $wp_cron_args );
@@ -143,20 +117,9 @@ final class BackendFailoverTest extends IntegrationTestCase {
 
 		$action_scheduler_ready = true;
 
-		self::assertTrue(
-			$scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ),
-			'The dormant occurrence must become visible when Action Scheduler readiness returns'
-		);
-		self::assertSame(
-			$action_scheduler_at,
-			$scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ),
-			'The recovered backend must expose the original occurrence timestamp'
-		);
-		$recovered_clear = $scheduler->unschedule(
-			self::HOOK,
-			$action_scheduler_args,
-			self::ACTION_SCHEDULER_GROUP
-		);
+		self::assertTrue( $scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'The dormant occurrence must become visible when Action Scheduler readiness returns' );
+		self::assertSame( $action_scheduler_at, $scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'The recovered backend must expose the original occurrence timestamp' );
+		$recovered_clear = $scheduler->unschedule( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP );
 		self::assertInstanceOf( Success::class, $recovered_clear, 'The recovered backend occurrence must be cancellable' );
 		self::assertTrue( $recovered_clear->value );
 		self::assertSame(
@@ -172,16 +135,8 @@ final class BackendFailoverTest extends IntegrationTestCase {
 			),
 			'Recovered clear success must remove the original occurrence from the pending store'
 		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_CANCELED,
-			$store->get_status( $action_id ),
-			'Recovered clear success must cancel the exact dormant Action Scheduler row'
-		);
-		self::assertSame(
-			$wp_cron_events,
-			$this->wordpress_cron_events( self::HOOK, $wp_cron_args ),
-			'Clearing the recovered Action Scheduler identity must preserve the fallback WP-Cron occurrence'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $action_id ), 'Recovered clear success must cancel the exact dormant Action Scheduler row' );
+		self::assertSame( $wp_cron_events, $this->wordpress_cron_events( self::HOOK, $wp_cron_args ), 'Clearing the recovered Action Scheduler identity must preserve the fallback WP-Cron occurrence' );
 	}
 
 	// endregion.

@@ -118,11 +118,7 @@ final readonly class CleanupIntents {
 			return $this->clear_intent( $registration_key, $expected_raw );
 		}
 
-		$clearance = $this->scheduler->unschedule_for_convergence(
-			OccurrenceDelivery::SCHEDULE_HOOK,
-			array( $registration_key ),
-			$registration_key
-		);
+		$clearance = $this->scheduler->unschedule_for_convergence( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
 		$removed   = $clearance->result;
 		if ( $removed->is_failure() ) {
 			$this->log_pending_intent(
@@ -137,10 +133,7 @@ final readonly class CleanupIntents {
 		}
 
 		if ( ! $clearance->authoritative ) {
-			$this->log_pending_intent(
-				'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.',
-				array( 'registration_key' => $registration_key )
-			);
+			$this->log_pending_intent( 'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.', array( 'registration_key' => $registration_key ) );
 
 			return false;
 		}
@@ -162,10 +155,7 @@ final readonly class CleanupIntents {
 		try {
 			$registration_keys = $this->intent_keys();
 		} catch ( \Throwable $throwable ) {
-			$this->log_pending_intent(
-				'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
-				array( 'exception' => $throwable )
-			);
+			$this->log_pending_intent( 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.', array( 'exception' => $throwable ) );
 
 			return;
 		}

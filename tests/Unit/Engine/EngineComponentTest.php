@@ -142,14 +142,8 @@ final class EngineComponentTest extends TestCase {
 			),
 			\array_column( $actions, 'hook_name' )
 		);
-		self::assertSame(
-			array( 'cron_schedules' ),
-			\array_column( $filters, 'hook_name' )
-		);
-		self::assertSame(
-			array( 3, 3, 3, 4, 3, 1, 1 ),
-			\array_column( $actions, 'accepted_args' )
-		);
+		self::assertSame( array( 'cron_schedules' ), \array_column( $filters, 'hook_name' ) );
+		self::assertSame( array( 3, 3, 3, 4, 3, 1, 1 ), \array_column( $actions, 'accepted_args' ) );
 	}
 
 	/**
@@ -246,10 +240,7 @@ final class EngineComponentTest extends TestCase {
 		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
 		self::assertContains( 'wp_loaded', $hook_names, 'A mid-init boot must defer the sync until init completes' );
 		self::assertNotContains( 'init', $hook_names, 'A mid-init boot must not append to the active init bucket' );
-		self::assertNull(
-			$this->schedule_registry(),
-			'A mid-init boot must not synchronize before Action Scheduler initializes'
-		);
+		self::assertNull( $this->schedule_registry(), 'A mid-init boot must not synchronize before Action Scheduler initializes' );
 	}
 
 	/**
@@ -266,12 +257,7 @@ final class EngineComponentTest extends TestCase {
 
 		\a8csp_bgte_plugin();
 
-		$init_registrations = \array_values(
-			\array_filter(
-				$this->registrations( 'a8csp_bgte_test_action_registrations' ),
-				static fn ( array $registration ): bool => 'init' === $registration['hook_name']
-			)
-		);
+		$init_registrations = \array_values( \array_filter( $this->registrations( 'a8csp_bgte_test_action_registrations' ), static fn ( array $registration ): bool => 'init' === $registration['hook_name'] ) );
 		self::assertCount( 1, $init_registrations );
 		$init_callback = $init_registrations[0]['callback'] ?? null;
 		self::assertIsCallable( $init_callback );
@@ -279,16 +265,8 @@ final class EngineComponentTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_blog_id'] = 2;
 		$init_callback();
 
-		self::assertSame(
-			array( 1 ),
-			$GLOBALS['a8csp_bgte_test_blog_switch_calls'],
-			'The deferred sync must switch back to the boot-time site before writing'
-		);
-		self::assertCount(
-			1,
-			$GLOBALS['a8csp_bgte_test_blog_restore_calls'],
-			'The deferred sync must restore the interrupted site afterwards'
-		);
+		self::assertSame( array( 1 ), $GLOBALS['a8csp_bgte_test_blog_switch_calls'], 'The deferred sync must switch back to the boot-time site before writing' );
+		self::assertCount( 1, $GLOBALS['a8csp_bgte_test_blog_restore_calls'], 'The deferred sync must restore the interrupted site afterwards' );
 	}
 
 	/**
@@ -300,22 +278,10 @@ final class EngineComponentTest extends TestCase {
 		\a8csp_bgte_plugin();
 
 		// Boot defers the engine's own maintenance sync to init; fire it the way WordPress would.
-		$init_registrations = \array_values(
-			\array_filter(
-				$this->registrations( 'a8csp_bgte_test_action_registrations' ),
-				static fn ( array $registration ): bool => 'init' === $registration['hook_name']
-			)
-		);
+		$init_registrations = \array_values( \array_filter( $this->registrations( 'a8csp_bgte_test_action_registrations' ), static fn ( array $registration ): bool => 'init' === $registration['hook_name'] ) );
 		self::assertCount( 1, $init_registrations, 'Boot must defer exactly one maintenance sync to init' );
-		self::assertSame(
-			10,
-			$init_registrations[0]['priority'] ?? null,
-			'The normal deferred sync must use the default init priority after Action Scheduler initializes at init:1'
-		);
-		self::assertNull(
-			$this->schedule_registry(),
-			'Boot must not write the schedule registry before init fires'
-		);
+		self::assertSame( 10, $init_registrations[0]['priority'] ?? null, 'The normal deferred sync must use the default init priority after Action Scheduler initializes at init:1' );
+		self::assertNull( $this->schedule_registry(), 'Boot must not write the schedule registry before init fires' );
 		$init_callback = $init_registrations[0]['callback'] ?? null;
 		self::assertIsCallable( $init_callback );
 		$init_callback();
@@ -351,10 +317,7 @@ final class EngineComponentTest extends TestCase {
 			$this->cron_events_for_hook( 'a8csp_background_tasks/run' )
 		);
 
-		$batch_result = $consumer->batches()->start(
-			name: 'catalog-sync',
-			start_args: $batch_start_args
-		);
+		$batch_result = $consumer->batches()->start( name: 'catalog-sync', start_args: $batch_start_args );
 
 		self::assertInstanceOf( Success::class, $batch_result );
 		self::assertIsString( $batch_result->value );
@@ -396,14 +359,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsArray( $maintenance_registrations );
 		$maintenance = $maintenance_registrations['a8csp-bgte:maintenance'] ?? null;
 		self::assertIsArray( $maintenance );
-		$expected_maintenance = new Schedule(
-			'maintenance',
-			Recurrence::every( \HOUR_IN_SECONDS ),
-			MaintenanceTask::NAME,
-			array(),
-			OverlapPolicy::Skip,
-			CatchUpPolicy::RunOnce
-		);
+		$expected_maintenance = new Schedule( 'maintenance', Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceTask::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
 		self::assertSame( $expected_maintenance->fingerprint(), $maintenance['fingerprint'] ?? null );
 		self::assertSame( 0, $maintenance['misfires'] ?? null );
 		self::assertSame( 0, $maintenance['skips'] ?? null );
@@ -411,10 +367,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertIsArray( $owner_registrations );
 		$registration = $owner_registrations['consumer-plugin:connection-monitor'] ?? null;
 		self::assertIsArray( $registration );
-		self::assertSame(
-			$schedule->fingerprint(),
-			$registration['fingerprint'] ?? null
-		);
+		self::assertSame( $schedule->fingerprint(), $registration['fingerprint'] ?? null );
 		self::assertIsInt( $registration['next_due'] ?? null );
 		self::assertNull( $registration['last_fired'] ?? null );
 		self::assertSame( 4, $this->cron_event_count() );
@@ -447,10 +400,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertInstanceOf( ApiError::class, $retry_result->error );
 		self::assertSame( ApiErrorCode::UnknownWork, $retry_result->error->code );
 		self::assertSame( array( 'name' => 'consumer-plugin:unknown' ), $retry_result->error->context );
-		self::assertSame(
-			'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.',
-			$retry_result->error->message
-		);
+		self::assertSame( 'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.', $retry_result->error->message );
 		self::assertSame( $options_before_retry, $GLOBALS['a8csp_bgte_test_options'] );
 		self::assertSame( $registry_before_retry, $this->schedule_registry() );
 		self::assertSame( $cron_before_retry, \get_option( 'cron', array() ) );
@@ -476,10 +426,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertInstanceOf( Consumer::class, $consumer );
 		$as_calls = $GLOBALS['a8csp_bgte_test_as_calls'] ?? null;
 		self::assertIsArray( $as_calls );
-		self::assertContains(
-			'as_schedule_recurring_action',
-			\array_column( $as_calls, 'function' )
-		);
+		self::assertContains( 'as_schedule_recurring_action', \array_column( $as_calls, 'function' ) );
 		$GLOBALS['a8csp_bgte_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 		$consumer->tasks()->register( new RecordingTask( 'preferred-backend' ) );

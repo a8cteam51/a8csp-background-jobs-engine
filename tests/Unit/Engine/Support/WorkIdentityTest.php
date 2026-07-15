@@ -104,10 +104,7 @@ final class WorkIdentityTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_compose_accepts_the_reserved_owner_only_for_engine_work(): void {
-		self::assertSame(
-			'a8csp-bgte:maintenance',
-			WorkIdentity::compose( 'a8csp-bgte', 'maintenance', true )
-		);
+		self::assertSame( 'a8csp-bgte:maintenance', WorkIdentity::compose( 'a8csp-bgte', 'maintenance', true ) );
 	}
 
 	/**

@@ -104,43 +104,31 @@ final readonly class Schedules {
 		$declared = array();
 		foreach ( $declarations as $registration_key => $declaration ) {
 			if ( ! \is_string( $registration_key ) ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync declaration keys must be canonical owner-qualified schedule identities.'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical owner-qualified schedule identities.' );
 			}
 
 			$registration_parts = WorkIdentity::parts( $registration_key );
 			if ( null === $registration_parts || $owner !== $registration_parts[0] ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync declaration identities must be canonical and belong to the bound owner.'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound owner.' );
 			}
 
 			$schedule = \is_array( $declaration ) ? ( $declaration['schedule'] ?? null ) : null;
 			if ( ! $schedule instanceof Schedule ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
 			}
 
 			if ( $schedule->name !== $registration_parts[1] ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync declaration identities must match their Schedule value-object names.'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync declaration identities must match their Schedule value-object names.' );
 			}
 
 			$task = $declaration['task'] ?? null;
 			if ( ! \is_string( $task ) ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync target identities must be canonical owner-qualified task identities.'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical owner-qualified task identities.' );
 			}
 
 			$task_parts = WorkIdentity::parts( $task );
 			if ( null === $task_parts || $owner !== $task_parts[0] || $schedule->task !== $task_parts[1] ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object task names.'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object task names.' );
 			}
 
 			$declared[ $registration_key ] = array(
@@ -176,10 +164,7 @@ final readonly class Schedules {
 				return new Failure(
 					new SchedulingError(
 						SchedulingErrorReason::InvalidTimeInput,
-						\sprintf(
-							'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every() value.',
-							$schedule->name
-						),
+						\sprintf( 'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every() value.', $schedule->name ),
 						array(
 							'current_timestamp' => $now,
 							'interval'          => $interval,
@@ -196,22 +181,11 @@ final readonly class Schedules {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $registration_key ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				if ( $this->scheduler->is_scheduled(
-					OccurrenceDelivery::SCHEDULE_HOOK,
-					array( $registration_key ),
-					$registration_key
-				) ) {
+				if ( $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ) ) {
 					continue;
 				}
 
-				$recreated = $this->scheduler->schedule_recurring(
-					OccurrenceDelivery::SCHEDULE_HOOK,
-					$interval_by_identity[ $registration_key ],
-					array( $registration_key ),
-					$current['next_due'],
-					$registration_key,
-					priority: $schedule->priority
-				);
+				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $registration_key ], array( $registration_key ), $current['next_due'], $registration_key, priority: $schedule->priority );
 				if ( $recreated->is_failure() ) {
 					return $recreated;
 				}
@@ -219,17 +193,9 @@ final readonly class Schedules {
 				continue;
 			}
 
-			$backend_occurrence_exists = null === $current && $this->scheduler->is_scheduled(
-				OccurrenceDelivery::SCHEDULE_HOOK,
-				array( $registration_key ),
-				$registration_key
-			);
+			$backend_occurrence_exists = null === $current && $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
 			if ( null !== $current || $backend_occurrence_exists ) {
-				$removed = $this->scheduler->unschedule(
-					OccurrenceDelivery::SCHEDULE_HOOK,
-					array( $registration_key ),
-					$registration_key
-				);
+				$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
 				if ( $removed->is_failure() ) {
 					return $this->replacement_clear_failure( $schedule );
 				}
@@ -248,14 +214,7 @@ final readonly class Schedules {
 				return $this->registry_persist_failure( $owner );
 			}
 
-			$scheduled = $this->scheduler->schedule_recurring(
-				OccurrenceDelivery::SCHEDULE_HOOK,
-				$interval,
-				array( $registration_key ),
-				$next_due,
-				$registration_key,
-				priority: $schedule->priority
-			);
+			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $registration_key ), $next_due, $registration_key, priority: $schedule->priority );
 			if ( $scheduled->is_failure() ) {
 				// A scheduling failure leaves the benign registration-without-chain that the fingerprint-match fast path
 				// recreates; rolling back can race a delivery and manufacture chain-without-registration, the exact orphan
@@ -265,11 +224,7 @@ final readonly class Schedules {
 		}
 
 		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $registration_key ) {
-			$removed = $this->scheduler->unschedule(
-				OccurrenceDelivery::SCHEDULE_HOOK,
-				array( $registration_key ),
-				$registration_key
-			);
+			$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
 			if ( $removed->is_failure() ) {
 				return $removed;
 			}
@@ -305,9 +260,7 @@ final readonly class Schedules {
 	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
 	public function run_now( string $registration_key ): AbstractResult {
 		if ( null === WorkIdentity::parts( $registration_key ) ) {
-			throw new \InvalidArgumentException(
-				'Schedule identity is invalid; pass one canonical {owner}:{name} identity.'
-			);
+			throw new \InvalidArgumentException( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.' );
 		}
 
 		return $this->occurrence_delivery->run_now_under_lease( $registration_key );
@@ -330,14 +283,8 @@ final readonly class Schedules {
 	private function cron_failure( Schedule $schedule ): Failure {
 		$supported = $this->scheduler->supports_cron_expressions();
 		$message   = $supported
-			? \sprintf(
-				'Schedule "%s" uses a cron expression unavailable through the v1 recurring-interval port; use Recurrence::every().',
-				$schedule->name
-			)
-			: \sprintf(
-				'Schedule "%s" uses a cron expression unsupported by every ready backend; use Recurrence::every() or configure a backend that supports cron expressions.',
-				$schedule->name
-			);
+			? \sprintf( 'Schedule "%s" uses a cron expression unavailable through the v1 recurring-interval port; use Recurrence::every().', $schedule->name )
+			: \sprintf( 'Schedule "%s" uses a cron expression unsupported by every ready backend; use Recurrence::every() or configure a backend that supports cron expressions.', $schedule->name );
 
 		return new Failure(
 			new SchedulingError(
@@ -362,16 +309,7 @@ final readonly class Schedules {
 	 * @return  Failure<SchedulingError>
 	 */
 	private function replacement_clear_failure( Schedule $schedule ): Failure {
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				\sprintf(
-					'Schedule "%s" cannot be replaced; retry the sync; the previous occurrence could not be confirmed removed.',
-					$schedule->name
-				),
-				array( 'schedule' => $schedule->name ),
-			)
-		);
+		return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'Schedule "%s" cannot be replaced; retry the sync; the previous occurrence could not be confirmed removed.', $schedule->name ), array( 'schedule' => $schedule->name ), ) );
 	}
 
 	/**
@@ -385,9 +323,7 @@ final readonly class Schedules {
 	 * @return  Failure<SchedulingError>
 	 */
 	private function registry_read_failure( string $owner ): Failure {
-		return new Failure(
-			SchedulingError::registry_read_failure( $owner )
-		);
+		return new Failure( SchedulingError::registry_read_failure( $owner ) );
 	}
 
 	/**
@@ -401,9 +337,7 @@ final readonly class Schedules {
 	 * @return  Failure<SchedulingError>
 	 */
 	private function registry_persist_failure( string $owner ): Failure {
-		return new Failure(
-			SchedulingError::registry_persist_failure( $owner )
-		);
+		return new Failure( SchedulingError::registry_persist_failure( $owner ) );
 	}
 
 	// endregion

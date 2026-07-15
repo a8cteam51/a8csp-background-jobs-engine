@@ -52,9 +52,7 @@ function a8csp_bgte_plugin(): Plugin {
  */
 function a8csp_bgte( string $owner ): Consumer {
 	if ( 0 === did_action( 'init' ) && ! doing_action( 'init' ) ) {
-		throw new \LogicException(
-			'The background tasks consumer is available from the init hook; call a8csp_bgte() from an init callback or later.'
-		);
+		throw new \LogicException( 'The background tasks consumer is available from the init hook; call a8csp_bgte() from an init callback or later.' );
 	}
 
 	return Component::consumer( $owner );

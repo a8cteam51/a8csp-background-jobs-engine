@@ -104,20 +104,11 @@ final class RigContractTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_action_scheduler_cleanup_removes_pending_actions(): void {
-		$action_id = \as_schedule_single_action(
-			\time() + \HOUR_IN_SECONDS,
-			self::ACTION_SCHEDULER_HOOK
-		);
+		$action_id = \as_schedule_single_action( \time() + \HOUR_IN_SECONDS, self::ACTION_SCHEDULER_HOOK );
 		self::assertGreaterThan( 0, $action_id );
 
 		$store = $this->action_scheduler_store();
-		self::assertSame(
-			1,
-			(int) $store->query_actions(
-				array( 'status' => \ActionScheduler_Store::STATUS_PENDING ),
-				'count'
-			)
-		);
+		self::assertSame( 1, (int) $store->query_actions( array( 'status' => \ActionScheduler_Store::STATUS_PENDING ), 'count' ) );
 
 		$this->truncate_action_scheduler_tables();
 

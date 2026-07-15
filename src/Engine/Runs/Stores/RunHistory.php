@@ -190,9 +190,7 @@ final readonly class RunHistory {
 			}
 
 			$expected_raw = $selected->value;
-			$history      = self::history_from_option(
-				null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw )
-			);
+			$history      = self::history_from_option( null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw ) );
 			// Per-hash entries preserve record() idempotency for replayed terminal writes after global-buffer eviction and remain query-internal.
 			$hash_history = $history['by_hash'][ $args_hash ] ?? array(
 				'started'  => array(),

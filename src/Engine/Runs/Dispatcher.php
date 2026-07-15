@@ -108,14 +108,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	public function enqueue( string $task_name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
-		$result = $this->dispatch_task(
-			$task_name,
-			$args,
-			$delay,
-			$dedup_key,
-			$priority,
-			OverlapPolicy::Skip
-		);
+		$result = $this->dispatch_task( $task_name, $args, $delay, $dedup_key, $priority, OverlapPolicy::Skip );
 		if ( $result->is_failure() ) {
 			return $result;
 		}
@@ -150,15 +143,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a scheduled-task dispatch failure must be handled, not dropped' )]
 	public function dispatch_scheduled_task( string $task_name, array $args, OverlapPolicy $overlap, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
-		return $this->dispatch_task(
-			$task_name,
-			$args,
-			0,
-			null,
-			priority: $priority,
-			overlap: $overlap,
-			on_accepted: $on_accepted
-		);
+		return $this->dispatch_task( $task_name, $args, 0, null, priority: $priority, overlap: $overlap, on_accepted: $on_accepted );
 	}
 
 	/**
@@ -186,27 +171,13 @@ final readonly class Dispatcher {
 			: null;
 
 		if ( null === $batch ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Batch "%s" is not registered; register it before starting it.',
-						$batch_name
-					),
-					reason: EngineErrorReason::UnknownWork,
-					context: array( 'name' => $batch_name ),
-				)
-			);
+			return new Failure( new EngineError( \sprintf( 'Batch "%s" is not registered; register it before starting it.', $batch_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $batch_name ), ) );
 		}
 
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Batch "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.',
-						$batch_name,
-						$priority,
-						self::MAX_PRIORITY
-					),
+					\sprintf( 'Batch "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.', $batch_name, $priority, self::MAX_PRIORITY ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
 						'name'     => $batch_name,
@@ -224,62 +195,25 @@ final readonly class Dispatcher {
 		$now            = $this->clock->now()->getTimestamp();
 		$run_id         = RunIdentity::generate( $now, $this->randomizer );
 		$latest_pointer = $this->stores->latest_run_pointer( $batch_name );
-		$claim          = $this->overlap_guard->claim(
-			$batch_name,
-			$args_hash,
-			$run_id,
-			$this->lock_windows->lock_staleness( $batch_name, $run_id )
-		);
+		$claim          = $this->overlap_guard->claim( $batch_name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $batch_name, $run_id ) );
 		if ( LockClaimOutcome::Held === $claim && ExistingRunPolicy::Reject === $existing ) {
 			$owner = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
 			if ( $owner->is_failure() ) {
-				return new Failure(
-					new EngineError(
-						\sprintf(
-							'Batch "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
-							$batch_name
-						),
-						reason: EngineErrorReason::StorageFailure,
-						context: array( 'name' => $batch_name ),
-					)
-				);
+				return new Failure( new EngineError( \sprintf( 'Batch "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.', $batch_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $batch_name ), ) );
 			}
 
 			$message = null === $owner->value
-				? \sprintf(
-					'Batch "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
-					$batch_name
-				)
-				: \sprintf(
-					'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.',
-					$batch_name,
-					$owner->value
-				);
+				? \sprintf( 'Batch "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.', $batch_name )
+				: \sprintf( 'Batch "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $batch_name, $owner->value );
 			$context = null === $owner->value
 				? array( 'name' => $batch_name )
 				: array( 'run_id' => $owner->value );
 
-			return new Failure(
-				new EngineError(
-					$message,
-					reason: EngineErrorReason::OverlapHeld,
-					context: $context,
-				)
-			);
+			return new Failure( new EngineError( $message, reason: EngineErrorReason::OverlapHeld, context: $context, ) );
 		}
 
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->create_run_state_and_replace_if_held(
-			'Batch',
-			$batch_name,
-			$run_id,
-			$start_args,
-			$args_hash,
-			array(),
-			$claim,
-			$run_store,
-			PendingAction::async( 'start', $priority )
-		);
+		$state     = $this->create_run_state_and_replace_if_held( 'Batch', $batch_name, $run_id, $start_args, $args_hash, array(), $claim, $run_store, PendingAction::async( 'start', $priority ) );
 		if ( $state instanceof Failure ) {
 			return $state;
 		}
@@ -293,12 +227,7 @@ final readonly class Dispatcher {
 				)
 			);
 		}
-		$scheduled = $this->scheduler->enqueue_async(
-			'a8csp_background_tasks/start',
-			array( $batch_name, $run_id, $state->action_seq ),
-			$batch_name . '|' . $run_id,
-			$priority
-		);
+		$scheduled = $this->scheduler->enqueue_async( 'a8csp_background_tasks/start', array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, $priority );
 		if ( $scheduled->is_failure() ) {
 			$this->overlap_guard->release( $batch_name, $args_hash, $run_id );
 			$run_store->delete( $run_id );
@@ -342,16 +271,7 @@ final readonly class Dispatcher {
 		$batch = 'batch' === $kind ? $this->batches->get( $name ) : null;
 
 		if ( null === $task && null === $batch ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.',
-						$name
-					),
-					reason: EngineErrorReason::UnknownWork,
-					context: array( 'name' => $name ),
-				)
-			);
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.', $name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $name ), ) );
 		}
 
 		$failed_store = $this->stores->failed_run_store( $name );
@@ -361,28 +281,17 @@ final readonly class Dispatcher {
 		}
 
 		$entries = $read->value;
-		$entry   = \array_find(
-			$entries,
-			static fn ( array $candidate ): bool => $run_id === $candidate['run_id']
-		);
+		$entry   = \array_find( $entries, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
 
 		if ( null === $entry ) {
 			$retained_run_ids = \array_column( $entries, 'run_id' );
 			$correction       = array() === $retained_run_ids
 				? 'retry a run identifier returned by the failed-run store after a terminal failure is recorded.'
-				: \sprintf(
-					'retry one of the retained run identifiers: "%s".',
-					\implode( '", "', $retained_run_ids )
-				);
+				: \sprintf( 'retry one of the retained run identifiers: "%s".', \implode( '", "', $retained_run_ids ) );
 
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Failed run "%1$s" for background-work "%2$s" is not retained; %3$s',
-						$run_id,
-						$name,
-						$correction
-					),
+					\sprintf( 'Failed run "%1$s" for background-work "%2$s" is not retained; %3$s', $run_id, $name, $correction ),
 					reason: EngineErrorReason::RunNotRetained,
 					context: array(
 						'name'   => $name,
@@ -426,16 +335,7 @@ final readonly class Dispatcher {
 		$batch = 'batch' === $kind ? $this->batches->get( $name ) : null;
 
 		if ( null === $task && null === $batch ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Background-work "%s" is not registered; register the matching task or batch before cancelling its run.',
-						$name
-					),
-					reason: EngineErrorReason::UnknownWork,
-					context: array( 'name' => $name ),
-				)
-			);
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching task or batch before cancelling its run.', $name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $name ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $name );
@@ -443,11 +343,7 @@ final readonly class Dispatcher {
 		if ( $inspected->is_failure() ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.',
-						$run_id,
-						$name
-					),
+					\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, $name ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'name'   => $name,
@@ -466,11 +362,7 @@ final readonly class Dispatcher {
 		if ( RunStatus::Running !== $state->status ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Run "%1$s" is already terminal (%2$s); a finished run cannot be cancelled.',
-						$run_id,
-						$state->status->value
-					),
+					\sprintf( 'Run "%1$s" is already terminal (%2$s); a finished run cannot be cancelled.', $run_id, $state->status->value ),
 					reason: EngineErrorReason::RunNotCancellable,
 					context: array(
 						'run_id' => $run_id,
@@ -485,27 +377,10 @@ final readonly class Dispatcher {
 		}
 
 		if ( null !== $batch && array() === $state->queue && 1 < $state->action_seq ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Run "%s" has no chunks left to process; the pending cleanup completes it.',
-						$run_id
-					),
-					reason: EngineErrorReason::RunNotCancellable,
-					context: array( 'run_id' => $run_id ),
-				)
-			);
+			return new Failure( new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending cleanup completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), ) );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run(
-			null !== $batch ? 'Batch' : 'Task',
-			$name,
-			$run_id,
-			$state,
-			$run_store,
-			$snapshot['raw'],
-			fn () => $this->unschedule_group( $name . '|' . $run_id )
-		);
+		$cancelled = $this->terminal_transitions->cancel_run( null !== $batch ? 'Batch' : 'Task', $name, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->unschedule_group( $name . '|' . $run_id ) );
 		if ( $cancelled ) {
 			return new Success( $run_id );
 		}
@@ -516,16 +391,7 @@ final readonly class Dispatcher {
 			return $this->cancel_executing( $run_id );
 		}
 
-		return new Failure(
-			new EngineError(
-				\sprintf(
-					'Run "%s" changed state while the cancel was in flight; re-inspect the run before retrying.',
-					$run_id
-				),
-				reason: EngineErrorReason::RunNotCancellable,
-				context: array( 'run_id' => $run_id ),
-			)
-		);
+		return new Failure( new EngineError( \sprintf( 'Run "%s" changed state while the cancel was in flight; re-inspect the run before retrying.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), ) );
 	}
 
 	// endregion
@@ -546,11 +412,7 @@ final readonly class Dispatcher {
 	private function cancel_not_retained( string $name, string $run_id ): Failure {
 		return new Failure(
 			new EngineError(
-				\sprintf(
-					'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.',
-					$run_id,
-					$name
-				),
+				\sprintf( 'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.', $run_id, $name ),
 				reason: EngineErrorReason::RunNotRetained,
 				context: array(
 					'name'   => $name,
@@ -571,16 +433,7 @@ final readonly class Dispatcher {
 	 * @return  Failure<EngineError>
 	 */
 	private function cancel_executing( string $run_id ): Failure {
-		return new Failure(
-			new EngineError(
-				\sprintf(
-					'Run "%s" is executing; a run in flight completes or fails on its own.',
-					$run_id
-				),
-				reason: EngineErrorReason::RunNotCancellable,
-				context: array( 'run_id' => $run_id ),
-			)
-		);
+		return new Failure( new EngineError( \sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), ) );
 	}
 
 	/**
@@ -623,27 +476,13 @@ final readonly class Dispatcher {
 			: null;
 
 		if ( null === $task ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Task "%s" is not registered; register it before enqueueing.',
-						$task_name
-					),
-					reason: EngineErrorReason::UnknownWork,
-					context: array( 'name' => $task_name ),
-				)
-			);
+			return new Failure( new EngineError( \sprintf( 'Task "%s" is not registered; register it before enqueueing.', $task_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $task_name ), ) );
 		}
 
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Task "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.',
-						$task_name,
-						$priority,
-						self::MAX_PRIORITY
-					),
+					\sprintf( 'Task "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.', $task_name, $priority, self::MAX_PRIORITY ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
 						'name'     => $task_name,
@@ -665,11 +504,7 @@ final readonly class Dispatcher {
 		if ( 0 < $delay && $delay > \PHP_INT_MAX - $now ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Task "%1$s" delay %2$d exceeds supported Unix seconds; pass a smaller delay.',
-						$task_name,
-						$delay
-					),
+					\sprintf( 'Task "%1$s" delay %2$d exceeds supported Unix seconds; pass a smaller delay.', $task_name, $delay ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
 						'delay' => $delay,
@@ -687,77 +522,27 @@ final readonly class Dispatcher {
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $task_name );
-		$claim          = $this->overlap_guard->claim(
-			$task_name,
-			$args_hash,
-			$run_id,
-			$this->lock_windows->lock_staleness( $task_name, $run_id )
-		);
+		$claim          = $this->overlap_guard->claim( $task_name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $task_name, $run_id ) );
 		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Skip === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
 			if ( $owner->is_failure() ) {
-				return new Failure(
-					new EngineError(
-						\sprintf(
-							'Task "%s" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.',
-							$task_name
-						),
-						reason: EngineErrorReason::StorageFailure,
-						context: array( 'name' => $task_name ),
-					)
-				);
+				return new Failure( new EngineError( \sprintf( 'Task "%s" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ) );
 			}
 
 			$running_run_id = $owner->value;
 			if ( null === $running_run_id ) {
-				return new Failure(
-					new EngineError(
-						\sprintf(
-							'Task "%s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.',
-							$task_name
-						),
-						reason: EngineErrorReason::OverlapHeld,
-						context: array( 'name' => $task_name ),
-					)
-				);
+				return new Failure( new EngineError( \sprintf( 'Task "%s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.', $task_name ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $task_name ), ) );
 			}
 
-			return new Success(
-				new TaskDispatchSkipped(
-					$running_run_id,
-					EngineError::held_task( $task_name, $running_run_id )
-				)
-			);
+			return new Success( new TaskDispatchSkipped( $running_run_id, EngineError::held_task( $task_name, $running_run_id ) ) );
 		}
 
 		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
-			return new Failure(
-				new EngineError(
-					\sprintf(
-						'Task "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.',
-						$task_name,
-						$run_id
-					),
-					reason: EngineErrorReason::OverlapHeld,
-					context: array( 'name' => $task_name ),
-				)
-			);
+			return new Failure( new EngineError( \sprintf( 'Task "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.', $task_name, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $task_name ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $task_name );
-		$state     = $this->create_run_state_and_replace_if_held(
-			'Task',
-			$task_name,
-			$run_id,
-			$args,
-			$args_hash,
-			array( $args ),
-			$claim,
-			$run_store,
-			0 === $delay
-				? PendingAction::async( 'run', $priority )
-				: PendingAction::single( 'run', $scheduled_at, $priority )
-		);
+		$state     = $this->create_run_state_and_replace_if_held( 'Task', $task_name, $run_id, $args, $args_hash, array( $args ), $claim, $run_store, 0 === $delay ? PendingAction::async( 'run', $priority ) : PendingAction::single( 'run', $scheduled_at, $priority ) );
 		if ( $state instanceof Failure ) {
 			return $state;
 		}
@@ -765,22 +550,8 @@ final readonly class Dispatcher {
 		if ( 0 < $delay ) {
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $scheduled_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError(
-					\sprintf(
-						'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
-						$task_name
-					),
-					reason: EngineErrorReason::OverlapHeld,
-					context: array( 'name' => $task_name ),
-				),
-				HeartbeatOutcome::Indeterminate => new EngineError(
-					\sprintf(
-						'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.',
-						$task_name
-					),
-					reason: EngineErrorReason::StorageFailure,
-					context: array( 'name' => $task_name ),
-				),
+				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( 'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.', $task_name ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $task_name ), ),
+				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( 'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ),
 			};
 			if ( null !== $heartbeat_error ) {
 				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
@@ -796,10 +567,7 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf(
-							'Task "%s" lost its live run state while preparing its delayed action; retry the enqueue against the current run state.',
-							$task_name
-						),
+						\sprintf( 'Task "%s" lost its live run state while preparing its delayed action; retry the enqueue against the current run state.', $task_name ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
 							'name'   => $task_name,
@@ -848,11 +616,7 @@ final readonly class Dispatcher {
 		} catch ( \Throwable $throwable ) {
 			$exception_type = \get_debug_type( $throwable );
 			$error          = new EngineError(
-				\sprintf(
-					'Task "%1$s" started listener failed because %2$s was thrown. Fix the started-hook listener before enqueueing the task again.',
-					$task_name,
-					$exception_type
-				),
+				\sprintf( 'Task "%1$s" started listener failed because %2$s was thrown. Fix the started-hook listener before enqueueing the task again.', $task_name, $exception_type ),
 				$exception_type,
 				reason: EngineErrorReason::ExecutionFailed,
 				context: array(
@@ -860,16 +624,7 @@ final readonly class Dispatcher {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_run(
-				$task_name,
-				$run_id,
-				$state,
-				$run_store,
-				$error,
-				1,
-				'execution',
-				ApiErrorCode::ExecutionFailed
-			);
+			$this->terminal_transitions->fail_run( $task_name, $run_id, $state, $run_store, $error, 1, 'execution', ApiErrorCode::ExecutionFailed );
 
 			return new Failure( $error );
 		}
@@ -904,12 +659,7 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.',
-						$run_id,
-						\strtolower( $work_type ),
-						$name
-					),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, \strtolower( $work_type ), $name ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'name'      => $name,
@@ -932,12 +682,7 @@ final readonly class Dispatcher {
 
 		return new Failure(
 			new EngineError(
-				\sprintf(
-					'%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.',
-					$work_type,
-					$name,
-					'Task' === $work_type ? 'dispatch' : 'start'
-				),
+				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.', $work_type, $name, 'Task' === $work_type ? 'dispatch' : 'start' ),
 				reason: EngineErrorReason::OverlapHeld,
 				context: array(
 					'name'      => $name,
@@ -972,11 +717,7 @@ final readonly class Dispatcher {
 		if ( ! \is_string( $encoded ) || ! PortableArguments::is_valid( $args ) ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
-						$work_type,
-						$name
-					),
+					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $work_type, $name ),
 					$exception_class,
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(

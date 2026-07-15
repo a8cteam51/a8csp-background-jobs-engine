@@ -53,16 +53,12 @@ final readonly class Schedules {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
 			if ( ! $schedule instanceof Schedule ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
 			}
 
 			$identity = $this->identity( $schedule->name );
 			if ( isset( $declarations[ $identity ] ) ) {
-				throw new \InvalidArgumentException(
-					'Schedule sync accepts each owner-local schedule name exactly once.'
-				);
+				throw new \InvalidArgumentException( 'Schedule sync accepts each owner-local schedule name exactly once.' );
 			}
 
 			$declarations[ $identity ] = array(

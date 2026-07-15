@@ -75,20 +75,11 @@ final class WPCronBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_recurring_is_idempotent_with_a_non_empty_group(): void {
-		$result = ( new WPCronBackend() )->schedule_recurring(
-			self::HOOK,
-			300,
-			array( 'run-17' ),
-			1_700_000_000,
-			'reports|run-17'
-		);
+		$result = ( new WPCronBackend() )->schedule_recurring( self::HOOK, 300, array( 'run-17' ), 1_700_000_000, 'reports|run-17' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'run-17' ), true ),
-			$this->cron_calls( 'wp_schedule_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'run-17' ), true ), $this->cron_calls( 'wp_schedule_event' )[0]['args'] );
 	}
 
 	/**
@@ -97,19 +88,11 @@ final class WPCronBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_single_ignores_a_non_empty_group(): void {
-		$result = ( new WPCronBackend() )->schedule_single(
-			self::HOOK,
-			1_700_000_000,
-			array( 'run-18' ),
-			'reports|run-18'
-		);
+		$result = ( new WPCronBackend() )->schedule_single( self::HOOK, 1_700_000_000, array( 'run-18' ), 'reports|run-18' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( 1_700_000_000, self::HOOK, array( 'run-18' ), true ),
-			$this->cron_calls( 'wp_schedule_single_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, self::HOOK, array( 'run-18' ), true ), $this->cron_calls( 'wp_schedule_single_event' )[0]['args'] );
 	}
 
 	/**
@@ -119,11 +102,7 @@ final class WPCronBackendTest extends TestCase {
 	 */
 	public function test_enqueue_async_ignores_a_non_empty_group(): void {
 		$before = \time();
-		$result = ( new WPCronBackend() )->enqueue_async(
-			self::HOOK,
-			array( 'run-19' ),
-			'reports|run-19'
-		);
+		$result = ( new WPCronBackend() )->enqueue_async( self::HOOK, array( 'run-19' ), 'reports|run-19' );
 		$after  = \time();
 
 		self::assertInstanceOf( Success::class, $result );
@@ -148,10 +127,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
 		self::assertSame( false, \wp_next_scheduled( self::HOOK, array( 'a' ) ) );
-		self::assertSame(
-			array( 1_700_000_000, self::HOOK, array( 'a' ), true ),
-			$this->cron_calls( 'wp_unschedule_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, self::HOOK, array( 'a' ), true ), $this->cron_calls( 'wp_unschedule_event' )[0]['args'] );
 	}
 
 	/**
@@ -161,9 +137,7 @@ final class WPCronBackendTest extends TestCase {
 	 */
 	public function test_unschedule_with_an_empty_hook_preserves_every_cron_event(): void {
 		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'run-22' ), true ) );
-		self::assertTrue(
-			\wp_schedule_single_event( 1_700_000_100, 'a8csp_bgte_sibling_hook', array( 'run-23' ), true )
-		);
+		self::assertTrue( \wp_schedule_single_event( 1_700_000_100, 'a8csp_bgte_sibling_hook', array( 'run-23' ), true ) );
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
 		$result = ( new WPCronBackend() )->unschedule( '', array(), 'reports|run-22' );
@@ -172,10 +146,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertTrue( $result->value );
 		self::assertSame( array(), $this->cron_calls( 'wp_unschedule_event' ) );
 		self::assertSame( 1_700_000_000, \wp_next_scheduled( self::HOOK, array( 'run-22' ) ) );
-		self::assertSame(
-			1_700_000_100,
-			\wp_next_scheduled( 'a8csp_bgte_sibling_hook', array( 'run-23' ) )
-		);
+		self::assertSame( 1_700_000_100, \wp_next_scheduled( 'a8csp_bgte_sibling_hook', array( 'run-23' ) ) );
 	}
 
 	/**
@@ -207,10 +178,7 @@ final class WPCronBackendTest extends TestCase {
 				array( self::HOOK, array( 'a' ) ),
 				array( self::HOOK, array( 'a' ) ),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->cron_calls( 'wp_next_scheduled' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->cron_calls( 'wp_next_scheduled' ) )
 		);
 	}
 
@@ -223,10 +191,7 @@ final class WPCronBackendTest extends TestCase {
 		$backend = new WPCronBackend();
 
 		foreach ( array( 0, -1 ) as $interval ) {
-			$error = $this->assert_failure_reason(
-				$backend->schedule_recurring( self::HOOK, $interval ),
-				SchedulingErrorReason::InvalidTimeInput
-			);
+			$error = $this->assert_failure_reason( $backend->schedule_recurring( self::HOOK, $interval ), SchedulingErrorReason::InvalidTimeInput );
 
 			self::assertStringContainsString( 'greater than zero', $error->message );
 		}
@@ -247,10 +212,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
 		self::assertSame( array( $backend, 'register_synthetic_schedules' ), $callback );
-		self::assertSame(
-			array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'a' ), true ),
-			$this->cron_calls( 'wp_schedule_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'a' ), true ), $this->cron_calls( 'wp_schedule_event' )[0]['args'] );
 		self::assertSame( 1_700_000_000, \wp_next_scheduled( self::HOOK, array( 'a' ) ) );
 
 		$schedules = $callback( array() );
@@ -324,10 +286,7 @@ final class WPCronBackendTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
-		self::assertSame(
-			array( 1_700_000_000, self::HOOK, array( 'a' ), true ),
-			$this->cron_calls( 'wp_schedule_single_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, self::HOOK, array( 'a' ), true ), $this->cron_calls( 'wp_schedule_single_event' )[0]['args'] );
 		self::assertSame( 1_700_000_000, \wp_next_scheduled( self::HOOK, array( 'a' ) ) );
 	}
 
@@ -448,10 +407,7 @@ final class WPCronBackendTest extends TestCase {
 				array( self::HOOK, array( 'a' ) ),
 				array( self::HOOK, array( 'b' ) ),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->cron_calls( 'wp_next_scheduled' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->cron_calls( 'wp_next_scheduled' ) )
 		);
 		self::assertSame( array(), $this->cron_calls( 'wp_schedule_event' ) );
 		self::assertSame( array(), $this->cron_calls( 'wp_schedule_single_event' ) );
@@ -669,17 +625,11 @@ final class WPCronBackendTest extends TestCase {
 	public function test_unschedule_hooks_counts_and_clears_every_pending_event(): void {
 		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'a' ), true ) );
 		self::assertTrue( \wp_schedule_single_event( 1_700_000_601, self::HOOK, array( 'b' ), true ) );
-		self::assertTrue(
-			\wp_schedule_single_event( 1_700_000_100, 'a8csp_bgte_sibling_hook', array( 'c' ), true )
-		);
-		self::assertTrue(
-			\wp_schedule_single_event( 1_700_000_200, 'a8csp_bgte_unrelated_hook', array( 'd' ), true )
-		);
+		self::assertTrue( \wp_schedule_single_event( 1_700_000_100, 'a8csp_bgte_sibling_hook', array( 'c' ), true ) );
+		self::assertTrue( \wp_schedule_single_event( 1_700_000_200, 'a8csp_bgte_unrelated_hook', array( 'd' ), true ) );
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
-		$result = ( new WPCronBackend() )->unschedule_hooks(
-			array( self::HOOK, 'a8csp_bgte_sibling_hook' )
-		);
+		$result = ( new WPCronBackend() )->unschedule_hooks( array( self::HOOK, 'a8csp_bgte_sibling_hook' ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( 3, $result->value );
@@ -688,15 +638,9 @@ final class WPCronBackendTest extends TestCase {
 				array( self::HOOK, true ),
 				array( 'a8csp_bgte_sibling_hook', true ),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->cron_calls( 'wp_unschedule_hook' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->cron_calls( 'wp_unschedule_hook' ) )
 		);
-		self::assertSame(
-			1_700_000_200,
-			\wp_next_scheduled( 'a8csp_bgte_unrelated_hook', array( 'd' ) )
-		);
+		self::assertSame( 1_700_000_200, \wp_next_scheduled( 'a8csp_bgte_unrelated_hook', array( 'd' ) ) );
 	}
 
 	/**
@@ -709,10 +653,7 @@ final class WPCronBackendTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_calls']                  = array();
 		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = true;
 
-		$error = $this->assert_failure_reason(
-			( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( ( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( self::HOOK, $error->message );
 		self::assertCount( 1, $this->cron_calls( 'wp_unschedule_event' ) );
@@ -736,15 +677,9 @@ final class WPCronBackendTest extends TestCase {
 			),
 		);
 
-		$error = $this->assert_failure_reason(
-			( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( ( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) ), SchedulingErrorReason::ScheduleFailed );
 
-		self::assertSame(
-			'WP-Cron could not unschedule hook "a8csp_bgte_test_hook"; inspect the WordPress cron error, correct the rejected event, and retry.',
-			$error->message
-		);
+		self::assertSame( 'WP-Cron could not unschedule hook "a8csp_bgte_test_hook"; inspect the WordPress cron error, correct the rejected event, and retry.', $error->message );
 		self::assertSame(
 			array(
 				'hook'     => self::HOOK,
@@ -757,10 +692,7 @@ final class WPCronBackendTest extends TestCase {
 				array( $first_timestamp, self::HOOK, array( 'a' ), true ),
 				array( $second_timestamp, self::HOOK, array( 'a' ), true ),
 			),
-			\array_map(
-				static fn ( array $call ): array => $call['args'],
-				$this->cron_calls( 'wp_unschedule_event' )
-			)
+			\array_map( static fn ( array $call ): array => $call['args'], $this->cron_calls( 'wp_unschedule_event' ) )
 		);
 	}
 
@@ -812,10 +744,7 @@ final class WPCronBackendTest extends TestCase {
 			a8csp_bgte_test_store_cron_event( $timestamp + 10_000 + $insertions, $hook, $args, false );
 		};
 
-		$error = $this->assert_failure_reason(
-			( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( ( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) ), SchedulingErrorReason::ScheduleFailed );
 
 		self::assertStringContainsString( self::HOOK, $error->message );
 		self::assertSame( 2, $insertions );
@@ -832,15 +761,9 @@ final class WPCronBackendTest extends TestCase {
 			'wp_schedule_event' => array( new \WP_Error( 'invalid_schedule', 'The recurrence is unavailable.' ) ),
 		);
 
-		$error = $this->assert_failure_reason(
-			( new WPCronBackend() )->schedule_recurring( self::HOOK, 300 ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( ( new WPCronBackend() )->schedule_recurring( self::HOOK, 300 ), SchedulingErrorReason::ScheduleFailed );
 
-		self::assertSame(
-			'WP-Cron could not schedule hook "a8csp_bgte_test_hook": the recurrence is not registered; ensure register_hooks() ran on this request.',
-			$error->message
-		);
+		self::assertSame( 'WP-Cron could not schedule hook "a8csp_bgte_test_hook": the recurrence is not registered; ensure register_hooks() ran on this request.', $error->message );
 	}
 
 	/**
@@ -853,15 +776,9 @@ final class WPCronBackendTest extends TestCase {
 			'wp_schedule_single_event' => array( new \WP_Error( 'single_failed', 'The single event was rejected.' ) ),
 		);
 
-		$error = $this->assert_failure_reason(
-			( new WPCronBackend() )->schedule_single( self::HOOK, 1_700_000_000 ),
-			SchedulingErrorReason::ScheduleFailed
-		);
+		$error = $this->assert_failure_reason( ( new WPCronBackend() )->schedule_single( self::HOOK, 1_700_000_000 ), SchedulingErrorReason::ScheduleFailed );
 
-		self::assertSame(
-			'WP-Cron could not schedule hook "a8csp_bgte_test_hook"; inspect the WordPress cron error, correct the rejected event, and retry.',
-			$error->message
-		);
+		self::assertSame( 'WP-Cron could not schedule hook "a8csp_bgte_test_hook"; inspect the WordPress cron error, correct the rejected event, and retry.', $error->message );
 		self::assertSame(
 			array(
 				'hook'     => self::HOOK,
@@ -869,10 +786,7 @@ final class WPCronBackendTest extends TestCase {
 			),
 			$error->context
 		);
-		self::assertSame(
-			array( 1_700_000_000, self::HOOK, array(), true ),
-			$this->cron_calls( 'wp_schedule_single_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, self::HOOK, array(), true ), $this->cron_calls( 'wp_schedule_single_event' )[0]['args'] );
 	}
 
 	/**
@@ -889,14 +803,8 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Success::class, $backend->enqueue_async( self::HOOK, array( 'c' ), priority: \PHP_INT_MAX ) );
 		$after = \time();
 
-		self::assertSame(
-			array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'a' ), true ),
-			$this->cron_calls( 'wp_schedule_event' )[0]['args']
-		);
-		self::assertSame(
-			array( 1_700_001_000, self::HOOK, array( 'b' ), true ),
-			$this->cron_calls( 'wp_schedule_single_event' )[0]['args']
-		);
+		self::assertSame( array( 1_700_000_000, 'a8csp_bgte_every_300s', self::HOOK, array( 'a' ), true ), $this->cron_calls( 'wp_schedule_event' )[0]['args'] );
+		self::assertSame( array( 1_700_001_000, self::HOOK, array( 'b' ), true ), $this->cron_calls( 'wp_schedule_single_event' )[0]['args'] );
 		$async_call = $this->cron_calls( 'wp_schedule_single_event' )[1]['args'];
 		self::assertGreaterThanOrEqual( $before, $async_call[0] );
 		self::assertLessThanOrEqual( $after, $async_call[0] );
@@ -982,11 +890,6 @@ final class WPCronBackendTest extends TestCase {
 			return $calls;
 		}
 
-		return \array_values(
-			\array_filter(
-				$calls,
-				static fn ( array $call ): bool => $function_name === $call['function']
-			)
-		);
+		return \array_values( \array_filter( $calls, static fn ( array $call ): bool => $function_name === $call['function'] ) );
 	}
 }

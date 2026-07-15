@@ -318,20 +318,7 @@ final class RunStateTest extends TestCase {
 	 * @return  RunState
 	 */
 	private static function state(): RunState {
-		return new RunState(
-			status: RunStatus::Running,
-			executing: true,
-			start_args: array( 'scope' => 'all' ),
-			args_hash: 'hash-a',
-			queue: array( array( 'page' => 1 ) ),
-			failed_attempts: 2,
-			action_seq: 7,
-			created_at: 100,
-			heartbeat_at: 125,
-			pending: self::pending(),
-			error: self::ERROR,
-			effects: self::EFFECTS,
-		);
+		return new RunState( status: RunStatus::Running, executing: true, start_args: array( 'scope' => 'all' ), args_hash: 'hash-a', queue: array( array( 'page' => 1 ) ), failed_attempts: 2, action_seq: 7, created_at: 100, heartbeat_at: 125, pending: self::pending(), error: self::ERROR, effects: self::EFFECTS, );
 	}
 
 	/**

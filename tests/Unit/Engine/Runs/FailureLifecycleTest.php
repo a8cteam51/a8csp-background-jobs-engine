@@ -154,26 +154,9 @@ final class FailureLifecycleTest extends TestCase {
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$this->failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$this->terminal_transitions
-		);
+		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
-		$this->dispatcher = new Dispatcher(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$this->terminal_transitions,
-		);
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, );
 	}
 
 	// endregion.
@@ -207,11 +190,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_retry_policy_cap_failure_after_ownership_loss(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->set_filter_value(
@@ -239,11 +218,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_retry_schedule_after_retrying_listener_ownership_loss(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 7;
@@ -287,11 +262,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_reschedules_an_ordinary_failure_below_the_cap(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 17;
@@ -371,11 +342,7 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	#[DataProvider( 'seeded_jitter_delays' )]
 	public function test_retry_call_site_preserves_seeded_full_jitter_distribution( int $seed, int $expected_delay ): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->prepare_run_action();
 
@@ -405,13 +372,7 @@ final class FailureLifecycleTest extends TestCase {
 			}
 		};
 
-		$this->failure_lifecycle = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$this->terminal_transitions
-		);
+		$this->failure_lifecycle = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 
 		$this->handle_failed_task_attempt();
 
@@ -451,11 +412,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_stops_exactly_at_the_max_attempts_boundary(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
@@ -566,11 +523,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_falls_back_and_warns_for_a_foreign_retry_policy(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value( 'a8csp_background_tasks/retry_policy/' . self::IDENTITY, 'invalid-policy' );
 		$this->prepare_run_action();
@@ -636,10 +589,7 @@ final class FailureLifecycleTest extends TestCase {
 		$stored_error = $failed_run['error'] ?? null;
 		self::assertIsArray( $stored_error );
 		self::assertSame( \DomainException::class, $stored_error['class'] ?? null );
-		self::assertSame(
-			'Task "runs-tests:email-digest" could not resolve the retry policy because DomainException was thrown. Fix the retry policy provider or filter before retrying the failed run manually.',
-			$stored_error['message'] ?? null
-		);
+		self::assertSame( 'Task "runs-tests:email-digest" could not resolve the retry policy because DomainException was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $stored_error['message'] ?? null );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . self::IDENTITY,
@@ -682,20 +632,14 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_throwing_retrying_listener(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 7;
 		$this->randomizer->calls = array();
 
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY => new \RuntimeException(
-				'Retrying listener exploded.'
-			),
+			'a8csp_background_tasks/retrying/' . self::IDENTITY => new \RuntimeException( 'Retrying listener exploded.' ),
 		);
 
 		$this->handle_failed_task_attempt();
@@ -711,10 +655,7 @@ final class FailureLifecycleTest extends TestCase {
 		$stored_error = $failed_run['error'] ?? null;
 		self::assertIsArray( $stored_error );
 		self::assertSame( \RuntimeException::class, $stored_error['class'] ?? null );
-		self::assertSame(
-			'Task "runs-tests:email-digest" could not prepare the retry action because RuntimeException was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
-			$stored_error['message'] ?? null
-		);
+		self::assertSame( 'Task "runs-tests:email-digest" could not prepare the retry action because RuntimeException was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.', $stored_error['message'] ?? null );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/retrying/' . self::IDENTITY,
@@ -732,11 +673,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_after_retry_preparation_error_loses_ownership(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 7;
@@ -759,9 +696,7 @@ final class FailureLifecycleTest extends TestCase {
 			}
 		);
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY => new \RuntimeException(
-				'Retrying listener exploded.'
-			),
+			'a8csp_background_tasks/retrying/' . self::IDENTITY => new \RuntimeException( 'Retrying listener exploded.' ),
 		);
 
 		$this->handle_failed_task_attempt();
@@ -785,22 +720,13 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_retry_reschedule_failure(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 7;
 		$this->randomizer->calls = array();
 
-		$this->backend->results['schedule_single'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before retrying the task.'
-			)
-		);
+		$this->backend->results['schedule_single'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying the task.' ) );
 
 		$this->handle_failed_task_attempt();
 
@@ -813,10 +739,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( 1, $failed_run['attempts'] ?? null );
 		$stored_error = $failed_run['error'] ?? null;
 		self::assertIsArray( $stored_error );
-		self::assertSame(
-			'Task "runs-tests:email-digest" could not schedule the retry action: Restore the scheduler before retrying the task.',
-			$stored_error['message'] ?? null
-		);
+		self::assertSame( 'Task "runs-tests:email-digest" could not schedule the retry action: Restore the scheduler before retrying the task.', $stored_error['message'] ?? null );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/retrying/' . self::IDENTITY,
@@ -915,14 +838,7 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	private function handle_failed_task_attempt(): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq(),
-			$run_store,
-			fn (): int => $this->clock->timestamp + $this->task->max_runtime()
-		);
+		$state     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, fn (): int => $this->clock->timestamp + $this->task->max_runtime() );
 		if ( null === $state ) {
 			return;
 		}
@@ -930,14 +846,7 @@ final class FailureLifecycleTest extends TestCase {
 		try {
 			$this->task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_task_failure(
-				$this->task,
-				self::IDENTITY,
-				self::RUN_ID,
-				$state,
-				$run_store,
-				$throwable
-			);
+			$this->failure_lifecycle->handle_task_failure( $this->task, self::IDENTITY, self::RUN_ID, $state, $run_store, $throwable );
 		}
 	}
 
@@ -952,10 +861,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable = $throwable;
 		$this->prepare_run_action();
 		$this->randomizer->calls = array();
-		$expected_message        = \sprintf(
-			'Background-work execution failed because %s was thrown.',
-			\get_debug_type( $throwable )
-		);
+		$expected_message        = \sprintf( 'Background-work execution failed because %s was thrown.', \get_debug_type( $throwable ) );
 
 		$this->handle_failed_task_attempt();
 
@@ -996,10 +902,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( $expected_message, $actions[0]['args'][2]->summary );
 		self::assertNull( $actions[0]['args'][2]->failed_chunk );
 		self::assertSame( 'a8csp_background_tasks/failed', $actions[1]['hook_name'] );
-		self::assertSame(
-			array( self::IDENTITY, self::RUN_ID, self::ARGS, $actions[0]['args'][2] ),
-			$actions[1]['args']
-		);
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, $actions[0]['args'][2] ), $actions[1]['args'] );
 		self::assertSame(
 			array(
 				'lock:update',

@@ -39,9 +39,6 @@ final class ExistingRunPolicyTest extends TestCase {
 			),
 			$policies
 		);
-		self::assertSame(
-			array( 'reject', 'replace' ),
-			\array_map( static fn ( ExistingRunPolicy $policy ): string => $policy->value, $policies )
-		);
+		self::assertSame( array( 'reject', 'replace' ), \array_map( static fn ( ExistingRunPolicy $policy ): string => $policy->value, $policies ) );
 	}
 }

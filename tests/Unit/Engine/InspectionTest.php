@@ -98,17 +98,7 @@ final class InspectionTest extends TestCase {
 		$scheduler        = new SchedulerFacade( array( $this->backend ) );
 		$guard            = new OverlapGuard( $this->clock, new RecordingLogger(), new OptionRows( $this->wpdb ) );
 		$lock_windows     = new LockWindows( $this->clock );
-		$this->inspection = new Inspection(
-			$this->schedules,
-			$this->tasks,
-			$this->batches,
-			$scheduler,
-			$guard,
-			$this->stores,
-			$rows,
-			$lock_windows,
-			$this->clock
-		);
+		$this->inspection = new Inspection( $this->schedules, $this->tasks, $this->batches, $scheduler, $guard, $this->stores, $rows, $lock_windows, $this->clock );
 	}
 
 	/**
@@ -117,12 +107,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedules_join_live_declarations_and_preserve_orphan_honesty(): void {
-		$schedule = new Schedule(
-			'nightly',
-			Recurrence::every( 300 ),
-			'refresh-index',
-			array( 'scope' => 'all' )
-		);
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
 		$this->tasks->register( 'owner-a:refresh-index', new RecordingTask( 'refresh-index' ) );
 		self::assertTrue(
 			$this->schedules->replace_owner(
@@ -195,10 +180,7 @@ final class InspectionTest extends TestCase {
 		);
 		$owner_snapshot = $this->inspection->schedules( 'owner-b' );
 		self::assertNotNull( $owner_snapshot );
-		self::assertSame(
-			array( 'owner-b' ),
-			\array_column( $owner_snapshot['entries'], 'owner' )
-		);
+		self::assertSame( array( 'owner-b' ), \array_column( $owner_snapshot['entries'], 'owner' ) );
 	}
 
 	/**
@@ -239,31 +221,10 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_schedule_locks_preserve_discriminated_honesty_states(): void {
 		$schedules     = array(
-			'allow'   => new Schedule(
-				'allow',
-				Recurrence::every( 300 ),
-				'allow-task',
-				array( 'case' => 'allow' ),
-				OverlapPolicy::Allow
-			),
-			'failed'  => new Schedule(
-				'failed',
-				Recurrence::every( 300 ),
-				'failed-task',
-				array( 'case' => 'failed' )
-			),
-			'free'    => new Schedule(
-				'free',
-				Recurrence::every( 300 ),
-				'free-task',
-				array( 'case' => 'free' )
-			),
-			'invalid' => new Schedule(
-				'invalid',
-				Recurrence::every( 300 ),
-				'invalid-task',
-				array( 'case' => 'invalid' )
-			),
+			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-task', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
+			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-task', array( 'case' => 'failed' ) ),
+			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-task', array( 'case' => 'free' ) ),
+			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-task', array( 'case' => 'invalid' ) ),
 		);
 		$registrations = array();
 		foreach ( $schedules as $name => $schedule ) {
@@ -275,17 +236,8 @@ final class InspectionTest extends TestCase {
 				'skips'       => 0,
 			);
 		}
-		self::assertTrue(
-			$this->schedules->replace_owner(
-				'owner',
-				self::declarations( 'owner', ...\array_values( $schedules ) ),
-				$registrations
-			)
-		);
-		$this->wpdb->put(
-			'a8csp_bgte_lock_owner:invalid-task_' . self::args_hash( array( 'case' => 'invalid' ) ),
-			'not-a-lock-row'
-		);
+		self::assertTrue( $this->schedules->replace_owner( 'owner', self::declarations( 'owner', ...\array_values( $schedules ) ), $registrations ) );
+		$this->wpdb->put( 'a8csp_bgte_lock_owner:invalid-task_' . self::args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
@@ -319,22 +271,8 @@ final class InspectionTest extends TestCase {
 		$stale_state = $store->create( $stale_id, array(), 'hash-stale', array( array() ) );
 		self::assertNotNull( $fresh_state );
 		self::assertNotNull( $stale_state );
-		self::assertIsString(
-			$store->transition_state(
-				$fresh_id,
-				$fresh_state,
-				$fresh_state
-					->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS )
-					->with_executing( true )
-			)
-		);
-		self::assertIsString(
-			$store->transition_state(
-				$stale_id,
-				$stale_state,
-				$stale_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS - 1 )
-			)
-		);
+		self::assertIsString( $store->transition_state( $fresh_id, $fresh_state, $fresh_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS )->with_executing( true ) ) );
+		self::assertIsString( $store->transition_state( $stale_id, $stale_state, $stale_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS - 1 ) ) );
 
 		$snapshot = $this->inspection->runs( $identity );
 
@@ -401,24 +339,7 @@ final class InspectionTest extends TestCase {
 		self::assertTrue( $history->record_started( $live_id, 'hash-live' ) );
 		self::assertTrue( $history->record_terminal( 'run-completed', 'hash-completed', RunStatus::Completed ) );
 		self::assertTrue( $history->record_terminal( 'run-failed', 'hash-failed', RunStatus::Failed ) );
-		self::assertTrue(
-			$this->stores->failed_run_store( $identity )->record(
-				'run-failed',
-				self::NOW - 1,
-				array(),
-				2,
-				new EngineError( 'Retained failure.' ),
-				new RunFailure(
-					name: $identity,
-					run_id: 'run-failed',
-					attempts: 2,
-					stage: 'execution',
-					code: ApiErrorCode::ExecutionFailed,
-					summary: 'Retained failure.',
-					failed_chunk: null,
-				)
-			)
-		);
+		self::assertTrue( $this->stores->failed_run_store( $identity )->record( 'run-failed', self::NOW - 1, array(), 2, new EngineError( 'Retained failure.' ), new RunFailure( name: $identity, run_id: 'run-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null, ) ) );
 
 		$snapshot = $this->inspection->runs( $identity );
 
@@ -508,12 +429,8 @@ final class InspectionTest extends TestCase {
 		$foreign_id   = self::run_id( 2 );
 		$this->tasks->register( 'owner:foo', new RecordingTask( 'foo' ) );
 		$this->tasks->register( 'owner:foo_bar', new RecordingTask( 'foo_bar' ) );
-		self::assertNotNull(
-			$this->stores->run_store( 'owner:foo' )->create( $requested_id, array(), 'foo-hash', array( array() ) )
-		);
-		self::assertNotNull(
-			$this->stores->run_store( 'owner:foo_bar' )->create( $foreign_id, array(), 'foo-bar-hash', array( array() ) )
-		);
+		self::assertNotNull( $this->stores->run_store( 'owner:foo' )->create( $requested_id, array(), 'foo-hash', array( array() ) ) );
+		self::assertNotNull( $this->stores->run_store( 'owner:foo_bar' )->create( $foreign_id, array(), 'foo-bar-hash', array( array() ) ) );
 		self::assertSame(
 			array(
 				'name'   => 'owner:foo_bar',
@@ -537,9 +454,7 @@ final class InspectionTest extends TestCase {
 	public function test_run_enumeration_skips_malformed_candidates_before_valid_rows(): void {
 		$identity = 'owner:malformed-leading';
 		$run_id   = self::run_id( 1 );
-		self::assertNotNull(
-			$this->stores->run_store( $identity )->create( $run_id, array(), 'valid-hash', array( array() ) )
-		);
+		self::assertNotNull( $this->stores->run_store( $identity )->create( $run_id, array(), 'valid-hash', array( array() ) ) );
 
 		$prefix = 'a8csp_bgte_run_' . $identity . '_';
 		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
@@ -562,9 +477,7 @@ final class InspectionTest extends TestCase {
 		$this->tasks->register( 'owner:many-runs', new RecordingTask( 'many-runs' ) );
 		$store = $this->stores->run_store( 'owner:many-runs' );
 		for ( $sequence = 1; $sequence <= 24; ++$sequence ) {
-			self::assertNotNull(
-				$store->create( self::run_id( $sequence ), array(), 'hash-' . $sequence, array( array() ) )
-			);
+			self::assertNotNull( $store->create( self::run_id( $sequence ), array(), 'hash-' . $sequence, array( array() ) ) );
 		}
 
 		$snapshot = $this->inspection->runs( 'owner:many-runs' );
@@ -572,10 +485,7 @@ final class InspectionTest extends TestCase {
 		self::assertNull( $snapshot['live_error'] );
 		self::assertSame( 20, $snapshot['live_scanned'] );
 		self::assertSame( 4, $snapshot['live_uninspected'] );
-		self::assertSame(
-			\array_map( static fn ( int $sequence ): string => self::run_id( $sequence ), \range( 1, 20 ) ),
-			\array_column( $snapshot['live'], 'run_id' )
-		);
+		self::assertSame( \array_map( static fn ( int $sequence ): string => self::run_id( $sequence ), \range( 1, 20 ) ), \array_column( $snapshot['live'], 'run_id' ) );
 	}
 
 	/**
@@ -616,9 +526,7 @@ final class InspectionTest extends TestCase {
 		self::assertSame( array(), $scan_failure['history'] );
 
 		$run_id = self::run_id( 1 );
-		self::assertNotNull(
-			$this->stores->run_store( 'owner:failed-row' )->create( $run_id, array(), 'hash', array( array() ) )
-		);
+		self::assertNotNull( $this->stores->run_store( 'owner:failed-row' )->create( $run_id, array(), 'hash', array( array() ) ) );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -640,35 +548,14 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_work_kind_is_owner_qualified_and_unknown_preserves_queue_depth(): void {
 		$orphan_id = self::run_id( 1 );
-		self::assertNotNull(
-			$this->stores->run_store( 'owner:orphaned' )->create(
-				$orphan_id,
-				array(),
-				'orphaned-hash',
-				array( array( 'page' => 1 ), array( 'page' => 2 ) )
-			)
-		);
+		self::assertNotNull( $this->stores->run_store( 'owner:orphaned' )->create( $orphan_id, array(), 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) );
 
 		$task_id = self::run_id( 2 );
 		$this->tasks->register( 'owner-a:shared', new RecordingTask( 'shared' ) );
-		self::assertNotNull(
-			$this->stores->run_store( 'owner-a:shared' )->create(
-				$task_id,
-				array(),
-				'task-hash',
-				array( array( 'page' => 1 ) )
-			)
-		);
+		self::assertNotNull( $this->stores->run_store( 'owner-a:shared' )->create( $task_id, array(), 'task-hash', array( array( 'page' => 1 ) ) ) );
 		$batch_id = self::run_id( 3 );
 		$this->batches->register( 'owner-b:shared', new RecordingBatch( 'shared' ) );
-		self::assertNotNull(
-			$this->stores->run_store( 'owner-b:shared' )->create(
-				$batch_id,
-				array(),
-				'batch-hash',
-				array( array( 'page' => 1 ) )
-			)
-		);
+		self::assertNotNull( $this->stores->run_store( 'owner-b:shared' )->create( $batch_id, array(), 'batch-hash', array( array( 'page' => 1 ) ) ) );
 
 		$orphaned = $this->inspection->runs( 'owner:orphaned' )['live'][0];
 		$task     = $this->inspection->runs( 'owner-a:shared' )['live'][0];

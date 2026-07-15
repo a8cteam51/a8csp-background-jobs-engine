@@ -91,21 +91,13 @@ final class ApiBoundaryTest extends TestCase {
 			foreach ( $reflection->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
 				$location = $type . '::' . $method->getName() . '()';
 				foreach ( $method->getParameters() as $parameter ) {
-					self::assert_supported_reflection_type(
-						$parameter->getType(),
-						$method->getDeclaringClass(),
-						$location . ' $' . $parameter->getName()
-					);
+					self::assert_supported_reflection_type( $parameter->getType(), $method->getDeclaringClass(), $location . ' $' . $parameter->getName() );
 				}
 				self::assert_supported_reflection_type( $method->getReturnType(), $method->getDeclaringClass(), $location . ' return' );
 			}
 
 			foreach ( $reflection->getProperties( \ReflectionProperty::IS_PUBLIC ) as $property ) {
-				self::assert_supported_reflection_type(
-					$property->getType(),
-					$property->getDeclaringClass(),
-					$type . '::$' . $property->getName()
-				);
+				self::assert_supported_reflection_type( $property->getType(), $property->getDeclaringClass(), $type . '::$' . $property->getName() );
 			}
 		}
 	}
@@ -121,9 +113,7 @@ final class ApiBoundaryTest extends TestCase {
 	 */
 	private static function declared_api_types(): array {
 		$api_directory = \dirname( __DIR__, 2 ) . '/src/Api';
-		$iterator      = new \RecursiveIteratorIterator(
-			new \RecursiveDirectoryIterator( $api_directory, \FilesystemIterator::SKIP_DOTS )
-		);
+		$iterator      = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $api_directory, \FilesystemIterator::SKIP_DOTS ) );
 		$types         = array();
 
 		foreach ( $iterator as $file ) {
@@ -133,10 +123,7 @@ final class ApiBoundaryTest extends TestCase {
 
 			$relative = \substr( $file->getPathname(), \strlen( $api_directory ) + 1, -4 );
 			$type     = self::API_NAMESPACE . \str_replace( \DIRECTORY_SEPARATOR, '\\', $relative );
-			self::assertTrue(
-				\class_exists( $type ) || \interface_exists( $type ) || \enum_exists( $type ),
-				'The API file must declare its path-derived type: ' . $type
-			);
+			self::assertTrue( \class_exists( $type ) || \interface_exists( $type ) || \enum_exists( $type ), 'The API file must declare its path-derived type: ' . $type );
 			$types[] = $type;
 		}
 

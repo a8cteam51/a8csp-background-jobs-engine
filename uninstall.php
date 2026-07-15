@@ -93,10 +93,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 		$a8csp_bgte_action_scheduler_tables[ $a8csp_bgte_action_scheduler_table_suffix ] = $a8csp_bgte_action_scheduler_table;
 	}
 
-	$a8csp_bgte_hook_placeholders = \implode(
-		', ',
-		\array_fill( 0, \count( $a8csp_bgte_lifecycle_hooks ), '%s' )
-	);
+	$a8csp_bgte_hook_placeholders = \implode( ', ', \array_fill( 0, \count( $a8csp_bgte_lifecycle_hooks ), '%s' ) );
 
 	// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- IN-list placeholders are array_fill()-built literals; every value still binds through prepare().
 
@@ -104,15 +101,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 	 * Candidate group IDs must be captured before their matching actions disappear. The final
 	 * unreferenced check keeps groups shared with surviving foreign actions structurally out of scope.
 	 */
-	$a8csp_bgte_group_id_rows = $wpdb->get_col(
-		$wpdb->prepare(
-			'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')',
-			\array_merge(
-				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ),
-				$a8csp_bgte_lifecycle_hooks
-			)
-		)
-	);
+	$a8csp_bgte_group_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
 	$a8csp_bgte_group_ids     = array();
 	foreach ( $a8csp_bgte_group_id_rows as $a8csp_bgte_group_id ) {
 		$a8csp_bgte_group_id = (int) $a8csp_bgte_group_id;
@@ -126,7 +115,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 	$a8csp_bgte_log_delete_query = $wpdb->prepare(
 		'DELETE FROM %i WHERE `action_id` IN (' .
 			'SELECT `action_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')' .
-		')',
+			')',
 		\array_merge(
 			array(
 				$a8csp_bgte_action_scheduler_tables['actionscheduler_logs'],
@@ -139,13 +128,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 		return;
 	}
 
-	$a8csp_bgte_action_delete_query = $wpdb->prepare(
-		'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')',
-		\array_merge(
-			array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ),
-			$a8csp_bgte_lifecycle_hooks
-		)
-	);
+	$a8csp_bgte_action_delete_query = $wpdb->prepare( 'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) );
 	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) || array() === $a8csp_bgte_group_ids ) { // @phpstan-ignore argument.type
 		return;
 	}

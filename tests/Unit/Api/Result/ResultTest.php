@@ -49,15 +49,7 @@ final class ResultTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_failure_truth_table(): void {
-		$this->assert_truth_table(
-			new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::ScheduleFailed,
-					'Retry with a supported schedule.'
-				)
-			),
-			false
-		);
+		$this->assert_truth_table( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry with a supported schedule.' ) ), false );
 	}
 
 	/**
@@ -92,10 +84,7 @@ final class ResultTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_failure_carries_its_exact_error(): void {
-		$error  = new SchedulingError(
-			SchedulingErrorReason::InvalidTimeInput,
-			'Use an interval greater than zero.'
-		);
+		$error  = new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use an interval greater than zero.' );
 		$result = new Failure( $error );
 
 		self::assertSame( $error, $result->error );
@@ -119,10 +108,7 @@ final class ResultTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_predicate_branches_expose_the_narrowed_payload(): void {
-		$error = new SchedulingError(
-			SchedulingErrorReason::BackendNotReady,
-			'Load a supported scheduling backend.'
-		);
+		$error = new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' );
 
 		self::assertSame( 42, $this->read_narrowed_result( new Success( 42 ) ) );
 		self::assertSame( $error->message, $this->read_narrowed_result( new Failure( $error ) ) );

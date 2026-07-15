@@ -319,11 +319,7 @@ final readonly class OverlapGuard {
 
 		$lock = self::parse( $raw );
 
-		return null !== $lock && ! self::is_stale(
-			$lock,
-			$this->clock->now()->getTimestamp(),
-			$staleness_window
-		);
+		return null !== $lock && ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window );
 	}
 
 	/**
@@ -390,11 +386,7 @@ final readonly class OverlapGuard {
 	 * @return  array{name: string, args_hash: string}|null
 	 */
 	public static function identity_from_option_name( string $option_name ): ?array {
-		$matched = \preg_match(
-			'/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<args_hash>[a-f0-9]{64})\z/D',
-			$option_name,
-			$matches
-		);
+		$matched = \preg_match( '/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<args_hash>[a-f0-9]{64})\z/D', $option_name, $matches );
 		if ( 1 !== $matched || null === WorkIdentity::parts( $matches['name'] ) ) {
 			return null;
 		}

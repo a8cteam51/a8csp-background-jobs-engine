@@ -94,18 +94,7 @@ final readonly class RunStore {
 	public function create( string $run_id, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState(
-			status: RunStatus::Running,
-			executing: false,
-			start_args: $start_args,
-			args_hash: $args_hash,
-			queue: $queue,
-			failed_attempts: 0,
-			action_seq: 1,
-			created_at: $now,
-			heartbeat_at: $now,
-			pending: $pending,
-		);
+		$state = new RunState( status: RunStatus::Running, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
 
 		if ( ! \add_option( RunIdentity::option_name( $this->name, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
@@ -221,11 +210,7 @@ final readonly class RunStore {
 	 */
 	public function transition_state( string $run_id, RunState $expected, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->compare_and_swap(
-			RunIdentity::option_name( $this->name, $run_id ),
-			self::serialize_state( $expected ),
-			$replacement_raw
-		) ) {
+		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->name, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
 			return null;
 		}
 
@@ -347,9 +332,7 @@ final readonly class RunStore {
 			$expected = $snapshot['state'];
 		}
 
-		$replacement     = $expected
-			->with_heartbeat_at( $at ?? $this->clock->now()->getTimestamp() )
-			->with_executing( true );
+		$replacement     = $expected->with_heartbeat_at( $at ?? $this->clock->now()->getTimestamp() )->with_executing( true );
 		$replacement_raw = null === $raw
 			? $this->transition_state( $run_id, $expected, $replacement )
 			: $this->transition( $run_id, $raw, $replacement );
@@ -490,20 +473,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState(
-			status: $status,
-			executing: $value['executing'],
-			start_args: $value['start_args'],
-			args_hash: $value['args_hash'],
-			queue: $value['queue'],
-			failed_attempts: $value['failed_attempts'],
-			action_seq: $value['action_seq'],
-			created_at: $value['created_at'],
-			heartbeat_at: $value['heartbeat_at'],
-			pending: $pending,
-			error: $error,
-			effects: $effects,
-		);
+		return new RunState( status: $status, executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_seq: $value['action_seq'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
 	}
 
 	/**
@@ -552,10 +522,7 @@ final readonly class RunStore {
 			return false;
 		}
 
-		return \array_all(
-			$value['queue'],
-			static fn ( mixed $chunk ): bool => \is_array( $chunk ) && PortableArguments::is_valid( $chunk )
-		);
+		return \array_all( $value['queue'], static fn ( mixed $chunk ): bool => \is_array( $chunk ) && PortableArguments::is_valid( $chunk ) );
 	}
 
 	/**

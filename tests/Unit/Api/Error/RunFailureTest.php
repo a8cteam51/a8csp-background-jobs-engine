@@ -33,15 +33,7 @@ final class RunFailureTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_constructor_retains_the_complete_failure(): void {
-		$failure = new RunFailure(
-			name: 'recount-comments',
-			run_id: 'run-7',
-			attempts: 3,
-			stage: 'execution',
-			code: ApiErrorCode::ExecutionFailed,
-			summary: 'Background-work execution failed because RuntimeException was thrown.',
-			failed_chunk: array( 'post_id' => 42 ),
-		);
+		$failure = new RunFailure( name: 'recount-comments', run_id: 'run-7', attempts: 3, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Background-work execution failed because RuntimeException was thrown.', failed_chunk: array( 'post_id' => 42 ), );
 
 		self::assertInstanceOf( ErrorInterface::class, $failure );
 		self::assertSame( 'recount-comments', $failure->name );

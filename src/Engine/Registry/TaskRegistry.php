@@ -67,9 +67,7 @@ final class TaskRegistry {
 		WorkIdentity::validate_name( $name );
 		$parts = WorkIdentity::parts( $identity );
 		if ( null === $parts || $name !== $parts[1] ) {
-			throw new \InvalidArgumentException(
-				'Task identity must be canonical and end with the task\'s declared local name.'
-			);
+			throw new \InvalidArgumentException( 'Task identity must be canonical and end with the task\'s declared local name.' );
 		}
 
 		$this->work->claim( $identity, 'task' );

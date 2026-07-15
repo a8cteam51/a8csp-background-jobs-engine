@@ -146,26 +146,8 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_record_all_and_remove_round_trip_exact_entries(): void {
 		$store = new FailedRunStore( self::identity( 'reports' ), $this->rows );
 
-		self::assertTrue(
-			$store->record(
-				'run-a',
-				1_700_000_001,
-				array( 'site_id' => 7 ),
-				3,
-				new EngineError( 'Database unavailable.', \RuntimeException::class ),
-				self::failure( 'run-a', 3, 'Database unavailable.', 'reports', array( 'page' => 7 ) )
-			)
-		);
-		self::assertTrue(
-			$store->record(
-				'run-b',
-				1_700_000_002,
-				array( 'site_id' => 8 ),
-				1,
-				new EngineError( 'Task returned an invalid result.' ),
-				self::failure( 'run-b', 1, 'Task returned an invalid result.', 'reports' )
-			)
-		);
+		self::assertTrue( $store->record( 'run-a', 1_700_000_001, array( 'site_id' => 7 ), 3, new EngineError( 'Database unavailable.', \RuntimeException::class ), self::failure( 'run-a', 3, 'Database unavailable.', 'reports', array( 'page' => 7 ) ) ) );
+		self::assertTrue( $store->record( 'run-b', 1_700_000_002, array( 'site_id' => 8 ), 1, new EngineError( 'Task returned an invalid result.' ), self::failure( 'run-b', 1, 'Task returned an invalid result.', 'reports' ) ) );
 
 		$expected = array(
 			array(
@@ -226,21 +208,12 @@ final class FailedRunStoreTest extends TestCase {
 		$store = new FailedRunStore( self::identity( 'first-write-wins' ), $this->rows );
 		$first = self::entry( 'run-a', 100, array( 'source' => 'first' ), 1, 'First failure.' );
 
-		self::assertTrue(
-			$store->record( 'run-a', 100, array( 'source' => 'first' ), 1, new EngineError( 'First failure.' ), self::failure( 'run-a', 1, 'First failure.', 'first-write-wins' ) )
-		);
+		self::assertTrue( $store->record( 'run-a', 100, array( 'source' => 'first' ), 1, new EngineError( 'First failure.' ), self::failure( 'run-a', 1, 'First failure.', 'first-write-wins' ) ) );
 		$first_raw = $this->wpdb->rows[ $key ] ?? null;
 		self::assertIsString( $first_raw );
 		$this->wpdb->recorded_queries = array();
 
-		$recorded = $store->record(
-			'run-a',
-			200,
-			array( 'source' => 'second' ),
-			2,
-			new EngineError( 'Second failure.', \RuntimeException::class ),
-			self::failure( 'run-a', 2, 'Second failure.', 'first-write-wins' )
-		);
+		$recorded = $store->record( 'run-a', 200, array( 'source' => 'second' ), 2, new EngineError( 'Second failure.', \RuntimeException::class ), self::failure( 'run-a', 2, 'Second failure.', 'first-write-wins' ) );
 
 		self::assertTrue( $recorded );
 		self::assertSame( $first_raw, $this->wpdb->rows[ $key ] ?? null );
@@ -257,25 +230,11 @@ final class FailedRunStoreTest extends TestCase {
 		$this->wpdb->before_next(
 			'insert',
 			static function () use ( $store, &$rival_recorded ): void {
-				$rival_recorded = $store->record(
-					'run-a',
-					100,
-					array( 'source' => 'rival' ),
-					1,
-					new EngineError( 'Rival failure.' ),
-					self::failure( 'run-a', 1, 'Rival failure.', 'same-run-race' )
-				);
+				$rival_recorded = $store->record( 'run-a', 100, array( 'source' => 'rival' ), 1, new EngineError( 'Rival failure.' ), self::failure( 'run-a', 1, 'Rival failure.', 'same-run-race' ) );
 			}
 		);
 
-		$recorded = $store->record(
-			'run-a',
-			200,
-			array( 'source' => 'requested' ),
-			2,
-			new EngineError( 'Requested failure.' ),
-			self::failure( 'run-a', 2, 'Requested failure.', 'same-run-race' )
-		);
+		$recorded = $store->record( 'run-a', 200, array( 'source' => 'requested' ), 2, new EngineError( 'Requested failure.' ), self::failure( 'run-a', 2, 'Requested failure.', 'same-run-race' ) );
 
 		$raw = $this->wpdb->rows[ $key ] ?? null;
 		self::assertTrue( $rival_recorded );
@@ -296,16 +255,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		for ( $index = 0; $index <= 20; ++$index ) {
 			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
-			self::assertTrue(
-				$store->record(
-					'run-' . $suffix,
-					1_700_000_000 + $index,
-					array( 'index' => $index ),
-					$index + 1,
-					new EngineError( 'Failure ' . $suffix ),
-					self::failure( 'run-' . $suffix, $index + 1, 'Failure ' . $suffix, 'exports' )
-				)
-			);
+			self::assertTrue( $store->record( 'run-' . $suffix, 1_700_000_000 + $index, array( 'index' => $index ), $index + 1, new EngineError( 'Failure ' . $suffix ), self::failure( 'run-' . $suffix, $index + 1, 'Failure ' . $suffix, 'exports' ) ) );
 		}
 
 		$result = $store->all();
@@ -316,13 +266,7 @@ final class FailedRunStoreTest extends TestCase {
 		$entries = $result->value;
 
 		self::assertCount( 20, $entries );
-		self::assertSame(
-			\array_map(
-				static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-				\range( 1, 20 )
-			),
-			\array_column( $entries, 'run_id' )
-		);
+		self::assertSame( \array_map( static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), \range( 1, 20 ) ), \array_column( $entries, 'run_id' ) );
 		self::assertSame( 'Failure 01', $entries[0]['error']['message'] );
 		self::assertSame( 'Failure 20', $entries[19]['error']['message'] );
 		$this->assert_authoritative_row( 'a8csp_bgte_failed_runs-tests:exports', $entries );
@@ -431,14 +375,7 @@ final class FailedRunStoreTest extends TestCase {
 			}
 		);
 
-		$recorded = ( new FailedRunStore( self::identity( 'imports' ), $this->rows ) )->record(
-			'run-new',
-			200,
-			array(),
-			1,
-			new EngineError( 'New failure.' ),
-			self::failure( 'run-new', 1, 'New failure.', 'imports' )
-		);
+		$recorded = ( new FailedRunStore( self::identity( 'imports' ), $this->rows ) )->record( 'run-new', 200, array(), 1, new EngineError( 'New failure.' ), self::failure( 'run-new', 1, 'New failure.', 'imports' ) );
 
 		self::assertFalse( $recorded );
 		self::assertSame( 1, $read_failures );
@@ -454,8 +391,7 @@ final class FailedRunStoreTest extends TestCase {
 		$this->wpdb->put( $key, $raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$recorded = ( new FailedRunStore( self::identity( 'record-write-failure' ), $this->rows ) )
-			->record( 'run-new', 200, array(), 2, new EngineError( 'New failure.' ), self::failure( 'run-new', 2, 'New failure.', 'record-write-failure' ) );
+		$recorded = ( new FailedRunStore( self::identity( 'record-write-failure' ), $this->rows ) )->record( 'run-new', 200, array(), 2, new EngineError( 'New failure.' ), self::failure( 'run-new', 2, 'New failure.', 'record-write-failure' ) );
 
 		self::assertFalse( $recorded );
 		self::assertSame( $raw, $this->wpdb->rows[ $key ] ?? null );
@@ -604,16 +540,7 @@ final class FailedRunStoreTest extends TestCase {
 			$this->wpdb->before_next(
 				'delete',
 				static function ( WpdbLockSpy $wpdb ) use ( $store, $index, $suffix ): void {
-					self::assertTrue(
-						$store->record(
-							'run-' . $suffix,
-							200 + $index,
-							array(),
-							2 + $index,
-							new EngineError( 'Failure ' . \strtoupper( $suffix ) . '.' ),
-							self::failure( 'run-' . $suffix, 2 + $index, 'Failure ' . \strtoupper( $suffix ) . '.', 'cas-exhaustion' )
-						)
-					);
+					self::assertTrue( $store->record( 'run-' . $suffix, 200 + $index, array(), 2 + $index, new EngineError( 'Failure ' . \strtoupper( $suffix ) . '.' ), self::failure( 'run-' . $suffix, 2 + $index, 'Failure ' . \strtoupper( $suffix ) . '.', 'cas-exhaustion' ) ) );
 				}
 			);
 		}
@@ -699,10 +626,7 @@ final class FailedRunStoreTest extends TestCase {
 		}
 
 		$expected_run_ids =
-			\array_map(
-				static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-				\range( 2, 21 )
-			);
+			\array_map( static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), \range( 2, 21 ) );
 		self::assertSame( $expected_run_ids, \array_column( $result->value, 'run_id' ) );
 		$this->assert_authoritative_row( $key, $result->value );
 	}
@@ -751,15 +675,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  RunFailure
 	 */
 	private static function failure( string $run_id, int $attempts, string $summary, string $name, ?array $failed_chunk = null ): RunFailure {
-		return new RunFailure(
-			name: self::identity( $name ),
-			run_id: $run_id,
-			attempts: $attempts,
-			stage: 'execution',
-			code: ApiErrorCode::ExecutionFailed,
-			summary: $summary,
-			failed_chunk: $failed_chunk,
-		);
+		return new RunFailure( name: self::identity( $name ), run_id: $run_id, attempts: $attempts, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: $summary, failed_chunk: $failed_chunk, );
 	}
 
 	/**
@@ -803,14 +719,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function write_queries( ?string $prefix = null ): array {
-		return \array_values(
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => null === $prefix
-					? \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'UPDATE ' ) || \str_starts_with( $query, 'DELETE ' )
-					: \str_starts_with( $query, $prefix )
-			)
-		);
+		return \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => null === $prefix ? \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'UPDATE ' ) || \str_starts_with( $query, 'DELETE ' ) : \str_starts_with( $query, $prefix ) ) );
 	}
 
 	/**

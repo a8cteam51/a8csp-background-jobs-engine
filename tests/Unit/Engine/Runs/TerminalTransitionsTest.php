@@ -149,26 +149,9 @@ final class TerminalTransitionsTest extends TestCase {
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$this->failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$this->terminal_transitions
-		);
+		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
-		$this->dispatcher = new Dispatcher(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$this->terminal_transitions,
-		);
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, );
 	}
 
 	// endregion.
@@ -251,13 +234,7 @@ final class TerminalTransitionsTest extends TestCase {
 	public function test_active_run_state_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq(),
-			$run_store
-		);
+		$first     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 		$expected_run  = $this->option( $this->run_option_name() );
@@ -268,13 +245,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
-		$duplicate = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq(),
-			$run_store
-		);
+		$duplicate = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 
 		self::assertNull( $duplicate );
 		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
@@ -306,26 +277,14 @@ final class TerminalTransitionsTest extends TestCase {
 	public function test_active_run_state_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq(),
-			$run_store
-		);
+		$first     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 
 		$this->clock->timestamp = self::NOW + 991;
 		$this->logger->records  = array();
 
-		$reclaimed = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq(),
-			$run_store
-		);
+		$reclaimed = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 
 		self::assertInstanceOf( RunState::class, $reclaimed );
 		self::assertTrue( $reclaimed->executing );
@@ -344,47 +303,21 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
-		$incumbent = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq(),
-			$run_store,
-			static fn (): int => $credit_at
-		);
+		$incumbent = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, static fn (): int => $credit_at );
 		self::assertInstanceOf( RunState::class, $incumbent );
 
 		$reset_at               = $credit_at + 901;
-		$advanced               = $incumbent
-			->with_heartbeat_at( $reset_at )
-			->with_action_seq( $incumbent->action_seq + 1 );
+		$advanced               = $incumbent->with_heartbeat_at( $reset_at )->with_action_seq( $incumbent->action_seq + 1 );
 		$this->clock->timestamp = $reset_at;
 		$this->wpdb->before_next(
 			'select',
 			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
-				self::assertFalse(
-					$this->terminal_transitions->abort_unless_fence_owned(
-						'Task',
-						self::IDENTITY,
-						self::RUN_ID,
-						$incumbent,
-						$run_store,
-						$reset_at,
-						$incumbent->heartbeat_at
-					)
-				);
+				self::assertFalse( $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
 				self::assertIsString( $run_store->transition_state( self::RUN_ID, $incumbent, $advanced ) );
 			}
 		);
 
-		$reclaimed = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$incumbent->action_seq,
-			$run_store,
-			static fn (): int => $reset_at + 300
-		);
+		$reclaimed = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $incumbent->action_seq, $run_store, static fn (): int => $reset_at + 300 );
 
 		self::assertNull( $reclaimed );
 		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
@@ -423,13 +356,7 @@ final class TerminalTransitionsTest extends TestCase {
 			}
 		);
 
-		$must_abort = $this->terminal_transitions->abort_unless_fence_owned(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$state,
-			$run_store
-		);
+		$must_abort = $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		$after = $run_store->inspect( self::RUN_ID );
@@ -537,11 +464,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_the_counter_after_a_successful_retry(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
@@ -562,11 +485,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_a_scheduled_retry_executes(): void {
-		$this->task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
@@ -748,16 +667,7 @@ final class TerminalTransitionsTest extends TestCase {
 		}
 		$error = new EngineError( 'Terminal failure.' );
 
-		$this->terminal_transitions->fail_run(
-			self::IDENTITY,
-			self::RUN_ID,
-			$state,
-			$run_store,
-			$error,
-			1,
-			'execution',
-			ApiErrorCode::ExecutionFailed
-		);
+		$this->terminal_transitions->fail_run( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 1, 'execution', ApiErrorCode::ExecutionFailed );
 
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 		self::assertSame(
@@ -837,62 +747,23 @@ final class TerminalTransitionsTest extends TestCase {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $running );
-		$terminal  = $running
-			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
+		$terminal  = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$claim_raw = $run_store->transition_state( self::RUN_ID, $running, $terminal );
 		self::assertIsString( $claim_raw );
 
-		self::assertFalse(
-			$this->terminal_transitions->finish_claimed_transition(
-				self::IDENTITY,
-				self::RUN_ID,
-				$terminal,
-				$claim_raw,
-				$run_store,
-				'Task'
-			)
-		);
+		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store, 'Task' ) );
 		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
 		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
 		self::assertNotNull( $hooks );
-		self::assertFalse(
-			$this->terminal_transitions->finish_claimed_transition(
-				self::IDENTITY,
-				self::RUN_ID,
-				$hooks['state'],
-				$hooks['raw'],
-				$run_store,
-				'Task'
-			)
-		);
+		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store, 'Task' ) );
 
 		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
 		self::assertNotNull( $complete );
-		self::assertFalse(
-			$this->terminal_transitions->finish_claimed_transition(
-				self::IDENTITY,
-				self::RUN_ID,
-				$complete['state'],
-				$hooks['raw'],
-				$run_store,
-				'Task'
-			)
-		);
+		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store, 'Task' ) );
 		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
-		self::assertTrue(
-			$this->terminal_transitions->finish_claimed_transition(
-				self::IDENTITY,
-				self::RUN_ID,
-				$complete['state'],
-				$complete['raw'],
-				$run_store,
-				'Task'
-			)
-		);
+		self::assertTrue( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store, 'Task' ) );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
@@ -933,11 +804,7 @@ final class TerminalTransitionsTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame(
-			$run_ids[20],
-			( new LatestRunPointer( self::IDENTITY, $this->rows ) )->get_latest(),
-			'Repairing the evicted owner identity must preserve the globally newest run'
-		);
+		self::assertSame( $run_ids[20], ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->get_latest(), 'Repairing the evicted owner identity must preserve the globally newest run' );
 	}
 
 	/**
@@ -984,13 +851,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-		$must_abort = $this->terminal_transitions->abort_unless_fence_owned(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$state,
-			$run_store
-		);
+		$must_abort = $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -1017,9 +878,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
-		self::assertIsString(
-			$run_store->transition_state( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) )
-		);
+		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) ) );
 
 		$this->logger->records = array();
 
@@ -1225,13 +1084,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	private function handle_task_run_action( string $run_id, int $action_seq ): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			$run_id,
-			$action_seq,
-			$run_store
-		);
+		$state     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -1239,14 +1092,7 @@ final class TerminalTransitionsTest extends TestCase {
 		try {
 			$this->task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_task_failure(
-				$this->task,
-				self::IDENTITY,
-				$run_id,
-				$state,
-				$run_store,
-				$throwable
-			);
+			$this->failure_lifecycle->handle_task_failure( $this->task, self::IDENTITY, $run_id, $state, $run_store, $throwable );
 
 			return;
 		}

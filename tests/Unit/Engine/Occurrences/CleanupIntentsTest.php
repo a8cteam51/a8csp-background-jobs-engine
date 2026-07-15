@@ -125,12 +125,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$this->delivery = $this->new_delivery( $this->registry );
-		$this->api      = new Schedules(
-			$this->registry,
-			$this->backend,
-			$this->clock,
-			$this->delivery
-		);
+		$this->api      = new Schedules( $this->registry, $this->backend, $this->clock, $this->delivery );
 	}
 
 	// endregion.
@@ -147,22 +142,12 @@ final class CleanupIntentsTest extends TestCase {
 
 		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( array( self::REGISTRATION_KEY ), $this->backend->calls[1]['args']['args'] ?? null );
-		self::assertCount(
-			1,
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				fn ( string $query ): bool => \str_starts_with( $query, 'INSERT IGNORE ' )
-					&& \str_contains( $query, $this->intent_option_name() )
-			)
-		);
+		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, fn ( string $query ): bool => \str_starts_with( $query, 'INSERT IGNORE ' ) && \str_contains( $query, $this->intent_option_name() ) ) );
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
-		self::assertSame(
-			'Unknown schedule registration "owner-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Unknown schedule registration "owner-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -173,10 +158,7 @@ final class CleanupIntentsTest extends TestCase {
 	public function test_inline_convergence_uses_authority_from_the_clearing_snapshot(): void {
 		$dormant                    = new RecordingBackend();
 		$dormant->readiness_results = array( false, true );
-		$this->delivery             = $this->new_delivery(
-			$this->registry,
-			new SchedulerFacade( array( $dormant, $this->backend ) )
-		);
+		$this->delivery             = $this->new_delivery( $this->registry, new SchedulerFacade( array( $dormant, $this->backend ) ) );
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
@@ -226,12 +208,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_logs_and_retains_a_failed_clear(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Repair the backend before retrying convergence.'
-			)
-		);
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the backend before retrying convergence.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		$this->backend->calls  = array();
 		$this->logger->records = array();
@@ -242,10 +219,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame(
-			'Unknown schedule cleanup intent remains pending because verified clearance failed.',
-			$this->logger->records[0]['message'] ?? null
-		);
+		self::assertSame( 'Unknown schedule cleanup intent remains pending because verified clearance failed.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -254,12 +228,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_skips_a_failed_name_scan(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the intent pending until the maintenance sweep.'
-			)
-		);
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the intent pending until the maintenance sweep.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$this->backend->calls         = array();
@@ -400,12 +369,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_unknown_delivery_keeps_an_existing_intent_unchanged(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the intent pending across deliveries.'
-			)
-		);
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the intent pending across deliveries.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		$original_raw = $this->wpdb->rows[ $this->intent_option_name() ] ?? null;
 		self::assertIsString( $original_raw );
@@ -422,12 +386,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_chain_clears_intent_without_scheduler_access(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the intent pending until registration.'
-			)
-		);
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the intent pending until registration.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$this->sync_schedule( $this->schedule() );
@@ -445,12 +404,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_intent_cas_delete_loses_to_a_delete_reinsert(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the first intent pending.'
-			)
-		);
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the first intent pending.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$this->clock->timestamp = self::NOW + 1;
@@ -480,12 +434,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_intent_convergence_never_throws_on_a_poisoned_row(): void {
-		$this->backend->results['unschedule'] = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Keep the valid intent pending.'
-			)
-		);
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the valid intent pending.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$poisoned_name = 'a8csp_bgte_cleanup_' . \str_repeat( '0', 64 );
@@ -513,15 +462,7 @@ final class CleanupIntentsTest extends TestCase {
 		OverlapPolicy $overlap = OverlapPolicy::Skip,
 		CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce
 	): Schedule {
-		return new Schedule(
-			self::NAME,
-			Recurrence::every( self::INTERVAL ),
-			self::TASK,
-			self::ARGS,
-			$overlap,
-			$catch_up,
-			23
-		);
+		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::TASK, self::ARGS, $overlap, $catch_up, 23 );
 	}
 
 	/**
@@ -579,36 +520,12 @@ final class CleanupIntentsTest extends TestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$dispatcher           = new Dispatcher(
-			$tasks,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$dispatcher           = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, );
 
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
-		$this->cleanup_intents = new CleanupIntents(
-			$registry,
-			$scheduler,
-			new OptionRows( $this->wpdb ),
-			$this->clock,
-			$this->logger
-		);
+		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
-		return new OccurrenceDelivery(
-			$registry,
-			$dispatcher,
-			new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ),
-			$this->cleanup_intents,
-			$this->clock,
-			$this->logger
-		);
+		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );
 	}
 
 	/**

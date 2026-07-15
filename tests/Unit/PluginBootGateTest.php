@@ -98,10 +98,7 @@ final class PluginBootGateTest extends TestCase {
 		self::assertSame( 3, $log_registration['accepted_args'] ?? null );
 		$filter_registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? null;
 		self::assertIsArray( $filter_registrations );
-		self::assertSame(
-			array( 'cron_schedules' ),
-			\array_column( $filter_registrations, 'hook_name' )
-		);
+		self::assertSame( array( 'cron_schedules' ), \array_column( $filter_registrations, 'hook_name' ) );
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
 	}
 

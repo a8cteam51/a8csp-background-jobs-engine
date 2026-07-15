@@ -97,13 +97,7 @@ final class WPCronBackend implements BackendInterface {
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
 		if ( 1 > $interval ) {
-			return new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::InvalidTimeInput,
-					'WP-Cron requires recurring intervals greater than zero; use at least one second.',
-					array( 'interval' => $interval ),
-				)
-			);
+			return new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'WP-Cron requires recurring intervals greater than zero; use at least one second.', array( 'interval' => $interval ), ) );
 		}
 
 		$next_scheduled = \wp_next_scheduled( $hook, $args );
@@ -199,16 +193,7 @@ final class WPCronBackend implements BackendInterface {
 			return $this->result_for_wp_write( $wp_error, $hook, 'unschedule' );
 		}
 
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				\sprintf(
-					'WP-Cron still has hook "%s" scheduled; repair the WordPress cron event and retry unscheduling.',
-					$hook
-				),
-				array( 'hook' => $hook ),
-			)
-		);
+		return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'WP-Cron still has hook "%s" scheduled; repair the WordPress cron event and retry unscheduling.', $hook ), array( 'hook' => $hook ), ) );
 	}
 
 	/**
@@ -229,16 +214,7 @@ final class WPCronBackend implements BackendInterface {
 				return $this->failure_for_wp_error( $result, $hook, 'unschedule' );
 			}
 			if ( ! \is_int( $result ) || 0 !== $this->hook_occurrence_count( $hook ) ) {
-				return new Failure(
-					new SchedulingError(
-						SchedulingErrorReason::ScheduleFailed,
-						\sprintf(
-							'WP-Cron still has hook "%s" scheduled; repair the WordPress cron event and retry unscheduling.',
-							$hook
-						),
-						array( 'hook' => $hook ),
-					)
-				);
+				return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'WP-Cron still has hook "%s" scheduled; repair the WordPress cron event and retry unscheduling.', $hook ), array( 'hook' => $hook ), ) );
 			}
 
 			$count += $result;
@@ -535,17 +511,7 @@ final class WPCronBackend implements BackendInterface {
 		}
 
 		if ( false === $result ) {
-			return new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::ScheduleFailed,
-					\sprintf(
-						'WP-Cron could not %1$s hook "%2$s"; repair the WordPress cron event and retry.',
-						$operation,
-						$hook
-					),
-					array( 'hook' => $hook ),
-				)
-			);
+			return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'WP-Cron could not %1$s hook "%2$s"; repair the WordPress cron event and retry.', $operation, $hook ), array( 'hook' => $hook ), ) );
 		}
 
 		return $this->failure_for_wp_error( $result, $hook, $operation );
@@ -565,21 +531,9 @@ final class WPCronBackend implements BackendInterface {
 	 */
 	private function failure_for_wp_error( \WP_Error $result, string $hook, string $operation ): Failure {
 		$message = match ( $result->get_error_code() ) {
-			'duplicate_event' => \sprintf(
-				'WP-Cron could not %1$s hook "%2$s": an identical hook+args event exists within WP-Cron\'s ten-minute duplicate window; use arguments that identify a distinct event or retry after the existing event clears.',
-				$operation,
-				$hook
-			),
-			'invalid_schedule' => \sprintf(
-				'WP-Cron could not %1$s hook "%2$s": the recurrence is not registered; ensure register_hooks() ran on this request.',
-				$operation,
-				$hook
-			),
-			default => \sprintf(
-				'WP-Cron could not %1$s hook "%2$s"; inspect the WordPress cron error, correct the rejected event, and retry.',
-				$operation,
-				$hook
-			),
+			'duplicate_event' => \sprintf( 'WP-Cron could not %1$s hook "%2$s": an identical hook+args event exists within WP-Cron\'s ten-minute duplicate window; use arguments that identify a distinct event or retry after the existing event clears.', $operation, $hook ),
+			'invalid_schedule' => \sprintf( 'WP-Cron could not %1$s hook "%2$s": the recurrence is not registered; ensure register_hooks() ran on this request.', $operation, $hook ),
+			default => \sprintf( 'WP-Cron could not %1$s hook "%2$s"; inspect the WordPress cron error, correct the rejected event, and retry.', $operation, $hook ),
 		};
 
 		return new Failure(

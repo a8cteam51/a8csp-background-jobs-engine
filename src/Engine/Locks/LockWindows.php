@@ -72,12 +72,7 @@ final readonly class LockWindows {
 	 * @return  int
 	 */
 	public function continue_delay( string $batch_name, string $run_id ): int {
-		$delay = \apply_filters(
-			'a8csp_background_tasks/continue_delay',
-			self::CONTINUE_DELAY,
-			$batch_name,
-			$run_id
-		);
+		$delay = \apply_filters( 'a8csp_background_tasks/continue_delay', self::CONTINUE_DELAY, $batch_name, $run_id );
 
 		return \is_int( $delay ) && 0 <= $delay ? $delay : self::CONTINUE_DELAY;
 	}
@@ -97,10 +92,7 @@ final readonly class LockWindows {
 		$continue_delay = $this->continue_delay( $name, $run_id );
 
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
-		$staleness         = \apply_filters(
-			'a8csp_background_tasks/lock_staleness/' . $name,
-			$default_staleness
-		);
+		$staleness         = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $name, $default_staleness );
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
 			$staleness = $default_staleness;
 		}

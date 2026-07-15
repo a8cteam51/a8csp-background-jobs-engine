@@ -199,11 +199,7 @@ final readonly class ScheduleOutput {
 	public static function render( array $snapshot, ?string $owner, string $format ): void {
 		$rows = self::rows_from_entries( $snapshot['entries'], $snapshot['observed_at'] );
 		if ( array() === $rows && 'table' === $format ) {
-			\WP_CLI::line(
-				null === $owner
-					? 'No schedule registrations are persisted.'
-					: \sprintf( 'No schedule registrations are persisted for owner "%s".', $owner )
-			);
+			\WP_CLI::line( null === $owner ? 'No schedule registrations are persisted.' : \sprintf( 'No schedule registrations are persisted for owner "%s".', $owner ) );
 			return;
 		}
 

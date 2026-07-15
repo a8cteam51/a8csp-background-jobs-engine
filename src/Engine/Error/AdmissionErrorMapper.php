@@ -121,9 +121,7 @@ final class AdmissionErrorMapper {
 	 */
 	private static function engine_code( EngineError $error ): ApiErrorCode {
 		if ( null === $error->reason ) {
-			throw new \LogicException(
-				'An internal engine failure reached the admission boundary without a public classification.'
-			);
+			throw new \LogicException( 'An internal engine failure reached the admission boundary without a public classification.' );
 		}
 
 		return match ( $error->reason ) {

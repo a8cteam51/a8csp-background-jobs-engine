@@ -47,16 +47,13 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const CANCEL_BATCH_NAME = 'integration-cli-command:integration-cli-command-cancel-batch';
 
 	/** Test-only WP-CLI bootstrap that registers the cancel-completeness batch. */
-	private const CANCEL_BATCH_BOOTSTRAP = self::WP_PATH
-		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
+	private const CANCEL_BATCH_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
 
 	/** Test-only WP-CLI bootstrap that declares the inspection task and schedule. */
-	private const INSPECTION_BOOTSTRAP = self::WP_PATH
-		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
+	private const INSPECTION_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
 
 	/** Test-only WP-CLI bootstrap that fails the retained-run row read after name discovery. */
-	private const FAILED_READ_BOOTSTRAP = self::WP_PATH
-		. '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-failed-read.php';
+	private const FAILED_READ_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-failed-read.php';
 
 	/** Owner declared in every isolated inspection request. */
 	private const INSPECTION_OWNER = 'integration-cli-inspection-owner';
@@ -112,10 +109,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame(
-			"Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte:maintenance\".\n",
-			$result['stdout']
-		);
+		self::assertSame( "Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte:maintenance\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		$run_read = self::option_rows()->read( self::cancel_run_option_name() );
 		if ( $run_read->is_failure() ) {
@@ -156,10 +150,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Error: Run \"integration-cli-command-run-1\" is executing; a run in flight completes or fails on its own.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Error: Run \"integration-cli-command-run-1\" is executing; a run in flight completes or fails on its own.\n", $result['stderr'] );
 	}
 
 	/**
@@ -171,20 +162,12 @@ final class CLICommandTest extends IntegrationTestCase {
 		$this->expect_option( self::cancel_batch_run_option_name() );
 		$run_store = $this->seed_cancel_batch_pending_cleanup();
 
-		$result = self::run_command_with_globals(
-			'cancel',
-			array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ),
-			self::CANCEL_BATCH_NAME,
-			self::RUN_ID
-		);
+		$result = self::run_command_with_globals( 'cancel', array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ), self::CANCEL_BATCH_NAME, self::RUN_ID );
 		self::assertTrue( $run_store->delete( self::RUN_ID ), 'The completeness fixture must remain retained after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Error: Run \"integration-cli-command-run-1\" has no chunks left to process; the pending cleanup completes it.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Error: Run \"integration-cli-command-run-1\" has no chunks left to process; the pending cleanup completes it.\n", $result['stderr'] );
 	}
 
 	/**
@@ -197,11 +180,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' .
-			"register the matching task or batch before cancelling its run.\n",
-			$result['stderr']
-		);
+		self::assertSame( 'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' . "register the matching task or batch before cancelling its run.\n", $result['stderr'] );
 	}
 
 	/**
@@ -214,11 +193,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			'Error: Run "integration-cli-command-run-1" for background-work ' .
-			"\"a8csp-bgte:maintenance\" is not retained; nothing remains to cancel.\n",
-			$result['stderr']
-		);
+		self::assertSame( 'Error: Run "integration-cli-command-run-1" for background-work ' . "\"a8csp-bgte:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
 	}
 
 	/**
@@ -317,19 +292,11 @@ final class CLICommandTest extends IntegrationTestCase {
 		$this->expect_option( self::option_name( self::LIST_STORE_NAME ) );
 		$this->seed_failed_run( self::LIST_STORE_NAME );
 
-		$result = self::run_command_with_globals(
-			'failed-runs',
-			array( '--require=' . self::FAILED_READ_BOOTSTRAP ),
-			'list'
-		);
+		$result = self::run_command_with_globals( 'failed-runs', array( '--require=' . self::FAILED_READ_BOOTSTRAP ), 'list' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			'Error: Failed runs for "integration-cli-command:integration-cli-command-list-store" are unavailable because the authoritative ' .
-			"database read failed; resolve the database error and try again.\n",
-			$result['stderr']
-		);
+		self::assertSame( 'Error: Failed runs for "integration-cli-command:integration-cli-command-list-store" are unavailable because the authoritative ' . "database read failed; resolve the database error and try again.\n", $result['stderr'] );
 	}
 
 	/**
@@ -342,11 +309,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' .
-			"register the matching task or batch before retrying its failed run.\n",
-			$result['stderr']
-		);
+		self::assertSame( 'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' . "register the matching task or batch before retrying its failed run.\n", $result['stderr'] );
 	}
 
 	/**
@@ -361,10 +324,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_failed_runs_command( 'purge', self::PURGE_STORE_NAME );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame(
-			"Success: Purged 1 failed run for \"integration-cli-command:integration-cli-command-purge-store\".\n",
-			$result['stdout']
-		);
+		self::assertSame( "Success: Purged 1 failed run for \"integration-cli-command:integration-cli-command-purge-store\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		self::assert_store_absent( self::PURGE_STORE_NAME, $store, $rows );
 	}
@@ -422,10 +382,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Error: Failed-run action \"remove\" is invalid; use list, retry, or purge.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Error: Failed-run action \"remove\" is invalid; use list, retry, or purge.\n", $result['stderr'] );
 	}
 
 	/**
@@ -435,11 +392,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	#[Group( 'degraded' )]
 	public function test_schedules_list_renders_the_table(): void {
-		$result = self::run_command_with_globals(
-			'schedules',
-			array( '--require=' . self::INSPECTION_BOOTSTRAP ),
-			'list'
-		);
+		$result = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stderr'] );
@@ -460,13 +413,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_schedules_list_json_exposes_the_registered_row(): void {
-		$result  = self::run_command_with_globals(
-			'schedules',
-			array( '--require=' . self::INSPECTION_BOOTSTRAP ),
-			'list',
-			'--owner=' . self::INSPECTION_OWNER,
-			'--format=json'
-		);
+		$result  = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=' . self::INSPECTION_OWNER, '--format=json' );
 		$decoded = \json_decode( $result['stdout'], true, 512, \JSON_THROW_ON_ERROR );
 
 		self::assertSame( 0, $result['exit_code'] );
@@ -475,10 +422,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertCount( 1, $decoded );
 		$row = $decoded[0] ?? null;
 		self::assertIsArray( $row );
-		self::assertSame(
-			array( 'owner', 'name', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ),
-			\array_keys( $row )
-		);
+		self::assertSame( array( 'owner', 'name', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ), \array_keys( $row ) );
 		self::assertSame( self::INSPECTION_OWNER, $row['owner'] ?? null );
 		self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $row['name'] ?? null );
 		self::assertSame( 300, $row['recurrence'] ?? null );
@@ -498,12 +442,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_schedules_list_reports_the_filtered_empty_state(): void {
-		$result = self::run_command_with_globals(
-			'schedules',
-			array( '--require=' . self::INSPECTION_BOOTSTRAP ),
-			'list',
-			'--owner=missing-owner'
-		);
+		$result = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=missing-owner' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "No schedule registrations are persisted for owner \"missing-owner\".\n", $result['stdout'] );
@@ -527,10 +466,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n", $result['stderr'] );
 	}
 
 	/**
@@ -542,10 +478,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_command( 'schedules' );
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame(
-			"usage: wp background-tasks schedules <action> [--owner=<owner>] [--format=<format>]\n",
-			$result['stdout']
-		);
+		self::assertSame( "usage: wp background-tasks schedules <action> [--owner=<owner>] [--format=<format>]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -559,10 +492,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $result['stderr'] );
 	}
 
 	/**
@@ -575,19 +505,13 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $owner['exit_code'] );
 		self::assertSame( '', $owner['stdout'] );
-		self::assertSame(
-			"Error: Schedule list owner is invalid; pass a value with --owner=<owner>.\n",
-			$owner['stderr']
-		);
+		self::assertSame( "Error: Schedule list owner is invalid; pass a value with --owner=<owner>.\n", $owner['stderr'] );
 
 		$format = self::run_command( 'schedules', 'list', '--no-format' );
 
 		self::assertSame( 1, $format['exit_code'] );
 		self::assertSame( '', $format['stdout'] );
-		self::assertSame(
-			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
-			$format['stderr']
-		);
+		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $format['stderr'] );
 	}
 
 	/**
@@ -613,31 +537,12 @@ final class CLICommandTest extends IntegrationTestCase {
 		$run_store  = new RunStore( self::CANCEL_NAME, new SystemClock(), $rows );
 		$live_state = $run_store->create( self::CANONICAL_RUN_ID, array(), self::args_hash( array() ), array( array() ) );
 		self::assertNotNull( $live_state );
-		self::assertIsString(
-			$run_store->transition_state( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) )
-		);
+		self::assertIsString( $run_store->transition_state( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) ) );
 		$history = new RunHistory( self::CANCEL_NAME, $rows );
 		self::assertTrue( $history->record_started( self::CANONICAL_RUN_ID, self::args_hash( array() ) ) );
 		self::assertTrue( $history->record_terminal( 'integration-cli-history-failed', 'history-hash', RunStatus::Failed ) );
 		$failed_store = new FailedRunStore( self::CANCEL_NAME, $rows );
-		self::assertTrue(
-			$failed_store->record(
-				'integration-cli-history-failed',
-				self::FAILED_AT,
-				array(),
-				2,
-				new EngineError( 'CLI history failure.' ),
-				new RunFailure(
-					name: self::CANCEL_NAME,
-					run_id: 'integration-cli-history-failed',
-					attempts: 2,
-					stage: 'execution',
-					code: ApiErrorCode::ExecutionFailed,
-					summary: 'CLI history failure.',
-					failed_chunk: null,
-				)
-			)
-		);
+		self::assertTrue( $failed_store->record( 'integration-cli-history-failed', self::FAILED_AT, array(), 2, new EngineError( 'CLI history failure.' ), new RunFailure( name: self::CANCEL_NAME, run_id: 'integration-cli-history-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ) ) );
 
 		try {
 			$result = self::run_runs_command( 'list', self::CANCEL_NAME );
@@ -666,10 +571,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_runs_command( 'list', 'integration-cli-command:unknown-stable-name' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame(
-			"No live runs or history are retained for \"integration-cli-command:unknown-stable-name\".\n",
-			$result['stdout']
-		);
+		self::assertSame( "No live runs or history are retained for \"integration-cli-command:unknown-stable-name\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -691,10 +593,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Warning: Recent run history is unavailable because an authoritative database read failed.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Warning: Recent run history is unavailable because an authoritative database read failed.\n", $result['stderr'] );
 	}
 
 	/**
@@ -737,10 +636,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame(
-			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
-			$result['stderr']
-		);
+		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $result['stderr'] );
 	}
 
 	/**
@@ -753,19 +649,13 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $invalid_name['exit_code'] );
 		self::assertSame( '', $invalid_name['stdout'] );
-		self::assertSame(
-			"Error: Run identity is invalid; use a composed {owner}:{name} identity.\n",
-			$invalid_name['stderr']
-		);
+		self::assertSame( "Error: Run identity is invalid; use a composed {owner}:{name} identity.\n", $invalid_name['stderr'] );
 
 		$invalid_format = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=ids' );
 
 		self::assertSame( 1, $invalid_format['exit_code'] );
 		self::assertSame( '', $invalid_format['stdout'] );
-		self::assertSame(
-			"Error: List format is invalid; use table, csv, json, count, or yaml.\n",
-			$invalid_format['stderr']
-		);
+		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $invalid_format['stderr'] );
 	}
 
 	/**
@@ -779,19 +669,11 @@ final class CLICommandTest extends IntegrationTestCase {
 		$task            = new RecordingTask( self::INSPECTION_TASK );
 		$task->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
 		$consumer->tasks()->register( $task );
-		$schedule = new Schedule(
-			self::INSPECTION_SCHEDULE,
-			Recurrence::every( 300 ),
-			self::INSPECTION_TASK,
-			array( 'source' => 'schedule' )
-		);
+		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_TASK, array( 'source' => 'schedule' ) );
 		$synced   = $consumer->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
-		\add_filter(
-			'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK_IDENTITY,
-			static fn (): RetryPolicy => $retry_policy
-		);
+		\add_filter( 'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
 		$enqueued = $consumer->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
@@ -802,20 +684,8 @@ final class CLICommandTest extends IntegrationTestCase {
 		try {
 			self::assertSame( 1, $this->run_next_engine_action() );
 
-			$schedules = self::run_command_with_globals(
-				'schedules',
-				array( '--require=' . self::INSPECTION_BOOTSTRAP ),
-				'list',
-				'--owner=' . self::INSPECTION_OWNER,
-				'--format=json'
-			);
-			$runs      = self::run_command_with_globals(
-				'runs',
-				array( '--require=' . self::INSPECTION_BOOTSTRAP ),
-				'list',
-				self::INSPECTION_TASK_IDENTITY,
-				'--format=json'
-			);
+			$schedules = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=' . self::INSPECTION_OWNER, '--format=json' );
+			$runs      = self::run_command_with_globals( 'runs', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', self::INSPECTION_TASK_IDENTITY, '--format=json' );
 
 			self::assertSame( 0, $schedules['exit_code'] );
 			self::assertSame( '', $schedules['stderr'] );
@@ -825,10 +695,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			$schedule_row = $schedule_rows[0] ?? null;
 			self::assertIsArray( $schedule_row );
 			self::assertSame( self::INSPECTION_OWNER, $schedule_row['owner'] ?? null );
-			self::assertSame(
-				self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE,
-				$schedule_row['name'] ?? null
-			);
+			self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $schedule_row['name'] ?? null );
 			self::assertSame( 'yes', $schedule_row['scheduled'] ?? null );
 			self::assertSame( 'free', $schedule_row['lock'] ?? null );
 
@@ -1000,10 +867,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertNotNull( $state, 'The CLI cancel boundary requires one deterministic retained run' );
 
 		if ( $executing ) {
-			self::assertIsString(
-				$run_store->transition_state( self::RUN_ID, $state, $state->with_executing( true ) ),
-				'The executing-refusal fixture must persist its admitted-delivery marker'
-			);
+			self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_executing( true ) ), 'The executing-refusal fixture must persist its admitted-delivery marker' );
 		}
 
 		return $run_store;
@@ -1019,10 +883,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$run_store = new RunStore( self::CANCEL_BATCH_NAME, new SystemClock(), self::option_rows() );
 		$state     = $run_store->create( self::RUN_ID, $args, self::args_hash( $args ), array() );
 		self::assertNotNull( $state, 'The CLI completeness boundary requires one retained batch run' );
-		self::assertIsString(
-			$run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ),
-			'The zero-chunk fixture must advance beyond its unmaterialized state'
-		);
+		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ), 'The zero-chunk fixture must advance beyond its unmaterialized state' );
 
 		return $run_store;
 	}
@@ -1067,24 +928,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private function seed_failed_run( string $name, ?OptionRows $rows = null ): FailedRunStore {
 		$store = new FailedRunStore( $name, $rows ?? self::option_rows() );
-		self::assertTrue(
-			$store->record(
-				self::RUN_ID,
-				self::FAILED_AT,
-				array( 'account_id' => 42 ),
-				3,
-				new EngineError( 'CLI boundary failure.', \RuntimeException::class ),
-				new RunFailure(
-					name: $name,
-					run_id: self::RUN_ID,
-					attempts: 3,
-					stage: 'execution',
-					code: ApiErrorCode::ExecutionFailed,
-					summary: 'CLI boundary failure.',
-					failed_chunk: null,
-				)
-			)
-		);
+		self::assertTrue( $store->record( self::RUN_ID, self::FAILED_AT, array( 'account_id' => 42 ), 3, new EngineError( 'CLI boundary failure.', \RuntimeException::class ), new RunFailure( name: $name, run_id: self::RUN_ID, attempts: 3, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ) ) );
 
 		return $store;
 	}
@@ -1133,8 +977,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function purge_usage_error(): string {
-		return 'Error: Purge requires exactly one identity or --all; ' .
-			"use wp background-tasks failed-runs purge <identity> or purge --all.\n";
+		return 'Error: Purge requires exactly one identity or --all; ' . "use wp background-tasks failed-runs purge <identity> or purge --all.\n";
 	}
 
 	// endregion.

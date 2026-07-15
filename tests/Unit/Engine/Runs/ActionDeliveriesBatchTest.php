@@ -156,39 +156,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
+		$failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
 
-		$this->lifecycle_deliveries = new ActionDeliveries(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $failure_lifecycle, );
 
 		$this->batches->register( self::IDENTITY, $this->batch );
-		$this->dispatcher = new Dispatcher(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$this->dispatcher = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, );
 	}
 
 	// endregion.
@@ -334,10 +307,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( self::NOW + 30, $enqueue_state['heartbeat_at'] );
 		self::assertSame( 2, $enqueue_state['action_seq'] );
 		self::assertSame( $state['pending'], $enqueue_state['pending'] );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
+		self::assertSame( array( true, false ), \array_column( $this->recorded_run_states(), 'executing' ) );
 		self::assertSame( self::NOW + 30, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(
@@ -430,10 +400,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
 		$this->start_batch();
 		$this->backend->calls = array();
-		$this->set_action_throwable(
-			'a8csp_background_tasks/started/' . self::IDENTITY,
-			new \RuntimeException( 'Started listener exploded.' )
-		);
+		$this->set_action_throwable( 'a8csp_background_tasks/started/' . self::IDENTITY, new \RuntimeException( 'Started listener exploded.' ) );
 		$this->clock->timestamp = self::NOW + 30;
 
 		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
@@ -475,11 +442,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
-		$this->assert_terminal_start_error(
-			'Background-work execution failed because RuntimeException was thrown.',
-			\RuntimeException::class,
-			ApiErrorCode::ExecutionFailed
-		);
+		$this->assert_terminal_start_error( 'Background-work execution failed because RuntimeException was thrown.', \RuntimeException::class, ApiErrorCode::ExecutionFailed );
 	}
 
 	/**
@@ -501,11 +464,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
-		$this->assert_terminal_start_error(
-			'Background-work execution failed because RuntimeException was thrown.',
-			\RuntimeException::class,
-			ApiErrorCode::ExecutionFailed
-		);
+		$this->assert_terminal_start_error( 'Background-work execution failed because RuntimeException was thrown.', \RuntimeException::class, ApiErrorCode::ExecutionFailed );
 		self::assertStringNotContainsString( 'token secret', $this->batch->failure_calls[0]['error']->summary );
 	}
 
@@ -590,11 +549,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
-		$this->assert_terminal_start_error(
-			'Batch queue filter returned a non-array value; return one argument array per chunk.',
-			\UnexpectedValueException::class,
-			ApiErrorCode::PayloadRejected
-		);
+		$this->assert_terminal_start_error( 'Batch queue filter returned a non-array value; return one argument array per chunk.', \UnexpectedValueException::class, ApiErrorCode::PayloadRejected );
 	}
 
 	/**
@@ -617,11 +572,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
-		$this->assert_terminal_start_error(
-			'Background-work execution failed because DomainException was thrown.',
-			\DomainException::class,
-			ApiErrorCode::ExecutionFailed
-		);
+		$this->assert_terminal_start_error( 'Background-work execution failed because DomainException was thrown.', \DomainException::class, ApiErrorCode::ExecutionFailed );
 		self::assertStringNotContainsString( 'credential secret', $this->batch->failure_calls[0]['error']->summary );
 	}
 
@@ -771,10 +722,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		$this->start_batch();
 		$this->backend->calls = array();
-		$this->set_action_throwable(
-			'a8csp_background_tasks/started/' . self::IDENTITY,
-			new \RuntimeException( 'Started listener exploded.' )
-		);
+		$this->set_action_throwable( 'a8csp_background_tasks/started/' . self::IDENTITY, new \RuntimeException( 'Started listener exploded.' ) );
 		$this->clock->timestamp = self::NOW + 30;
 
 		$this->lifecycle_deliveries->handle_start_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
@@ -831,10 +779,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$state['pending']
 		);
 		self::assertSame( $state, $scheduled_state );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
+		self::assertSame( array( true, false ), \array_column( $this->recorded_run_states(), 'executing' ) );
 		self::assertSame( self::NOW + 90, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(
@@ -885,10 +830,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$state['pending']
 		);
 		self::assertSame( $state, $scheduled_state );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
+		self::assertSame( array( true, false ), \array_column( $this->recorded_run_states(), 'executing' ) );
 		self::assertSame(
 			array(
 				array(
@@ -991,10 +933,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		self::assertSame( $state, $scheduled_state );
 		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
+		self::assertSame( array( true, false ), \array_column( $this->recorded_run_states(), 'executing' ) );
 		self::assertSame(
 			array(
 				'arity' => 3,
@@ -1069,10 +1008,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( 'execution', $failure->stage );
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
-		self::assertSame(
-			'Batch chunk arguments must contain only null, scalar, or nested array values.',
-			$failure->summary
-		);
+		self::assertSame( 'Batch chunk arguments must contain only null, scalar, or nested array values.', $failure->summary );
 		self::assertStringNotContainsString( $marker, $failure->summary );
 		self::assertSame( $chunk_args, $failure->failed_chunk );
 	}
@@ -1130,12 +1066,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 
 		$this->clear_action_observations();
-		$this->lifecycle_deliveries->handle_run_action(
-			self::IDENTITY,
-			self::RUN_ID,
-			$chunk_args,
-			$action_seq
-		);
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $action_seq );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
@@ -1218,12 +1149,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
 		};
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::IDENTITY,
-			self::RUN_ID,
-			$chunk_args,
-			$this->action_seq()
-		);
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertIsArray( $observed_state );
@@ -1329,10 +1255,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$this->assert_run_state_write_omits_pending( 'running', 4 );
-		self::assertSame(
-			array( array( 'chunk' => 'committed' ) ),
-			$this->failed_run_state()['queue']
-		);
+		self::assertSame( array( array( 'chunk' => 'committed' ) ), $this->failed_run_state()['queue'] );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->backend->calls );
@@ -1404,11 +1327,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$chunk_args = array( 'chunk' => 'current' );
 		$remaining  = array( 'chunk' => 'remaining' );
 
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
 		$this->batch->on_process        = static function (
 			array $processed_args,
@@ -1440,10 +1359,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$state['pending']
 		);
-		self::assertSame(
-			array( true, true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
+		self::assertSame( array( true, true, false ), \array_column( $this->recorded_run_states(), 'executing' ) );
 		self::assertSame( self::NOW + 131, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
@@ -1494,22 +1410,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	public function test_stale_continue_after_retry_advances_sequence_only_reads_authoritative_state(): void {
 		$chunk_args                = array( 'chunk' => 'current' );
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
 		$this->clock->timestamp         = self::NOW + 120;
 		$this->randomizer->value        = 11;
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::IDENTITY,
-			self::RUN_ID,
-			$chunk_args,
-			$this->action_seq()
-		);
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_args, $this->action_seq() );
 
 		$expected_state = $this->run_state();
 		$expected_lock  = $this->lock();
@@ -1523,10 +1430,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->wpdb->recorded_queries );
 		self::assertStringStartsWith( 'SELECT `option_value` FROM ', $this->wpdb->recorded_queries[0] );
-		self::assertStringContainsString(
-			"WHERE `option_name` = '" . $this->run_option_name() . "' LIMIT 1",
-			$this->wpdb->recorded_queries[0]
-		);
+		self::assertStringContainsString( "WHERE `option_name` = '" . $this->run_option_name() . "' LIMIT 1", $this->wpdb->recorded_queries[0] );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame(
 			array(
@@ -1553,11 +1457,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$chunk_a = array( 'chunk' => 'a' );
 		$chunk_b = array( 'chunk' => 'b' );
 
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->prepare_scheduled_chunk( array( $chunk_a, $chunk_b ) );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk A failed once.' );
 		$this->randomizer->value        = 5;
@@ -1599,10 +1499,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$observed_attempts
 		);
-		self::assertSame(
-			array( $chunk_a, $chunk_a, $chunk_b ),
-			\array_column( $this->batch->process_calls, 'chunk_args' )
-		);
+		self::assertSame( array( $chunk_a, $chunk_a, $chunk_b ), \array_column( $this->batch->process_calls, 'chunk_args' ) );
 	}
 
 	/**
@@ -1613,11 +1510,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_run_action_terminalizes_a_chunk_retry_schedule_failure(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
 
@@ -1633,10 +1526,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertCount( 1, $this->batch->failure_calls );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.',
-			$this->batch->failure_calls[0]['error']->summary
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.', $this->batch->failure_calls[0]['error']->summary );
 		self::assertSame( 'scheduling', $this->batch->failure_calls[0]['error']->stage );
 		self::assertSame( ApiErrorCode::BackendRejected, $this->batch->failure_calls[0]['error']->code );
 		self::assertSame( $chunk_args, $this->batch->failure_calls[0]['error']->failed_chunk );
@@ -1704,10 +1594,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->prepare_scheduled_chunk( array( $chunk_args ) );
 		$this->batch->process_throwable = new \DomainException( 'Chunk failed.' );
 		$listener_throwable             = new \RuntimeException( 'Failed listener exploded.' );
-		$this->set_action_throwable(
-			'a8csp_background_tasks/failed/' . self::IDENTITY,
-			$listener_throwable
-		);
+		$this->set_action_throwable( 'a8csp_background_tasks/failed/' . self::IDENTITY, $listener_throwable );
 		$this->clock->timestamp = self::NOW + 120;
 		$caught                 = null;
 
@@ -1834,10 +1721,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$this->lifecycle_labels()
 		);
-		self::assertSame(
-			array( true, true, true, true, true ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
+		self::assertSame( array( true, true, true, true, true ), \array_column( $this->recorded_run_states(), 'executing' ) );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
@@ -1946,9 +1830,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$replacement_result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
 			self::assertInstanceOf( Success::class, $replacement_result );
 			self::assertIsString( $replacement_result->value );
-			$replacement_state = $this->option(
-				'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_result->value
-			);
+			$replacement_state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_result->value );
 			$replacement_lock  = $this->lock();
 		};
 
@@ -1962,10 +1844,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( $replacement_run_id, $replacement_lock['run_id'] );
 		self::assertSame( $replacement_lock, $this->lock() );
 		self::assertIsArray( $replacement_state );
-		self::assertSame(
-			$replacement_state,
-			$this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_run_id )
-		);
+		self::assertSame( $replacement_state, $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_run_id ) );
 		self::assertSame( 'running', $replacement_state['status'] ?? null );
 		self::assertFalse( $replacement_state['executing'] ?? null );
 		self::assertSame( 1, $replacement_state['action_seq'] ?? null );
@@ -2379,12 +2258,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  Failure<SchedulingError>
 	 */
 	private function scheduling_failure_result(): Failure {
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before retrying this batch.'
-			)
-		);
+		return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying this batch.' ) );
 	}
 
 	/**
@@ -2449,13 +2323,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$failure = $this->batch->failure_calls[0]['error'];
-		self::assertSame(
-			\sprintf(
-				'Batch "runs-tests:catalog-sync" could not schedule the %s action: Restore the scheduler before retrying this batch.',
-				$stage
-			),
-			$failure->summary
-		);
+		self::assertSame( \sprintf( 'Batch "runs-tests:catalog-sync" could not schedule the %s action: Restore the scheduler before retrying this batch.', $stage ), $failure->summary );
 		self::assertSame( 'scheduling', $failure->stage );
 		self::assertSame( ApiErrorCode::BackendRejected, $failure->code );
 		self::assertSame( 'run' === $stage ? array( 'chunk' => 'first' ) : null, $failure->failed_chunk );

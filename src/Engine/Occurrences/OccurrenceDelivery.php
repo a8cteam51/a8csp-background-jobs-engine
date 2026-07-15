@@ -79,12 +79,7 @@ final readonly class OccurrenceDelivery {
 	 * @return  void
 	 */
 	public function register_hooks(): void {
-		\add_action(
-			self::SCHEDULE_HOOK,
-			array( $this, 'handle_schedule_due' ),
-			10,
-			1
-		);
+		\add_action( self::SCHEDULE_HOOK, array( $this, 'handle_schedule_due' ), 10, 1 );
 	}
 
 	/**
@@ -103,10 +98,7 @@ final readonly class OccurrenceDelivery {
 	public function handle_schedule_due( string $registration_key ): void {
 		$lease_raw = $this->lease->claim( $registration_key );
 		if ( null === $lease_raw ) {
-			$this->logger->debug(
-				'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.',
-				array( 'registration_key' => $registration_key )
-			);
+			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'registration_key' => $registration_key ) );
 
 			return;
 		}
@@ -137,12 +129,7 @@ final readonly class OccurrenceDelivery {
 	public function run_now_under_lease( string $registration_key ): AbstractResult {
 		$parts = WorkIdentity::parts( $registration_key );
 		if ( null === $parts ) {
-			return new Failure(
-				new EngineError(
-					'Schedule identity is invalid; pass one canonical {owner}:{name} identity.',
-					reason: EngineErrorReason::PayloadRejected,
-				)
-			);
+			return new Failure( new EngineError( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.', reason: EngineErrorReason::PayloadRejected, ) );
 		}
 
 		[ $owner, $name ] = $parts;
@@ -150,11 +137,7 @@ final readonly class OccurrenceDelivery {
 		if ( null === $lease_raw ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.',
-						$name,
-						$owner
-					),
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $owner ),
 					reason: EngineErrorReason::OverlapHeld,
 					context: array(
 						'owner'    => $owner,
@@ -198,23 +181,14 @@ final readonly class OccurrenceDelivery {
 				'converged'        => $converged,
 			);
 
-			$this->logger->warning(
-				\sprintf(
-					'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.',
-					$registration_key
-				),
-				$context
-			);
+			$this->logger->warning( \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key ), $context );
 
 			return;
 		}
 
 		$declaration = $this->registry->get( $registration_key );
 		if ( null === $declaration ) {
-			$this->logger->debug(
-				'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.',
-				array( 'registration_key' => $registration_key )
-			);
+			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'registration_key' => $registration_key ) );
 
 			return;
 		}
@@ -222,10 +196,7 @@ final readonly class OccurrenceDelivery {
 		$schedule = $declaration['schedule'];
 
 		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
-			$this->logger->debug(
-				'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.',
-				array( 'registration_key' => $registration_key )
-			);
+			$this->logger->debug( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', array( 'registration_key' => $registration_key ) );
 
 			return;
 		}
@@ -277,12 +248,7 @@ final readonly class OccurrenceDelivery {
 		 * @param   string $owner            Stable consumer identifier.
 		 * @param   string $identity         Complete owner-qualified schedule identity.
 		 */
-		$grace = \apply_filters(
-			'a8csp_background_tasks/misfire_grace/' . $registration_key,
-			$interval,
-			$owner,
-			$registration_key
-		);
+		$grace = \apply_filters( 'a8csp_background_tasks/misfire_grace/' . $registration_key, $interval, $owner, $registration_key );
 		if ( ! \is_int( $grace ) || 0 > $grace ) {
 			$grace = $interval;
 		}
@@ -324,12 +290,7 @@ final readonly class OccurrenceDelivery {
 					 * @param   int    $misfired_due Dropped occurrence due timestamp.
 					 * @param   int    $now          Occurrence observation timestamp.
 					 */
-					\do_action(
-						'a8csp_background_tasks/misfired/' . $registration_key,
-						$owner,
-						$misfired_due,
-						$now
-					);
+					\do_action( 'a8csp_background_tasks/misfired/' . $registration_key, $owner, $misfired_due, $now );
 				} finally {
 					/**
 					 * Fires after the identity-specific misfired schedule hook.
@@ -342,13 +303,7 @@ final readonly class OccurrenceDelivery {
 					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
 					 * @param   int    $now              Occurrence observation timestamp.
 					 */
-					\do_action(
-						'a8csp_background_tasks/misfired',
-						$registration_key,
-						$owner,
-						$misfired_due,
-						$now
-					);
+					\do_action( 'a8csp_background_tasks/misfired', $registration_key, $owner, $misfired_due, $now );
 				}
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(
@@ -444,11 +399,7 @@ final readonly class OccurrenceDelivery {
 		if ( null === $registration ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Schedule "%1$s" for owner "%2$s" is not synchronized; declare it with sync() before running it now.',
-						$name,
-						$owner
-					),
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" is not synchronized; declare it with sync() before running it now.', $name, $owner ),
 					reason: EngineErrorReason::UnknownSchedule,
 					context: array(
 						'owner'    => $owner,
@@ -462,11 +413,7 @@ final readonly class OccurrenceDelivery {
 		if ( null === $declaration ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Schedule "%1$s" for owner "%2$s" is inactive in this request; synchronize its declaration before running it now.',
-						$name,
-						$owner
-					),
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" is inactive in this request; synchronize its declaration before running it now.', $name, $owner ),
 					reason: EngineErrorReason::UnknownSchedule,
 					context: array(
 						'owner'    => $owner,
@@ -481,11 +428,7 @@ final readonly class OccurrenceDelivery {
 		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
 			return new Failure(
 				new EngineError(
-					\sprintf(
-						'Schedule "%1$s" for owner "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.',
-						$name,
-						$owner
-					),
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.', $name, $owner ),
 					reason: EngineErrorReason::UnknownSchedule,
 					context: array(
 						'owner'    => $owner,
@@ -540,11 +483,7 @@ final readonly class OccurrenceDelivery {
 	 * @return  void
 	 */
 	private function persist_delivery_state( string $registration_key, string $owner, array $registration ): void {
-		$outcome = $this->registry->update_registration(
-			$registration_key,
-			$registration['fingerprint'],
-			$registration
-		);
+		$outcome = $this->registry->update_registration( $registration_key, $registration['fingerprint'], $registration );
 		if ( RegistrationUpdateOutcome::Updated === $outcome ) {
 			return;
 		}

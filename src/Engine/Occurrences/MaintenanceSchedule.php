@@ -90,14 +90,7 @@ final readonly class MaintenanceSchedule {
 		try {
 			$owner                = WorkIdentity::ENGINE_OWNER;
 			$schedule_identity    = WorkIdentity::compose( $owner, MaintenanceTask::NAME, true );
-			$maintenance_schedule = new Schedule(
-				MaintenanceTask::NAME,
-				Recurrence::every( \HOUR_IN_SECONDS ),
-				MaintenanceTask::NAME,
-				array(),
-				OverlapPolicy::Skip,
-				CatchUpPolicy::RunOnce
-			);
+			$maintenance_schedule = new Schedule( MaintenanceTask::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceTask::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
 			$result               = $this->schedules->sync_owner(
 				$owner,
 				array(
@@ -108,10 +101,7 @@ final readonly class MaintenanceSchedule {
 				)
 			);
 			if ( $result->is_failure() ) {
-				$this->logger->error(
-					'Engine maintenance schedule could not be synchronized: {error}',
-					array( 'error' => $result->error->message )
-				);
+				$this->logger->error( 'Engine maintenance schedule could not be synchronized: {error}', array( 'error' => $result->error->message ) );
 			}
 		} finally {
 			if ( $switched ) {

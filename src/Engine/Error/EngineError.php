@@ -57,15 +57,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function held_task( string $task_name, string $running_run_id ): self {
-		return new self(
-			\sprintf(
-				'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.',
-				$task_name,
-				$running_run_id
-			),
-			reason: EngineErrorReason::OverlapHeld,
-			context: array( 'run_id' => $running_run_id ),
-		);
+		return new self( \sprintf( 'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.', $task_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**
@@ -82,16 +74,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function scheduling( string $work_type, string $name, string $stage, SchedulingError $error ): self {
-		return new self(
-			\sprintf(
-				'%1$s "%2$s" could not schedule the %3$s action: %4$s',
-				$work_type,
-				$name,
-				$stage,
-				$error->message
-			),
-			SchedulingError::class
-		);
+		return new self( \sprintf( '%1$s "%2$s" could not schedule the %3$s action: %4$s', $work_type, $name, $stage, $error->message ), SchedulingError::class );
 	}
 
 	/**
@@ -130,13 +113,7 @@ final readonly class EngineError implements ErrorInterface {
 	public static function from_throwable( \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self(
-			\sprintf(
-				'Background-work execution failed because %s was thrown.',
-				$exception_type
-			),
-			$exception_type
-		);
+		return new self( \sprintf( 'Background-work execution failed because %s was thrown.', $exception_type ), $exception_type );
 	}
 
 	/**
@@ -154,15 +131,7 @@ final readonly class EngineError implements ErrorInterface {
 	public static function retry_policy( string $work_type, string $name, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self(
-			\sprintf(
-				'%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.',
-				$work_type,
-				$name,
-				$exception_type
-			),
-			$exception_type
-		);
+		return new self( \sprintf( '%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $work_type, $name, $exception_type ), $exception_type );
 	}
 
 	/**
@@ -180,15 +149,7 @@ final readonly class EngineError implements ErrorInterface {
 	public static function retry_state( string $work_type, string $name, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self(
-			\sprintf(
-				'%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.',
-				$work_type,
-				$name,
-				$exception_type
-			),
-			$exception_type
-		);
+		return new self( \sprintf( '%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.', $work_type, $name, $exception_type ), $exception_type );
 	}
 
 	/**
@@ -206,15 +167,7 @@ final readonly class EngineError implements ErrorInterface {
 	public static function retry_preparation( string $work_type, string $name, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self(
-			\sprintf(
-				'%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
-				$work_type,
-				$name,
-				$exception_type
-			),
-			$exception_type
-		);
+		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.', $work_type, $name, $exception_type ), $exception_type );
 	}
 
 	// endregion

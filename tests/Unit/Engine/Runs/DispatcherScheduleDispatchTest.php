@@ -112,18 +112,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
 
-		$this->dispatcher = new Dispatcher(
-			$tasks,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$clock,
-			$randomizer,
-			$logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$this->dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, );
 	}
 
 	// endregion.
@@ -209,12 +198,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_allow_dispatch_does_not_contend_with_a_held_shared_identity(): void {
 		$this->seed_held_lock();
 
-		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::IDENTITY,
-			self::ARGS,
-			OverlapPolicy::Allow,
-			10
-		);
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Allow, 10 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -236,12 +220,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_allow_dispatch_reports_a_forced_run_id_collision(): void {
-		$first = $this->dispatcher->dispatch_scheduled_task(
-			self::IDENTITY,
-			self::ARGS,
-			OverlapPolicy::Allow,
-			10
-		);
+		$first = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Allow, 10 );
 		self::assertInstanceOf( Success::class, $first );
 		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
@@ -257,12 +236,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertIsString( $raw );
 		$this->wpdb->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $salted_hash, $raw );
 
-		$collision = $this->dispatcher->dispatch_scheduled_task(
-			self::IDENTITY,
-			self::ARGS,
-			OverlapPolicy::Allow,
-			10
-		);
+		$collision = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Allow, 10 );
 
 		self::assertInstanceOf( Failure::class, $collision );
 		$error = $collision->error;
@@ -311,12 +285,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_skip_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
 		$this->wpdb->script_result( 'insert', false );
 
-		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::IDENTITY,
-			self::ARGS,
-			OverlapPolicy::Skip,
-			10
-		);
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, 10 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -333,12 +302,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_replace_dispatch_takes_over_a_held_lock(): void {
 		$this->seed_held_lock();
 
-		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::IDENTITY,
-			self::ARGS,
-			OverlapPolicy::Replace,
-			10
-		);
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Replace, 10 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -368,12 +332,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->dispatch_scheduled_task(
-			self::IDENTITY,
-			self::ARGS,
-			OverlapPolicy::Replace,
-			10
-		);
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Replace, 10 );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertSame( 'run-rival', $this->lock_owner( self::ARGS_HASH ) );
@@ -388,12 +347,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 */
 	public function test_replace_dispatch_releases_takeover_when_scheduling_fails(): void {
 		$this->seed_held_lock();
-		$failure                                 = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before dispatching the replacement.'
-			)
-		);
+		$failure                                 = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before dispatching the replacement.' ) );
 		$this->backend->results['enqueue_async'] = $failure;
 
 		$accepted = false;

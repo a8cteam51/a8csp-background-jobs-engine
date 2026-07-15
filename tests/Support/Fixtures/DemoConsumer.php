@@ -70,9 +70,7 @@ final readonly class DemoConsumer {
 		private int $site_health_interval = \HOUR_IN_SECONDS
 	) {
 		if ( 1 > $this->site_health_interval ) {
-			throw new \InvalidArgumentException(
-				'The demo site-health interval must be positive; pass at least one second.'
-			);
+			throw new \InvalidArgumentException( 'The demo site-health interval must be positive; pass at least one second.' );
 		}
 	}
 
@@ -107,15 +105,7 @@ final readonly class DemoConsumer {
 
 		$synced = $consumer->schedules()->sync(
 			array(
-				new Schedule(
-					self::SCHEDULE_NAME,
-					Recurrence::every( $this->site_health_interval ),
-					SiteHealthPingTask::NAME,
-					array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ),
-					OverlapPolicy::Skip,
-					CatchUpPolicy::RunOnce,
-					10
-				),
+				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingTask::NAME, array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 10 ),
 			)
 		);
 		if ( $synced->is_failure() ) {
@@ -129,12 +119,7 @@ final readonly class DemoConsumer {
 			 * @param   string                  $message Consumer failure message.
 			 * @param   array<array-key, mixed> $context Structured failure context.
 			 */
-			\do_action(
-				self::LOG_HOOK,
-				'error',
-				'The demo consumer could not synchronize its site-health schedule.',
-				array( 'error_type' => \get_debug_type( $synced->error ) )
-			);
+			\do_action( self::LOG_HOOK, 'error', 'The demo consumer could not synchronize its site-health schedule.', array( 'error_type' => \get_debug_type( $synced->error ) ) );
 		}
 	}
 

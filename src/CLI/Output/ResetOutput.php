@@ -73,10 +73,7 @@ final readonly class ResetOutput {
 	 * @return  void
 	 */
 	public function confirm( array $assoc_args ): void {
-		( $this->confirm )(
-			'This development reset permanently deletes every engine option row and pending backend action. In-flight work cannot be recovered. Continue?',
-			$assoc_args
-		);
+		( $this->confirm )( 'This development reset permanently deletes every engine option row and pending backend action. In-flight work cannot be recovered. Continue?', $assoc_args );
 	}
 
 	/**

@@ -91,10 +91,7 @@ final class LogTest extends TestCase {
 
 		ErrorLogSink::register();
 
-		self::assertSame(
-			'',
-			$this->capture_error_log( 'info', 'Default sink disabled', array(), true )
-		);
+		self::assertSame( '', $this->capture_error_log( 'info', 'Default sink disabled', array(), true ) );
 	}
 
 	/**
@@ -112,10 +109,7 @@ final class LogTest extends TestCase {
 			)
 		);
 
-		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine.warning: Work will retry {"task_id":42,"attempt":2}',
-			$output
-		);
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.warning: Work will retry {"task_id":42,"attempt":2}', $output );
 	}
 
 	/**
@@ -145,10 +139,7 @@ final class LogTest extends TestCase {
 
 		$output = $this->capture_error_log( 'error', 'Work failed', $context );
 
-		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine.error: Work failed ' . $normalized_context,
-			$output
-		);
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed ' . $normalized_context, $output );
 		self::assertStringNotContainsString( 'secret-token', $output );
 		self::assertStringNotContainsString( 'user@example.com', $output );
 		self::assertStringNotContainsString( __DIR__, $output );
@@ -171,16 +162,9 @@ final class LogTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_log_escapes_line_breaks(): void {
-		$output = $this->capture_error_log(
-			"notice\nlevel",
-			"First line\r\nSecond line",
-			array( 'detail' => "Third line\r\nFourth line" )
-		);
+		$output = $this->capture_error_log( "notice\nlevel", "First line\r\nSecond line", array( 'detail' => "Third line\r\nFourth line" ) );
 
-		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine.notice\nlevel: First line\r\nSecond line {"detail":"Third line\\r\\nFourth line"}',
-			$output
-		);
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.notice\nlevel: First line\r\nSecond line {"detail":"Third line\\r\\nFourth line"}', $output );
 	}
 
 	/**
@@ -191,10 +175,7 @@ final class LogTest extends TestCase {
 	public function test_log_reports_an_unencodable_context_without_throwing(): void {
 		$output = $this->capture_error_log( 'error', 'Work failed', array( 'duration' => \INF ) );
 
-		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine.error: Work failed [context JSON encoding failed: use only JSON-encodable values]',
-			$output
-		);
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed [context JSON encoding failed: use only JSON-encodable values]', $output );
 	}
 
 	/**
@@ -217,10 +198,7 @@ final class LogTest extends TestCase {
 
 		$output = $this->capture_error_log( 'error', 'Work failed', array( 'value' => $unencodable_value ) );
 
-		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine.error: Work failed {"value":"JsonSerializable@anonymous"}',
-			$output
-		);
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed {"value":"JsonSerializable@anonymous"}', $output );
 	}
 
 	/**
@@ -267,10 +245,7 @@ final class LogTest extends TestCase {
 
 		$output = $this->capture_error_log( 'debug', 'Recursive context', array( 'value' => $recursive ) );
 
-		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine.debug: Recursive context {"value":"array"}',
-			$output
-		);
+		$this->assert_error_log_line( 'a8csp-background-tasks-engine.debug: Recursive context {"value":"array"}', $output );
 	}
 
 	/**
@@ -349,9 +324,6 @@ final class LogTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_error_log_line( string $expected, string $actual ): void {
-		self::assertMatchesRegularExpression(
-			'/^(?:\[[^\r\n]+\] )?' . \preg_quote( $expected, '/' ) . '\r?\n$/D',
-			$actual
-		);
+		self::assertMatchesRegularExpression( '/^(?:\[[^\r\n]+\] )?' . \preg_quote( $expected, '/' ) . '\r?\n$/D', $actual );
 	}
 }

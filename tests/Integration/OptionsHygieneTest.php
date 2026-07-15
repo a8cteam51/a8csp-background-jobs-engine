@@ -52,12 +52,7 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 
 		$this->expect_option( 'a8csp_bgte_latest_' . self::TASK_IDENTITY );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_IDENTITY );
-		\add_filter(
-			'a8csp_background_tasks/continue_delay',
-			static fn ( int $delay, string $name, string $run_id ): int => 0,
-			10,
-			3
-		);
+		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
 		$task_result = $consumer->tasks()->enqueue( self::TASK_NAME, $task_args );
 		self::assertInstanceOf( Success::class, $task_result, 'The census task must enqueue through the public API' );
@@ -103,11 +98,7 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 
 		$autoloaded_values = \wp_autoload_values_to_autoload();
 		foreach ( $rows as $row ) {
-			self::assertNotContains(
-				$row['autoload'],
-				$autoloaded_values,
-				\sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] )
-			);
+			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
 		$task_latest = \get_option( 'a8csp_bgte_latest_' . self::TASK_IDENTITY );

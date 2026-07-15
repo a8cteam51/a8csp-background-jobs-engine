@@ -50,10 +50,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'name'   => 'consumer-plugin:email-digest',
 				'run_id' => 'run-1',
 			),
-			RunsCommand::cancel_request_from_args(
-				array( 'consumer-plugin:email-digest', 'run-1' ),
-				array()
-			)
+			RunsCommand::cancel_request_from_args( array( 'consumer-plugin:email-digest', 'run-1' ), array() )
 		);
 	}
 
@@ -325,10 +322,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	#[DataProvider( 'valid_schedule_requests' )]
 	public function test_valid_schedule_requests_are_parsed( array $assoc_args, array $expected ): void {
-		self::assertSame(
-			$expected,
-			SchedulesCommand::request_from_args( array( 'list' ), $assoc_args )
-		);
+		self::assertSame( $expected, SchedulesCommand::request_from_args( array( 'list' ), $assoc_args ) );
 	}
 
 	/**
@@ -369,10 +363,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'name'   => 'consumer-plugin:email_digest-2',
 				'format' => $format,
 			),
-			RunsCommand::runs_request_from_args(
-				array( 'list', 'consumer-plugin:email_digest-2' ),
-				$assoc_args
-			)
+			RunsCommand::runs_request_from_args( array( 'list', 'consumer-plugin:email_digest-2' ), $assoc_args )
 		);
 	}
 
@@ -463,10 +454,7 @@ final class CommandsAndOutputTest extends TestCase {
 			),
 			$rows
 		);
-		self::assertSame(
-			'note: a scheduling backend is not ready; dormant occurrences are not visible.',
-			ScheduleOutput::dormant_backend_note( true )
-		);
+		self::assertSame( 'note: a scheduling backend is not ready; dormant occurrences are not visible.', ScheduleOutput::dormant_backend_note( true ) );
 		self::assertNull( ScheduleOutput::dormant_backend_note( false ) );
 	}
 
@@ -477,22 +465,10 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_schedule_lock_labels_are_discriminated(): void {
 		self::assertSame( 'free', ScheduleOutput::lock_label( array( 'state' => 'free' ) ) );
-		self::assertSame(
-			'unknown (not declared this request)',
-			ScheduleOutput::lock_label( array( 'state' => 'not_declared' ) )
-		);
-		self::assertSame(
-			'unknown (lock read failed)',
-			ScheduleOutput::lock_label( array( 'state' => 'read_failed' ) )
-		);
-		self::assertSame(
-			'not blocking (overlap allowed)',
-			ScheduleOutput::lock_label( array( 'state' => 'overlap_allowed' ) )
-		);
-		self::assertSame(
-			'unknown (invalid lock row)',
-			ScheduleOutput::lock_label( array( 'state' => 'invalid' ) )
-		);
+		self::assertSame( 'unknown (not declared this request)', ScheduleOutput::lock_label( array( 'state' => 'not_declared' ) ) );
+		self::assertSame( 'unknown (lock read failed)', ScheduleOutput::lock_label( array( 'state' => 'read_failed' ) ) );
+		self::assertSame( 'not blocking (overlap allowed)', ScheduleOutput::lock_label( array( 'state' => 'overlap_allowed' ) ) );
+		self::assertSame( 'unknown (invalid lock row)', ScheduleOutput::lock_label( array( 'state' => 'invalid' ) ) );
 	}
 
 	/**
@@ -600,23 +576,11 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_live_run_listing_honesty_messages_are_explicit(): void {
-		self::assertSame(
-			'Live-run state is unknown (run enumeration failed); resolve the database error and try again.',
-			RunOutput::error_message( 'enumeration_failed' )
-		);
-		self::assertSame(
-			'Live-run state is unknown (run read failed); resolve the database error and try again.',
-			RunOutput::error_message( 'read_failed' )
-		);
+		self::assertSame( 'Live-run state is unknown (run enumeration failed); resolve the database error and try again.', RunOutput::error_message( 'enumeration_failed' ) );
+		self::assertSame( 'Live-run state is unknown (run read failed); resolve the database error and try again.', RunOutput::error_message( 'read_failed' ) );
 		self::assertNull( RunOutput::error_message( null ) );
-		self::assertSame(
-			'Showing first 20 matching run rows; 4 more were not inspected.',
-			RunOutput::truncation_message( 20, 4 )
-		);
-		self::assertSame(
-			'Showing first 20 matching run rows; 1 more was not inspected.',
-			RunOutput::truncation_message( 20, 1 )
-		);
+		self::assertSame( 'Showing first 20 matching run rows; 4 more were not inspected.', RunOutput::truncation_message( 20, 4 ) );
+		self::assertSame( 'Showing first 20 matching run rows; 1 more was not inspected.', RunOutput::truncation_message( 20, 1 ) );
 		self::assertNull( RunOutput::truncation_message( 20, 0 ) );
 	}
 
@@ -630,10 +594,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	#[DataProvider( 'heartbeat_boundaries' )]
 	public function test_heartbeat_time_boundaries( int $heartbeat_at, string $expected ): void {
-		self::assertSame(
-			$expected,
-			RunOutput::heartbeat_label( $heartbeat_at, 86_400, false )
-		);
+		self::assertSame( $expected, RunOutput::heartbeat_label( $heartbeat_at, 86_400, false ) );
 	}
 
 	/**
@@ -642,18 +603,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_due_time_boundaries_are_utc_and_directional(): void {
-		self::assertSame(
-			'1970-01-02T00:01:00+00:00 (in 1m)',
-			ScheduleOutput::due_label( 86_460, 86_400 )
-		);
-		self::assertSame(
-			'1970-01-02T00:00:00+00:00 (due now)',
-			ScheduleOutput::due_label( 86_400, 86_400 )
-		);
-		self::assertSame(
-			'1970-01-01T23:00:00+00:00 (overdue 1h)',
-			ScheduleOutput::due_label( 82_800, 86_400 )
-		);
+		self::assertSame( '1970-01-02T00:01:00+00:00 (in 1m)', ScheduleOutput::due_label( 86_460, 86_400 ) );
+		self::assertSame( '1970-01-02T00:00:00+00:00 (due now)', ScheduleOutput::due_label( 86_400, 86_400 ) );
+		self::assertSame( '1970-01-01T23:00:00+00:00 (overdue 1h)', ScheduleOutput::due_label( 82_800, 86_400 ) );
 	}
 
 	/**
@@ -663,10 +615,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_heartbeat_clock_skew_and_integer_extremes_are_safe(): void {
 		self::assertSame( '0s ago', RunOutput::heartbeat_label( 86_401, 86_400, false ) );
-		self::assertSame(
-			\intdiv( \PHP_INT_MAX, 86_400 ) . 'd ago (stale)',
-			RunOutput::heartbeat_label( \PHP_INT_MIN, \PHP_INT_MAX, true )
-		);
+		self::assertSame( \intdiv( \PHP_INT_MAX, 86_400 ) . 'd ago (stale)', RunOutput::heartbeat_label( \PHP_INT_MIN, \PHP_INT_MAX, true ) );
 	}
 
 	// endregion.

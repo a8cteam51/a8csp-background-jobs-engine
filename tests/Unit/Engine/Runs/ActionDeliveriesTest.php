@@ -148,38 +148,11 @@ final class ActionDeliveriesTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
+		$failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
 
-		$this->lifecycle_deliveries = new ActionDeliveries(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->registry, $batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $failure_lifecycle, );
 
-		$this->dispatcher = new Dispatcher(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, );
 	}
 
 	// endregion.
@@ -251,11 +224,7 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->randomizer->value = 43;
 
-		$duplicate = $this->dispatcher->enqueue(
-			self::IDENTITY,
-			$successor_args,
-			dedup_key: $dedup_key
-		);
+		$duplicate = $this->dispatcher->enqueue( self::IDENTITY, $successor_args, dedup_key: $dedup_key );
 
 		self::assertInstanceOf( Failure::class, $duplicate );
 		self::assertInstanceOf( EngineError::class, $duplicate->error );
@@ -263,22 +232,14 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( 'run_id' => self::RUN_ID ), $duplicate->error->context );
 		self::assertCount( 1, $this->backend->calls );
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::IDENTITY,
-			self::RUN_ID,
-			$this->action_seq()
-		);
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertArrayNotHasKey( $lock_option_name, $this->wpdb->rows );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 
 		$this->randomizer->value = 44;
-		$reused                  = $this->dispatcher->enqueue(
-			self::IDENTITY,
-			$successor_args,
-			dedup_key: $dedup_key
-		);
+		$reused                  = $this->dispatcher->enqueue( self::IDENTITY, $successor_args, dedup_key: $dedup_key );
 
 		self::assertInstanceOf( Success::class, $reused );
 		$reused_run_id = '00000000001700000000-0000000000000000044';
@@ -626,12 +587,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->prepare_run_action();
 		$action_seq = $this->action_seq();
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::IDENTITY,
-			self::RUN_ID,
-			array( 'chunk' => 'misdelivered' ),
-			$action_seq
-		);
+		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ), $action_seq );
 
 		$state = $this->option( $this->run_option_name() );
 		self::assertIsArray( $state );
@@ -677,24 +633,8 @@ final class ActionDeliveriesTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-		$lifecycle_deliveries = new ActionDeliveries(
-			$tasks,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
+		$failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
+		$lifecycle_deliveries = new ActionDeliveries( $tasks, $batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $failure_lifecycle, );
 		$lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $action_seq );
 
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -705,10 +645,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertIsArray( $failed_run );
 		$stored_error = $failed_run['error'] ?? null;
 		self::assertIsArray( $stored_error );
-		self::assertSame(
-			'Task identity "runs-tests:email-digest" has no registered task implementation for run "00000000001700000000-0000000000000000042"; register that task or purge the run.',
-			$stored_error['message'] ?? null
-		);
+		self::assertSame( 'Task identity "runs-tests:email-digest" has no registered task implementation for run "00000000001700000000-0000000000000000042"; register that task or purge the run.', $stored_error['message'] ?? null );
 		self::assertSame( 1, $failed_run['attempts'] ?? null );
 		self::assertSame(
 			array(
@@ -843,14 +780,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$terminal_transitions   = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->clock->timestamp = self::NOW + 90 + WorkInterface::DEFAULT_MAX_RUNTIME + 901;
 		$credit                 = $this->clock->timestamp + WorkInterface::DEFAULT_MAX_RUNTIME;
-		$replacement_state      = $terminal_transitions->active_run_state(
-			'Task',
-			self::IDENTITY,
-			self::RUN_ID,
-			$action_seq,
-			$stores->run_store( self::IDENTITY ),
-			static fn (): int => $credit
-		);
+		$replacement_state      = $terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $action_seq, $stores->run_store( self::IDENTITY ), static fn (): int => $credit );
 		self::assertInstanceOf( RunState::class, $replacement_state );
 
 		return $credit;

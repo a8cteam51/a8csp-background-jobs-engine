@@ -33,12 +33,7 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 		$interval  = 137;
 		$timestamp = \time() + \HOUR_IN_SECONDS;
 		$args      = array( 'request-a' );
-		$scheduled = ( new WPCronBackend() )->schedule_recurring(
-			self::RESOLUTION_HOOK,
-			$interval,
-			$args,
-			$timestamp
-		);
+		$scheduled = ( new WPCronBackend() )->schedule_recurring( self::RESOLUTION_HOOK, $interval, $args, $timestamp );
 
 		self::assertInstanceOf( Success::class, $scheduled, 'WP-Cron must accept the synthetic recurring schedule' );
 		$events = $this->wordpress_cron_events( self::RESOLUTION_HOOK, $args );
@@ -82,12 +77,7 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 			1
 		);
 
-		$scheduled = ( new WPCronBackend() )->schedule_recurring(
-			self::RECURRING_HOOK,
-			$interval,
-			$args,
-			$timestamp
-		);
+		$scheduled = ( new WPCronBackend() )->schedule_recurring( self::RECURRING_HOOK, $interval, $args, $timestamp );
 		self::assertInstanceOf( Success::class, $scheduled, 'WP-Cron must persist the due recurring occurrence' );
 
 		\remove_all_filters( 'cron_schedules' );
@@ -104,11 +94,7 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 		self::assertSame( 'a8csp_bgte_every_61s', $successors[0]['schedule'] );
 		self::assertSame( $interval, $successors[0]['interval'] );
 		self::assertSame( $args, $successors[0]['args'] );
-		self::assertSame(
-			$successors[0]['timestamp'],
-			\wp_next_scheduled( self::RECURRING_HOOK, $args ),
-			'WP-Cron reads must resolve the persisted recurring successor'
-		);
+		self::assertSame( $successors[0]['timestamp'], \wp_next_scheduled( self::RECURRING_HOOK, $args ), 'WP-Cron reads must resolve the persisted recurring successor' );
 	}
 
 	// endregion.

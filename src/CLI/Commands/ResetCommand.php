@@ -147,15 +147,8 @@ final readonly class ResetCommand {
 		foreach ( $persisted_rows as $option_name => $raw ) {
 			if ( ! $option_rows->delete_if_value_matches( $option_name, $raw ) ) {
 				$message = $option_rows->last_delete_failed()
-					? \sprintf(
-						'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.',
-						$deleted
-					)
-					: \sprintf(
-						'Engine option row "%1$s" changed during reset after %2$d deletions; stop background writes and retry.',
-						$option_name,
-						$deleted
-					);
+					? \sprintf( 'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.', $deleted )
+					: \sprintf( 'Engine option row "%1$s" changed during reset after %2$d deletions; stop background writes and retry.', $option_name, $deleted );
 				$output->error( $message );
 				return;
 			}
@@ -237,10 +230,7 @@ final readonly class ResetCommand {
 
 				$selected = $option_rows->read( $option_name );
 				if ( $selected->is_failure() ) {
-					return \sprintf(
-						'Engine option row "%s" could not be read; resolve the database error and retry the reset.',
-						$option_name
-					);
+					return \sprintf( 'Engine option row "%s" could not be read; resolve the database error and retry the reset.', $option_name );
 				}
 				if ( null !== $selected->value ) {
 					$rows[ $option_name ] = $selected->value;

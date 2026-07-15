@@ -146,18 +146,7 @@ final class DispatcherBatchTest extends TestCase {
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
 		$this->batches->register( self::IDENTITY, $this->batch );
-		$this->dispatcher = new Dispatcher(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+		$this->dispatcher = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, );
 	}
 
 	// endregion.
@@ -234,13 +223,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			\sprintf(
-				'Batch "runs-tests:catalog-sync" priority %d is invalid; pass a value from 0 through 255.',
-				$priority
-			),
-			$result->error->message
-		);
+		self::assertSame( \sprintf( 'Batch "runs-tests:catalog-sync" priority %d is invalid; pass a value from 0 through 255.', $priority ), $result->error->message );
 		$this->assert_start_boundaries_untouched();
 	}
 
@@ -263,24 +246,7 @@ final class DispatcherBatchTest extends TestCase {
 	 */
 	public function test_retry_failed_restarts_a_batch_and_removes_the_failed_entry(): void {
 		$store = new FailedRunStore( self::IDENTITY, new OptionRows( $this->wpdb ) );
-		self::assertTrue(
-			$store->record(
-				'failed-run',
-				self::NOW - 1,
-				self::ARGS,
-				2,
-				new EngineError( 'Chunk processing exploded.', \RuntimeException::class ),
-				new RunFailure(
-					name: self::IDENTITY,
-					run_id: 'failed-run',
-					attempts: 2,
-					stage: 'execution',
-					code: ApiErrorCode::ExecutionFailed,
-					summary: 'Chunk processing exploded.',
-					failed_chunk: array( 'chunk' => 1 ),
-				)
-			)
-		);
+		self::assertTrue( $store->record( 'failed-run', self::NOW - 1, self::ARGS, 2, new EngineError( 'Chunk processing exploded.', \RuntimeException::class ), new RunFailure( name: self::IDENTITY, run_id: 'failed-run', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ), ) ) );
 		$failed_key = 'a8csp_bgte_failed_' . self::IDENTITY;
 		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
 		self::assertIsString( $failed_raw );
@@ -381,10 +347,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
-			$result->error->message
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.', $result->error->message );
 		self::assertSame( array( 'run_id' => 'run-running' ), $result->error->context );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
@@ -407,10 +370,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" encountered a held lock whose current owner could not be read; repair database reads and retry the start.',
-			$result->error->message
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" encountered a held lock whose current owner could not be read; repair database reads and retry the start.', $result->error->message );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->backend->calls );
@@ -424,10 +384,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.',
-			$result->error->message
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.', $result->error->message );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->backend->calls );
 	}
@@ -448,10 +405,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
-			$result->error->message
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.', $result->error->message );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -476,10 +430,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.',
-			$result->error->message
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" is already running as run "run-running"; wait for that run to finish before starting the same arguments.', $result->error->message );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -590,14 +541,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			\sprintf(
-				'Run "%1$s" for batch "%2$s" could not be persisted; remove the conflicting run option before retrying.',
-				self::RUN_ID,
-				self::IDENTITY
-			),
-			$result->error->message
-		);
+		self::assertSame( \sprintf( 'Run "%1$s" for batch "%2$s" could not be persisted; remove the conflicting run option before retrying.', self::RUN_ID, self::IDENTITY ), $result->error->message );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
@@ -636,10 +580,7 @@ final class DispatcherBatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Batch "runs-tests:catalog-sync" lock ownership changed while the replacement was claiming it; retry the start against the current owner.',
-			$result->error->message
-		);
+		self::assertSame( 'Batch "runs-tests:catalog-sync" lock ownership changed while the replacement was claiming it; retry the start against the current owner.', $result->error->message );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->backend->calls );
@@ -656,12 +597,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  Failure<SchedulingError>
 	 */
 	private function scheduling_failure_result(): Failure {
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before retrying this batch.'
-			)
-		);
+		return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying this batch.' ) );
 	}
 
 	/**

@@ -110,23 +110,12 @@ final class UninstallTest extends IntegrationTestCase {
 
 		$scheduled_at = \time() + \HOUR_IN_SECONDS;
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			self::assertTrue(
-				\wp_schedule_single_event( $scheduled_at, $hook, self::SCHEDULE_ARGS, true ),
-				"wp-env must seed a WP-Cron event for '{$hook}'"
-			);
+			self::assertTrue( \wp_schedule_single_event( $scheduled_at, $hook, self::SCHEDULE_ARGS, true ), "wp-env must seed a WP-Cron event for '{$hook}'" );
 
-			$action_id = \as_schedule_single_action(
-				$scheduled_at,
-				$hook,
-				self::SCHEDULE_ARGS,
-				self::SCHEDULE_GROUP
-			);
+			$action_id = \as_schedule_single_action( $scheduled_at, $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP );
 			self::assertGreaterThan( 0, $action_id, "wp-env must seed an Action Scheduler action for '{$hook}'" );
 			self::assertSame( $scheduled_at, \wp_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
-			self::assertIsInt(
-				\as_next_scheduled_action( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ),
-				"Action Scheduler must retain the seeded '{$hook}' action before uninstall"
-			);
+			self::assertIsInt( \as_next_scheduled_action( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "Action Scheduler must retain the seeded '{$hook}' action before uninstall" );
 		}
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
@@ -143,14 +132,8 @@ final class UninstallTest extends IntegrationTestCase {
 			self::assertFalse( get_option( $option ), "uninstall.php must delete the dynamically named '{$option}' option" );
 		}
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			self::assertFalse(
-				\wp_next_scheduled( $hook, self::SCHEDULE_ARGS ),
-				"uninstall.php must remove every WP-Cron event for '{$hook}'"
-			);
-			self::assertFalse(
-				\as_next_scheduled_action( $hook ),
-				"uninstall.php must remove every pending Action Scheduler action for '{$hook}'"
-			);
+			self::assertFalse( \wp_next_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
+			self::assertFalse( \as_next_scheduled_action( $hook ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
 		}
 
 		self::assertSame( 'sentinel', get_option( self::CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );

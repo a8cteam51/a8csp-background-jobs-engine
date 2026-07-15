@@ -193,21 +193,13 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			10,
 			3
 		);
-		\add_filter(
-			'a8csp_background_tasks/continue_delay',
-			static fn ( int $delay, string $name ): int => self::BATCH_IDENTITY === $name ? 0 : $delay,
-			10,
-			2
-		);
+		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name ): int => self::BATCH_IDENTITY === $name ? 0 : $delay, 10, 2 );
 
 		// WordPress booted before PHPUnit, so isolate this callback instead of rerunning every init subscriber.
 		\remove_all_actions( 'init' );
 		$consumer = new DemoConsumer( 1 );
 		$consumer->boot();
-		self::assertNotFalse(
-			\has_action( 'init', array( $consumer, 'register_background_work' ) ),
-			'The demo entry point must register its declarations from init'
-		);
+		self::assertNotFalse( \has_action( 'init', array( $consumer, 'register_background_work' ) ), 'The demo entry point must register its declarations from init' );
 		$api = null;
 		\add_action(
 			'init',
@@ -225,10 +217,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertIsString( $manual->value );
 		$manual_run_id = $manual->value;
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $task_started_named );
-		self::assertSame(
-			array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ),
-			$task_started_generic
-		);
+		self::assertSame( array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ), $task_started_generic );
 
 		$schedule_due_before_manual = \did_action( 'a8csp_background_tasks/schedule_due' );
 		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
@@ -238,55 +227,23 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			? $this->run_matching_due_action( $matches_manual_run )
 			: $this->run_matching_due_cron_event( $matches_manual_run );
 		self::assertSame( 1, $manual_actions_processed, 'The scheduler must execute the direct demo task' );
-		self::assertSame(
-			$schedule_due_before_manual,
-			\did_action( 'a8csp_background_tasks/schedule_due' ),
-			'The direct task drive must not consume the recurring schedule occurrence'
-		);
+		self::assertSame( $schedule_due_before_manual, \did_action( 'a8csp_background_tasks/schedule_due' ), 'The direct task drive must not consume the recurring schedule occurrence' );
 		$this->assert_site_health_snapshot( self::MANUAL_SNAPSHOT_TRANSIENT );
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $task_completed_named );
-		self::assertSame(
-			array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ),
-			$task_completed_generic
-		);
+		self::assertSame( array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ), $task_completed_generic );
 
 		\sleep( 1 );
 		$schedule_due_before = \did_action( 'a8csp_background_tasks/schedule_due' );
-		self::assertSame(
-			1,
-			\class_exists( \ActionScheduler::class )
-				? $this->run_matching_due_action(
-					static fn ( string $hook, array $args ): bool =>
-						'a8csp_background_tasks/schedule_due' === $hook
-						&& array( self::SCHEDULE_IDENTITY ) === $args
-				)
-				: $this->run_matching_due_cron_event(
-					static fn ( string $hook, array $args ): bool =>
-						'a8csp_background_tasks/schedule_due' === $hook
-						&& array( self::SCHEDULE_IDENTITY ) === $args
-				),
-			'The scheduler must execute the demo consumer recurring occurrence'
-		);
-		self::assertSame(
-			$schedule_due_before + 1,
-			\did_action( 'a8csp_background_tasks/schedule_due' ),
-			'The registered recurring occurrence must fire the engine schedule-due action'
-		);
+		self::assertSame( 1, \class_exists( \ActionScheduler::class ) ? $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ) : $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ), 'The scheduler must execute the demo consumer recurring occurrence' );
+		self::assertSame( $schedule_due_before + 1, \did_action( 'a8csp_background_tasks/schedule_due' ), 'The registered recurring occurrence must fire the engine schedule-due action' );
 		self::assertCount( 2, $task_started_named, 'Schedule delivery must enqueue one additional task run' );
 		self::assertCount( 2, $task_started_generic, 'Schedule delivery must publish the generic started hook' );
-		self::assertFalse(
-			\get_transient( SiteHealthPingTask::SNAPSHOT_TRANSIENT ),
-			'Schedule delivery must enqueue instead of running the task inline'
-		);
+		self::assertFalse( \get_transient( SiteHealthPingTask::SNAPSHOT_TRANSIENT ), 'Schedule delivery must enqueue instead of running the task inline' );
 		self::assertIsString( $scheduled_run_id );
 		self::assertContains( array( $scheduled_run_id, $scheduled_args ), $task_started_named );
 
 		$stopped_schedule = $api->schedules()->sync( array() );
-		self::assertInstanceOf(
-			Success::class,
-			$stopped_schedule,
-			'Public owner sync must stop the one-second proof recurrence after its occurrence fires'
-		);
+		self::assertInstanceOf( Success::class, $stopped_schedule, 'Public owner sync must stop the one-second proof recurrence after its occurrence fires' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The scheduler must execute the scheduled demo task' );
 		$this->assert_site_health_snapshot( SiteHealthPingTask::SNAPSHOT_TRANSIENT );
 		self::assertSame(
@@ -303,13 +260,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		foreach ( array( $first_post_id, $second_post_id ) as $stale_post_id ) {
-			$updated = $wpdb->update(
-				$wpdb->posts,
-				array( 'comment_count' => 0 ),
-				array( 'ID' => $stale_post_id ),
-				array( '%d' ),
-				array( '%d' )
-			);
+			$updated = $wpdb->update( $wpdb->posts, array( 'comment_count' => 0 ), array( 'ID' => $stale_post_id ), array( '%d' ), array( '%d' ) );
 			self::assertSame( 1, $updated, 'The recount proof must stale exactly one persisted comment count' );
 			\clean_post_cache( $stale_post_id );
 			self::assertSame( 0, (int) \get_comments_number( $stale_post_id ) );
@@ -322,11 +273,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		$batch_run_id = $batch->value;
 
 		for ( $step = 1; 7 >= $step; ++$step ) {
-			self::assertSame(
-				1,
-				$this->run_next_engine_action(),
-				\sprintf( 'The scheduler must execute demo batch action %d of 7.', $step )
-			);
+			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo batch action %d of 7.', $step ) );
 		}
 
 		self::assertSame(
@@ -339,10 +286,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		);
 		self::assertSame( array( array( $batch_run_id, $batch_args ) ), $batch_succeeded );
 		self::assertSame( array( array( $batch_run_id, $batch_args ) ), $batch_completed_named );
-		self::assertSame(
-			array( array( self::BATCH_IDENTITY, $batch_run_id, $batch_args ) ),
-			$batch_completed_global
-		);
+		self::assertSame( array( array( self::BATCH_IDENTITY, $batch_run_id, $batch_args ) ), $batch_completed_global );
 		self::assertSame( 1, (int) \get_comments_number( $first_post_id ) );
 		self::assertSame( 1, (int) \get_comments_number( $second_post_id ) );
 	}

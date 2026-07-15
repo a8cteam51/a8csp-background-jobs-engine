@@ -210,10 +210,7 @@ final class RunStoreTest extends TestCase {
 			'stage'   => 'execution',
 			'code'    => ApiErrorCode::ExecutionFailed->value,
 		);
-		$terminal = $state
-			->with_status( RunStatus::Failed )
-			->with_error( $error )
-			->with_effects( array( 'retention', 'callbacks' ) );
+		$terminal = $state->with_status( RunStatus::Failed )->with_error( $error )->with_effects( array( 'retention', 'callbacks' ) );
 
 		$terminal_raw = $store->transition_state( 'run-terminal', $state, $terminal );
 		$expected     = array(
@@ -353,13 +350,7 @@ final class RunStoreTest extends TestCase {
 		$appended = $store->append_terminal_effect( 'run-effect', $state, $raw, 'hooks' );
 
 		self::assertNull( $appended );
-		self::assertCount(
-			5,
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
-			)
-		);
+		self::assertCount( 5, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
 		self::assertSame( array(), $store->get( 'run-effect' )?->effects );
 	}
 
@@ -392,12 +383,7 @@ final class RunStoreTest extends TestCase {
 	public function test_state_transitions_round_trip_every_read_modify_write_mutation(): void {
 		$clock = new FixedClock( 100 );
 		$store = new RunStore( self::identity( 'reports' ), $clock, $this->rows );
-		$state = $store->create(
-			'run-rmw',
-			array( 'scope' => 'all' ),
-			'hash-rmw',
-			array( array( 'page' => 1 ), array( 'page' => 2 ) ),
-		);
+		$state = $store->create( 'run-rmw', array( 'scope' => 'all' ), 'hash-rmw', array( array( 'page' => 1 ), array( 'page' => 2 ) ), );
 		self::assertNotNull( $state );
 
 		$replacement = $state->with_queue( \array_slice( $state->queue, 1 ) );
@@ -417,10 +403,7 @@ final class RunStoreTest extends TestCase {
 		$replacement = $state->with_queue( $queue );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
-		self::assertSame(
-			array( array( 'page' => 0 ), array( 'page' => 2 ), array( 'page' => 3 ) ),
-			$this->stored_state( $store, 'run-rmw' )->queue
-		);
+		self::assertSame( array( array( 'page' => 0 ), array( 'page' => 2 ), array( 'page' => 3 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
 
 		$replacement = $state->with_failed_attempts( $state->failed_attempts + 1 );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
@@ -527,10 +510,7 @@ final class RunStoreTest extends TestCase {
 
 		self::assertNull( $store->get( 'run-delete' ) );
 		self::assertArrayNotHasKey( 'a8csp_bgte_run_runs-tests:cleanup_run-delete', $this->options() );
-		self::assertSame(
-			array( 'a8csp_bgte_run_runs-tests:cleanup_run-delete' ),
-			$this->option_calls( 'delete_option' )[0]['args']
-		);
+		self::assertSame( array( 'a8csp_bgte_run_runs-tests:cleanup_run-delete' ), $this->option_calls( 'delete_option' )[0]['args'] );
 	}
 
 	/** Terminal transitions and cleanup win only against the exact observed raw snapshots. */
@@ -1112,12 +1092,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  list<array{function: string, args: list<mixed>}>
 	 */
 	private function option_calls( string $function_name ): array {
-		return \array_values(
-			\array_filter(
-				$this->all_option_calls(),
-				static fn ( array $call ): bool => $function_name === $call['function']
-			)
-		);
+		return \array_values( \array_filter( $this->all_option_calls(), static fn ( array $call ): bool => $function_name === $call['function'] ) );
 	}
 
 	/**

@@ -108,9 +108,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 		// A typo'd post type would drain an empty queue and report success; failing loudly on an
 		// unregistered key is a permanent input defect, so it escapes the retry ladder.
 		if ( ! \is_string( $post_type ) || ! \post_type_exists( $post_type ) ) {
-			throw new NonRetryableTaskException(
-				'Comment-count recount arguments require a registered post_type; pass the post type key when starting the batch.'
-			);
+			throw new NonRetryableTaskException( 'Comment-count recount arguments require a registered post_type; pass the post type key when starting the batch.' );
 		}
 
 		$post_ids = \get_posts(
@@ -150,17 +148,13 @@ final class CommentCountRecountBatch implements BatchInterface {
 	public function process_chunk( array $chunk_args, BatchContextInterface $context ): void {
 		$post_id = $chunk_args['post_id'] ?? null;
 		if ( ! \is_int( $post_id ) || 1 > $post_id ) {
-			throw new NonRetryableTaskException(
-				'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.'
-			);
+			throw new NonRetryableTaskException( 'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.' );
 		}
 
 		// WordPress returns false only when the post no longer exists — a permanent missing
 		// reference, not a transient failure, so it escapes the retry ladder.
 		if ( ! \wp_update_comment_count_now( $post_id ) ) {
-			throw new NonRetryableTaskException(
-				\sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id )
-			);
+			throw new NonRetryableTaskException( \sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id ) );
 		}
 
 		// The core helper reports success without checking its database update, so comparing the
@@ -175,14 +169,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 			)
 		);
 		if ( $approved_comment_count !== $stored_comment_count ) {
-			throw new \RuntimeException(
-				\sprintf(
-					'Post %1$d stores comment_count %2$d but has %3$d approved comments; fix the database write before retrying the chunk.',
-					$post_id,
-					$stored_comment_count,
-					$approved_comment_count
-				)
-			);
+			throw new \RuntimeException( \sprintf( 'Post %1$d stores comment_count %2$d but has %3$d approved comments; fix the database write before retrying the chunk.', $post_id, $stored_comment_count, $approved_comment_count ) );
 		}
 
 		/**
@@ -259,12 +246,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 */
 	#[\Override]
 	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy(
-			max_attempts: 3,
-			base_delay: 5,
-			multiplier: 2,
-			max_delay: \MINUTE_IN_SECONDS
-		);
+		return new RetryPolicy( max_attempts: 3, base_delay: 5, multiplier: 2, max_delay: \MINUTE_IN_SECONDS );
 	}
 
 	// endregion.

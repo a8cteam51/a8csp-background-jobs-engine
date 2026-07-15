@@ -124,13 +124,7 @@ final class LatestRunPointerTest extends TestCase {
 		self::assertSame( 'run-01', $pointer->get_latest_for_hash( 'hash-01' ) );
 		self::assertSame( 'run-20', $pointer->get_latest_for_hash( 'hash-20' ) );
 		self::assertSame( 'run-20', $pointer->get_latest() );
-		self::assertSame(
-			\array_map(
-				static fn ( int $index ): string => 'hash-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-				\range( 1, 20 )
-			),
-			\array_keys( $this->by_hash_option( 'a8csp_bgte_latest_runs-tests:exports' ) )
-		);
+		self::assertSame( \array_map( static fn ( int $index ): string => 'hash-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), \range( 1, 20 ) ), \array_keys( $this->by_hash_option( 'a8csp_bgte_latest_runs-tests:exports' ) ) );
 
 		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_latest_runs-tests:exports'] ?? null );
 		self::assertSame( array(), $this->option_calls() );
@@ -380,16 +374,7 @@ final class LatestRunPointerTest extends TestCase {
 		self::assertNull( $pointer->get_latest_for_hash( 'hash-01' ) );
 		self::assertSame( 'run-02', $pointer->get_latest_for_hash( 'hash-02' ) );
 		self::assertSame( 'run-20', $pointer->get_latest_for_hash( 'hash-20' ) );
-		self::assertSame(
-			array_merge(
-				\array_map(
-					static fn ( int $index ): string => 'hash-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-					\range( 2, 19 )
-				),
-				array( 'hash-00', 'hash-20' )
-			),
-			\array_keys( $this->by_hash_option( 'a8csp_bgte_latest_runs-tests:imports' ) )
-		);
+		self::assertSame( array_merge( \array_map( static fn ( int $index ): string => 'hash-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ), \range( 2, 19 ) ), array( 'hash-00', 'hash-20' ) ), \array_keys( $this->by_hash_option( 'a8csp_bgte_latest_runs-tests:imports' ) ) );
 		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_latest_runs-tests:imports'] ?? null );
 		self::assertSame( array(), $this->option_calls() );
 	}
@@ -474,12 +459,7 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function queries_starting_with( string $prefix ): array {
-		return \array_values(
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, $prefix )
-			)
-		);
+		return \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, $prefix ) ) );
 	}
 
 	/**
@@ -488,14 +468,7 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function write_queries(): array {
-		return \array_values(
-			\array_filter(
-				$this->wpdb->recorded_queries,
-				static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' )
-					|| \str_starts_with( $query, 'UPDATE ' )
-					|| \str_starts_with( $query, 'DELETE ' )
-			)
-		);
+		return \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'UPDATE ' ) || \str_starts_with( $query, 'DELETE ' ) ) );
 	}
 
 	/**
