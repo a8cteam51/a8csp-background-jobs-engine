@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( BatchContext::class )]
-#[UsesClass( ScalarTree::class )]
+#[UsesClass( PortableArguments::class )]
 final class BatchContextTest extends TestCase {
 
 	/**
@@ -75,11 +75,11 @@ final class BatchContextTest extends TestCase {
 	}
 
 	/**
-	 * Appending an invalid scalar tree throws without changing the buffered queue.
+	 * Appending non-portable arguments throws without changing the buffered queue.
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_rejects_an_invalid_scalar_tree_without_mutating_the_queue(): void {
+	public function test_enqueue_rejects_non_portable_arguments_without_mutating_the_queue(): void {
 		$initial = array( array( 'chunk' => 'existing' ) );
 		$context = new BatchContext( 'run-7', array( 'site_id' => 7 ), $initial );
 		$caught  = null;
@@ -99,11 +99,11 @@ final class BatchContextTest extends TestCase {
 	}
 
 	/**
-	 * Prepending an invalid scalar tree throws without changing the buffered queue.
+	 * Prepending non-portable arguments throws without changing the buffered queue.
 	 *
 	 * @return  void
 	 */
-	public function test_prepend_rejects_an_invalid_scalar_tree_without_mutating_the_queue(): void {
+	public function test_prepend_rejects_non_portable_arguments_without_mutating_the_queue(): void {
 		$initial = array( array( 'chunk' => 'existing' ) );
 		$context = new BatchContext( 'run-7', array( 'site_id' => 7 ), $initial );
 		$caught  = null;

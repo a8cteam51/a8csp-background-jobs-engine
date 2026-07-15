@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -31,7 +31,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * The guard accepts only scalar trees whose JSON form fits the incumbent-proven 8000-byte ceiling.
+	 * The guard accepts only portable arguments whose JSON form fits the incumbent-proven 8000-byte ceiling.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -506,7 +506,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  Failure<SchedulingError>|null
 	 */
 	private function payload_failure( string $hook, array $args ): ?Failure {
-		if ( ! ScalarTree::is_valid( $args, self::MAX_ARGUMENTS_JSON_DEPTH ) ) {
+		if ( ! PortableArguments::is_valid( $args, self::MAX_ARGUMENTS_JSON_DEPTH ) ) {
 			return new Failure(
 				new SchedulingError(
 					SchedulingErrorReason::PayloadTooLarge,

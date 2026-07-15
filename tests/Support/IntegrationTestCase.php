@@ -271,7 +271,7 @@ abstract class IntegrationTestCase extends TestCase {
 	}
 
 	/**
-	 * Returns the engine's insertion-ordered argument identity for a scalar tree.
+	 * Returns the engine's insertion-ordered identity for portable arguments.
 	 *
 	 * @param   array<array-key, mixed> $args Start arguments.
 	 *

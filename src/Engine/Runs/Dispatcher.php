@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;
@@ -901,7 +901,7 @@ final readonly class Dispatcher {
 			$exception_class = \get_debug_type( $exception );
 		}
 
-		if ( ! \is_string( $encoded ) || ! ScalarTree::is_valid( $args ) ) {
+		if ( ! \is_string( $encoded ) || ! PortableArguments::is_valid( $args ) ) {
 			return new Failure(
 				new EngineError(
 					\sprintf(

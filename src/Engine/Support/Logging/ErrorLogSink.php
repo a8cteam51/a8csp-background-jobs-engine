@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -145,7 +145,7 @@ final class ErrorLogSink implements Component {
 			if (
 				null === $value
 				|| \is_scalar( $value )
-				|| ( \is_array( $value ) && ScalarTree::is_valid( $value, self::MAX_CONTEXT_ARRAY_DEPTH ) )
+				|| ( \is_array( $value ) && PortableArguments::is_valid( $value, self::MAX_CONTEXT_ARRAY_DEPTH ) )
 			) {
 				$normalized[ $key ] = $value;
 				continue;

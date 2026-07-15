@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -413,7 +413,7 @@ final readonly class FailedRunStore {
 		$failed_chunk = null;
 		if ( $has_failed_chunk ) {
 			$failed_chunk = $error['failed_chunk'] ?? null;
-			if ( ! \is_array( $failed_chunk ) || ! ScalarTree::is_valid( $failed_chunk ) ) {
+			if ( ! \is_array( $failed_chunk ) || ! PortableArguments::is_valid( $failed_chunk ) ) {
 				return null;
 			}
 		}

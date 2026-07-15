@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -150,12 +150,12 @@ final class BatchContext implements BatchContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Chunk arguments.
 	 *
-	 * @throws  InvalidBatchChunkException When the chunk is not a scalar tree.
+	 * @throws  InvalidBatchChunkException When the chunk arguments are not portable.
 	 *
 	 * @return  void
 	 */
 	private static function assert_valid_chunk( array $chunk_args ): void {
-		if ( ! ScalarTree::is_valid( $chunk_args ) ) {
+		if ( ! PortableArguments::is_valid( $chunk_args ) ) {
 			throw new InvalidBatchChunkException();
 		}
 	}

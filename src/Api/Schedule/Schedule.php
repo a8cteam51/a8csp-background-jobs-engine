@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
@@ -79,7 +79,7 @@ final readonly class Schedule {
 			$encoded_args = false;
 		}
 
-		if ( ! \is_string( $encoded_args ) || ! ScalarTree::is_valid( $this->args ) ) {
+		if ( ! \is_string( $encoded_args ) || ! PortableArguments::is_valid( $this->args ) ) {
 			// Exception values are diagnostic data, not rendered output.
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			throw new \InvalidArgumentException(

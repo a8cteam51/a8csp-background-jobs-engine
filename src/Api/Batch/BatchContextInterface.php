@@ -25,7 +25,7 @@ interface BatchContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for the appended chunk.
 	 *
-	 * @throws  \InvalidArgumentException When the chunk is not a scalar tree.
+	 * @throws  \InvalidArgumentException When the chunk arguments are not portable.
 	 *
 	 * @return  void
 	 */
@@ -39,7 +39,7 @@ interface BatchContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for the prepended chunk.
 	 *
-	 * @throws  \InvalidArgumentException When the chunk is not a scalar tree.
+	 * @throws  \InvalidArgumentException When the chunk arguments are not portable.
 	 *
 	 * @return  void
 	 */

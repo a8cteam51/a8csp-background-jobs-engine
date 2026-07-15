@@ -5,18 +5,21 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Recognizes arrays whose leaves remain portable through JSON and option storage.
+ * Enforces the portable-arguments rule for backend round-trips.
+ *
+ * Portable arguments contain only scalars, null, or nested arrays of such values and must survive
+ * backend serialization round-trips byte-faithfully.
  *
  * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ScalarTree {
+final class PortableArguments {
 	// region METHODS
 
 	/**
-	 * Returns whether every leaf is null or scalar within the permitted array depth.
+	 * Returns whether values satisfy the portability rule within the permitted array depth.
 	 *
 	 * JSON encoding runs before unbounded callers use this traversal so recursive arrays do not
 	 * reach it. The optional depth bound rejects excessive nesting independently of encoding.

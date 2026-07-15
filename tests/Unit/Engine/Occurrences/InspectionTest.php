@@ -663,7 +663,7 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
-	 * Returns the engine's exact scalar-tree argument identity.
+	 * Returns the engine's exact identity for portable arguments.
 	 *
 	 * @param   array<array-key, mixed> $args Start arguments.
 	 *

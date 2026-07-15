@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -529,7 +529,7 @@ final readonly class RunStore {
 			|| ! \is_string( $value['status'] ?? null )
 			|| ! \is_bool( $value['executing'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
-			|| ! ScalarTree::is_valid( $value['start_args'] )
+			|| ! PortableArguments::is_valid( $value['start_args'] )
 			|| ! \is_string( $value['args_hash'] ?? null )
 			|| ! \is_array( $value['queue'] ?? null )
 			|| ! \array_is_list( $value['queue'] )
@@ -545,7 +545,7 @@ final readonly class RunStore {
 		}
 
 		foreach ( $value['queue'] as $chunk ) {
-			if ( ! \is_array( $chunk ) || ! ScalarTree::is_valid( $chunk ) ) {
+			if ( ! \is_array( $chunk ) || ! PortableArguments::is_valid( $chunk ) ) {
 				return false;
 			}
 		}
@@ -614,7 +614,7 @@ final readonly class RunStore {
 		}
 
 		return ! \array_key_exists( 'failed_chunk', $value )
-			|| ( \is_array( $value['failed_chunk'] ) && ScalarTree::is_valid( $value['failed_chunk'] ) );
+			|| ( \is_array( $value['failed_chunk'] ) && PortableArguments::is_valid( $value['failed_chunk'] ) );
 	}
 
 	/**

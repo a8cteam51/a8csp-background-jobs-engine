@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -33,7 +33,7 @@ final class RunStoreWakeupProbe {
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RawOptionDecoder::class )]
-#[UsesClass( ScalarTree::class )]
+#[UsesClass( PortableArguments::class )]
 final class RunStoreTest extends TestCase {
 	private const OWNER = 'runs-tests';
 

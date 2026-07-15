@@ -2,20 +2,20 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins scalar-tree depth boundaries directly.
+ * Pins portable-argument depth boundaries directly.
  *
  */
-#[CoversClass( ScalarTree::class )]
-final class ScalarTreeTest extends TestCase {
+#[CoversClass( PortableArguments::class )]
+final class PortableArgumentsTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies production boot guards before the scalar-tree helper is autoloaded.
+	 * Satisfies production boot guards before the portable-arguments validator is autoloaded.
 	 *
 	 * @return  void
 	 */
@@ -36,7 +36,7 @@ final class ScalarTreeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_accepts_exactly_512_array_levels(): void {
-		self::assertTrue( ScalarTree::is_valid( $this->nested_values( 512 ) ) );
+		self::assertTrue( PortableArguments::is_valid( $this->nested_values( 512 ) ) );
 	}
 
 	/**
@@ -45,7 +45,7 @@ final class ScalarTreeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_rejects_513_array_levels(): void {
-		self::assertFalse( ScalarTree::is_valid( $this->nested_values( 513 ) ) );
+		self::assertFalse( PortableArguments::is_valid( $this->nested_values( 513 ) ) );
 	}
 
 	// endregion.
@@ -53,7 +53,7 @@ final class ScalarTreeTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Builds a scalar tree with the requested number of array levels.
+	 * Builds portable arguments with the requested number of array levels.
 	 *
 	 * @param   int $depth Array depth.
 	 *

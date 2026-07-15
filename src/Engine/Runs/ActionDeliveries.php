@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\ScalarTree;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -921,7 +921,7 @@ final readonly class ActionDeliveries {
 					\UnexpectedValueException::class
 				);
 			}
-			if ( ! ScalarTree::is_valid( $chunk_args ) ) {
+			if ( ! PortableArguments::is_valid( $chunk_args ) ) {
 				return new EngineError(
 					\sprintf(
 						'Batch queue chunk at index %d must contain only null, scalar, or nested array values.',
