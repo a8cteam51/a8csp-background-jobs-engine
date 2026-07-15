@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
@@ -44,7 +44,7 @@ final readonly class Schedule {
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the definition is not portable or violates a boundary.
+	 * @throws  \InvalidArgumentException When a schedule or target task name is invalid, or the definition is not portable or violates a boundary.
 	 */
 	public function __construct(
 		public string $name,
@@ -56,40 +56,9 @@ final readonly class Schedule {
 		public int $priority = 10,
 	) {
 		WorkIdentity::validate_name( $this->name );
-
-		if ( 0 > $this->priority || 255 < $this->priority ) {
-			// Exception values are diagnostic data, not rendered output.
-			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Schedule "%1$s" priority %2$d is invalid; pass a value from 0 through 255.',
-					$this->name,
-					$this->priority
-				)
-			);
-			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
-
-		try {
-			$encoded_args = \wp_json_encode(
-				$this->args,
-				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
-			);
-		} catch ( \JsonException ) {
-			$encoded_args = false;
-		}
-
-		if ( ! \is_string( $encoded_args ) || ! PortableArguments::is_valid( $this->args ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Schedule "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
-					$this->name
-				)
-			);
-			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
+		WorkIdentity::validate_name( $this->task );
+		AdmissionValidator::assert_priority( $this->priority, \sprintf( 'Schedule "%s"', $this->name ) );
+		AdmissionValidator::assert_portable_args( $this->args, \sprintf( 'Schedule "%s"', $this->name ) );
 
 		try {
 			$encoded = \wp_json_encode(

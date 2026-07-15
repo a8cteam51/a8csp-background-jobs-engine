@@ -63,9 +63,17 @@ final readonly class Recurrence {
 	 *
 	 * @param   string $expression Cron expression.
 	 *
+	 * @throws  \InvalidArgumentException When the expression is empty or whitespace-only.
+	 *
 	 * @return  self
 	 */
 	public static function cron( string $expression ): self {
+		if ( '' === \trim( $expression ) ) {
+			throw new \InvalidArgumentException(
+				'Recurrence cron expression must not be empty; pass a non-empty calendar expression.'
+			);
+		}
+
 		return new self( 'cron', $expression );
 	}
 

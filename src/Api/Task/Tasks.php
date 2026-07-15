@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionValidator;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -26,16 +26,6 @@ final readonly class Tasks {
 	 * @var     int
 	 */
 	private const MAX_DEDUP_KEY_BYTES = 64;
-
-	/**
-	 * Highest scheduler priority accepted by the public command contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const MAX_PRIORITY = 255;
 
 	// endregion
 
@@ -104,20 +94,7 @@ final readonly class Tasks {
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	public function enqueue( string $name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
 		$identity = $this->identity( $name );
-
-		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
-			// Exception values are diagnostic data, not rendered output.
-			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Task "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.',
-					$name,
-					$priority,
-					self::MAX_PRIORITY
-				)
-			);
-			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
+		AdmissionValidator::assert_priority( $priority, \sprintf( 'Task "%s"', $name ) );
 
 		if ( 0 > $delay ) {
 			// Exception values are diagnostic data, not rendered output.
@@ -145,26 +122,7 @@ final readonly class Tasks {
 			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
-		try {
-			$encoded_args = \wp_json_encode(
-				$args,
-				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
-			);
-		} catch ( \JsonException ) {
-			$encoded_args = false;
-		}
-
-		if ( ! \is_string( $encoded_args ) || ! PortableArguments::is_valid( $args ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException(
-				\sprintf(
-					'Task "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
-					$name
-				)
-			);
-			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
+		AdmissionValidator::assert_portable_args( $args, \sprintf( 'Task "%s"', $name ) );
 
 		return ( $this->enqueue )( $identity, $args, $delay, $dedup_key, $priority );
 	}

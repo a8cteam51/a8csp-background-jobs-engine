@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionValidator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -19,6 +20,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Recurrence::class )]
 #[UsesClass( CatchUpPolicy::class )]
 #[UsesClass( OverlapPolicy::class )]
+#[UsesClass( AdmissionValidator::class )]
 final class ScheduleTest extends TestCase {
 
 	/**
@@ -106,6 +108,20 @@ final class ScheduleTest extends TestCase {
 			'period'    => array( 'name' => 'refresh.index' ),
 			'non-ASCII' => array( 'name' => 'réindex' ),
 		);
+	}
+
+	/**
+	 * Target task names obey the same stable grammar at definition construction.
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_rejects_an_invalid_target_task_name(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs(
+			'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.'
+		);
+
+		new Schedule( 'nightly', Recurrence::every( 300 ), 'Refresh Index' );
 	}
 
 	/**

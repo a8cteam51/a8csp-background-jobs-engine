@@ -18,6 +18,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
  *
  * @template-covariant TValue
  * @template-covariant TError of ErrorInterface
+ *
+ * @phpstan-sealed Success|Failure
  */
 abstract readonly class AbstractResult {
 	// region METHODS

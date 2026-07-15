@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api\Schedule;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -60,6 +61,35 @@ final class RecurrenceTest extends TestCase {
 				'value' => '0 3 * * *',
 			),
 			$recurrence->fingerprint_value()
+		);
+	}
+
+	/**
+	 * Empty cron expressions identify the non-empty value the caller must supply.
+	 *
+	 * @param   string $expression Empty or whitespace-only expression.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'empty_cron_expressions' )]
+	public function test_cron_rejects_an_empty_expression( string $expression ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs(
+			'Recurrence cron expression must not be empty; pass a non-empty calendar expression.'
+		);
+
+		Recurrence::cron( $expression );
+	}
+
+	/**
+	 * Supplies empty expressions with and without whitespace.
+	 *
+	 * @return  array<string, array{expression: string}>
+	 */
+	public static function empty_cron_expressions(): array {
+		return array(
+			'empty'      => array( 'expression' => '' ),
+			'whitespace' => array( 'expression' => " \t\n\r\0\x0B" ),
 		);
 	}
 

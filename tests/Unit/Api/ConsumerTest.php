@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -31,6 +32,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Batches::class )]
 #[CoversClass( Schedules::class )]
 #[CoversClass( Runs::class )]
+#[UsesClass( AdmissionValidator::class )]
 #[UsesClass( WorkIdentity::class )]
 final class ConsumerTest extends TestCase {
 	/**
