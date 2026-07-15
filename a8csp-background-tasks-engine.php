@@ -14,7 +14,7 @@
  * Plugin Name:             A8CSP Background Tasks Engine
  * Plugin URI:              https://specialprojects.automattic.com
  * Update URI:              https://github.com/a8cteam51/a8csp-background-tasks-engine
- * Description:             A background-work engine for WordPress sites: Tasks, Schedules, and Batches on pluggable scheduling backends.
+ * Description:             A background-work engine for WordPress sites: Tasks, Schedules, and Batches using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
  * Version:                 1.0.0-beta.1
  * Requires at least:       7.0
  * Tested up to:            7.0

@@ -9,7 +9,7 @@
 **License:** GPL v2 or later
 **License URI:** <https://www.gnu.org/licenses/gpl-2.0.html>
 
-A background-work engine for WordPress sites: Tasks, Schedules, and Batches on pluggable scheduling backends.
+A background-work engine for WordPress sites: Tasks, Schedules, and Batches using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
 
 ## What it is
 
@@ -212,7 +212,7 @@ interface BatchContextInterface {
 
 `Schedule` is a readonly value object with this constructor shape:
 
-```php
+```
 public function __construct(
 	public string $name,
 	public Recurrence $recurrence,

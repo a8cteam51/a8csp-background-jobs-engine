@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 /**
- * Uninstall handler. WordPress runs this file directly when the plugin is deleted, in a cold
- * bootstrap where only `WP_UNINSTALL_PLUGIN` is defined — no Composer autoloader, no Plugin class,
- * no Component registry — so the plugin's footprint stays inline below instead of living in a
- * separately-requirable file: nothing here may reference plugin code.
+ * Uninstall handler. WordPress runs this file directly when the plugin is deleted. The plugin's
+ * entry point, Composer autoloader, and plugin classes are not loaded, so the plugin's footprint
+ * stays inline below instead of living in a separately-requirable file: nothing here may reference
+ * plugin code.
  *
  * @since       1.0.0
  * @version     1.0.0
