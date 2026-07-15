@@ -169,7 +169,7 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$stored = self::decode_registry( $expected_raw );
+			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
 				return false;
 			}
@@ -318,7 +318,7 @@ final class ScheduleRegistry {
 				return RegistrationUpdateOutcome::Pruned;
 			}
 
-			$stored = self::decode_registry( $expected_raw );
+			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
 				return RegistrationUpdateOutcome::Failed;
 			}
@@ -433,28 +433,6 @@ final class ScheduleRegistry {
 		$stored = RawOptionDecoder::decode( $raw );
 
 		return new Success( \is_array( $stored ) ? $stored : array() );
-	}
-
-	/**
-	 * Returns a raw registry row without constructing serialized objects.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $raw Exact persisted option value.
-	 *
-	 * @return  mixed
-	 */
-	private static function decode_registry( string $raw ): mixed {
-		\call_user_func( 'set_error_handler', static fn (): bool => true );
-
-		try {
-			return \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
-		} catch ( \Throwable ) {
-			return null;
-		} finally {
-			\call_user_func( 'restore_error_handler' );
-		}
 	}
 
 	/**

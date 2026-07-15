@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -16,6 +17,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( OccurrenceLease::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 final class OccurrenceLeaseTest extends TestCase {
 	private const KEY = 'owner-a:email-digest';
 	private const NOW = 1_700_000_000;

@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -32,6 +33,7 @@ final class LockRowWakeupProbe {
 #[UsesClass( ClaimResult::class )]
 #[UsesClass( HeartbeatOutcome::class )]
 #[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
 	private const ARGS_HASH = 'args-123';
 	private const KEY       = 'a8csp_bgte_lock_email-digest_args-123';

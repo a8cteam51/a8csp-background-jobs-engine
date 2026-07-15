@@ -375,7 +375,12 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'transient heartbeat read failure';
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $lock_reader ): void {
+						$lock_reader->last_error = 'transient heartbeat read failure';
+					}
+				);
 			}
 		);
 

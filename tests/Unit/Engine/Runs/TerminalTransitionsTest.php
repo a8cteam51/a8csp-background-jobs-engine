@@ -198,7 +198,7 @@ final class TerminalTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A stale task delivery exits before heartbeats, callbacks, or state writes.
+	 * A stale task delivery exits after its authoritative read and before heartbeats, callbacks, or writes.
 	 *
 	 * @return  void
 	 */
@@ -219,7 +219,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->task->calls );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( $expected, $this->option( $this->run_option_name() ) );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
+		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame(
 			array(
@@ -238,7 +238,7 @@ final class TerminalTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A fresh execution marker excludes a same-sequence delivery before another fence write.
+	 * A fresh execution marker excludes a same-sequence delivery after its read and before another fence write.
 	 *
 	 * @return  void
 	 */
@@ -273,7 +273,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertNull( $duplicate );
 		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
 		self::assertSame( $expected_lock, $this->lock() );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
+		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_lifecycle_events'] );
 		self::assertSame(
@@ -1120,7 +1120,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->task->calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
+		$this->assert_only_authoritative_run_read( 'missing-run' );
 		self::assertSame(
 			array(
 				array(
@@ -1148,6 +1148,21 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Asserts that one delivery performed only the required authoritative run-state read.
+	 *
+	 * @param   string $run_id Run identifier.
+	 *
+	 * @return  void
+	 */
+	private function assert_only_authoritative_run_read( string $run_id ): void {
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+		$query = $this->wpdb->recorded_queries[0];
+		self::assertStringStartsWith( 'SELECT `option_value` FROM ', $query );
+		self::assertStringContainsString( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id, $query );
+		self::assertStringEndsWith( ' LIMIT 1', $query );
 	}
 
 	/**

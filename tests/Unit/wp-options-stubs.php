@@ -55,6 +55,16 @@ if ( ! \function_exists( 'get_option' ) ) {
 	 * @phpstan-impure
 	 */
 	function get_option( $option, $default_value = false ) {
+		/** @var callable(string, mixed): mixed|null $reader */
+		$reader = $GLOBALS['a8csp_bgte_test_get_option'] ?? null;
+		if ( null !== $reader ) {
+			if ( ! \is_callable( $reader ) ) {
+				throw new \UnexpectedValueException( 'Initialize the get-option test seam as a callable.' );
+			}
+
+			return $reader( $option, $default_value );
+		}
+
 		if ( 'cron' === $option && \array_key_exists( 'a8csp_bgte_test_cron_array', $GLOBALS ) ) {
 			return $GLOBALS['a8csp_bgte_test_cron_array'];
 		}

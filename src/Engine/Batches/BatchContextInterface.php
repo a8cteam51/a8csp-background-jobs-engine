@@ -25,6 +25,8 @@ interface BatchContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for the appended chunk.
 	 *
+	 * @throws  \InvalidArgumentException When the chunk is not a scalar tree.
+	 *
 	 * @return  void
 	 */
 	public function enqueue( array $chunk_args ): void;
@@ -36,6 +38,8 @@ interface BatchContextInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for the prepended chunk.
+	 *
+	 * @throws  \InvalidArgumentException When the chunk is not a scalar tree.
 	 *
 	 * @return  void
 	 */

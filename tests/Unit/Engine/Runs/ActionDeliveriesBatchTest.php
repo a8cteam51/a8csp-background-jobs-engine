@@ -36,6 +36,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -61,6 +62,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
+#[UsesClass( ScalarTree::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TaskRegistry::class )]
 final class ActionDeliveriesBatchTest extends TestCase {
@@ -466,6 +468,73 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
+	 * Generated chunks reject non-scalar leaves without exposing their contents or stalling the run.
+	 *
+	 * @param   mixed $invalid_value Invalid chunk leaf.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_generated_chunk_values' )]
+	public function test_handle_start_action_fails_terminally_for_an_invalid_generated_chunk( mixed $invalid_value ): void {
+		$private_marker     = 'private-payload-must-not-leak';
+		$this->batch->queue = array(
+			array( 'chunk' => 'valid' ),
+			array( $private_marker => $invalid_value ),
+		);
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		$message = 'Batch queue chunk at index 1 must contain only null, scalar, or nested array values.';
+		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertStringNotContainsString( $private_marker, $this->batch->failure_calls[0]['error']->message );
+		$this->assert_terminal_start_error( $message, \UnexpectedValueException::class );
+	}
+
+	/**
+	 * Supplies unserializable and object-bearing generated chunk leaves.
+	 *
+	 * @return  array<string, array{invalid_value: mixed}>
+	 */
+	public static function invalid_generated_chunk_values(): array {
+		return array(
+			'object'  => array( 'invalid_value' => new \stdClass() ),
+			'closure' => array( 'invalid_value' => static fn (): null => null ),
+		);
+	}
+
+	/**
+	 * Valid nested scalar trees survive generation and filtering byte-for-byte.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_preserves_valid_scalar_tree_chunks(): void {
+		$queue = array(
+			array(
+				'nested' => array(
+					'integer' => 7,
+					'string'  => 'value',
+					'boolean' => true,
+					'nothing' => null,
+					'list'    => array( 1, 'two', false, null ),
+				),
+			),
+		);
+
+		$this->batch->queue = $queue;
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame( $queue, $this->run_state()['queue'] );
+		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/**
 	 * A non-array queue-filter result fails the run before scheduling continue.
 	 *
 	 * @return  void
@@ -483,6 +552,33 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			'Batch queue filter returned a non-array value; return one argument array per chunk.',
 			\UnexpectedValueException::class
 		);
+	}
+
+	/**
+	 * Filter-derived chunks pass through the same scalar-tree admission boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_fails_terminally_for_an_invalid_filtered_chunk(): void {
+		$private_marker     = 'filtered-private-payload';
+		$this->batch->queue = array( array( 'chunk' => 'generated' ) );
+		$this->set_filter_value(
+			'a8csp_background_tasks/queue/' . self::NAME,
+			array(
+				array( 'chunk' => 'valid' ),
+				array( $private_marker => new \stdClass() ),
+			)
+		);
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		$message = 'Batch queue chunk at index 1 must contain only null, scalar, or nested array values.';
+		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertStringNotContainsString( $private_marker, $this->batch->failure_calls[0]['error']->message );
+		$this->assert_terminal_start_error( $message, \UnexpectedValueException::class );
 	}
 
 	/**
@@ -857,6 +953,75 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		self::assertSame( array(), $this->batch->success_calls );
 		self::assertSame( array(), $this->batch->failure_calls );
+	}
+
+	/**
+	 * Invalid callback queue mutations fail without persisting the rejected chunk or an execution marker.
+	 *
+	 * @param   string $mutation     Context mutation method.
+	 * @param   mixed  $invalid_value Invalid chunk leaf.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_context_mutations' )]
+	public function test_handle_run_action_rejects_invalid_context_mutations_transactionally( string $mutation, mixed $invalid_value ): void {
+		$chunk_args = array( 'chunk' => 'current' );
+		$remaining  = array( 'chunk' => 'remaining' );
+		$marker     = 'callback-private-payload';
+
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
+		$this->batch->on_process = static function (
+			array $processed_args,
+			BatchContextInterface $context
+		) use (
+			$invalid_value,
+			$marker,
+			$mutation
+		): void {
+			if ( 'enqueue' === $mutation ) {
+				$context->enqueue( array( $marker => $invalid_value ) );
+
+				return;
+			}
+
+			$context->prepend( array( $marker => $invalid_value ) );
+		};
+
+		$this->clock->timestamp = self::NOW + 120;
+
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+
+		self::assertSame( array( $chunk_args, $remaining ), $this->failed_run_state()['queue'] );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertNull( $this->lock() );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->batch->failure_calls );
+		$error = $this->batch->failure_calls[0]['error'];
+		self::assertSame( \InvalidArgumentException::class, $error->exception_class );
+		self::assertSame(
+			'Batch chunk arguments must contain only null, scalar, or nested array values.',
+			$error->message
+		);
+		self::assertStringNotContainsString( $marker, $error->message );
+	}
+
+	/**
+	 * Supplies both callback queue mutation directions with invalid leaves.
+	 *
+	 * @return  array<string, array{mutation: 'enqueue'|'prepend', invalid_value: mixed}>
+	 */
+	public static function invalid_context_mutations(): array {
+		return array(
+			'enqueue closure' => array(
+				'mutation'      => 'enqueue',
+				'invalid_value' => static fn (): null => null,
+			),
+			'prepend object'  => array(
+				'mutation'      => 'prepend',
+				'invalid_value' => new \stdClass(),
+			),
+		);
 	}
 
 	/**
@@ -1251,11 +1416,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * A retry-advanced sequence drops an older continue delivery without touching state or scheduling.
+	 * A retry-advanced sequence drops an older continue delivery after only its authoritative state read.
 	 *
 	 * @return  void
 	 */
-	public function test_stale_continue_after_retry_advances_sequence_is_side_effect_free(): void {
+	public function test_stale_continue_after_retry_advances_sequence_only_reads_authoritative_state(): void {
 		$chunk_args                = array( 'chunk' => 'current' );
 		$this->batch->retry_policy = new RetryPolicy(
 			max_attempts: 2,
@@ -1284,7 +1449,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( $expected_state, $this->run_state() );
 		self::assertSame( $expected_lock, $this->lock() );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT `option_value` FROM ', $this->wpdb->recorded_queries[0] );
+		self::assertStringContainsString(
+			"WHERE `option_name` = '" . $this->run_option_name() . "' LIMIT 1",
+			$this->wpdb->recorded_queries[0]
+		);
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame(
 			array(

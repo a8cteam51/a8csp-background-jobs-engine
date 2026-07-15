@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -712,7 +713,7 @@ final readonly class OverlapGuard {
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
 	private static function parse( string $raw ): ?array {
-		$value = self::decode( $raw );
+		$value = RawOptionDecoder::decode( $raw );
 		if (
 			! \is_array( $value )
 			|| 3 !== \count( $value )
@@ -728,29 +729,6 @@ final readonly class OverlapGuard {
 			'claimed_at'   => $value['claimed_at'],
 			'heartbeat_at' => $value['heartbeat_at'],
 		);
-	}
-
-	/**
-	 * Decodes a raw row without allowing serialized objects to construct classes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $raw Exact persisted option value.
-	 *
-	 * @return  mixed
-	 */
-	private static function decode( string $raw ): mixed {
-		\call_user_func( 'set_error_handler', static fn (): bool => true );
-
-		try {
-			// Lock rows contain only scalars and arrays, so class construction is never valid during decoding.
-			return \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
-		} catch ( \Throwable ) {
-			return null;
-		} finally {
-			\call_user_func( 'restore_error_handler' );
-		}
 	}
 
 	/**

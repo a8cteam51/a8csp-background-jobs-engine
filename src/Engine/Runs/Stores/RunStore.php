@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -119,7 +120,17 @@ final readonly class RunStore {
 	 * @return  RunState|null
 	 */
 	public function get( string $run_id ): ?RunState {
-		$state = self::from_option( \get_option( $this->option_name( $run_id ), null ) );
+		$selected = $this->rows->read( $this->option_name( $run_id ) );
+		if ( $selected->is_failure() ) {
+			return null;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return null;
+		}
+
+		$state = self::from_option( RawOptionDecoder::decode( $raw ) );
 		if ( null === $state ) {
 			// A vanished or corrupted run is unrecoverable, so callers treat it as no run.
 			return null;
@@ -345,9 +356,12 @@ final readonly class RunStore {
 	 */
 	public function delete( string $run_id ): bool {
 		\delete_option( $this->option_name( $run_id ) );
-		$missing = new \stdClass();
+		$selected = $this->rows->read( $this->option_name( $run_id ) );
+		if ( $selected->is_failure() ) {
+			return false;
+		}
 
-		return \get_option( $this->option_name( $run_id ), $missing ) === $missing;
+		return null === $selected->value;
 	}
 
 	// endregion
@@ -512,6 +526,7 @@ final readonly class RunStore {
 			|| ! \is_string( $value['status'] ?? null )
 			|| ! \is_bool( $value['executing'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
+			|| ! ScalarTree::is_valid( $value['start_args'] )
 			|| ! \is_string( $value['args_hash'] ?? null )
 			|| ! \is_array( $value['queue'] ?? null )
 			|| ! \array_is_list( $value['queue'] )
@@ -527,7 +542,7 @@ final readonly class RunStore {
 		}
 
 		foreach ( $value['queue'] as $chunk ) {
-			if ( ! \is_array( $chunk ) ) {
+			if ( ! \is_array( $chunk ) || ! ScalarTree::is_valid( $chunk ) ) {
 				return false;
 			}
 		}

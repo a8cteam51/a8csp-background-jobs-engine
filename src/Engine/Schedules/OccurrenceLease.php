@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 
@@ -194,15 +195,7 @@ final readonly class OccurrenceLease {
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
 	private static function parse( string $raw ): ?array {
-		\call_user_func( 'set_error_handler', static fn (): bool => true );
-
-		try {
-			$value = \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
-		} catch ( \Throwable ) {
-			return null;
-		} finally {
-			\call_user_func( 'restore_error_handler' );
-		}
+		$value = RawOptionDecoder::decode( $raw );
 
 		if (
 			! \is_array( $value )

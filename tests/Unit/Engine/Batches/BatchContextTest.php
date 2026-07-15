@@ -3,7 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Batches;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -11,6 +13,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( BatchContext::class )]
+#[UsesClass( ScalarTree::class )]
 final class BatchContextTest extends TestCase {
 
 	/**
@@ -69,5 +72,53 @@ final class BatchContextTest extends TestCase {
 			),
 			$context->get_queue()
 		);
+	}
+
+	/**
+	 * Appending an invalid scalar tree throws without changing the buffered queue.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_rejects_an_invalid_scalar_tree_without_mutating_the_queue(): void {
+		$initial = array( array( 'chunk' => 'existing' ) );
+		$context = new BatchContext( 'run-7', array( 'site_id' => 7 ), $initial );
+		$caught  = null;
+
+		try {
+			$context->enqueue( array( 'private-payload' => static fn (): null => null ) );
+		} catch ( \InvalidArgumentException $exception ) {
+			$caught = $exception;
+		}
+
+		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
+		self::assertSame(
+			'Batch chunk arguments must contain only null, scalar, or nested array values.',
+			$caught->getMessage()
+		);
+		self::assertSame( $initial, $context->get_queue() );
+	}
+
+	/**
+	 * Prepending an invalid scalar tree throws without changing the buffered queue.
+	 *
+	 * @return  void
+	 */
+	public function test_prepend_rejects_an_invalid_scalar_tree_without_mutating_the_queue(): void {
+		$initial = array( array( 'chunk' => 'existing' ) );
+		$context = new BatchContext( 'run-7', array( 'site_id' => 7 ), $initial );
+		$caught  = null;
+
+		try {
+			$context->prepend( array( 'private-payload' => new \stdClass() ) );
+		} catch ( \InvalidArgumentException $exception ) {
+			$caught = $exception;
+		}
+
+		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
+		self::assertSame(
+			'Batch chunk arguments must contain only null, scalar, or nested array values.',
+			$caught->getMessage()
+		);
+		self::assertSame( $initial, $context->get_queue() );
 	}
 }

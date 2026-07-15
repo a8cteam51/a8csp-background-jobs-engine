@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -843,18 +844,30 @@ final readonly class ActionDeliveries {
 	 *
 	 * @param   iterable<mixed> $chunks Generated or filtered chunks.
 	 *
-	 * @throws  \UnexpectedValueException When one chunk is not an argument array.
+	 * @throws  \UnexpectedValueException When one chunk is not an argument array or scalar tree.
 	 *
 	 * @return  list<array<array-key, mixed>>
 	 */
 	private function materialize_queue( iterable $chunks ): array {
 		$queue = array();
 		foreach ( $chunks as $chunk_args ) {
+			$index = \count( $queue );
+			// Exception values are diagnostic data, not rendered output.
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			if ( ! \is_array( $chunk_args ) ) {
 				throw new \UnexpectedValueException(
-					'Batch queue contains a non-array chunk; generate and filter one argument array per chunk.'
+					\sprintf( 'Batch queue chunk at index %d must be an argument array.', $index )
 				);
 			}
+			if ( ! ScalarTree::is_valid( $chunk_args ) ) {
+				throw new \UnexpectedValueException(
+					\sprintf(
+						'Batch queue chunk at index %d must contain only null, scalar, or nested array values.',
+						$index
+					)
+				);
+			}
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 			$queue[] = $chunk_args;
 		}

@@ -9,9 +9,20 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
+
+/** Detects whether run-state decoding constructs a serialized class. */
+final class RunStoreWakeupProbe {
+	public static int $wakeups = 0;
+
+	/** Records an unsafe object construction during unserialization. */
+	public function __wakeup(): void {
+		++self::$wakeups;
+	}
+}
 
 /**
  * Pins consolidated run-option persistence and typed read-modify-write state.
@@ -21,6 +32,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( ScalarTree::class )]
 final class RunStoreTest extends TestCase {
 	private OptionRows $rows;
 	private WpdbLockSpy $wpdb;
@@ -57,6 +69,14 @@ final class RunStoreTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
 		$this->wpdb                                 = new WpdbLockSpy();
 		$this->rows                                 = new OptionRows( $this->wpdb );
+	}
+
+	/** Clears the opt-in get_option seam so it cannot leak into later test classes. */
+	#[\Override]
+	protected function tearDown(): void {
+		unset( $GLOBALS['a8csp_bgte_test_get_option'] );
+
+		parent::tearDown();
 	}
 
 	/**
@@ -548,6 +568,121 @@ final class RunStoreTest extends TestCase {
 			self::fail( 'The deleted run snapshot could not be read.' );
 		}
 		self::assertNull( $missing->value );
+	}
+
+	/**
+	 * The authoritative row wins when the WordPress options view carries an older valid state.
+	 *
+	 * @return  void
+	 */
+	public function test_get_ignores_a_stale_options_view(): void {
+		$key   = 'a8csp_bgte_run_authoritative_run-current';
+		$state = array(
+			'status'        => 'running',
+			'executing'     => false,
+			'start_args'    => array(),
+			'args_hash'     => 'hash',
+			'queue'         => array( array( 'page' => 1 ) ),
+			'chunk_retries' => 0,
+			'action_seq'    => 1,
+			'created_at'    => 1,
+			'heartbeat_at'  => 1,
+		);
+
+		$GLOBALS['a8csp_bgte_test_options'] = array( $key => $state );
+
+		$state['queue']      = array( array( 'page' => 2 ) );
+		$state['action_seq'] = 2;
+		$raw                 = \maybe_serialize( $state );
+		self::assertIsString( $raw );
+		$this->wpdb->put( $key, $raw );
+		$store = new RunStore( 'authoritative', new FixedClock( 123 ), $this->rows );
+
+		$stored = $store->get( 'run-current' );
+
+		self::assertNotNull( $stored );
+		self::assertSame( 2, $stored->action_seq );
+		self::assertSame( array( array( 'page' => 2 ) ), $stored->queue );
+	}
+
+	/**
+	 * An authoritative read failure preserves the public no-run result without using cached state.
+	 *
+	 * @return  void
+	 */
+	public function test_get_returns_null_when_the_authoritative_read_fails(): void {
+		$key = 'a8csp_bgte_run_read-failure_run-current';
+		$raw = \maybe_serialize(
+			array(
+				'status'        => 'running',
+				'executing'     => false,
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( $key, $raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient run read failure';
+			}
+		);
+		$store = new RunStore( 'read-failure', new FixedClock( 123 ), $this->rows );
+
+		self::assertNull( $store->get( 'run-current' ) );
+		self::assertSame( $raw, $this->wpdb->rows[ $key ] );
+	}
+
+	/**
+	 * Run reads reject object-bearing queue chunks without invoking serialized wakeup hooks.
+	 *
+	 * @return  void
+	 */
+	public function test_get_and_inspect_reject_object_bearing_chunks_without_instantiation(): void {
+		$key = 'a8csp_bgte_run_poisoned_run-object';
+		$raw = \maybe_serialize(
+			array(
+				'status'        => 'running',
+				'executing'     => false,
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(
+					array( 'private-payload' => new RunStoreWakeupProbe() ),
+				),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( $key, $raw );
+
+		RunStoreWakeupProbe::$wakeups = 0;
+
+		$GLOBALS['a8csp_bgte_test_get_option'] = static function ( string $option, mixed $default_value ) use ( $key, $raw ): mixed {
+			// This seam models the unrestricted decoder whose wakeup side effect is under test.
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+			return $key === $option ? \unserialize( $raw ) : $default_value;
+		};
+
+		$store = new RunStore( 'poisoned', new FixedClock( 123 ), $this->rows );
+
+		self::assertNull( $store->get( 'run-object' ) );
+		$inspection = $store->inspect( 'run-object' );
+		if ( $inspection->is_failure() ) {
+			self::fail( $inspection->error->message );
+		}
+
+		self::assertSame( $raw, $inspection->value['raw'] ?? null );
+		self::assertNull( $inspection->value['state'] ?? null );
+		self::assertSame( 0, RunStoreWakeupProbe::$wakeups );
 	}
 
 	/**

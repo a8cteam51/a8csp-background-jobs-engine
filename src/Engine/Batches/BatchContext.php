@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -77,6 +79,8 @@ final class BatchContext implements BatchContextInterface {
 	 */
 	#[\Override]
 	public function enqueue( array $chunk_args ): void {
+		self::assert_valid_chunk( $chunk_args );
+
 		$this->appended[] = $chunk_args;
 	}
 
@@ -88,6 +92,8 @@ final class BatchContext implements BatchContextInterface {
 	 */
 	#[\Override]
 	public function prepend( array $chunk_args ): void {
+		self::assert_valid_chunk( $chunk_args );
+
 		$this->prepended[] = $chunk_args;
 	}
 
@@ -131,6 +137,26 @@ final class BatchContext implements BatchContextInterface {
 			$this->queue,
 			$this->appended
 		);
+	}
+
+	/**
+	 * Rejects chunk arguments that option storage and scheduler payloads cannot carry safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $chunk_args Chunk arguments.
+	 *
+	 * @throws  \InvalidArgumentException When the chunk is not a scalar tree.
+	 *
+	 * @return  void
+	 */
+	private static function assert_valid_chunk( array $chunk_args ): void {
+		if ( ! ScalarTree::is_valid( $chunk_args ) ) {
+			throw new \InvalidArgumentException(
+				'Batch chunk arguments must contain only null, scalar, or nested array values.'
+			);
+		}
 	}
 
 	// endregion
