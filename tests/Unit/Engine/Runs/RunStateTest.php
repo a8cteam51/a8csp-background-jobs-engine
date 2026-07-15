@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -13,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( RunState::class )]
+#[UsesClass( PendingAction::class )]
 #[UsesClass( RunStatus::class )]
 final class RunStateTest extends TestCase {
 	private const EFFECTS = array( 'retention', 'callbacks' );
@@ -22,13 +24,6 @@ final class RunStateTest extends TestCase {
 		'message' => 'Database unavailable.',
 		'stage'   => 'execution',
 		'code'    => 'execution_failed',
-	);
-
-	private const PENDING = array(
-		'stage'    => 'continue',
-		'mode'     => 'single',
-		'fire_at'  => 175,
-		'priority' => 10,
 	);
 
 	/**
@@ -76,7 +71,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => self::EFFECTS,
 			),
@@ -105,7 +100,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => self::EFFECTS,
 			),
@@ -134,7 +129,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => self::EFFECTS,
 			),
@@ -163,7 +158,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => self::EFFECTS,
 			),
@@ -192,7 +187,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 8,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => self::EFFECTS,
 			),
@@ -221,7 +216,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 150,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => self::EFFECTS,
 			),
@@ -236,12 +231,7 @@ final class RunStateTest extends TestCase {
 	 */
 	public function test_with_pending_preserves_every_other_field(): void {
 		$original = self::state();
-		$pending  = array(
-			'stage'    => 'run',
-			'mode'     => 'async',
-			'fire_at'  => null,
-			'priority' => 23,
-		);
+		$pending  = PendingAction::async( 'run', 23 );
 		$copy     = $original->with_pending( $pending );
 
 		self::assertNotSame( $original, $copy );
@@ -288,7 +278,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => $error,
 				'effects'         => self::EFFECTS,
 			),
@@ -314,7 +304,7 @@ final class RunStateTest extends TestCase {
 				'action_seq'      => 7,
 				'created_at'      => 100,
 				'heartbeat_at'    => 125,
-				'pending'         => self::PENDING,
+				'pending'         => self::pending(),
 				'error'           => self::ERROR,
 				'effects'         => $effects,
 			),
@@ -338,7 +328,7 @@ final class RunStateTest extends TestCase {
 			action_seq: 7,
 			created_at: 100,
 			heartbeat_at: 125,
-			pending: self::PENDING,
+			pending: self::pending(),
 			error: self::ERROR,
 			effects: self::EFFECTS,
 		);
@@ -359,7 +349,7 @@ final class RunStateTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null,
+	 *     pending: PendingAction|null,
 	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null,
 	 *     effects: list<string>
 	 * }
@@ -379,5 +369,17 @@ final class RunStateTest extends TestCase {
 			'error'           => $state->error,
 			'effects'         => $state->effects,
 		);
+	}
+
+	/**
+	 * Returns the shared pending-action value.
+	 *
+	 * @return  PendingAction
+	 */
+	private static function pending(): PendingAction {
+		/** @var PendingAction|null $pending */
+		static $pending = null;
+
+		return $pending ??= PendingAction::single( 'continue', 175, 10 );
 	}
 }

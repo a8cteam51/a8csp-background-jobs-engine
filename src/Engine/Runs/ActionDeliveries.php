@@ -202,14 +202,7 @@ final readonly class ActionDeliveries {
 			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 )
 			->with_executing( false )
-			->with_pending(
-				array(
-					'stage'    => 'continue',
-					'mode'     => 'async',
-					'fire_at'  => null,
-					'priority' => 10,
-				)
-			);
+			->with_pending( PendingAction::async( 'continue', 10 ) );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -290,14 +283,7 @@ final readonly class ActionDeliveries {
 			$replacement = $state
 				->with_action_seq( $state->action_seq + 1 )
 				->with_executing( false )
-				->with_pending(
-					array(
-						'stage'    => 'cleanup',
-						'mode'     => 'async',
-						'fire_at'  => null,
-						'priority' => 10,
-					)
-				);
+				->with_pending( PendingAction::async( 'cleanup', 10 ) );
 			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 				return;
 			}
@@ -327,14 +313,7 @@ final readonly class ActionDeliveries {
 		$replacement = $state
 			->with_action_seq( $state->action_seq + 1 )
 			->with_executing( false )
-			->with_pending(
-				array(
-					'stage'    => 'run',
-					'mode'     => 'async',
-					'fire_at'  => null,
-					'priority' => 10,
-				)
-			);
+			->with_pending( PendingAction::async( 'run', 10 ) );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -712,14 +691,7 @@ final readonly class ActionDeliveries {
 			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 )
 			->with_executing( false )
-			->with_pending(
-				array(
-					'stage'    => 'continue',
-					'mode'     => 'single',
-					'fire_at'  => $fire_at,
-					'priority' => 10,
-				)
-			);
+			->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}

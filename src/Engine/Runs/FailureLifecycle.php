@@ -237,14 +237,7 @@ final readonly class FailureLifecycle {
 				->with_heartbeat_at( $fire_at )
 				->with_action_seq( $state->action_seq + 1 )
 				->with_executing( false )
-				->with_pending(
-					array(
-						'stage'    => 'run',
-						'mode'     => 'single',
-						'fire_at'  => $fire_at,
-						'priority' => 10,
-					)
-				);
+				->with_pending( PendingAction::single( 'run', $fire_at, 10 ) );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,

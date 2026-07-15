@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
@@ -23,6 +24,8 @@ use Psr\Clock\ClockInterface;
  * observes an older state loses its transition instead of overwriting or recreating the run.
  *
  * @internal
+ *
+ * @phpstan-type StoredPendingAction = array{stage: 'start'|'run'|'continue'|'cleanup', mode: 'async', fire_at: null, priority: int}|array{stage: 'run'|'continue', mode: 'single', fire_at: int, priority: int}
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -80,17 +83,15 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null $pending
-	 *
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
 	 * @param   string                        $args_hash  Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
-	 * @param   array|null                    $pending    Durable successor delivery, or null when none exists.
+	 * @param   PendingAction|null            $pending    Durable successor delivery, or null when none exists.
 	 *
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
-	public function create( string $run_id, array $start_args, string $args_hash, array $queue, ?array $pending = null ): ?RunState {
+	public function create( string $run_id, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState(
@@ -416,7 +417,12 @@ final readonly class RunStore {
 			'heartbeat_at'    => $state->heartbeat_at,
 		);
 		if ( null !== $state->pending ) {
-			$option['pending'] = $state->pending;
+			$option['pending'] = array(
+				'stage'    => $state->pending->stage,
+				'mode'     => $state->pending->mode,
+				'fire_at'  => $state->pending->fire_at,
+				'priority' => $state->pending->priority,
+			);
 		}
 		if ( null !== $state->error ) {
 			$option['error'] = $state->error;
@@ -476,6 +482,13 @@ final readonly class RunStore {
 		) {
 			return null;
 		}
+		$stored_pending = $value['pending'] ?? null;
+		$pending        = null;
+		if ( null !== $stored_pending ) {
+			$pending = 'async' === $stored_pending['mode']
+				? PendingAction::async( $stored_pending['stage'], $stored_pending['priority'] )
+				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
+		}
 
 		return new RunState(
 			status: $status,
@@ -487,7 +500,7 @@ final readonly class RunStore {
 			action_seq: $value['action_seq'],
 			created_at: $value['created_at'],
 			heartbeat_at: $value['heartbeat_at'],
-			pending: $value['pending'] ?? null,
+			pending: $pending,
 			error: $error,
 			effects: $effects,
 		);
@@ -509,7 +522,7 @@ final readonly class RunStore {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
+	 *     pending?: StoredPendingAction,
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
 	 *     effects?: non-empty-list<string>
 	 * } $value
@@ -551,7 +564,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-assert-if-true array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int} $value
+	 * @phpstan-assert-if-true StoredPendingAction $value
 	 *
 	 * @param   mixed $value Persisted pending-action descriptor.
 	 *
@@ -572,9 +585,12 @@ final readonly class RunStore {
 			return false;
 		}
 
+		// The acceptance set is exactly PendingAction's six factory combinations: async pairs with every
+		// guard-permitted stage, while single pairs only with run and continue — no writer has ever
+		// produced another pairing, so anything else is a corrupt row rather than a hydratable state.
 		return 'async' === $value['mode']
 			? null === $value['fire_at']
-			: \is_int( $value['fire_at'] );
+			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'run', 'continue' ), true );
 	}
 
 	/**

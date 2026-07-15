@@ -305,7 +305,7 @@ final readonly class RunReconciliation {
 			}
 
 			$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
-			$failed_chunk = 'Batch' === $work_type && 'run' === ( $state->pending['stage'] ?? null )
+			$failed_chunk = 'Batch' === $work_type && 'run' === $state->pending?->stage
 				? ( $state->queue[0] ?? null )
 				: null;
 			if ( null !== $batch ) {
@@ -399,7 +399,7 @@ final readonly class RunReconciliation {
 		}
 
 		$args = array( $name, $run_id );
-		if ( 'run' === $pending['stage'] && 'batch' === $this->tasks->kind( $name ) ) {
+		if ( 'run' === $pending->stage && 'batch' === $this->tasks->kind( $name ) ) {
 			$chunk_args = $state->queue[0] ?? null;
 			if ( ! \is_array( $chunk_args ) ) {
 				throw new \LogicException( 'Pending batch run redrive requires a retained queue head.' );
@@ -408,18 +408,18 @@ final readonly class RunReconciliation {
 			$args[] = $chunk_args;
 		}
 		$args[] = $state->action_seq;
-		$hook   = 'a8csp_background_tasks/' . $pending['stage'];
+		$hook   = 'a8csp_background_tasks/' . $pending->stage;
 		$group  = $name . '|' . $run_id;
-		if ( 'async' === $pending['mode'] ) {
+		if ( 'async' === $pending->mode ) {
 			return $this->scheduler->enqueue_async(
 				$hook,
 				$args,
 				$group,
-				$pending['priority']
+				$pending->priority
 			);
 		}
 
-		$fire_at = $pending['fire_at'];
+		$fire_at = $pending->fire_at;
 		if ( ! \is_int( $fire_at ) ) {
 			throw new \LogicException( 'Pending single-action redrive requires an integer fire time.' );
 		}
@@ -429,7 +429,7 @@ final readonly class RunReconciliation {
 			\max( $this->clock->now()->getTimestamp(), $fire_at ),
 			$args,
 			$group,
-			$pending['priority']
+			$pending->priority
 		);
 	}
 

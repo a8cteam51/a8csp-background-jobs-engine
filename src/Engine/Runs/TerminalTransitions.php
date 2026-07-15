@@ -1059,7 +1059,7 @@ final readonly class TerminalTransitions {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private static function failed_chunk_for_state( string $work_type, RunState $state ): ?array {
-		if ( 'Batch' !== $work_type || 'run' !== ( $state->pending['stage'] ?? null ) ) {
+		if ( 'Batch' !== $work_type || 'run' !== $state->pending?->stage ) {
 			return null;
 		}
 

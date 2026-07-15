@@ -37,7 +37,6 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null $pending
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 * @phpstan-param list<string> $effects
 	 *
@@ -51,7 +50,7 @@ final readonly class RunState {
 	 * @param   int                           $action_seq      Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at      Creation timestamp.
 	 * @param   int                           $heartbeat_at    Latest liveness timestamp.
-	 * @param   array|null                    $pending         Durable successor delivery, or null when none exists.
+	 * @param   PendingAction|null            $pending         Durable successor delivery, or null when none exists.
 	 * @param   array|null                    $error           Durable terminal failure detail, or null for non-failed runs.
 	 * @param   array                         $effects         Completed terminal effect keys in execution order.
 	 */
@@ -65,7 +64,7 @@ final readonly class RunState {
 		int $action_seq,
 		public int $created_at,
 		public int $heartbeat_at,
-		public ?array $pending = null,
+		public ?PendingAction $pending = null,
 		public ?array $error = null,
 		public array $effects = array(),
 	) {
@@ -234,13 +233,11 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int}|null $pending
-	 *
-	 * @param   array|null $pending Durable successor delivery, or null when none exists.
+	 * @param   PendingAction|null $pending Durable successor delivery, or null when none exists.
 	 *
 	 * @return  self
 	 */
-	public function with_pending( ?array $pending ): self {
+	public function with_pending( ?PendingAction $pending ): self {
 		return new self(
 			status: $this->status,
 			executing: $this->executing,

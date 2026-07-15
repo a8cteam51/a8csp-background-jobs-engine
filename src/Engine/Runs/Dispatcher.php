@@ -278,12 +278,7 @@ final readonly class Dispatcher {
 			array(),
 			$claim,
 			$run_store,
-			array(
-				'stage'    => 'start',
-				'mode'     => 'async',
-				'fire_at'  => null,
-				'priority' => $priority,
-			)
+			PendingAction::async( 'start', $priority )
 		);
 		if ( $state instanceof Failure ) {
 			return $state;
@@ -759,12 +754,9 @@ final readonly class Dispatcher {
 			array( $args ),
 			$claim,
 			$run_store,
-			array(
-				'stage'    => 'run',
-				'mode'     => 0 === $delay ? 'async' : 'single',
-				'fire_at'  => 0 === $delay ? null : $scheduled_at,
-				'priority' => $priority,
-			)
+			0 === $delay
+				? PendingAction::async( 'run', $priority )
+				: PendingAction::single( 'run', $scheduled_at, $priority )
 		);
 		if ( $state instanceof Failure ) {
 			return $state;
@@ -891,8 +883,6 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int} $pending
-	 *
 	 * @param   'Task'|'Batch'                $work_type Work contract type.
 	 * @param   string                        $name      Complete owner-qualified task or batch identity.
 	 * @param   string                        $run_id    Replacement run identifier.
@@ -901,11 +891,11 @@ final readonly class Dispatcher {
 	 * @param   list<array<array-key, mixed>> $queue     Initial run queue.
 	 * @param   LockClaimOutcome              $claim     Initial lock-claim outcome.
 	 * @param   RunStore                      $run_store Active-run store.
-	 * @param   array                         $pending   Durable successor delivery.
+	 * @param   PendingAction                 $pending   Durable successor delivery.
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, array $pending ): RunState|Failure {
+	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, PendingAction $pending ): RunState|Failure {
 		$state = $run_store->create( $run_id, $args, $args_hash, $queue, $pending );
 		if ( null === $state ) {
 			if ( LockClaimOutcome::Held !== $claim ) {

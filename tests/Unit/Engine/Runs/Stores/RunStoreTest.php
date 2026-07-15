@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
@@ -30,6 +31,7 @@ final class RunStoreWakeupProbe {
  *
  */
 #[CoversClass( RunStore::class )]
+#[UsesClass( PendingAction::class )]
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RawOptionDecoder::class )]
@@ -159,20 +161,21 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_descriptor_round_trips_and_serializes_only_while_present(): void {
-		$store   = new RunStore( self::identity( 'email-digest' ), new FixedClock( 1_700_000_100 ), $this->rows );
-		$pending = array(
+		$store          = new RunStore( self::identity( 'email-digest' ), new FixedClock( 1_700_000_100 ), $this->rows );
+		$pending        = PendingAction::single( 'run', 1_700_000_220, 31 );
+		$pending_option = array(
 			'stage'    => 'run',
 			'mode'     => 'single',
 			'fire_at'  => 1_700_000_220,
 			'priority' => 31,
 		);
-		$state   = $store->create( 'run-pending', array( 'site_id' => 7 ), 'hash-a', array( array( 'site_id' => 7 ) ), $pending );
+		$state          = $store->create( 'run-pending', array( 'site_id' => 7 ), 'hash-a', array( array( 'site_id' => 7 ) ), $pending );
 		self::assertNotNull( $state );
 
-		self::assertSame( $pending, $store->get( 'run-pending' )?->pending );
+		self::assertEquals( $pending, $store->get( 'run-pending' )?->pending );
 		$stored = $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-pending' );
 		self::assertIsArray( $stored );
-		self::assertSame( $pending, $stored['pending'] ?? null );
+		self::assertSame( $pending_option, $stored['pending'] ?? null );
 
 		$replacement     = $state->with_pending( null );
 		$replacement_raw = $store->transition_state( 'run-pending', $state, $replacement );
@@ -193,7 +196,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $legacy_shape, $stored );
 		self::assertArrayNotHasKey( 'pending', $stored );
 		self::assertSame( \maybe_serialize( $legacy_shape ), $replacement_raw );
-		self::assertNull( $store->get( 'run-pending' )->pending );
+		self::assertNull( $store->get( 'run-pending' )?->pending );
 	}
 
 	/** Terminal failure detail and effect progress round-trip only while present. */
@@ -444,16 +447,11 @@ final class RunStoreTest extends TestCase {
 		$state = $replacement;
 		self::assertFalse( $this->stored_state( $store, 'run-rmw' )->executing );
 
-		$pending     = array(
-			'stage'    => 'continue',
-			'mode'     => 'async',
-			'fire_at'  => null,
-			'priority' => 10,
-		);
+		$pending     = PendingAction::async( 'continue', 10 );
 		$replacement = $state->with_pending( $pending );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
-		self::assertSame( $pending, $this->stored_state( $store, 'run-rmw' )->pending );
+		self::assertEquals( $pending, $this->stored_state( $store, 'run-rmw' )->pending );
 
 		$replacement = $state->with_status( RunStatus::Failed );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
@@ -941,6 +939,18 @@ final class RunStoreTest extends TestCase {
 				'priority' => 10,
 				'extra'    => true,
 			),
+			array(
+				'stage'    => 'start',
+				'mode'     => 'single',
+				'fire_at'  => 2,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => 'cleanup',
+				'mode'     => 'single',
+				'fire_at'  => 2,
+				'priority' => 10,
+			),
 		);
 
 		foreach ( $invalid_pending as $pending ) {
@@ -1035,7 +1045,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $expected->action_seq, $actual->action_seq );
 		self::assertSame( $expected->created_at, $actual->created_at );
 		self::assertSame( $expected->heartbeat_at, $actual->heartbeat_at );
-		self::assertSame( $expected->pending, $actual->pending );
+		self::assertEquals( $expected->pending, $actual->pending );
 		self::assertSame( $expected->error, $actual->error );
 		self::assertSame( $expected->effects, $actual->effects );
 	}
