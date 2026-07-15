@@ -110,6 +110,7 @@
     "changelog:write": "@php vendor/bin/changelogger write"
   },
   "config": {
+    "platform-check": false,
     "allow-plugins": {
       "composer/*": true,
       "dealerdirect/phpcodesniffer-composer-installer": true,
