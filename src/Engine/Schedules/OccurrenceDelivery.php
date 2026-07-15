@@ -710,13 +710,28 @@ final readonly class OccurrenceDelivery {
 	 * @return  void
 	 */
 	private function persist_delivery_state( string $registration_key, string $owner, array $registration ): void {
-		$outcome = $this->registry->update_registration( $registration_key, $registration );
+		$outcome = $this->registry->update_registration(
+			$registration_key,
+			$registration['fingerprint'],
+			$registration
+		);
 		if ( RegistrationUpdateOutcome::Updated === $outcome ) {
 			return;
 		}
 		if ( RegistrationUpdateOutcome::Pruned === $outcome ) {
 			$this->logger->debug(
 				'Schedule registration pruned concurrently; delivery state discarded.',
+				array(
+					'owner'            => $owner,
+					'registration_key' => $registration_key,
+				)
+			);
+
+			return;
+		}
+		if ( RegistrationUpdateOutcome::Superseded === $outcome ) {
+			$this->logger->debug(
+				'Schedule registration superseded concurrently; delivery state discarded.',
 				array(
 					'owner'            => $owner,
 					'registration_key' => $registration_key,

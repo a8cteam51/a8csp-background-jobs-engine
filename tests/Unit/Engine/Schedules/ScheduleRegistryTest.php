@@ -862,7 +862,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $registry['owner-a']['nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -901,7 +905,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $registry['owner-a']['nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
@@ -936,7 +944,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $this->two_registration_registry()['owner-a']['nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
 
 		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
 		$stored = self::stored_registry();
@@ -948,6 +960,143 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertIsArray( $stored_hourly );
 		self::assertSame( 1_700_000_600, $stored_nightly['next_due'] ?? null );
 		self::assertSame( 1_700_000_111, $stored_hourly['last_fired'] ?? null );
+	}
+
+	/**
+	 * A row update persists complete timing state when its observed definition still matches.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_persists_for_the_observed_fingerprint(): void {
+		$registry = $this->two_registration_registry();
+		self::store_registry( $registry );
+		$nightly               = $registry['owner-a']['nightly'];
+		$nightly['next_due']   = 1_700_000_600;
+		$nightly['last_fired'] = 1_700_000_300;
+		$nightly['misfires']   = 2;
+		$nightly['skips']      = 3;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
+
+		$registry['owner-a']['nightly'] = $nightly;
+		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
+		self::assertSame( $registry, self::stored_registry() );
+	}
+
+	/**
+	 * A definition installed after observation supersedes stale delivery state without a write.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_preserves_a_newer_definition_byte_for_byte(): void {
+		$observed = $this->two_registration_registry();
+		$current  = $observed;
+
+		$current['owner-a']['nightly'] = array(
+			'fingerprint' => 'replacement-fingerprint',
+			'next_due'    => 1_700_001_200,
+			'last_fired'  => 1_700_000_900,
+			'misfires'    => 4,
+			'skips'       => 5,
+		);
+
+		$current_raw = \maybe_serialize( $current );
+		self::assertIsString( $current_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $current_raw );
+		$nightly             = $observed['owner-a']['nightly'];
+		$nightly['next_due'] = 1_700_000_600;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
+
+		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
+		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+	}
+
+	/**
+	 * A lost CAS cannot write stale timing state after a retry observes a replacement definition.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_superseded_after_a_lost_cas_without_retrying_the_write(): void {
+		$observed     = $this->two_registration_registry();
+		$expected_raw = \maybe_serialize( $observed );
+		$current      = $observed;
+
+		$current['owner-a']['nightly'] = array(
+			'fingerprint' => 'replacement-fingerprint',
+			'next_due'    => 1_700_001_200,
+			'last_fired'  => 1_700_000_900,
+			'misfires'    => 4,
+			'skips'       => 5,
+		);
+
+		$current_raw = \maybe_serialize( $current );
+		self::assertIsString( $expected_raw );
+		self::assertIsString( $current_raw );
+		$this->wpdb->put( 'a8csp_bgte_schedules', $expected_raw );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $current_raw ): void {
+				$wpdb->put( 'a8csp_bgte_schedules', $current_raw );
+			}
+		);
+		$nightly             = $observed['owner-a']['nightly'];
+		$nightly['next_due'] = 1_700_000_600;
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
+
+		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
+		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertCount( 4, $this->wpdb->recorded_queries );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
+		self::assertCount(
+			1,
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
+			)
+		);
+	}
+
+	/**
+	 * A malformed stored row is preserved as superseded instead of being overwritten.
+	 *
+	 * @return  void
+	 */
+	public function test_update_registration_reports_superseded_without_overwriting_a_malformed_row(): void {
+		$registry                       = $this->two_registration_registry();
+		$registry['owner-a']['nightly'] = 'malformed';
+		self::store_registry( $registry );
+		$nightly = $this->two_registration_registry()['owner-a']['nightly'];
+
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
+
+		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
+		$stored = self::stored_registry();
+		$owner  = $stored['owner-a'] ?? null;
+		self::assertIsArray( $owner );
+		self::assertSame( 'malformed', $owner['nightly'] ?? null );
 	}
 
 	/**
@@ -971,7 +1120,11 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$nightly = $this->two_registration_registry()['owner-a']['nightly'];
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
 
 		self::assertSame( RegistrationUpdateOutcome::Pruned, $outcome );
 		$stored = self::stored_registry();
@@ -991,7 +1144,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$nightly             = $this->two_registration_registry()['owner-a']['nightly'];
 		$nightly['next_due'] = 1_700_000_600;
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		$stored = self::stored_registry();
@@ -1011,7 +1168,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->wpdb->put( 'a8csp_bgte_schedules', 'not-serialized' );
 		$nightly = $this->two_registration_registry()['owner-a']['nightly'];
 
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly );
+		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration(
+			'owner-a:nightly',
+			$nightly['fingerprint'],
+			$nightly
+		);
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
 		self::assertSame( 'not-serialized', $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );

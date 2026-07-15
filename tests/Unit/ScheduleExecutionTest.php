@@ -874,6 +874,57 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * A definition synchronized after acceptance supersedes stale delivery state without an error.
+	 *
+	 * @return  void
+	 */
+	public function test_post_acceptance_persist_preserves_a_concurrently_synchronized_definition(): void {
+		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
+		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
+		$current     = new Schedule(
+			self::NAME,
+			Recurrence::every( 600 ),
+			self::TASK,
+			self::ARGS,
+			OverlapPolicy::Allow,
+			CatchUpPolicy::RunOnce,
+			23
+		);
+		$current_raw = null;
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $current_api, $current, &$current_raw ): void {
+				$result = $current_api->sync( self::OWNER, array( $current ) );
+				self::assertInstanceOf( Success::class, $result );
+
+				$current_raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
+				self::assertIsString( $current_raw );
+			}
+		);
+		$this->clock->timestamp = self::NOW + self::INTERVAL;
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertIsString( $current_raw );
+		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertSame( $current->fingerprint(), $this->registration()['fingerprint'] ?? null );
+		self::assertContains( 'enqueue_async', \array_column( $this->backend->calls, 'verb' ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame(
+			'Schedule registration superseded concurrently; delivery state discarded.',
+			$this->logger->records[0]['message'] ?? null
+		);
+		self::assertSame(
+			array(
+				'owner'            => self::OWNER,
+				'registration_key' => self::REGISTRATION_KEY,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
 	 * A dispatch failure leaves recurrence timing unchanged for a later occurrence retry.
 	 *
 	 * @return  void

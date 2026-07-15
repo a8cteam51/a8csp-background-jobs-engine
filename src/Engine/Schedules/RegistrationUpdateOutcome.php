@@ -11,7 +11,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
  * @version 1.0.0
  */
 enum RegistrationUpdateOutcome: string {
-	case Updated = 'updated';
-	case Pruned  = 'pruned';
-	case Failed  = 'failed';
+	case Updated    = 'updated';
+	case Pruned     = 'pruned';
+	case Superseded = 'superseded';
+	case Failed     = 'failed';
 }

@@ -286,20 +286,21 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Replaces one persisted registration while retaining this request's owner declarations.
+	 * Replaces one persisted registration while its observed definition fingerprint remains current.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int} $registration
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   array  $registration     Complete registration timing state.
+	 * @param   string $registration_key     `{owner}:{name}` schedule identity.
+	 * @param   string $observed_fingerprint Definition fingerprint observed before the update.
+	 * @param   array  $registration         Complete registration timing state.
 	 *
 	 * @return  RegistrationUpdateOutcome Fenced row-update outcome.
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function update_registration( string $registration_key, array $registration ): RegistrationUpdateOutcome {
+	public function update_registration( string $registration_key, string $observed_fingerprint, array $registration ): RegistrationUpdateOutcome {
 		$parts = self::key_parts( $registration_key );
 		if ( null === $parts ) {
 			return RegistrationUpdateOutcome::Failed;
@@ -323,9 +324,19 @@ final class ScheduleRegistry {
 			}
 
 			$owner_rows = $stored[ $owner ] ?? null;
-			// The fresh existence check prevents a concurrently pruned row from being resurrected; concurrent writers of the same row remain last-writer-wins.
+			// The fresh existence check prevents a concurrently pruned row from being resurrected.
 			if ( ! \is_array( $owner_rows ) || ! \array_key_exists( $name, $owner_rows ) ) {
 				return RegistrationUpdateOutcome::Pruned;
+			}
+
+			// A row update persists only for the definition generation the caller validated;
+			// a changed fingerprint marks an in-flight occurrence as superseded by synchronization.
+			$current_registration = $owner_rows[ $name ];
+			if (
+				! \is_array( $current_registration )
+				|| ( $current_registration['fingerprint'] ?? null ) !== $observed_fingerprint
+			) {
+				return RegistrationUpdateOutcome::Superseded;
 			}
 
 			$owner_rows[ $name ] = $registration;
