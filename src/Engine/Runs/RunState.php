@@ -33,6 +33,8 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 *
 	 * @param   RunStatus                     $status          Lifecycle state.
 	 * @param   bool                          $executing       Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
@@ -43,6 +45,7 @@ final readonly class RunState {
 	 * @param   int                           $action_seq      Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at      Creation timestamp.
 	 * @param   int                           $heartbeat_at    Latest liveness timestamp.
+	 * @param   array|null                    $pending         Durable successor delivery, or null when none exists. Its unique flag applies to async scheduling only; single-mode scheduling has no uniqueness parameter.
 	 */
 	public function __construct(
 		public RunStatus $status,
@@ -54,6 +57,7 @@ final readonly class RunState {
 		int $action_seq,
 		public int $created_at,
 		public int $heartbeat_at,
+		public ?array $pending = null,
 	) {
 		$this->action_seq = $action_seq;
 	}
@@ -99,6 +103,7 @@ final readonly class RunState {
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
 		);
 	}
 
@@ -123,6 +128,7 @@ final readonly class RunState {
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
 		);
 	}
 
@@ -147,6 +153,7 @@ final readonly class RunState {
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
 		);
 	}
 
@@ -172,6 +179,7 @@ final readonly class RunState {
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
 		);
 	}
 
@@ -196,6 +204,34 @@ final readonly class RunState {
 			action_seq: $action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
+		);
+	}
+
+	/**
+	 * Returns a copy with the supplied durable successor delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 *
+	 * @param   array|null $pending Durable successor delivery, or null when none exists.
+	 *
+	 * @return  self
+	 */
+	public function with_pending( ?array $pending ): self {
+		return new self(
+			status: $this->status,
+			executing: $this->executing,
+			start_args: $this->start_args,
+			args_hash: $this->args_hash,
+			queue: $this->queue,
+			chunk_retries: $this->chunk_retries,
+			action_seq: $this->action_seq,
+			created_at: $this->created_at,
+			heartbeat_at: $this->heartbeat_at,
+			pending: $pending,
 		);
 	}
 
@@ -220,6 +256,7 @@ final readonly class RunState {
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $heartbeat_at,
+			pending: $this->pending,
 		);
 	}
 

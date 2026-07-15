@@ -152,7 +152,8 @@ final class Component implements ComponentContract {
 			$lock_windows,
 			$terminal_transitions,
 			$tasks,
-			$batches
+			$batches,
+			$scheduler
 		);
 		$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 		$occurrence_delivery  = new OccurrenceDelivery(

@@ -164,6 +164,13 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_creates_and_dispatches_a_running_task(): void {
+		$scheduled_state = null;
+		$this->backend->before_next(
+			'enqueue_async',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->option( $this->run_option_name() );
+			}
+		);
 		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
@@ -203,9 +210,18 @@ final class DispatcherTest extends TestCase {
 				'action_seq'    => 1,
 				'created_at'    => self::NOW,
 				'heartbeat_at'  => self::NOW,
+				'pending'       => array(
+					'stage'    => 'run',
+					'mode'     => 'async',
+					'fire_at'  => null,
+					'unique'   => false,
+					'priority' => 23,
+				),
 			),
 			$this->option( $this->run_option_name() )
 		);
+		self::assertIsArray( $scheduled_state );
+		self::assertSame( $this->option( $this->run_option_name() ), $scheduled_state );
 		self::assertSame(
 			array(
 				'all'     => self::RUN_ID,
@@ -498,6 +514,13 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_with_delay_routes_to_single_scheduling(): void {
+		$scheduled_state = null;
+		$this->backend->before_next(
+			'schedule_single',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->option( $this->run_option_name() );
+			}
+		);
 		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120, unique: true, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
@@ -519,6 +542,17 @@ final class DispatcherTest extends TestCase {
 		$state = $this->option( $this->run_option_name() );
 		self::assertIsArray( $state );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] ?? null );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'single',
+				'fire_at'  => self::NOW + 120,
+				'unique'   => true,
+				'priority' => 31,
+			),
+			$state['pending'] ?? null
+		);
+		self::assertSame( $state, $scheduled_state );
 		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
 	}
 
@@ -573,7 +607,20 @@ final class DispatcherTest extends TestCase {
 		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertTrue( $this->backend->calls[0]['args']['unique'] );
+		$call = $this->backend->calls[0] ?? null;
+		self::assertIsArray( $call );
+		$backend_args = $call['args'] ?? null;
+		self::assertIsArray( $backend_args );
+		$backend_unique = $backend_args['unique'] ?? null;
+		self::assertIsBool( $backend_unique );
+		self::assertTrue( $backend_unique );
+		$state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $state );
+		$pending = $state['pending'] ?? null;
+		self::assertIsArray( $pending );
+		$persisted_unique = $pending['unique'] ?? null;
+		self::assertIsBool( $persisted_unique );
+		self::assertTrue( $persisted_unique );
 	}
 
 	/**

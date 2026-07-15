@@ -308,12 +308,23 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertFalse( $state['executing'] );
 		self::assertSame( self::NOW + 30, $state['heartbeat_at'] );
 		self::assertSame( 2, $state['action_seq'] );
+		self::assertSame(
+			array(
+				'stage'    => 'continue',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$state['pending']
+		);
 		self::assertIsArray( $enqueue_lock );
 		self::assertSame( self::NOW + 30, $enqueue_lock['heartbeat_at'] );
 		self::assertIsArray( $enqueue_state );
 		self::assertFalse( $enqueue_state['executing'] );
 		self::assertSame( self::NOW + 30, $enqueue_state['heartbeat_at'] );
 		self::assertSame( 2, $enqueue_state['action_seq'] );
+		self::assertSame( $state['pending'], $enqueue_state['pending'] );
 		self::assertSame(
 			array( true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
@@ -628,6 +639,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$second = array( 'chunk' => 'second' );
 		$this->prepare_started_batch( array( $first, $second ) );
 		$this->clock->timestamp = self::NOW + 90;
+		$scheduled_state        = null;
+		$this->backend->before_next(
+			'enqueue_async',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->run_state();
+			}
+		);
 
 		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
@@ -636,6 +654,17 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertFalse( $state['executing'] );
 		self::assertSame( 3, $state['action_seq'] );
 		self::assertSame( self::NOW + 90, $state['heartbeat_at'] );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$state['pending']
+		);
+		self::assertSame( $state, $scheduled_state );
 		self::assertSame(
 			array( true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
@@ -667,6 +696,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	public function test_handle_continue_action_schedules_cleanup_for_an_empty_queue(): void {
 		$this->prepare_started_batch( array() );
 		$this->clock->timestamp = self::NOW + 90;
+		$scheduled_state        = null;
+		$this->backend->before_next(
+			'enqueue_async',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->run_state();
+			}
+		);
 
 		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
@@ -674,6 +710,17 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array(), $state['queue'] );
 		self::assertFalse( $state['executing'] );
 		self::assertSame( 3, $state['action_seq'] );
+		self::assertSame(
+			array(
+				'stage'    => 'cleanup',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$state['pending']
+		);
+		self::assertSame( $state, $scheduled_state );
 		self::assertSame(
 			array( true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
@@ -739,6 +786,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$context->prepend( array( 'chunk' => 'prepended-2' ) );
 		};
 		$this->clock->timestamp  = self::NOW + 120;
+		$scheduled_state         = null;
+		$this->backend->before_next(
+			'schedule_single',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->run_state();
+			}
+		);
 
 		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
@@ -763,6 +817,17 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 0, $state['chunk_retries'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
+		self::assertSame(
+			array(
+				'stage'    => 'continue',
+				'mode'     => 'single',
+				'fire_at'  => self::NOW + 195,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$state['pending']
+		);
+		self::assertSame( $state, $scheduled_state );
 		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array( true, false ),
@@ -1027,6 +1092,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
 
+		$this->assert_run_state_write_omits_pending( 'running', 4 );
 		self::assertSame(
 			array( array( 'chunk' => 'committed' ) ),
 			$this->failed_run_state()['queue']
@@ -1127,6 +1193,16 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 1, $state['chunk_retries'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 131, $state['heartbeat_at'] );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'single',
+				'fire_at'  => self::NOW + 131,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$state['pending']
+		);
 		self::assertSame(
 			array( true, true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
@@ -1837,7 +1913,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     chunk_retries: int,
 	 *     action_seq: int,
 	 *     created_at: int,
-	 *     heartbeat_at: int
+	 *     heartbeat_at: int,
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
 	 * }
 	 */
 	private function failed_run_state(): array {
@@ -1853,6 +1930,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 			$state = \maybe_unserialize( $event['raw'] ?? null );
 			if ( \is_array( $state ) && 'failed' === ( $state['status'] ?? null ) ) {
+				self::assertArrayNotHasKey( 'pending', $state );
+
 				return $this->typed_run_state( $state );
 			}
 		}
@@ -1873,11 +1952,47 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 			$state = $args[1] ?? null;
 			if ( \is_array( $state ) && 'failed' === ( $state['status'] ?? null ) ) {
+				self::assertArrayNotHasKey( 'pending', $state );
+
 				return $this->typed_run_state( $state );
 			}
 		}
 
 		self::fail( 'The batch run never persisted its failed state.' );
+	}
+
+	/**
+	 * Asserts one exact run-state generation serializes without a successor key.
+	 *
+	 * @param   string $status     Expected lifecycle status.
+	 * @param   int    $action_seq Expected action generation.
+	 *
+	 * @return  void
+	 */
+	private function assert_run_state_write_omits_pending( string $status, int $action_seq ): void {
+		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		foreach ( $events as $event ) {
+			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
+				continue;
+			}
+			if ( $this->run_option_name() !== ( $event['key'] ?? null ) ) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $event['raw'] ?? null );
+			if (
+				\is_array( $state )
+				&& ( $state['status'] ?? null ) === $status
+				&& ( $state['action_seq'] ?? null ) === $action_seq
+			) {
+				self::assertArrayNotHasKey( 'pending', $state );
+
+				return;
+			}
+		}
+
+		self::fail( 'The run never persisted the expected successor-free generation.' );
 	}
 
 	/**
@@ -2088,6 +2203,26 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_terminal_history( RunStatus $status ): void {
+		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		$terminal_state = null;
+		foreach ( $events as $event ) {
+			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
+				continue;
+			}
+			if ( $this->run_option_name() !== ( $event['key'] ?? null ) ) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $event['raw'] ?? null );
+			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status->value ) {
+				$terminal_state = $state;
+				break;
+			}
+		}
+		self::assertIsArray( $terminal_state );
+		self::assertArrayNotHasKey( 'pending', $terminal_state );
+
 		$entry = array(
 			'run_id' => self::RUN_ID,
 			'status' => $status->value,
@@ -2150,7 +2285,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     chunk_retries: int,
 	 *     action_seq: int,
 	 *     created_at: int,
-	 *     heartbeat_at: int
+	 *     heartbeat_at: int,
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
 	 * }
 	 */
 	private function run_state(): array {
@@ -2171,7 +2307,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     chunk_retries: int,
 	 *     action_seq: int,
 	 *     created_at: int,
-	 *     heartbeat_at: int
+	 *     heartbeat_at: int,
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
 	 * }
 	 */
 	private function typed_run_state( mixed $state ): array {
@@ -2185,6 +2322,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$action_seq    = $state['action_seq'] ?? null;
 		$created_at    = $state['created_at'] ?? null;
 		$heartbeat_at  = $state['heartbeat_at'] ?? null;
+		$pending       = $state['pending'] ?? null;
 		self::assertIsString( $status );
 		self::assertIsBool( $executing );
 		self::assertIsArray( $start_args );
@@ -2194,6 +2332,30 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertIsInt( $action_seq );
 		self::assertIsInt( $created_at );
 		self::assertIsInt( $heartbeat_at );
+		$typed_pending = null;
+		if ( null !== $pending ) {
+			self::assertIsArray( $pending );
+			$stage    = $pending['stage'] ?? null;
+			$mode     = $pending['mode'] ?? null;
+			$fire_at  = $pending['fire_at'] ?? null;
+			$unique   = $pending['unique'] ?? null;
+			$priority = $pending['priority'] ?? null;
+			self::assertIsString( $stage );
+			self::assertIsString( $mode );
+			if ( 'async' !== $mode && 'single' !== $mode ) {
+				throw new \LogicException( 'Expected a supported pending-action mode.' );
+			}
+			self::assertTrue( null === $fire_at || \is_int( $fire_at ) );
+			self::assertIsBool( $unique );
+			self::assertIsInt( $priority );
+			$typed_pending = array(
+				'stage'    => $stage,
+				'mode'     => $mode,
+				'fire_at'  => $fire_at,
+				'unique'   => $unique,
+				'priority' => $priority,
+			);
+		}
 
 		$queue = array();
 		foreach ( $raw_queue as $chunk_args ) {
@@ -2211,6 +2373,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			'action_seq'    => $action_seq,
 			'created_at'    => $created_at,
 			'heartbeat_at'  => $heartbeat_at,
+			'pending'       => $typed_pending,
 		);
 	}
 
@@ -2226,7 +2389,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     chunk_retries: int,
 	 *     action_seq: int,
 	 *     created_at: int,
-	 *     heartbeat_at: int
+	 *     heartbeat_at: int,
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
 	 * }>
 	 */
 	private function recorded_run_states(): array {

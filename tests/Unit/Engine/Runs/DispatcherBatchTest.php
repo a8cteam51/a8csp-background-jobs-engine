@@ -167,6 +167,13 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_batch_creates_a_run_and_schedules_the_internal_start_action(): void {
+		$scheduled_state = null;
+		$this->backend->before_next(
+			'enqueue_async',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->option( $this->run_option_name() );
+			}
+		);
 		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS, unique: true, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
@@ -197,9 +204,18 @@ final class DispatcherBatchTest extends TestCase {
 				'action_seq'    => 1,
 				'created_at'    => self::NOW,
 				'heartbeat_at'  => self::NOW,
+				'pending'       => array(
+					'stage'    => 'start',
+					'mode'     => 'async',
+					'fire_at'  => null,
+					'unique'   => true,
+					'priority' => 23,
+				),
 			),
 			$this->option( $this->run_option_name() )
 		);
+		self::assertIsArray( $scheduled_state );
+		self::assertSame( $this->option( $this->run_option_name() ), $scheduled_state );
 		self::assertSame( array(), $this->batch->generate_calls );
 		self::assertSame( array(), $this->fired_actions() );
 	}
@@ -303,6 +319,16 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertSame( array(), $new_state['queue'] ?? null );
 		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
 		self::assertSame( 1, $new_state['action_seq'] ?? null );
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$new_state['pending'] ?? null
+		);
 	}
 
 	/**

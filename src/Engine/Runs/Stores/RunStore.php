@@ -65,14 +65,17 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 *
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
 	 * @param   string                        $args_hash  Stable identity of the start arguments.
 	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
+	 * @param   array|null                    $pending    Durable successor delivery, or null when none exists.
 	 *
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
-	public function create( string $run_id, array $start_args, string $args_hash, array $queue ): ?RunState {
+	public function create( string $run_id, array $start_args, string $args_hash, array $queue, ?array $pending = null ): ?RunState {
 		// Run options persist Unix-second integers.
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState(
@@ -85,6 +88,7 @@ final readonly class RunStore {
 			action_seq: 1,
 			created_at: $now,
 			heartbeat_at: $now,
+			pending: $pending,
 		);
 
 		if ( ! \add_option( $this->option_name( $run_id ), self::to_option( $state ), '', false ) ) {
@@ -304,11 +308,12 @@ final readonly class RunStore {
 	 *     chunk_retries: int,
 	 *     action_seq: int,
 	 *     created_at: int,
-	 *     heartbeat_at: int
+	 *     heartbeat_at: int,
+	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}
 	 * }
 	 */
 	private static function to_option( RunState $state ): array {
-		return array(
+		$option = array(
 			'status'        => $state->status->value,
 			'executing'     => $state->executing,
 			'start_args'    => $state->start_args,
@@ -319,6 +324,11 @@ final readonly class RunStore {
 			'created_at'    => $state->created_at,
 			'heartbeat_at'  => $state->heartbeat_at,
 		);
+		if ( null !== $state->pending ) {
+			$option['pending'] = $state->pending;
+		}
+
+		return $option;
 	}
 
 	/**
@@ -372,6 +382,7 @@ final readonly class RunStore {
 			action_seq: $value['action_seq'],
 			created_at: $value['created_at'],
 			heartbeat_at: $value['heartbeat_at'],
+			pending: $value['pending'] ?? null,
 		);
 	}
 
@@ -390,7 +401,8 @@ final readonly class RunStore {
 	 *     chunk_retries: int,
 	 *     action_seq: int,
 	 *     created_at: int,
-	 *     heartbeat_at: int
+	 *     heartbeat_at: int,
+	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}
 	 * } $value
 	 *
 	 * @param   mixed $value Persisted option value.
@@ -410,6 +422,7 @@ final readonly class RunStore {
 			|| ! \is_int( $value['action_seq'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
+			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )
 		) {
 			return false;
 		}
@@ -421,6 +434,39 @@ final readonly class RunStore {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Returns whether a value is one complete deterministic successor descriptor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-assert-if-true array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int} $value
+	 *
+	 * @param   mixed $value Persisted pending-action descriptor.
+	 *
+	 * @return  bool
+	 */
+	private static function is_stored_pending( mixed $value ): bool {
+		if (
+			! \is_array( $value )
+			|| 5 !== \count( $value )
+			|| ! \is_string( $value['stage'] ?? null )
+			|| ! \in_array( $value['stage'], array( 'start', 'run', 'continue', 'cleanup' ), true )
+			|| ! \is_string( $value['mode'] ?? null )
+			|| ! \in_array( $value['mode'], array( 'async', 'single' ), true )
+			|| ! \array_key_exists( 'fire_at', $value )
+			|| ( null !== $value['fire_at'] && ! \is_int( $value['fire_at'] ) )
+			|| ! \is_bool( $value['unique'] ?? null )
+			|| ! \is_int( $value['priority'] ?? null )
+		) {
+			return false;
+		}
+
+		return 'async' === $value['mode']
+			? null === $value['fire_at']
+			: \is_int( $value['fire_at'] );
 	}
 
 	// endregion

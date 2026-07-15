@@ -455,9 +455,146 @@ final readonly class OverlapGuard {
 			: MaintenanceFenceOutcome::Indeterminate;
 	}
 
+	/**
+	 * Classifies run ownership without deleting a stale lock needed by a redriven delivery.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name      Stable task or batch name.
+	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @param   string $run_id    Expected lock owner.
+	 *
+	 * @return  MaintenanceFenceOutcome Typed ownership classification.
+	 */
+	public function classify_run_fence( string $name, string $args_hash, string $run_id ): MaintenanceFenceOutcome {
+		$inspected = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			return MaintenanceFenceOutcome::Abandoned;
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		return $run_id === $lock['run_id']
+			? MaintenanceFenceOutcome::Owned
+			: MaintenanceFenceOutcome::Transferred;
+	}
+
+	/**
+	 * Prepares the exact lock generation expected by a redriven delivery.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name         Stable task or batch name.
+	 * @param   string $args_hash    Stable identity of the start arguments.
+	 * @param   string $run_id       Expected lock owner.
+	 * @param   int    $claimed_at   Original run claim timestamp.
+	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
+	 * @param   int    $staleness    Resolved lock-staleness window.
+	 *
+	 * @return  RedriveFenceOutcome Typed readiness after the preparation attempt.
+	 */
+	public function prepare_run_redrive_fence( string $name, string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at, int $staleness ): RedriveFenceOutcome {
+		$key         = $this->option_name( $name, $args_hash );
+		$replacement = array(
+			'run_id'       => $run_id,
+			'claimed_at'   => $claimed_at,
+			'heartbeat_at' => $heartbeat_at,
+		);
+		$inspected   = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return RedriveFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			if ( $this->rows->insert( $key, self::serialize( $replacement ) ) ) {
+				return RedriveFenceOutcome::Ready;
+			}
+
+			return $this->classify_redrive_fence( $name, $args_hash, $run_id, $heartbeat_at, $staleness );
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			if ( $this->rows->replace( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
+				return RedriveFenceOutcome::Ready;
+			}
+
+			return $this->classify_redrive_fence( $name, $args_hash, $run_id, $heartbeat_at, $staleness );
+		}
+		if ( $run_id !== $lock['run_id'] ) {
+			return RedriveFenceOutcome::Transferred;
+		}
+		if ( $heartbeat_at === $lock['heartbeat_at'] ) {
+			return RedriveFenceOutcome::Ready;
+		}
+		if ( ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness ) ) {
+			return RedriveFenceOutcome::Live;
+		}
+
+		$replacement['claimed_at'] = $lock['claimed_at'];
+		if ( $this->rows->replace( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
+			return RedriveFenceOutcome::Ready;
+		}
+
+		return $this->classify_redrive_fence( $name, $args_hash, $run_id, $heartbeat_at, $staleness );
+	}
+
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Reclassifies a redrive fence after an exact lock write loses its race.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name         Stable task or batch name.
+	 * @param   string $args_hash    Stable identity of the start arguments.
+	 * @param   string $run_id       Expected lock owner.
+	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
+	 * @param   int    $staleness    Resolved lock-staleness window.
+	 *
+	 * @return  RedriveFenceOutcome Typed readiness after the lost write.
+	 */
+	private function classify_redrive_fence( string $name, string $args_hash, string $run_id, int $heartbeat_at, int $staleness ): RedriveFenceOutcome {
+		$inspected = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return RedriveFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot || null === $snapshot['lock'] ) {
+			return RedriveFenceOutcome::Indeterminate;
+		}
+
+		$lock = $snapshot['lock'];
+		if ( $run_id !== $lock['run_id'] ) {
+			return RedriveFenceOutcome::Transferred;
+		}
+		if ( $heartbeat_at === $lock['heartbeat_at'] ) {
+			return RedriveFenceOutcome::Ready;
+		}
+
+		return self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness )
+			? RedriveFenceOutcome::Indeterminate
+			: RedriveFenceOutcome::Live;
+	}
 
 	/**
 	 * Replaces the exact stale or malformed row selected by a losing insert.

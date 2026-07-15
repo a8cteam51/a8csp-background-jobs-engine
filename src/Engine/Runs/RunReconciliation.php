@@ -6,9 +6,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\RedriveFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -39,6 +42,7 @@ final readonly class RunReconciliation {
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   TaskRegistry        $tasks               Registered task instances.
 	 * @param   BatchRegistry       $batches             Registered batch instances.
+	 * @param   BackendInterface    $scheduler           Scheduling facade boundary.
 	 */
 	public function __construct(
 		private OverlapGuard $overlap_guard,
@@ -49,6 +53,7 @@ final readonly class RunReconciliation {
 		private TerminalTransitions $terminal_transitions,
 		private TaskRegistry $tasks,
 		private BatchRegistry $batches,
+		private BackendInterface $scheduler,
 	) {}
 
 	// endregion
@@ -157,18 +162,9 @@ final readonly class RunReconciliation {
 
 		if ( RunStatus::Running === $state->status ) {
 			$staleness = $this->lock_windows->lock_staleness( $name, $run_id );
-			$fence     = $this->overlap_guard->fence_abandoned_run(
-				$name,
-				$state->args_hash,
-				$run_id,
-				$staleness
-			);
-			if (
-				MaintenanceFenceOutcome::Owned === $fence
-				|| MaintenanceFenceOutcome::Indeterminate === $fence
-			) {
-				return new Success( null );
-			}
+			$fence     = $state->executing
+				? $this->overlap_guard->fence_abandoned_run( $name, $state->args_hash, $run_id, $staleness )
+				: $this->overlap_guard->classify_run_fence( $name, $state->args_hash, $run_id );
 
 			$batch     = $this->batches->get( $name );
 			$work_type = null !== $batch && null === $this->tasks->get( $name ) ? 'Batch' : 'Task';
@@ -194,20 +190,115 @@ final readonly class RunReconciliation {
 				return new Success( null );
 			}
 
-			$error = new EngineError(
-				\sprintf(
-					'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.',
-					$run_id,
-					$name
-				)
-			);
-			$this->logger->warning(
-				'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-				)
-			);
+			if ( $state->executing ) {
+				if (
+					MaintenanceFenceOutcome::Owned === $fence
+					|| MaintenanceFenceOutcome::Indeterminate === $fence
+				) {
+					return new Success( null );
+				}
+
+				$error = $this->crash_reclaim_error( $name, $run_id );
+				$this->logger->warning(
+					'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
+					array(
+						'name'   => $name,
+						'run_id' => $run_id,
+					)
+				);
+			} else {
+				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
+					return new Success( null );
+				}
+
+				if ( null === $state->pending ) {
+					$fence = $this->overlap_guard->fence_abandoned_run(
+						$name,
+						$state->args_hash,
+						$run_id,
+						$staleness
+					);
+					if (
+						MaintenanceFenceOutcome::Owned === $fence
+						|| MaintenanceFenceOutcome::Indeterminate === $fence
+					) {
+						return new Success( null );
+					}
+					if ( MaintenanceFenceOutcome::Transferred === $fence ) {
+						$latest_run_id = $this->stores
+							->latest_run_pointer( $name )
+							->get_latest_for_hash( $state->args_hash );
+						$this->terminal_transitions->supersede_run(
+							$name,
+							$run_id,
+							$latest_run_id,
+							$state,
+							$run_store,
+							$work_type,
+							$snapshot['raw']
+						);
+
+						return new Success( null );
+					}
+
+					$error = $this->crash_reclaim_error( $name, $run_id );
+					$this->logger->warning(
+						'Reclaimed stale running run that carries no pending-action descriptor.',
+						array(
+							'name'   => $name,
+							'run_id' => $run_id,
+						)
+					);
+				} else {
+					$redrive_fence = $this->overlap_guard->prepare_run_redrive_fence(
+						$name,
+						$state->args_hash,
+						$run_id,
+						$state->created_at,
+						$state->heartbeat_at,
+						$staleness
+					);
+					if (
+						RedriveFenceOutcome::Live === $redrive_fence
+						|| RedriveFenceOutcome::Indeterminate === $redrive_fence
+					) {
+						return new Success( null );
+					}
+					if ( RedriveFenceOutcome::Transferred === $redrive_fence ) {
+						$latest_run_id = $this->stores
+							->latest_run_pointer( $name )
+							->get_latest_for_hash( $state->args_hash );
+						$this->terminal_transitions->supersede_run(
+							$name,
+							$run_id,
+							$latest_run_id,
+							$state,
+							$run_store,
+							$work_type,
+							$snapshot['raw']
+						);
+
+						return new Success( null );
+					}
+
+					$scheduled = $this->redrive_pending_action( $name, $run_id, $state );
+					if ( ! $scheduled->is_failure() ) {
+						return new Success( null );
+					}
+					$this->logger->warning(
+						'Pending-action redrive was rejected by the scheduler; maintenance skipped terminal handling.',
+						array(
+							'name'         => $name,
+							'run_id'       => $run_id,
+							'error_class'  => $scheduled->error::class,
+							'error_reason' => $scheduled->error->reason->value,
+						)
+					);
+
+					return new Success( null );
+				}
+			}
+
 			$attempts = RunState::increment_attempts_safely( $state->chunk_retries );
 			if ( null !== $batch && null === $this->tasks->get( $name ) ) {
 				$this->terminal_transitions->fail_batch(
@@ -255,6 +346,86 @@ final readonly class RunReconciliation {
 		}
 
 		return new Success( null );
+	}
+
+	/**
+	 * Re-enqueues the exact pending lifecycle action represented by a running row.
+	 *
+	 * Maintenance skips terminal handling after a redrive rejection because a previously accepted delivery may still be queued.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $name   Stable task or batch name.
+	 * @param   string   $run_id Run identifier.
+	 * @param   RunState $state  Stale non-executing running state.
+	 *
+	 * @throws  \LogicException When a schema-valid descriptor conflicts with its run state.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	private function redrive_pending_action( string $name, string $run_id, RunState $state ): AbstractResult {
+		$pending = $state->pending;
+		if ( null === $pending ) {
+			throw new \LogicException( 'Pending-action redrive requires a durable descriptor.' );
+		}
+
+		$args  = array( $name, $run_id );
+		$batch = $this->batches->get( $name );
+		if ( 'run' === $pending['stage'] && null !== $batch && null === $this->tasks->get( $name ) ) {
+			$chunk_args = $state->queue[0] ?? null;
+			if ( ! \is_array( $chunk_args ) ) {
+				throw new \LogicException( 'Pending batch run redrive requires a retained queue head.' );
+			}
+
+			$args[] = $chunk_args;
+		}
+		$args[] = $state->action_seq;
+		$hook   = 'a8csp_background_tasks/' . $pending['stage'];
+		$group  = $name . '|' . $run_id;
+		if ( 'async' === $pending['mode'] ) {
+			return $this->scheduler->enqueue_async(
+				$hook,
+				$args,
+				$group,
+				$pending['unique'],
+				$pending['priority']
+			);
+		}
+
+		$fire_at = $pending['fire_at'];
+		if ( ! \is_int( $fire_at ) ) {
+			throw new \LogicException( 'Pending single-action redrive requires an integer fire time.' );
+		}
+
+		return $this->scheduler->schedule_single(
+			$hook,
+			\max( $this->clock->now()->getTimestamp(), $fire_at ),
+			$args,
+			$group,
+			$pending['priority']
+		);
+	}
+
+	/**
+	 * Returns the stable crash-reclaim terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Stable task or batch name.
+	 * @param   string $run_id Run identifier.
+	 *
+	 * @return  EngineError
+	 */
+	private function crash_reclaim_error( string $name, string $run_id ): EngineError {
+		return new EngineError(
+			\sprintf(
+				'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.',
+				$run_id,
+				$name
+			)
+		);
 	}
 
 	// endregion

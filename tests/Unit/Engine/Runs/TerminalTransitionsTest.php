@@ -1110,6 +1110,8 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_terminal_history( string $status ): void {
+		$this->recorded_run_state( $status );
+
 		self::assertSame(
 			array(
 				'started'   => array( self::RUN_ID ),
@@ -1165,6 +1167,8 @@ final class TerminalTransitionsTest extends TestCase {
 
 			$state = \maybe_unserialize( $event['raw'] ?? null );
 			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status ) {
+				self::assertArrayNotHasKey( 'pending', $state );
+
 				return array(
 					'status'        => $state['status'] ?? null,
 					'executing'     => $state['executing'] ?? null,
@@ -1195,6 +1199,8 @@ final class TerminalTransitionsTest extends TestCase {
 
 			$state = $args[1] ?? null;
 			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status ) {
+				self::assertArrayNotHasKey( 'pending', $state );
+
 				return array(
 					'status'        => $state['status'] ?? null,
 					'executing'     => $state['executing'] ?? null,

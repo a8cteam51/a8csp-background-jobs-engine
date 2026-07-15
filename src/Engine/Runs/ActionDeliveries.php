@@ -179,7 +179,16 @@ final readonly class ActionDeliveries {
 			->with_queue( $queue )
 			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 )
-			->with_executing( false );
+			->with_executing( false )
+			->with_pending(
+				array(
+					'stage'    => 'continue',
+					'mode'     => 'async',
+					'fire_at'  => null,
+					'unique'   => false,
+					'priority' => 10,
+				)
+			);
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -255,7 +264,16 @@ final readonly class ActionDeliveries {
 		if ( array() === $state->queue ) {
 			$replacement = $state
 				->with_action_seq( $state->action_seq + 1 )
-				->with_executing( false );
+				->with_executing( false )
+				->with_pending(
+					array(
+						'stage'    => 'cleanup',
+						'mode'     => 'async',
+						'fire_at'  => null,
+						'unique'   => false,
+						'priority' => 10,
+					)
+				);
 			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 				return;
 			}
@@ -282,7 +300,16 @@ final readonly class ActionDeliveries {
 		$chunk_args  = $state->queue[0];
 		$replacement = $state
 			->with_action_seq( $state->action_seq + 1 )
-			->with_executing( false );
+			->with_executing( false )
+			->with_pending(
+				array(
+					'stage'    => 'run',
+					'mode'     => 'async',
+					'fire_at'  => null,
+					'unique'   => false,
+					'priority' => 10,
+				)
+			);
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -448,7 +475,8 @@ final readonly class ActionDeliveries {
 
 		$terminal_state = $state
 			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 
 		// Completed listeners observe the terminal snapshot before exact cleanup deletes it and appends history.
 		$this->terminal_transitions->execute_terminal_transition(
@@ -594,48 +622,41 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$replacement = $state
-			->with_queue( $context->get_queue() )
-			->with_chunk_retries( 0 )
-			->with_heartbeat_at( $reset_at )
-			->with_action_seq( $state->action_seq + 1 )
-			->with_executing( false );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
-			return;
-		}
-		$state = $replacement;
-
 		try {
 			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
 
-			$this->terminal_transitions->fail_batch(
+			$this->fail_processed_batch_chunk(
 				$batch,
 				$batch_name,
 				$run_id,
 				$state,
 				$run_store,
+				$context->get_queue(),
+				$reset_at,
 				EngineError::from_throwable( $throwable )
 			);
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 			return;
 		}
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->terminal_transitions->fail_batch(
+			$this->fail_processed_batch_chunk(
 				$batch,
 				$batch_name,
 				$run_id,
 				$state,
 				$run_store,
+				$context->get_queue(),
+				$reset_at,
 				new EngineError(
 					\sprintf(
 						'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.',
@@ -646,10 +667,30 @@ final readonly class ActionDeliveries {
 
 			return;
 		}
+		$fire_at     = $now + $delay;
+		$replacement = $state
+			->with_queue( $context->get_queue() )
+			->with_chunk_retries( 0 )
+			->with_heartbeat_at( $reset_at )
+			->with_action_seq( $state->action_seq + 1 )
+			->with_executing( false )
+			->with_pending(
+				array(
+					'stage'    => 'continue',
+					'mode'     => 'single',
+					'fire_at'  => $fire_at,
+					'unique'   => false,
+					'priority' => 10,
+				)
+			);
+		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			return;
+		}
+		$state = $replacement;
 
 		$scheduled = $this->scheduler->schedule_single(
 			self::CONTINUE_HOOK,
-			$now + $delay,
+			$fire_at,
 			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id,
 			10
@@ -664,6 +705,45 @@ final readonly class ActionDeliveries {
 				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 		}
+	}
+
+	/**
+	 * Commits processed queue state without a successor before terminal failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   BatchInterface                $batch      Registered batch.
+	 * @param   string                        $batch_name Stable batch name.
+	 * @param   string                        $run_id     Run identifier.
+	 * @param   RunState                      $state      Fenced running state.
+	 * @param   RunStore                      $run_store  Active-run store.
+	 * @param   list<array<array-key, mixed>> $queue      Committed queue after the processed chunk.
+	 * @param   int                           $reset_at   Post-callback liveness timestamp.
+	 * @param   EngineError                   $error      Terminal failure detail.
+	 *
+	 * @return  void
+	 */
+	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error ): void {
+		$replacement = $state
+			->with_queue( $queue )
+			->with_chunk_retries( 0 )
+			->with_heartbeat_at( $reset_at )
+			->with_action_seq( $state->action_seq + 1 )
+			->with_executing( false )
+			->with_pending( null );
+		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			return;
+		}
+
+		$this->terminal_transitions->fail_batch(
+			$batch,
+			$batch_name,
+			$run_id,
+			$replacement,
+			$run_store,
+			$error
+		);
 	}
 
 	/**
@@ -761,7 +841,8 @@ final readonly class ActionDeliveries {
 
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 
 		$this->terminal_transitions->execute_terminal_transition(
 			$name,

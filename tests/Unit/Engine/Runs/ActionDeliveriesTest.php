@@ -648,6 +648,7 @@ final class ActionDeliveriesTest extends TestCase {
 			),
 			$this->logger->records
 		);
+		$this->assert_terminal_history( RunStatus::Failed );
 	}
 
 	/**
@@ -840,6 +841,26 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_terminal_history( RunStatus $status ): void {
+		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		$terminal_state = null;
+		foreach ( $events as $event ) {
+			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
+				continue;
+			}
+			if ( $this->run_option_name() !== ( $event['key'] ?? null ) ) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $event['raw'] ?? null );
+			if ( \is_array( $state ) && ( $state['status'] ?? null ) === $status->value ) {
+				$terminal_state = $state;
+				break;
+			}
+		}
+		self::assertIsArray( $terminal_state );
+		self::assertArrayNotHasKey( 'pending', $terminal_state );
+
 		$entry = array(
 			'run_id' => self::RUN_ID,
 			'status' => $status->value,

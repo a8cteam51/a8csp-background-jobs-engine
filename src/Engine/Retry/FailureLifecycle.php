@@ -217,7 +217,16 @@ final readonly class FailureLifecycle {
 				->with_chunk_retries( $attempt )
 				->with_heartbeat_at( $fire_at )
 				->with_action_seq( $state->action_seq + 1 )
-				->with_executing( false );
+				->with_executing( false )
+				->with_pending(
+					array(
+						'stage'    => 'run',
+						'mode'     => 'single',
+						'fire_at'  => $fire_at,
+						'unique'   => false,
+						'priority' => 10,
+					)
+				);
 			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 				return null;
 			}

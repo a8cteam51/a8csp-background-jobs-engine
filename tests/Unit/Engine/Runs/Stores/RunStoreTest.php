@@ -87,6 +87,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( 1, $stored->action_seq );
 		self::assertSame( 1_700_000_100, $stored->created_at );
 		self::assertSame( 1_700_000_100, $stored->heartbeat_at );
+		self::assertNull( $stored->pending );
 		self::assertSame(
 			array(
 				'status'        => 'running',
@@ -111,6 +112,50 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( 'a8csp_bgte_run_email-digest_run-123', $add_calls[0]['args'][0] );
 		self::assertSame( '', $add_calls[0]['args'][2] );
 		self::assertSame( false, $add_calls[0]['args'][3] );
+	}
+
+	/**
+	 * Pending descriptors round-trip exactly and null restores the legacy raw shape.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_descriptor_round_trips_and_serializes_only_while_present(): void {
+		$store   = new RunStore( 'email-digest', new FixedClock( 1_700_000_100 ), $this->rows );
+		$pending = array(
+			'stage'    => 'run',
+			'mode'     => 'single',
+			'fire_at'  => 1_700_000_220,
+			'unique'   => true,
+			'priority' => 31,
+		);
+		$state   = $store->create( 'run-pending', array( 'site_id' => 7 ), 'hash-a', array( array( 'site_id' => 7 ) ), $pending );
+		self::assertNotNull( $state );
+
+		self::assertSame( $pending, $store->get( 'run-pending' )?->pending );
+		$stored = $this->option( 'a8csp_bgte_run_email-digest_run-pending' );
+		self::assertIsArray( $stored );
+		self::assertSame( $pending, $stored['pending'] ?? null );
+
+		$replacement     = $state->with_pending( null );
+		$replacement_raw = $store->transition_state( 'run-pending', $state, $replacement );
+		self::assertIsString( $replacement_raw );
+		$stored = $this->option( 'a8csp_bgte_run_email-digest_run-pending' );
+		self::assertIsArray( $stored );
+		$legacy_shape = array(
+			'status'        => 'running',
+			'executing'     => false,
+			'start_args'    => array( 'site_id' => 7 ),
+			'args_hash'     => 'hash-a',
+			'queue'         => array( array( 'site_id' => 7 ) ),
+			'chunk_retries' => 0,
+			'action_seq'    => 1,
+			'created_at'    => 1_700_000_100,
+			'heartbeat_at'  => 1_700_000_100,
+		);
+		self::assertSame( $legacy_shape, $stored );
+		self::assertArrayNotHasKey( 'pending', $stored );
+		self::assertSame( \maybe_serialize( $legacy_shape ), $replacement_raw );
+		self::assertNull( $store->get( 'run-pending' )->pending );
 	}
 
 	/**
@@ -196,6 +241,18 @@ final class RunStoreTest extends TestCase {
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertFalse( $this->stored_state( $store, 'run-rmw' )->executing );
+
+		$pending     = array(
+			'stage'    => 'continue',
+			'mode'     => 'async',
+			'fire_at'  => null,
+			'unique'   => false,
+			'priority' => 10,
+		);
+		$replacement = $state->with_pending( $pending );
+		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		$state = $replacement;
+		self::assertSame( $pending, $this->stored_state( $store, 'run-rmw' )->pending );
 
 		$replacement = $state->with_status( RunStatus::Failed );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
@@ -463,10 +520,134 @@ final class RunStoreTest extends TestCase {
 				'created_at'    => 1,
 				'heartbeat_at'  => 1,
 			),
+			array(
+				'status'        => 'running',
+				'executing'     => false,
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+				'pending'       => null,
+			),
+			array(
+				'status'        => 'running',
+				'executing'     => false,
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+				'pending'       => array(
+					'stage'    => 'run',
+					'mode'     => 'single',
+					'unique'   => false,
+					'priority' => 10,
+				),
+			),
+			array(
+				'status'        => 'running',
+				'executing'     => false,
+				'start_args'    => array(),
+				'args_hash'     => 'hash',
+				'queue'         => array(),
+				'chunk_retries' => 0,
+				'action_seq'    => 1,
+				'created_at'    => 1,
+				'heartbeat_at'  => 1,
+				'pending'       => array(
+					'stage'    => 'unknown',
+					'mode'     => 'async',
+					'fire_at'  => null,
+					'unique'   => false,
+					'priority' => 10,
+				),
+			),
 		);
 
 		foreach ( $malformed_values as $value ) {
 			$GLOBALS['a8csp_bgte_test_options'] = array( $key => $value );
+
+			self::assertNull( $store->get( 'run-bad' ) );
+		}
+	}
+
+	/**
+	 * Pending descriptors require the exact canonical field set and mode-specific fire time.
+	 *
+	 * @return  void
+	 */
+	public function test_get_rejects_noncanonical_pending_descriptors(): void {
+		$store           = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
+		$key             = 'a8csp_bgte_run_corruption_run-bad';
+		$state           = array(
+			'status'        => 'running',
+			'executing'     => false,
+			'start_args'    => array(),
+			'args_hash'     => 'hash',
+			'queue'         => array(),
+			'chunk_retries' => 0,
+			'action_seq'    => 1,
+			'created_at'    => 1,
+			'heartbeat_at'  => 1,
+		);
+		$invalid_pending = array(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'later',
+				'fire_at'  => 2,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => 2,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => 'run',
+				'mode'     => 'single',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => 1,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => '10',
+			),
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => false,
+				'priority' => 10,
+				'extra'    => true,
+			),
+		);
+
+		foreach ( $invalid_pending as $pending ) {
+			$GLOBALS['a8csp_bgte_test_options'] = array(
+				$key => array(
+					...$state,
+					'pending' => $pending,
+				),
+			);
 
 			self::assertNull( $store->get( 'run-bad' ) );
 		}
@@ -490,6 +671,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $expected->action_seq, $actual->action_seq );
 		self::assertSame( $expected->created_at, $actual->created_at );
 		self::assertSame( $expected->heartbeat_at, $actual->heartbeat_at );
+		self::assertSame( $expected->pending, $actual->pending );
 	}
 
 	/**

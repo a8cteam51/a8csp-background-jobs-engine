@@ -634,6 +634,19 @@ final class OverlapGuardTest extends TestCase {
 		);
 	}
 
+	/** A redrive fence classifies a stale owner without deleting its exact-generation heartbeat. */
+	public function test_redrive_fence_preserves_a_stale_owned_lock(): void {
+		$raw = self::raw( self::row( 'run-owner', 800, 899 ) );
+		$this->wpdb->put( self::KEY, $raw );
+
+		self::assertSame(
+			MaintenanceFenceOutcome::Owned,
+			$this->guard_at( 1_000 )->classify_run_fence( self::NAME, self::ARGS_HASH, 'run-owner' )
+		);
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+	}
+
 	/** A callback credit remains owned through its strict credit-plus-staleness boundary. */
 	public function test_maintenance_fence_preserves_a_credited_callback_until_the_full_window_elapses(): void {
 		$credited = self::row( 'run-owner', 1_000, 1_300 );

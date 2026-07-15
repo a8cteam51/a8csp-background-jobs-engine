@@ -276,7 +276,14 @@ final readonly class Dispatcher {
 			$args_hash,
 			array(),
 			$claim,
-			$run_store
+			$run_store,
+			array(
+				'stage'    => 'start',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => $unique,
+				'priority' => $priority,
+			)
 		);
 		if ( $state instanceof Failure ) {
 			return $state;
@@ -644,6 +651,7 @@ final readonly class Dispatcher {
 				)
 			);
 		}
+		$scheduled_at = $now + $delay;
 
 		$run_id = $this->run_id( $now );
 		if ( OverlapPolicy::Allow === $overlap ) {
@@ -712,15 +720,21 @@ final readonly class Dispatcher {
 			$args_hash,
 			array( $args ),
 			$claim,
-			$run_store
+			$run_store,
+			array(
+				'stage'    => 'run',
+				'mode'     => 0 === $delay ? 'async' : 'single',
+				'fire_at'  => 0 === $delay ? null : $scheduled_at,
+				'unique'   => $unique,
+				'priority' => $priority,
+			)
 		);
 		if ( $state instanceof Failure ) {
 			return $state;
 		}
 
 		if ( 0 < $delay ) {
-			$fire_at         = $now + $delay;
-			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $fire_at ) ) {
+			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $scheduled_at ) ) {
 				HeartbeatOutcome::Owned => null,
 				HeartbeatOutcome::Lost, HeartbeatOutcome::Stale => new EngineError(
 					\sprintf(
@@ -742,7 +756,7 @@ final readonly class Dispatcher {
 				return new Failure( $heartbeat_error );
 			}
 
-			$replacement = $state->with_heartbeat_at( $fire_at );
+			$replacement = $state->with_heartbeat_at( $scheduled_at );
 			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 				return new Failure(
 					new EngineError(
@@ -769,7 +783,7 @@ final readonly class Dispatcher {
 		$group       = $task_name . '|' . $run_id;
 		$scheduled   = 0 === $delay
 			? $this->scheduler->enqueue_async( 'a8csp_background_tasks/run', $action_args, $group, $unique, $priority )
-			: $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $now + $delay, $action_args, $group, $priority );
+			: $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $scheduled_at, $action_args, $group, $priority );
 
 		if ( $scheduled->is_failure() ) {
 			$this->overlap_guard->release( $task_name, $args_hash, $run_id );
@@ -813,6 +827,8 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int} $pending
+	 *
 	 * @param   'Task'|'Batch'                $work_type Work contract type.
 	 * @param   string                        $name      Stable task or batch name.
 	 * @param   string                        $run_id    Replacement run identifier.
@@ -821,11 +837,12 @@ final readonly class Dispatcher {
 	 * @param   list<array<array-key, mixed>> $queue     Initial run queue.
 	 * @param   ClaimResult                   $claim     Initial lock-claim outcome.
 	 * @param   RunStore                      $run_store Active-run store.
+	 * @param   array                         $pending   Durable successor delivery.
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, ClaimResult $claim, RunStore $run_store ): RunState|Failure {
-		$state = $run_store->create( $run_id, $args, $args_hash, $queue );
+	private function create_run_state_and_replace_if_held( string $work_type, string $name, string $run_id, array $args, string $args_hash, array $queue, ClaimResult $claim, RunStore $run_store, array $pending ): RunState|Failure {
+		$state = $run_store->create( $run_id, $args, $args_hash, $queue, $pending );
 		if ( null === $state ) {
 			if ( ClaimResult::Held !== $claim ) {
 				$this->overlap_guard->release( $name, $args_hash, $run_id );

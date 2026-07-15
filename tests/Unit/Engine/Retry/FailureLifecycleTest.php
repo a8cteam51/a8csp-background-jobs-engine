@@ -284,6 +284,13 @@ final class FailureLifecycleTest extends TestCase {
 		$this->prepare_run_action();
 		$this->randomizer->value = 17;
 		$this->randomizer->calls = array();
+		$scheduled_state         = null;
+		$this->backend->before_next(
+			'schedule_single',
+			function () use ( &$scheduled_state ): void {
+				$scheduled_state = $this->option( $this->run_option_name() );
+			}
+		);
 
 		$this->handle_failed_task_attempt();
 
@@ -294,6 +301,17 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( 1, $state['chunk_retries'] ?? null );
 		self::assertSame( 2, $state['action_seq'] ?? null );
 		self::assertSame( self::NOW + 107, $state['heartbeat_at'] ?? null );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'single',
+				'fire_at'  => self::NOW + 107,
+				'unique'   => false,
+				'priority' => 10,
+			),
+			$state['pending'] ?? null
+		);
+		self::assertSame( $state, $scheduled_state );
 		self::assertSame( self::NOW + 107, $this->lock()['heartbeat_at'] ?? null );
 		self::assertSame(
 			array(

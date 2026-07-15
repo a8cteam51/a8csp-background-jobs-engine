@@ -192,7 +192,8 @@ final readonly class TerminalTransitions {
 		$terminal_state = $state
 			->with_chunk_retries( 0 )
 			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
 		if ( null === $terminal_raw ) {
 			return;
@@ -227,7 +228,8 @@ final readonly class TerminalTransitions {
 	public function cancel_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state
 			->with_status( RunStatus::Cancelled )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 
 		return $this->execute_terminal_transition(
 			$name,
@@ -324,7 +326,8 @@ final readonly class TerminalTransitions {
 	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition(
 			$run_id,
 			$state,
@@ -382,7 +385,8 @@ final readonly class TerminalTransitions {
 	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 
 		$this->execute_terminal_transition(
 			$task_name,
@@ -529,7 +533,8 @@ final readonly class TerminalTransitions {
 	public function supersede_run( string $name, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, string $work_type, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Superseded )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition(
 			$run_id,
 			$state,

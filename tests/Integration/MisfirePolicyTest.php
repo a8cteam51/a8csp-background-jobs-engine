@@ -333,7 +333,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$lock_windows,
 			$terminal_transitions,
 			$tasks,
-			$batches
+			$batches,
+			$scheduler
 		);
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$occurrence_delivery  = new OccurrenceDelivery(
