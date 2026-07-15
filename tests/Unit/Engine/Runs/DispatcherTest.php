@@ -167,11 +167,11 @@ final class DispatcherTest extends TestCase {
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/**
-	 * A fresh enqueue persists the run, records fencing and history, fires hooks, and queues one action.
+	 * A null deduplication key preserves the argument-derived run state, fencing, history, and action.
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_creates_and_dispatches_a_running_task(): void {
+	public function test_enqueue_with_null_dedup_key_preserves_argument_based_dispatch_bytes(): void {
 		$scheduled_state = null;
 		$this->backend->before_next(
 			'enqueue_async',
@@ -179,7 +179,7 @@ final class DispatcherTest extends TestCase {
 				$scheduled_state = $this->option( $this->run_option_name() );
 			}
 		);
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, priority: 23 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, dedup_key: null, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -370,19 +370,19 @@ final class DispatcherTest extends TestCase {
 
 		$this->seed_running_lock( $heartbeat_age );
 
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, unique: true );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 
 		if ( $is_reclaimed ) {
 			self::assertInstanceOf( Success::class, $result );
 			self::assertSame( self::RUN_ID, $result->value );
-			self::assertSame( true, $this->backend->calls[0]['args']['unique'] );
+			self::assertSame( false, $this->backend->calls[0]['args']['unique'] );
 			return;
 		}
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "runs-tests:email-digest" is already running as run "run-running"; wait for that run to finish before dispatching the same arguments.',
+			'Task "runs-tests:email-digest" is already running as run "run-running"; wait for that run to finish before dispatching the same arguments or deduplication key.',
 			$result->error->message
 		);
 		self::assertSame( array(), $this->backend->calls );
@@ -529,7 +529,7 @@ final class DispatcherTest extends TestCase {
 				$scheduled_state = $this->option( $this->run_option_name() );
 			}
 		);
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 120, unique: true, priority: 31 );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 120, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -555,7 +555,7 @@ final class DispatcherTest extends TestCase {
 				'stage'    => 'run',
 				'mode'     => 'single',
 				'fire_at'  => self::NOW + 120,
-				'unique'   => true,
+				'unique'   => false,
 				'priority' => 31,
 			),
 			$state['pending'] ?? null
@@ -607,12 +607,66 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Unique async enqueue reaches the scheduling seam unchanged.
+	 * A failed delayed-state heartbeat transition releases an explicit key for immediate reuse.
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_passes_unique_to_async_scheduling(): void {
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, unique: true );
+	public function test_enqueue_with_delay_releases_dedup_key_when_future_heartbeat_state_transition_fails(): void {
+		$dedup_key       = 'delayed-site-digest';
+		$dedup_hash      = \hash( 'sha256', $dedup_key );
+		$lock_option     = 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $dedup_hash;
+		$failed_run      = self::RUN_ID;
+		$replacement_run = '00000000001700000000-0000000000000000043';
+
+		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		$failed = $this->dispatcher->enqueue(
+			self::IDENTITY,
+			self::ARGS,
+			delay: 120,
+			dedup_key: $dedup_key
+		);
+
+		self::assertInstanceOf( Failure::class, $failed );
+		self::assertInstanceOf( EngineError::class, $failed->error );
+		self::assertSame(
+			'Task "runs-tests:email-digest" lost its live run state while preparing its delayed action; retry the enqueue against the current run state.',
+			$failed->error->message
+		);
+		self::assertArrayNotHasKey( $lock_option, $this->wpdb->rows );
+		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run ) );
+		self::assertSame( array(), $this->backend->calls );
+
+		$this->randomizer->value = 43;
+		$reused                  = $this->dispatcher->enqueue(
+			self::IDENTITY,
+			self::ARGS,
+			delay: 120,
+			dedup_key: $dedup_key
+		);
+
+		self::assertInstanceOf( Success::class, $reused );
+		self::assertSame( $replacement_run, $reused->value );
+		self::assertArrayHasKey( $lock_option, $this->wpdb->rows );
+		self::assertNotNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $replacement_run ) );
+		self::assertCount( 1, $this->backend->calls );
+	}
+
+	/**
+	 * A deduplication key replaces the argument identity without requesting backend uniqueness.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_hashes_the_dedup_key_as_the_single_flight_identity(): void {
+		$dedup_key  = "logical-account\0\xFF";
+		$dedup_hash = \hash( 'sha256', $dedup_key );
+		$result     = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, dedup_key: $dedup_key );
 
 		self::assertInstanceOf( Success::class, $result );
 		$call = $this->backend->calls[0] ?? null;
@@ -621,14 +675,17 @@ final class DispatcherTest extends TestCase {
 		self::assertIsArray( $backend_args );
 		$backend_unique = $backend_args['unique'] ?? null;
 		self::assertIsBool( $backend_unique );
-		self::assertTrue( $backend_unique );
+		self::assertFalse( $backend_unique );
 		$state = $this->option( $this->run_option_name() );
 		self::assertIsArray( $state );
+		self::assertSame( $dedup_hash, $state['args_hash'] ?? null );
 		$pending = $state['pending'] ?? null;
 		self::assertIsArray( $pending );
 		$persisted_unique = $pending['unique'] ?? null;
 		self::assertIsBool( $persisted_unique );
-		self::assertTrue( $persisted_unique );
+		self::assertFalse( $persisted_unique );
+		self::assertArrayHasKey( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $dedup_hash, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 	}
 
 	/**
@@ -722,7 +779,8 @@ final class DispatcherTest extends TestCase {
 			self::IDENTITY,
 			array(
 				'callback' => static function (): void {},
-			)
+			),
+			dedup_key: 'non-portable-payload'
 		);
 
 		self::assertInstanceOf( Failure::class, $result );

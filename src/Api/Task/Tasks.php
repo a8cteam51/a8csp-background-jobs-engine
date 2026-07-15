@@ -18,6 +18,16 @@ final readonly class Tasks {
 	// region FIELDS AND CONSTANTS
 
 	/**
+	 * Longest consumer deduplication key accepted by the public command contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_DEDUP_KEY_BYTES = 64;
+
+	/**
 	 * Highest scheduler priority accepted by the public command contract.
 	 *
 	 * @since   1.0.0
@@ -37,9 +47,9 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                    $identity Owner-qualified identity composer.
-	 * @param   \Closure(string, TaskInterface): void                                                       $register Task registration delegate.
-	 * @param   \Closure(string, array<array-key, mixed>, int, bool, int): AbstractResult<string, ApiError> $enqueue  Task admission delegate.
+	 * @param   \Closure(string): string                                                                           $identity Owner-qualified identity composer.
+	 * @param   \Closure(string, TaskInterface): void                                                              $register Task registration delegate.
+	 * @param   \Closure(string, array<array-key, mixed>, int, string|null, int): AbstractResult<string, ApiError> $enqueue  Task admission delegate.
 	 */
 	public function __construct(
 		private \Closure $identity,
@@ -71,21 +81,28 @@ final readonly class Tasks {
 	/**
 	 * Creates and schedules one run for a registered task.
 	 *
+	 * A null deduplication key uses the task arguments as the single-flight identity. A non-null opaque
+	 * key of 1 through 64 bytes replaces that identity with its hash, so another enqueue with the same
+	 * key is refused while the incumbent is admitted or running even when its arguments differ. The
+	 * key is not a durable ledger entry and is reusable as soon as the incumbent reaches terminal
+	 * cleanup. A manual failed-run retry re-admits under the argument identity and does not carry
+	 * the key ({@see \A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs::retry_failed()}).
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name     Owner-local task name.
-	 * @param   array<array-key, mixed> $args     Task arguments.
-	 * @param   int                     $delay    Scheduling delay in seconds.
-	 * @param   bool                    $unique   Whether the backend retains an identical async action.
-	 * @param   int                     $priority Advisory priority from 0 through 255.
+	 * @param   string                  $name      Owner-local task name.
+	 * @param   array<array-key, mixed> $args      Task arguments.
+	 * @param   int                     $delay     Scheduling delay in seconds.
+	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the local name, delay, priority, or arguments violate the command contract.
+	 * @throws  \InvalidArgumentException When the local name, delay, deduplication key, priority, or arguments violate the command contract.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function enqueue( string $name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
 		$identity = $this->identity( $name );
 
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
@@ -115,6 +132,19 @@ final readonly class Tasks {
 			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
+		if ( null !== $dedup_key && ( '' === $dedup_key || self::MAX_DEDUP_KEY_BYTES < \strlen( $dedup_key ) ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException(
+				\sprintf(
+					'Task "%1$s" deduplication key must contain 1 to %2$d bytes when provided.',
+					$name,
+					self::MAX_DEDUP_KEY_BYTES
+				)
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
 		try {
 			$encoded_args = \wp_json_encode(
 				$args,
@@ -136,7 +166,7 @@ final readonly class Tasks {
 			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
-		return ( $this->enqueue )( $identity, $args, $delay, $unique, $priority );
+		return ( $this->enqueue )( $identity, $args, $delay, $dedup_key, $priority );
 	}
 
 	// endregion

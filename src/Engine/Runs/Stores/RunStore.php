@@ -83,7 +83,7 @@ final readonly class RunStore {
 	 *
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
-	 * @param   string                        $args_hash  Stable identity of the start arguments.
+	 * @param   string                        $args_hash  Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
 	 * @param   array|null                    $pending    Durable successor delivery, or null when none exists.
 	 *

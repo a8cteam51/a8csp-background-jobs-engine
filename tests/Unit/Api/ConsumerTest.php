@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
@@ -80,20 +81,20 @@ final class ConsumerTest extends TestCase {
 			static function ( string $identity, object $registered ) use ( &$calls ): void {
 				$calls[] = array( 'register', $identity, $registered );
 			},
-			static function ( string $identity, array $args, int $delay, bool $unique, int $priority ) use ( &$calls, $failure ): Failure {
-				$calls[] = array( 'enqueue', $identity, $args, $delay, $unique, $priority );
+			static function ( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ) use ( &$calls, $failure ): Failure {
+				$calls[] = array( 'enqueue', $identity, $args, $delay, $dedup_key, $priority );
 				return $failure;
 			}
 		);
 
 		$tasks->register( $task );
-		$result = $tasks->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, unique: true, priority: 5 );
+		$result = $tasks->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, dedup_key: 'site-7-sync', priority: 5 );
 
 		self::assertSame( $failure, $result );
 		self::assertSame(
 			array(
 				array( 'register', 'consumer-plugin:sync', $task ),
-				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, true, 5 ),
+				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, 'site-7-sync', 5 ),
 			),
 			$calls
 		);
@@ -113,20 +114,20 @@ final class ConsumerTest extends TestCase {
 			static function ( string $identity, object $registered ) use ( &$calls ): void {
 				$calls[] = array( 'register', $identity, $registered );
 			},
-			static function ( string $identity, array $args, bool $unique, int $priority ) use ( &$calls, $success ): Success {
-				$calls[] = array( 'start', $identity, $args, $unique, $priority );
+			static function ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ) use ( &$calls, $success ): Success {
+				$calls[] = array( 'start', $identity, $args, $existing, $priority );
 				return $success;
 			}
 		);
 
 		$batches->register( $batch );
-		$result = $batches->start( 'sync', array( 'site_id' => 7 ), unique: true, priority: 5 );
+		$result = $batches->start( 'sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 5 );
 
 		self::assertSame( $success, $result );
 		self::assertSame(
 			array(
 				array( 'register', 'consumer-plugin:sync', $batch ),
-				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), true, 5 ),
+				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), ExistingRunPolicy::Reject, 5 ),
 			),
 			$calls
 		);
@@ -313,6 +314,72 @@ final class ConsumerTest extends TestCase {
 	}
 
 	/**
+	 * Task deduplication keys accept opaque bounded bytes and reject invalid lengths.
+	 *
+	 * @param   string $dedup_key Consumer deduplication key.
+	 * @param   bool   $accepted  Whether the key reaches the admission delegate.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'task_deduplication_keys' )]
+	public function test_tasks_validate_deduplication_keys( string $dedup_key, bool $accepted ): void {
+		$calls = array();
+		$tasks = new Tasks(
+			self::identity( 'consumer-plugin' ),
+			static function (): void {},
+			static function ( string $identity, array $args, int $delay, ?string $key, int $priority ) use ( &$calls ): Success {
+				$calls[] = array( $identity, $args, $delay, $key, $priority );
+
+				return new Success( 'task-run' );
+			}
+		);
+
+		if ( ! $accepted ) {
+			self::assert_invalid_argument(
+				static fn () => $tasks->enqueue( 'sync', dedup_key: $dedup_key ),
+				'Task "sync" deduplication key must contain 1 to 64 bytes when provided.'
+			);
+			self::assertSame( array(), $calls );
+
+			return;
+		}
+
+		$result = $tasks->enqueue( 'sync', dedup_key: $dedup_key );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame(
+			array( array( 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ),
+			$calls
+		);
+	}
+
+	/**
+	 * Supplies both accepted boundaries and the adjacent rejected lengths with opaque binary keys.
+	 *
+	 * @return  array<string, array{dedup_key: string, accepted: bool}>
+	 */
+	public static function task_deduplication_keys(): array {
+		return array(
+			'one byte'                   => array(
+				'dedup_key' => "\x00",
+				'accepted'  => true,
+			),
+			'empty'                      => array(
+				'dedup_key' => '',
+				'accepted'  => false,
+			),
+			'sixty-five bytes'           => array(
+				'dedup_key' => \str_repeat( 'a', 65 ),
+				'accepted'  => false,
+			),
+			'sixty-four arbitrary bytes' => array(
+				'dedup_key' => \str_repeat( "\x00\xFF", 32 ),
+				'accepted'  => true,
+			),
+		);
+	}
+
+	/**
 	 * Batch commands reject deterministic violations before invoking the admission delegate.
 	 *
 	 * @param   array<array-key, mixed> $args     Batch start arguments.
@@ -384,16 +451,16 @@ final class ConsumerTest extends TestCase {
 		$tasks    = new Tasks(
 			$identity,
 			static function (): void {},
-			static function ( string $name, array $args, int $delay, bool $unique, int $priority ) use ( &$calls ): Success {
-				$calls[] = array( 'task', $name, $args, $delay, $unique, $priority );
+			static function ( string $name, array $args, int $delay, ?string $dedup_key, int $priority ) use ( &$calls ): Success {
+				$calls[] = array( 'task', $name, $args, $delay, $dedup_key, $priority );
 				return new Success( 'task-run' );
 			}
 		);
 		$batches  = new Batches(
 			$identity,
 			static function (): void {},
-			static function ( string $name, array $args, bool $unique, int $priority ) use ( &$calls ): Success {
-				$calls[] = array( 'batch', $name, $args, $unique, $priority );
+			static function ( string $name, array $args, ExistingRunPolicy $existing, int $priority ) use ( &$calls ): Success {
+				$calls[] = array( 'batch', $name, $args, $existing, $priority );
 				return new Success( 'batch-run' );
 			}
 		);
@@ -403,8 +470,8 @@ final class ConsumerTest extends TestCase {
 
 		self::assertSame(
 			array(
-				array( 'task', 'consumer-plugin:sync', array(), 0, false, 10 ),
-				array( 'batch', 'consumer-plugin:sync', array(), false, 10 ),
+				array( 'task', 'consumer-plugin:sync', array(), 0, null, 10 ),
+				array( 'batch', 'consumer-plugin:sync', array(), ExistingRunPolicy::Replace, 10 ),
 			),
 			$calls
 		);

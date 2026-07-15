@@ -73,7 +73,7 @@ final readonly class RunReconciliation {
 	 * @version 1.0.0
 	 *
 	 * @param   string $name      Stable task or batch name.
-	 * @param   string $args_hash Stable argument identity.
+	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Lock owner run identifier.
 	 *
 	 * @return  void
@@ -136,7 +136,7 @@ final readonly class RunReconciliation {
 	 * @param   string $run_id         Run identifier.
 	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
-	 * @return  AbstractResult<string|null, EngineError> Transferred argument identity whose foreign lock must remain as fence evidence.
+	 * @return  AbstractResult<string|null, EngineError> Transferred single-flight identity whose foreign lock must remain as fence evidence.
 	 */
 	public function reconcile_run( string $name, string $run_id, int $terminal_grace ): AbstractResult {
 		$run_store = $this->stores->run_store( $name );

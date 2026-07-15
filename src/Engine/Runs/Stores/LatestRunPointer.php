@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Persists the latest discoverable run globally and for each argument identity.
+ * Persists the latest discoverable run globally and for each single-flight identity.
  *
  * Execution-overlap lock ownership fences active work. These bounded pointers provide discovery
  * metadata and are repaired by an owner when eviction or a concurrent start commit makes them lag.
@@ -22,7 +22,7 @@ final readonly class LatestRunPointer {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum number of argument identities retained with latest-run pointers.
+	 * Maximum number of single-flight identities retained with latest-run pointers.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -74,13 +74,13 @@ final readonly class LatestRunPointer {
 	// region METHODS
 
 	/**
-	 * Records a run as latest globally and for its argument identity.
+	 * Records a run as latest globally and for its single-flight identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id    Run identifier.
-	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  bool True when the requested pointer state is confirmed persisted.
 	 */
@@ -100,7 +100,7 @@ final readonly class LatestRunPointer {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id    Authoritative lock owner.
-	 * @param   string $args_hash Stable identity of the owner's start arguments.
+	 * @param   string $args_hash Stable single-flight identity owned by the run.
 	 *
 	 * @return  bool True when the requested pointer state is confirmed persisted.
 	 */
@@ -110,7 +110,7 @@ final readonly class LatestRunPointer {
 	}
 
 	/**
-	 * Returns the latest run across all argument identities.
+	 * Returns the latest run across all single-flight identities.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -124,12 +124,12 @@ final readonly class LatestRunPointer {
 	}
 
 	/**
-	 * Returns the latest run for one argument identity.
+	 * Returns the latest run for one single-flight identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  string|null
 	 */
@@ -150,7 +150,7 @@ final readonly class LatestRunPointer {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id        Run identifier for the moved identity.
-	 * @param   string $args_hash     Stable identity of the start arguments.
+	 * @param   string $args_hash     Stable single-flight identity.
 	 * @param   bool   $repair_global Whether to preserve an unrelated global pointer.
 	 *
 	 * @return  bool True when the requested pointer state is confirmed persisted.

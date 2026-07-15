@@ -44,7 +44,7 @@ final readonly class RunState {
 	 * @param   RunStatus                     $status          Lifecycle state.
 	 * @param   bool                          $executing       Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
-	 * @param   string                        $args_hash       Stable identity of the start arguments.
+	 * @param   string                        $args_hash       Stable single-flight identity derived from arguments or a task deduplication key.
 	 * @param   list<array<array-key, mixed>> $queue           Persisted processing queue, oldest uncommitted chunk first.
 	 * @param   int                           $chunk_retries   Failed attempts consumed by the current batch chunk; for
 	 *                                                         a task, failed handle() attempts in this run.

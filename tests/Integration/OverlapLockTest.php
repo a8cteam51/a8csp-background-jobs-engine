@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
@@ -11,7 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
 /**
- * Verifies held-lock Skip and stale crash-reclaim semantics.
+ * Verifies held-lock rejection and stale crash-reclaim semantics.
  */
 final class OverlapLockTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -36,11 +37,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * A unique start under a fresh held lock returns the exact already-running failure.
+	 * Reject under a fresh held lock returns the exact already-running failure.
 	 *
 	 * @return  void
 	 */
-	public function test_unique_start_skips_a_fresh_held_lock(): void {
+	public function test_reject_policy_refuses_a_fresh_held_lock(): void {
 		$start_args   = array( 'scope' => 'skip' );
 		$batch        = new RecordingBatch( self::SKIP_NAME );
 		$batch->queue = array(
@@ -52,13 +53,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::SKIP_IDENTITY );
 		$this->filter_continue_delay_to_zero();
 
-		$run_a     = $this->start_batch( self::SKIP_NAME, $start_args, true );
+		$run_a     = $this->start_batch( self::SKIP_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_a   = self::SKIP_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
 		$lock_name = 'a8csp_bgte_lock_' . self::SKIP_IDENTITY . '_' . $args_hash;
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the unique incumbent queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the unique incumbent first chunk' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the rejecting incumbent queue' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the rejecting incumbent first chunk' );
 		$first_action_id = $this->assert_pending_chunk_action(
 			self::SKIP_IDENTITY,
 			$run_a,
@@ -68,9 +69,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
-		$result              = \a8csp_bgte( self::OWNER )->batches()->start( self::SKIP_NAME, $start_args, unique: true );
+		$result              = \a8csp_bgte( self::OWNER )->batches()->start( self::SKIP_NAME, $start_args, existing: ExistingRunPolicy::Reject );
 
-		self::assertInstanceOf( Failure::class, $result, 'A second unique start must be refused under the fresh lock' );
+		self::assertInstanceOf( Failure::class, $result, 'Reject must refuse a second start under the fresh lock' );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::OverlapHeld, $result->error->code );
 		self::assertSame( array( 'run_id' => $run_a ), $result->error->context );
@@ -81,23 +82,23 @@ final class OverlapLockTest extends IntegrationTestCase {
 				$run_a
 			),
 			$result->error->message,
-			'The unique held-lock failure must identify the incumbent run exactly'
+			'The rejected held-lock failure must identify the incumbent run exactly'
 		);
 		self::assertSame(
 			$action_count_before,
 			(int) $store->query_actions( array(), 'count' ),
-			'A skipped unique start must not create an Action Scheduler row'
+			'A rejected start must not create an Action Scheduler row'
 		);
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
-		self::assertSame( $run_a, $lock['run_id'] ?? null, 'A skipped unique start must preserve the incumbent lock owner' );
+		self::assertSame( $run_a, $lock['run_id'] ?? null, 'A rejected start must preserve the incumbent lock owner' );
 		self::assertSame(
 			array(
 				'all'     => $run_a,
 				'by_hash' => array( $args_hash => $run_a ),
 			),
 			\get_option( 'a8csp_bgte_latest_' . self::SKIP_IDENTITY, null ),
-			'A skipped unique start must preserve the incumbent latest pointers'
+			'A rejected start must preserve the incumbent latest pointers'
 		);
 		self::assertSame(
 			array(
@@ -111,7 +112,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 				),
 			),
 			\get_option( 'a8csp_bgte_history_' . self::SKIP_IDENTITY, null ),
-			'A skipped unique start must not create a second history entry'
+			'A rejected start must not create a second history entry'
 		);
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent first chunk' );
@@ -139,7 +140,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ),
 			\array_column( $batch->process_calls, 'chunk_args' ),
-			'The accepted incumbent must process both chunks after the unique skip'
+			'The accepted incumbent must process both chunks after the rejected start'
 		);
 		self::assertSame(
 			array(
@@ -149,7 +150,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 				),
 			),
 			$batch->success_calls,
-			'The accepted incumbent must complete normally after the unique skip'
+			'The accepted incumbent must complete normally after the rejected start'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Incumbent completion must release the overlap lock' );
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::SKIP_IDENTITY . '_' . $run_a, false ) );
@@ -159,7 +160,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 				'a8csp_bgte_latest_' . self::SKIP_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
-			'Unique Skip completion must retain only history and latest pointer state'
+			'Reject-policy completion must retain only history and latest pointer state'
 		);
 	}
 
@@ -209,7 +210,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a     = $this->start_batch( self::RECLAIM_NAME, $start_args, true );
+		$run_a     = $this->start_batch( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_a   = self::RECLAIM_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
 		$lock_name = 'a8csp_bgte_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
@@ -231,7 +232,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'The crash simulation must age the persisted heartbeat beyond the default stale window'
 		);
 
-		$run_b   = $this->start_batch( self::RECLAIM_NAME, $start_args, true );
+		$run_b   = $this->start_batch( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
 		self::assertNotSame( $run_a, $run_b, 'Stale reclaim must allocate a fresh run identifier' );
 		self::assertSame(
@@ -420,12 +421,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 *
 	 * @param   string                  $name       Stable batch name.
 	 * @param   array<array-key, mixed> $start_args Batch start arguments.
-	 * @param   bool                    $unique     Whether the start uses held-lock Skip semantics.
+	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching run exists.
 	 *
 	 * @return  string
 	 */
-	private function start_batch( string $name, array $start_args, bool $unique = false ): string {
-		$result = \a8csp_bgte( self::OWNER )->batches()->start( $name, $start_args, unique: $unique );
+	private function start_batch( string $name, array $start_args, ExistingRunPolicy $existing = ExistingRunPolicy::Replace ): string {
+		$result = \a8csp_bgte( self::OWNER )->batches()->start( $name, $start_args, existing: $existing );
 		self::assertInstanceOf( Success::class, $result, 'The batch must start through the public API' );
 		self::assertIsString( $result->value );
 

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
@@ -109,26 +110,31 @@ final readonly class Dispatcher {
 	/**
 	 * Creates and schedules one run for a registered task.
 	 *
+	 * A non-null deduplication key replaces the argument-derived single-flight identity. The key
+	 * refuses another admission only for the incumbent run's lifetime and is reusable after that
+	 * run reaches terminal cleanup; it is an admission-level mechanism, not a durable ledger.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $task_name Stable task name.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   bool                    $unique    Whether the backend retains an identical async action.
+	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $task_name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function enqueue( string $task_name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
 		$result = $this->dispatch_task(
 			$task_name,
 			$args,
 			$delay,
-			$unique,
+			$dedup_key,
 			$priority,
-			OverlapPolicy::Skip
+			OverlapPolicy::Skip,
+			false
 		);
 		if ( $result->is_failure() ) {
 			return $result;
@@ -168,18 +174,19 @@ final readonly class Dispatcher {
 			$task_name,
 			$args,
 			0,
-			// Only Skip has a stable single-flight identity worth backend-deduplicating.
-			unique: OverlapPolicy::Skip === $overlap,
+			null,
 			priority: $priority,
 			overlap: $overlap,
+			// Only Skip has a stable single-flight identity worth backend-deduplicating.
+			backend_unique: OverlapPolicy::Skip === $overlap,
 			on_accepted: $on_accepted
 		);
 	}
 
 	/**
-	 * A non-unique start whose arguments are already running takes over the incumbent's lock, and the
-	 * incumbent stops at its next fence; a unique start fails while a live incumbent holds the lock.
-	 * A crash between takeover and enqueueing converges through the staleness-reclaim model.
+	 * Replace takes over a fresh matching incumbent's lock, and the incumbent stops at its next
+	 * fence. Reject refuses admission while that lock is held. A crash between takeover and
+	 * enqueueing converges through the staleness-reclaim model.
 	 *
 	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
 	 * caller handles the returned failure by starting the batch again.
@@ -189,14 +196,13 @@ final readonly class Dispatcher {
 	 *
 	 * @param   string                  $batch_name Stable batch name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   bool                    $unique     Whether a fresh incumbent causes Failure instead of replacement and
-	 *                                              backend uniqueness is requested.
+	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-	public function start_batch( string $batch_name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
+	public function start_batch( string $batch_name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
 		$batch = 'batch' === $this->tasks->kind( $batch_name )
 			? $this->batches->get( $batch_name )
 			: null;
@@ -246,7 +252,7 @@ final readonly class Dispatcher {
 			$run_id,
 			$this->lock_windows->lock_staleness( $batch_name, $run_id )
 		);
-		if ( ClaimResult::Held === $claim && $unique ) {
+		if ( ClaimResult::Held === $claim && ExistingRunPolicy::Reject === $existing ) {
 			$owner = $this->overlap_guard->owner_run_id( $batch_name, $args_hash );
 			if ( $owner->is_failure() ) {
 				return new Failure(
@@ -284,8 +290,9 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->create_run_state_and_replace_if_held(
+		$backend_unique = ExistingRunPolicy::Reject === $existing;
+		$run_store      = $this->stores->run_store( $batch_name );
+		$state          = $this->create_run_state_and_replace_if_held(
 			'Batch',
 			$batch_name,
 			$run_id,
@@ -298,7 +305,7 @@ final readonly class Dispatcher {
 				'stage'    => 'start',
 				'mode'     => 'async',
 				'fire_at'  => null,
-				'unique'   => $unique,
+				'unique'   => $backend_unique,
 				'priority' => $priority,
 			)
 		);
@@ -319,7 +326,7 @@ final readonly class Dispatcher {
 			'a8csp_background_tasks/start',
 			array( $batch_name, $run_id, $state->action_seq ),
 			$batch_name . '|' . $run_id,
-			$unique,
+			$backend_unique,
 			$priority
 		);
 		if ( $scheduled->is_failure() ) {
@@ -344,6 +351,10 @@ final readonly class Dispatcher {
 
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
+	 *
+	 * A retried run does not re-acquire its original deduplication key or existing-run policy: it is
+	 * re-admitted under its argument identity, so it does not collapse against a concurrent enqueue
+	 * carrying the failed run's key.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -629,17 +640,18 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $task_name Stable task name.
-	 * @param   array<array-key, mixed> $args      Task arguments.
-	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   bool                    $unique    Whether backend uniqueness is requested.
-	 * @param   int                     $priority  Advisory priority from 0 through 255.
-	 * @param   OverlapPolicy           $overlap   Execution-overlap policy.
-	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
+	 * @param   string                  $task_name     Stable task name.
+	 * @param   array<array-key, mixed> $args          Task arguments.
+	 * @param   int                     $delay         Scheduling delay in seconds.
+	 * @param   string|null             $dedup_key     Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   int                     $priority      Advisory priority from 0 through 255.
+	 * @param   OverlapPolicy           $overlap       Execution-overlap policy.
+	 * @param   bool                    $backend_unique Whether backend uniqueness is requested.
+	 * @param   \Closure|null           $on_accepted   Internal callback after backend acceptance and before started hooks.
 	 *
 	 * @return  AbstractResult<string|TaskDispatchSkipped, EngineError|SchedulingError>
 	 */
-	private function dispatch_task( string $task_name, array $args, int $delay, bool $unique, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
+	private function dispatch_task( string $task_name, array $args, int $delay, ?string $dedup_key, int $priority, OverlapPolicy $overlap, bool $backend_unique, ?\Closure $on_accepted = null ): AbstractResult {
 		$task = 'task' === $this->tasks->kind( $task_name )
 			? $this->tasks->get( $task_name )
 			: null;
@@ -678,6 +690,9 @@ final readonly class Dispatcher {
 		$args_hash = $this->args_hash( $task_name, $args );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
+		}
+		if ( null !== $dedup_key ) {
+			$args_hash = \hash( 'sha256', $dedup_key );
 		}
 
 		$now = $this->clock->now()->getTimestamp();
@@ -777,7 +792,7 @@ final readonly class Dispatcher {
 				'stage'    => 'run',
 				'mode'     => 0 === $delay ? 'async' : 'single',
 				'fire_at'  => 0 === $delay ? null : $scheduled_at,
-				'unique'   => $unique,
+				'unique'   => $backend_unique,
 				'priority' => $priority,
 			)
 		);
@@ -814,6 +829,9 @@ final readonly class Dispatcher {
 
 			$replacement = $state->with_heartbeat_at( $scheduled_at );
 			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
+				$run_store->delete( $run_id );
+
 				return new Failure(
 					new EngineError(
 						\sprintf(
@@ -843,7 +861,7 @@ final readonly class Dispatcher {
 		$action_args = array( $task_name, $run_id, $state->action_seq );
 		$group       = $task_name . '|' . $run_id;
 		$scheduled   = 0 === $delay
-			? $this->scheduler->enqueue_async( 'a8csp_background_tasks/run', $action_args, $group, $unique, $priority )
+			? $this->scheduler->enqueue_async( 'a8csp_background_tasks/run', $action_args, $group, $backend_unique, $priority )
 			: $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $scheduled_at, $action_args, $group, $priority );
 
 		if ( $scheduled->is_failure() ) {
@@ -909,7 +927,7 @@ final readonly class Dispatcher {
 	 * @param   string                        $name      Stable task or batch name.
 	 * @param   string                        $run_id    Replacement run identifier.
 	 * @param   array<array-key, mixed>       $args      Start arguments.
-	 * @param   string                        $args_hash Stable argument identity.
+	 * @param   string                        $args_hash Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue     Initial run queue.
 	 * @param   ClaimResult                   $claim     Initial lock-claim outcome.
 	 * @param   RunStore                      $run_store Active-run store.

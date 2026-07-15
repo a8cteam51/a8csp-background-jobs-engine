@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
@@ -223,6 +224,74 @@ final class ActionDeliveriesTest extends TestCase {
 			),
 			$this->action_registrations()
 		);
+	}
+
+	/**
+	 * One explicit key remains held across differing payloads only until its incumbent completes.
+	 *
+	 * @return  void
+	 */
+	public function test_dedup_key_collapses_different_arguments_until_completion_then_allows_reuse(): void {
+		$dedup_key      = 'site-7-digest';
+		$successor_args = array(
+			'site_id' => 8,
+			'mode'    => 'delta',
+		);
+
+		$first = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, dedup_key: $dedup_key );
+		self::assertInstanceOf( Success::class, $first );
+		self::assertSame( self::RUN_ID, $first->value );
+
+		$first_state = $this->option( $this->run_option_name() );
+		self::assertIsArray( $first_state );
+		$dedup_hash = $first_state['args_hash'] ?? null;
+		self::assertIsString( $dedup_hash );
+		self::assertSame( \hash( 'sha256', $dedup_key ), $dedup_hash );
+		$lock_option_name = 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $dedup_hash;
+
+		$this->randomizer->value = 43;
+
+		$duplicate = $this->dispatcher->enqueue(
+			self::IDENTITY,
+			$successor_args,
+			dedup_key: $dedup_key
+		);
+
+		self::assertInstanceOf( Failure::class, $duplicate );
+		self::assertInstanceOf( EngineError::class, $duplicate->error );
+		self::assertSame( EngineErrorReason::OverlapHeld, $duplicate->error->reason );
+		self::assertSame( array( 'run_id' => self::RUN_ID ), $duplicate->error->context );
+		self::assertCount( 1, $this->backend->calls );
+
+		$this->lifecycle_deliveries->handle_run_action(
+			self::IDENTITY,
+			self::RUN_ID,
+			$this->action_seq()
+		);
+
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertArrayNotHasKey( $lock_option_name, $this->wpdb->rows );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+
+		$this->randomizer->value = 44;
+		$reused                  = $this->dispatcher->enqueue(
+			self::IDENTITY,
+			$successor_args,
+			dedup_key: $dedup_key
+		);
+
+		self::assertInstanceOf( Success::class, $reused );
+		$reused_run_id = '00000000001700000000-0000000000000000044';
+		self::assertSame( $reused_run_id, $reused->value );
+		$reused_state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $reused_run_id );
+		self::assertIsArray( $reused_state );
+		self::assertSame( $successor_args, $reused_state['start_args'] ?? null );
+		self::assertSame( $dedup_hash, $reused_state['args_hash'] ?? null );
+		$reused_lock_raw = $this->wpdb->rows[ $lock_option_name ] ?? null;
+		self::assertIsString( $reused_lock_raw );
+		$reused_lock = RawOptionDecoder::decode( $reused_lock_raw );
+		self::assertIsArray( $reused_lock );
+		self::assertSame( $reused_run_id, $reused_lock['run_id'] ?? null );
 	}
 
 	/**

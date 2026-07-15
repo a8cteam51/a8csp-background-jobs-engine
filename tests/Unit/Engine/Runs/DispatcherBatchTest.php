@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
@@ -178,7 +179,7 @@ final class DispatcherBatchTest extends TestCase {
 				$scheduled_state = $this->option( $this->run_option_name() );
 			}
 		);
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true, priority: 23 );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -373,14 +374,14 @@ final class DispatcherBatchTest extends TestCase {
 	}
 
 	/**
-	 * A held overlap lock rejects a unique start without stopping the incumbent run.
+	 * Reject leaves a held incumbent running and refuses the new start.
 	 *
 	 * @return  void
 	 */
-	public function test_start_batch_rejects_a_unique_held_overlap_without_stopping_the_previous_run(): void {
+	public function test_start_batch_rejects_a_held_overlap_without_stopping_the_previous_run(): void {
 		$this->seed_running_lock();
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -395,8 +396,8 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertSame( array(), $this->batch->failure_calls );
 	}
 
-	/** A failed contended-lock owner read rejects a unique start without admitting replacement work. */
-	public function test_start_batch_rejects_a_unique_start_when_the_lock_owner_read_fails(): void {
+	/** A failed contended-lock owner read rejects without admitting replacement work. */
+	public function test_start_batch_rejects_when_the_lock_owner_read_fails(): void {
 		$this->seed_running_lock();
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
@@ -406,7 +407,7 @@ final class DispatcherBatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -419,11 +420,11 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 	}
 
-	/** A held claim whose lock row has vanished declines a unique start with a retryable refusal. */
-	public function test_start_batch_rejects_a_unique_start_when_the_held_lock_no_longer_names_an_owner(): void {
+	/** A held claim whose lock row has vanished declines Reject with a retryable refusal. */
+	public function test_start_batch_rejects_when_the_held_lock_no_longer_names_an_owner(): void {
 		$this->wpdb->script_result( 'insert', false );
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -436,18 +437,18 @@ final class DispatcherBatchTest extends TestCase {
 	}
 
 	/**
-	 * A unique held-overlap failure identifies the lock owner without a latest pointer.
+	 * A Reject held-overlap failure identifies the lock owner without a latest pointer.
 	 *
 	 * @return  void
 	 */
-	public function test_start_batch_names_the_lock_owner_when_a_unique_held_overlap_has_no_latest_pointer(): void {
+	public function test_start_batch_names_the_lock_owner_when_a_rejected_held_overlap_has_no_latest_pointer(): void {
 		$this->seed_running_lock();
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 		unset( $options[ 'a8csp_bgte_latest_' . self::IDENTITY ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -461,11 +462,11 @@ final class DispatcherBatchTest extends TestCase {
 	}
 
 	/**
-	 * A unique held-overlap failure identifies the lock owner when the latest pointer lags.
+	 * A Reject held-overlap failure identifies the lock owner when the latest pointer lags.
 	 *
 	 * @return  void
 	 */
-	public function test_start_batch_names_the_lock_owner_when_a_unique_held_overlap_has_a_stale_latest_pointer(): void {
+	public function test_start_batch_names_the_lock_owner_when_a_rejected_held_overlap_has_a_stale_latest_pointer(): void {
 		$this->seed_running_lock();
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
@@ -475,7 +476,7 @@ final class DispatcherBatchTest extends TestCase {
 		);
 		$GLOBALS['a8csp_bgte_test_options']               = $options;
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, unique: true );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -496,7 +497,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_replaces_a_held_incumbent(): void {
 		$this->seed_running_lock();
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -538,7 +539,7 @@ final class DispatcherBatchTest extends TestCase {
 		unset( $options[ 'a8csp_bgte_latest_' . self::IDENTITY ] );
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -564,7 +565,7 @@ final class DispatcherBatchTest extends TestCase {
 		$this->backend->results['enqueue_async'] = $failure;
 		$this->seed_running_lock();
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertSame( $failure, $result );
 		self::assertNull( $this->lock() );
@@ -590,7 +591,7 @@ final class DispatcherBatchTest extends TestCase {
 		$options[ $this->run_option_name() ] = array( 'collision' => true );
 		$GLOBALS['a8csp_bgte_test_options']  = $options;
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -636,7 +637,7 @@ final class DispatcherBatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->start_batch( self::IDENTITY, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );

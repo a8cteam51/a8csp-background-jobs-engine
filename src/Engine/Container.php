@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches as ApiBatches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
@@ -71,8 +72,8 @@ final class Container {
 				static function ( string $name, TaskInterface $task ) use ( $engine ): void {
 					$engine->tasks()->register( $name, $task );
 				},
-				static fn ( string $name, array $args, int $delay, bool $unique, int $priority ) => AdmissionErrorMapper::map(
-					$engine->tasks()->enqueue( $name, $args, $delay, $unique, $priority )
+				static fn ( string $name, array $args, int $delay, ?string $dedup_key, int $priority ) => AdmissionErrorMapper::map(
+					$engine->tasks()->enqueue( $name, $args, $delay, $dedup_key, $priority )
 				)
 			),
 			new ApiBatches(
@@ -80,8 +81,8 @@ final class Container {
 				static function ( string $name, BatchInterface $batch ) use ( $engine ): void {
 					$engine->batches()->register( $name, $batch );
 				},
-				static fn ( string $name, array $args, bool $unique, int $priority ) => AdmissionErrorMapper::map(
-					$engine->batches()->start( $name, $args, $unique, $priority )
+				static fn ( string $name, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map(
+					$engine->batches()->start( $name, $args, $existing, $priority )
 				)
 			),
 			new ApiSchedules(

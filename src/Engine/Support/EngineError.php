@@ -59,7 +59,7 @@ final readonly class EngineError implements ErrorInterface {
 	public static function held_task( string $task_name, string $running_run_id ): self {
 		return new self(
 			\sprintf(
-				'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments.',
+				'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.',
 				$task_name,
 				$running_run_id
 			),

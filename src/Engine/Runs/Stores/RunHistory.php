@@ -50,7 +50,7 @@ final readonly class RunHistory {
 	public const OPTION_PREFIX = 'a8csp_bgte_history_';
 
 	/**
-	 * Distinct argument identities are evicted least-recently-recorded past this count; without
+	 * Distinct single-flight identities are evicted least-recently-recorded past this count; without
 	 * a bucket cap the by_hash map grows one entry per identity forever, which is the unbounded
 	 * option-row growth this store exists to prevent.
 	 *
@@ -90,7 +90,7 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id    Run identifier.
-	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @throws  \LogicException When no authoritative database connection exists or serialization fails.
 	 *
@@ -108,7 +108,7 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string    $run_id    Run identifier.
-	 * @param   string    $args_hash Stable identity of the start arguments.
+	 * @param   string    $args_hash Stable single-flight identity.
 	 * @param   RunStatus $status    Terminal run status.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
@@ -168,7 +168,7 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string         $run_id    Run identifier.
-	 * @param   string         $args_hash Stable identity of the start arguments.
+	 * @param   string         $args_hash Stable single-flight identity.
 	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.

@@ -45,6 +45,7 @@ In a consumer plugin under its own namespace, register the Task and Batch implem
 ```php
 namespace Acme\BackgroundTasks;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
@@ -102,7 +103,8 @@ $consumer = \a8csp_bgte( 'acme-background-work' );
 
 $task_result = $consumer->tasks()->enqueue(
 	SiteHealthPingTask::NAME,
-	array( 'transient' => 'acme_site_health_snapshot' )
+	array( 'transient' => 'acme_site_health_snapshot' ),
+	dedup_key: 'site-health-snapshot'
 );
 if ( $task_result->is_failure() ) {
 	switch ( $task_result->error->code ) {
@@ -116,21 +118,26 @@ if ( $task_result->is_failure() ) {
 
 $batch_result = $consumer->batches()->start(
 	CommentCountRecountBatch::NAME,
-	array( 'post_type' => 'post' )
+	array( 'post_type' => 'post' ),
+	existing: ExistingRunPolicy::Reject
 );
 ```
 
+A Task deduplication key is an optional opaque byte string scoped to that Task. While a run owns the key, another enqueue with the same key returns `OverlapHeld` even when its arguments differ; after terminal cleanup, the key is reusable. Pass 1 to 64 bytes, or leave it `null` to derive the overlap identity from the Task arguments. The key is hashed before storage and is an in-flight deduplication mechanism, not a durable idempotency record.
+
+`ExistingRunPolicy::Replace` is the default Batch policy: a start with matching arguments takes over a fresh incumbent's overlap lock, and the incumbent stops at its next fence. `ExistingRunPolicy::Reject` instead returns `OverlapHeld` and leaves the incumbent in place.
+
 Scheduling, retry, and cancellation methods return `Success` or `Failure<ApiError>`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property. Failed results expose a stable `ApiErrorCode` through `$result->error->code`; `context` contains redaction-safe structured details such as the incumbent `run_id` for `OverlapHeld`.
 
-Deterministic contract violations detected before engine side effects throw `InvalidArgumentException`: invalid or reserved identities, priorities outside 0–255, negative task delays, non-portable task or batch arguments, and cross-kind registration. Valid commands rejected by registration or runtime state—including unknown work, held locks, backend refusal, and storage failure—return `Failure<ApiError>`.
+Deterministic contract violations detected before engine side effects throw `InvalidArgumentException`: invalid or reserved identities, priorities outside 0–255, negative task delays, empty or over-64-byte Task deduplication keys, non-portable Task or Batch arguments, and cross-kind registration. Valid commands rejected by registration or runtime state—including unknown work, held locks, backend refusal, and storage failure—return `Failure<ApiError>`.
 
 The supported facade methods are:
 
 | Facade | Methods |
 | --- | --- |
 | `Consumer` | `tasks()`, `batches()`, `schedules()`, `runs()` |
-| `Api\Task\Tasks` | `register(TaskInterface)`, `enqueue(string $name, array $args = [], int $delay = 0, bool $unique = false, int $priority = 10)` |
-| `Api\Batch\Batches` | `register(BatchInterface)`, `start(string $name, array $start_args = [], bool $unique = false, int $priority = 10)` |
+| `Api\Task\Tasks` | `register(TaskInterface)`, `enqueue(string $name, array $args = [], int $delay = 0, ?string $dedup_key = null, int $priority = 10)` |
+| `Api\Batch\Batches` | `register(BatchInterface)`, `start(string $name, array $start_args = [], ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10)` |
 | `Api\Schedule\Schedules` | `sync(array $schedules)`, `run_now(string $name)` |
 | `Api\Run\Runs` | `retry_failed(string $name, string $run_id)`, `cancel(string $name, string $run_id)` |
 
@@ -223,9 +230,11 @@ Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization.
 
 Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and lifecycle hooks have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. A throwing failure callback or lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
 
-## Overlap and catch-up policies
+## Admission overlap and catch-up policies
 
-Overlap applies to a matching task name and argument identity. Catch-up determines what happens when a delivery is late beyond its grace window.
+Direct Task enqueue and Batch start coordinate active runs through a scoped overlap identity. A Task's overlap identity is its explicit deduplication key when provided and otherwise its arguments; a Batch's overlap identity is always its start arguments. Matching is scoped to the owner-qualified Task or Batch name.
+
+Schedule overlap is configured independently through `OverlapPolicy`. Catch-up determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap policy | `RunOnce` catch-up (default) | `Skip` catch-up |
 | --- | --- | --- |

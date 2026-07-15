@@ -17,7 +17,7 @@ final class WorkIdentity {
 
 	/**
 	 * Consumer-owner ceiling chosen with the name ceiling so the longest composed identity leaves
-	 * the 16-byte lock prefix, separator, and 64-byte argument hash inside WordPress's 191-character
+	 * the 16-byte lock prefix, separator, and 64-byte single-flight hash inside WordPress's 191-character
 	 * `option_name` boundary.
 	 *
 	 * @since   1.0.0
@@ -29,7 +29,7 @@ final class WorkIdentity {
 
 	/**
 	 * Local-name ceiling chosen with the owner ceiling so the longest composed identity leaves the
-	 * 16-byte lock prefix, separator, and 64-byte argument hash inside WordPress's 191-character
+	 * 16-byte lock prefix, separator, and 64-byte single-flight hash inside WordPress's 191-character
 	 * `option_name` boundary.
 	 *
 	 * @since   1.0.0

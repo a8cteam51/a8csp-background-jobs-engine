@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
@@ -61,6 +62,8 @@ final readonly class Batches {
 	/**
 	 * Creates and schedules one run for a registered batch.
 	 *
+	 * Reject refuses a fresh matching incumbent. Replace transfers its ownership fence to the new run.
+	 *
 	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
 	 * caller handles the returned failure by starting the batch again.
 	 *
@@ -69,15 +72,14 @@ final readonly class Batches {
 	 *
 	 * @param   string                  $name       Complete owner-qualified batch identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   bool                    $unique     Whether a fresh incumbent causes Failure instead of replacement and
-	 *                                              backend uniqueness is requested.
+	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-	public function start( string $name, array $start_args = array(), bool $unique = false, int $priority = 10 ): AbstractResult {
-		return $this->dispatcher->start_batch( $name, $start_args, $unique, $priority );
+	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
+		return $this->dispatcher->start_batch( $name, $start_args, $existing, $priority );
 	}
 
 	// endregion

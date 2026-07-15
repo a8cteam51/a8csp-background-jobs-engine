@@ -1148,7 +1148,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertStringContainsString( 'before dispatching the same arguments', $result->error->message );
+		self::assertStringContainsString( 'before dispatching the same arguments or deduplication key', $result->error->message );
 		self::assertSame( $before, $this->registration() );
 		self::assertSame( array(), $this->backend->calls );
 	}

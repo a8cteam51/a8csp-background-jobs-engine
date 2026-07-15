@@ -39,6 +39,10 @@ final readonly class Runs {
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
+	 * A retried run does not re-acquire its original deduplication key or existing-run policy: it is
+	 * re-admitted under its argument identity, so it does not collapse against a concurrent enqueue
+	 * carrying the failed run's key.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

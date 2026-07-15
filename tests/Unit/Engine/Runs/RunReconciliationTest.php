@@ -2,8 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
@@ -348,12 +350,80 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A stale task descriptor preserves caller uniqueness and priority during redrive.
+	 * A pending batch-start descriptor preserves the scheduler request derived from either policy.
+	 *
+	 * @param   string $existing_value Existing-run policy value used for admission.
+	 * @param   bool   $backend_unique Expected scheduler uniqueness on redrive.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'batch_start_redrive_policies' )]
+	public function test_sweep_redrives_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value, bool $backend_unique ): void {
+		$name  = self::identity( 'redriven-start-batch' );
+		$batch = new RecordingBatch( 'redriven-start-batch' );
+		$this->batches->register( $name, $batch );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'unique'   => $backend_unique,
+				'priority' => 23,
+			),
+			$this->run_state( $name )['pending'] ?? null
+		);
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp_background_tasks/start',
+						'args'     => array( $name, self::RUN_ID, 1 ),
+						'group'    => $name . '|' . self::RUN_ID,
+						'unique'   => $backend_unique,
+						'priority' => 23,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertSame( 'running', $this->run_state( $name )['status'] ?? null );
+		self::assertSame( array(), $batch->failure_calls );
+	}
+
+	/**
+	 * Supplies the complete existing-run policy to backend-uniqueness mapping.
+	 *
+	 * @return  array<string, array{existing_value: string, backend_unique: bool}>
+	 */
+	public static function batch_start_redrive_policies(): array {
+		return array(
+			'reject'  => array(
+				'existing_value' => 'reject',
+				'backend_unique' => true,
+			),
+			'replace' => array(
+				'existing_value' => 'replace',
+				'backend_unique' => false,
+			),
+		);
+	}
+
+	/**
+	 * A stale schedule-driven task descriptor preserves internal backend uniqueness and priority.
 	 *
 	 * @return  void
 	 */
 	public function test_sweep_redrives_a_stale_pending_task_action(): void {
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, unique: true, priority: 23 );
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;

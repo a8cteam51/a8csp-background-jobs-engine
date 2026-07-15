@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
@@ -181,7 +182,7 @@ final class EngineTest extends TestCase {
 			self::TASK_IDENTITY,
 			self::ARGS,
 			delay: 300,
-			unique: true,
+			dedup_key: 'site-7-full',
 			priority: 5
 		);
 
@@ -207,6 +208,7 @@ final class EngineTest extends TestCase {
 		self::assertIsArray( $run );
 		self::assertSame( 'running', $run['status'] ?? null );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
+		self::assertSame( \hash( 'sha256', 'site-7-full' ), $run['args_hash'] ?? null );
 		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
 		self::assertSame(
 			array(
@@ -225,7 +227,12 @@ final class EngineTest extends TestCase {
 	public function test_register_then_start_round_trips_through_the_batch_facade(): void {
 		$this->engine->batches()->register( self::BATCH_IDENTITY, new RecordingBatch( 'catalog-sync' ) );
 
-		$result = $this->engine->batches()->start( self::BATCH_IDENTITY, self::ARGS, unique: true, priority: 23 );
+		$result = $this->engine->batches()->start(
+			self::BATCH_IDENTITY,
+			self::ARGS,
+			existing: ExistingRunPolicy::Reject,
+			priority: 23
+		);
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );

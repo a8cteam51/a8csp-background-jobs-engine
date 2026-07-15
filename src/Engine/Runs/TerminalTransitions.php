@@ -554,7 +554,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @param   string         $name          Stable task or batch name.
 	 * @param   string         $run_id        Run identifier.
-	 * @param   string|null    $latest_run_id Latest discoverable pointer value for the argument identity.
+	 * @param   string|null    $latest_run_id Latest discoverable pointer value for the single-flight identity.
 	 * @param   RunState       $state         Running state.
 	 * @param   RunStore       $run_store     Active-run store.
 	 * @param   'Task'|'Batch' $work_type     Work contract type.

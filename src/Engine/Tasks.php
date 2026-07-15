@@ -61,20 +61,24 @@ final readonly class Tasks {
 	/**
 	 * Creates and schedules one run for a registered task.
 	 *
+	 * A null deduplication key uses the task arguments as the single-flight identity. A non-null key
+	 * replaces that identity for the incumbent run's lifetime and is reusable after terminal cleanup;
+	 * it is an admission-level mechanism, not a durable ledger.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name     Complete owner-qualified task identity.
-	 * @param   array<array-key, mixed> $args     Task arguments.
-	 * @param   int                     $delay    Scheduling delay in seconds.
-	 * @param   bool                    $unique   Whether the backend retains an identical async action.
-	 * @param   int                     $priority Advisory priority from 0 through 255.
+	 * @param   string                  $name      Complete owner-qualified task identity.
+	 * @param   array<array-key, mixed> $args      Task arguments.
+	 * @param   int                     $delay     Scheduling delay in seconds.
+	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
-		return $this->dispatcher->enqueue( $name, $args, $delay, $unique, $priority );
+	public function enqueue( string $name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
+		return $this->dispatcher->enqueue( $name, $args, $delay, $dedup_key, $priority );
 	}
 
 	// endregion
