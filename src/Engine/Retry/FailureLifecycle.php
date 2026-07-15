@@ -71,7 +71,7 @@ final readonly class FailureLifecycle {
 	 * @return  void
 	 */
 	public function handle_failed_attempt( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, \Closure $policy_provider, \Closure $terminal_failure, ?array $chunk_args = null ): void {
-		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -86,7 +86,7 @@ final readonly class FailureLifecycle {
 		try {
 			$policy = $this->retry_policy( $name, $policy_provider() );
 		} catch ( \Throwable $retry_policy_failure ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
@@ -99,7 +99,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -121,7 +121,7 @@ final readonly class FailureLifecycle {
 		);
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
-			if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $retry_state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $retry_state, $run_store ) ) {
 				return;
 			}
 
@@ -175,7 +175,9 @@ final readonly class FailureLifecycle {
 	 * @param   int                          $attempt    Consumed-attempt count.
 	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
 	 *
-	 * @return  array{state: RunState, error: EngineError}|null Exact failed state and detail, or null after success or a lost fence.
+	 * @return  array{state: RunState, error: EngineError}|null Exact failed state and detail, or null after successful
+	 *                                                        scheduling, a lost live-state transition, or an aborting
+	 *                                                        ownership fence.
 	 */
 	private function reschedule_retry( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, ?array $chunk_args = null ): ?array {
 		try {
@@ -201,7 +203,7 @@ final readonly class FailureLifecycle {
 		}
 
 		$fire_at = $now + $delay;
-		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
 			return null;
 		}
 
@@ -223,7 +225,7 @@ final readonly class FailureLifecycle {
 			);
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $fire_at ) ) {
 			return null;
 		}
 

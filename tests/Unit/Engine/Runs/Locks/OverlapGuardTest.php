@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Locks;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
@@ -29,6 +30,7 @@ final class LockRowWakeupProbe {
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( ClaimResult::class )]
+#[UsesClass( HeartbeatOutcome::class )]
 #[UsesClass( OptionRows::class )]
 final class OverlapGuardTest extends TestCase {
 	private const ARGS_HASH = 'args-123';
@@ -70,6 +72,18 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame(
 			array( 'claimed', 'reclaimed', 'held' ),
 			\array_column( ClaimResult::cases(), 'value' )
+		);
+	}
+
+	/** Heartbeat outcomes expose only the three lowercase-backed ownership states. */
+	public function test_heartbeat_outcome_pins_cases_and_backing_values(): void {
+		self::assertSame(
+			array( HeartbeatOutcome::Owned, HeartbeatOutcome::Lost, HeartbeatOutcome::Indeterminate ),
+			HeartbeatOutcome::cases()
+		);
+		self::assertSame(
+			array( 'owned', 'lost', 'indeterminate' ),
+			\array_column( HeartbeatOutcome::cases(), 'value' )
 		);
 	}
 
@@ -326,9 +340,9 @@ final class OverlapGuardTest extends TestCase {
 	public function test_heartbeat_refreshes_only_the_owned_rows_liveness_timestamp(): void {
 		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
 
-		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertTrue( $owned );
+		self::assertSame( HeartbeatOutcome::Owned, $outcome );
 		self::assertSame( self::row( 'run-owner', 100, 200 ), $this->lock() );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}
@@ -344,7 +358,10 @@ final class OverlapGuardTest extends TestCase {
 
 		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
 
-		self::assertTrue( $guard->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', 1_000 ) );
+		self::assertSame(
+			HeartbeatOutcome::Owned,
+			$guard->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', 1_000 )
+		);
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( self::row( 'run-owner', 100, 1_000 ), $this->lock() );
 		self::assertSame(
@@ -364,12 +381,14 @@ final class OverlapGuardTest extends TestCase {
 	/** An identical-second heartbeat is confirmed after MySQL reports zero affected rows. */
 	public function test_identical_second_heartbeat_confirms_the_unchanged_owned_row(): void {
 		$row = self::row( 'run-owner', 100, 200 );
-		$this->store_lock( $row );
+		$raw = self::raw( $row );
+		$this->wpdb->put( self::KEY, $raw );
 
-		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertTrue( $owned );
+		self::assertSame( HeartbeatOutcome::Owned, $outcome );
 		self::assertSame( $row, $this->lock() );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select', 'update', 'select' ), $this->operations() );
 	}
 
@@ -378,24 +397,36 @@ final class OverlapGuardTest extends TestCase {
 		$foreign_raw = self::raw( self::row( 'run-rival', 100, 120 ) );
 		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertFalse( $owned );
+		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
 	/** Heartbeat does not create an absent lock row. */
 	public function test_heartbeat_is_a_no_op_when_the_lock_is_absent(): void {
-		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertFalse( $owned );
+		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/** A failed heartbeat read preserves the current fence without attempting a refresh. */
-	public function test_heartbeat_preserves_the_fence_without_refresh_after_read_failure(): void {
+	/** A malformed heartbeat row cannot carry owned execution. */
+	public function test_heartbeat_reports_lost_without_touching_a_malformed_lock(): void {
+		$malformed_raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $malformed_raw );
+
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertSame( HeartbeatOutcome::Lost, $outcome );
+		self::assertSame( $malformed_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+	}
+
+	/** A failed heartbeat read leaves ownership indeterminate without attempting a refresh. */
+	public function test_heartbeat_reports_indeterminate_without_refresh_after_read_failure(): void {
 		$logger    = new RecordingLogger();
 		$owned_raw = self::raw( self::row( 'run-owner', 100, 120 ) );
 		$this->wpdb->put( self::KEY, $owned_raw );
@@ -406,16 +437,16 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$owned = $this->guard_at( 200, $logger )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200, $logger )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertTrue( $owned );
+		self::assertSame( HeartbeatOutcome::Indeterminate, $outcome );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 		self::assertSame(
 			array(
 				array(
-					'level'   => 'debug',
-					'message' => 'Skipped execution-overlap lock heartbeat refresh after an authoritative read failure.',
+					'level'   => 'warning',
+					'message' => 'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
 					'context' => array(
 						'key'       => self::KEY,
 						'name'      => self::NAME,
@@ -439,9 +470,9 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$owned = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
 
-		self::assertFalse( $owned );
+		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 

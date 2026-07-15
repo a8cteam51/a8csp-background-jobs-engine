@@ -144,7 +144,7 @@ final readonly class ActionDeliveries {
 				)
 			);
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
@@ -160,7 +160,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -174,7 +174,7 @@ final readonly class ActionDeliveries {
 		try {
 			$this->terminal_transitions->fire_started( $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
@@ -190,7 +190,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -523,7 +523,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Task', $task_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', $task_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -575,7 +575,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
@@ -592,7 +592,7 @@ final readonly class ActionDeliveries {
 		try {
 			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 				return;
 			}
 
@@ -608,7 +608,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
 			return;
 		}
 

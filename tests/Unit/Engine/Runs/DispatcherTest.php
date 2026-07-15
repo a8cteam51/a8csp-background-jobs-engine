@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
@@ -43,6 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Dispatcher::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
+#[UsesClass( HeartbeatOutcome::class )]
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
@@ -531,6 +533,32 @@ final class DispatcherTest extends TestCase {
 		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120 );
 
 		self::assertInstanceOf( Failure::class, $result );
+		self::assertNull( $this->lock() );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->backend->calls );
+	}
+
+	/**
+	 * An indeterminate delayed heartbeat aborts scheduling and removes provisional state.
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_with_delay_aborts_when_heartbeat_read_is_indeterminate(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient heartbeat read failure';
+			}
+		);
+
+		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120 );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame(
+			'Task "email-digest" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.',
+			$result->error->message
+		);
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->backend->calls );

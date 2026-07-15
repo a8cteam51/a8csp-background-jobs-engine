@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
@@ -718,19 +719,27 @@ final readonly class Dispatcher {
 		}
 
 		if ( 0 < $delay ) {
-			$fire_at = $now + $delay;
-			if ( ! $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $fire_at ) ) {
+			$fire_at         = $now + $delay;
+			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $fire_at ) ) {
+				HeartbeatOutcome::Owned => null,
+				HeartbeatOutcome::Lost => new EngineError(
+					\sprintf(
+						'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
+						$task_name
+					)
+				),
+				HeartbeatOutcome::Indeterminate => new EngineError(
+					\sprintf(
+						'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.',
+						$task_name
+					)
+				),
+			};
+			if ( null !== $heartbeat_error ) {
 				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
 				$run_store->delete( $run_id );
 
-				return new Failure(
-					new EngineError(
-						\sprintf(
-							'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.',
-							$task_name
-						)
-					)
-				);
+				return new Failure( $heartbeat_error );
 			}
 
 			$replacement = $state->with_heartbeat_at( $fire_at );

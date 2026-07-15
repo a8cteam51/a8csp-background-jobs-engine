@@ -200,14 +200,15 @@ final readonly class OverlapGuard {
 	 * @param   int|null $at        Liveness timestamp, or null to use the current clock time. A future value marks
 	 *                              the next expected retry fire as the run's legitimate sign of life.
 	 *
-	 * @return  bool Whether execution may continue under the current fence.
+	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
 	 */
-	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null ): bool {
+	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
+	public function heartbeat( string $name, string $args_hash, string $run_id, ?int $at = null ): HeartbeatOutcome {
 		$key      = $this->option_name( $name, $args_hash );
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			$this->logger->debug(
-				'Skipped execution-overlap lock heartbeat refresh after an authoritative read failure.',
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
 				array(
 					'key'       => $key,
 					'name'      => $name,
@@ -216,23 +217,25 @@ final readonly class OverlapGuard {
 				)
 			);
 
-			return true;
+			return HeartbeatOutcome::Indeterminate;
 		}
 
 		$raw = $selected->value;
 		if ( null === $raw ) {
-			return false;
+			return HeartbeatOutcome::Lost;
 		}
 
 		$lock = self::parse( $raw );
 		if ( null === $lock || $run_id !== $lock['run_id'] ) {
-			return false;
+			return HeartbeatOutcome::Lost;
 		}
 
 		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
 
 		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
-		return $this->rows->replace( $key, $raw, self::serialize( $lock ) );
+		return $this->rows->replace( $key, $raw, self::serialize( $lock ) )
+			? HeartbeatOutcome::Owned
+			: HeartbeatOutcome::Lost;
 	}
 
 	/**

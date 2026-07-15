@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
@@ -142,8 +143,8 @@ final readonly class TerminalTransitions {
 			return null;
 		}
 
-		// A lost heartbeat CAS means a replacement or reclaim took the lock, so the run fences itself.
-		if ( $this->supersede_if_fence_lost( $work_type, $name, $run_id, $state, $run_store ) ) {
+		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
+		if ( $this->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store ) ) {
 			return null;
 		}
 
@@ -446,7 +447,10 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Transitions a run to Superseded when its owner-scoped heartbeat fence fails.
+	 * Aborts a delivery when its owner-scoped heartbeat is lost or indeterminate.
+	 *
+	 * Confirmed loss claims a Superseded transition. An indeterminate authoritative read leaves the
+	 * running state untouched for a later delivery or the staleness sweep to resolve.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -460,11 +464,25 @@ final readonly class TerminalTransitions {
 	 * @param   RunStore       $run_store Active-run store.
 	 * @param   int|null       $at        Liveness timestamp, or null to use the current clock time.
 	 *
-	 * @return  bool Whether the failed fence transitioned the run to Superseded.
+	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	public function supersede_if_fence_lost( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null ): bool {
-		if ( $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at ) ) {
+	public function abort_unless_fence_owned( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null ): bool {
+		$outcome = $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at );
+		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
+		}
+
+		if ( HeartbeatOutcome::Indeterminate === $outcome ) {
+			$context_name = \strtolower( $work_type ) . '_name';
+			$this->logger->debug(
+				$work_type . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
+				array(
+					$context_name => $name,
+					'run_id'      => $run_id,
+				)
+			);
+
+			return true;
 		}
 
 		$latest_run_id = $this->stores

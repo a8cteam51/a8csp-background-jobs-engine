@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
@@ -45,6 +46,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( LatestRunPointer::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( HeartbeatOutcome::class )]
 #[UsesClass( LockWindows::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
@@ -325,6 +327,90 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( self::NOW + 991, $this->lock()['heartbeat_at'] ?? null );
 		self::assertEquals( $reclaimed, $run_store->get( self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * An indeterminate ownership fence aborts without claiming a terminal transition.
+	 *
+	 * @return  void
+	 */
+	public function test_abort_unless_fence_owned_aborts_without_a_terminal_claim_when_heartbeat_is_indeterminate(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$before    = $run_store->inspect( self::RUN_ID );
+		if ( $before->is_failure() ) {
+			self::fail( 'The running state could not be inspected before the indeterminate fence.' );
+		}
+		$before_snapshot = $before->value;
+		self::assertNotNull( $before_snapshot );
+		self::assertInstanceOf( RunState::class, $before_snapshot['state'] );
+		$state            = $before_snapshot['state'];
+		$expected_run_raw = $before_snapshot['raw'];
+		$expected_lock    = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		$expected_history = $this->option( 'a8csp_bgte_history_' . self::NAME );
+		self::assertIsString( $expected_lock );
+
+		$this->logger->records                       = array();
+		$this->wpdb->recorded_queries                = array();
+		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient heartbeat read failure';
+			}
+		);
+
+		$must_abort = $this->terminal_transitions->abort_unless_fence_owned(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$state,
+			$run_store
+		);
+
+		self::assertTrue( $must_abort );
+		$after = $run_store->inspect( self::RUN_ID );
+		if ( $after->is_failure() ) {
+			self::fail( 'The running state could not be inspected after the indeterminate fence.' );
+		}
+		$after_snapshot = $after->value;
+		self::assertNotNull( $after_snapshot );
+		self::assertInstanceOf( RunState::class, $after_snapshot['state'] );
+		$after_state = $after_snapshot['state'];
+		self::assertSame( $expected_run_raw, $after_snapshot['raw'] );
+		self::assertSame( RunStatus::Running, $after_state->status );
+		self::assertSame( self::NOW, $after_state->heartbeat_at );
+		self::assertSame( $expected_lock, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_history_' . self::NAME ) );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame( array(), $this->lifecycle_labels() );
+		foreach ( $this->wpdb->recorded_queries as $query ) {
+			self::assertStringStartsWith( 'SELECT ', $query );
+		}
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+					'context' => array(
+						'key'       => $this->lock_option_name(),
+						'name'      => self::NAME,
+						'args_hash' => self::ARGS_HASH,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+				array(
+					'level'   => 'debug',
+					'message' => 'Task ownership fence is indeterminate; the delivery aborts without a terminal transition.',
+					'context' => array(
+						'task_name' => self::NAME,
+						'run_id'    => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -738,6 +824,40 @@ final class TerminalTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A confirmed foreign owner still claims and records the Superseded transition.
+	 *
+	 * @return  void
+	 */
+	public function test_abort_unless_fence_owned_persists_superseded_after_confirmed_foreign_owner(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $state );
+		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+
+		$must_abort = $this->terminal_transitions->abort_unless_fence_owned(
+			'Task',
+			self::NAME,
+			self::RUN_ID,
+			$state,
+			$run_store
+		);
+
+		self::assertTrue( $must_abort );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame( 'superseded', $this->recorded_run_state( 'superseded' )['status'] );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history( 'superseded' );
+	}
+
+	/**
 	 * A persisted terminal state never re-enters task execution before reconciliation.
 	 *
 	 * @return  void
@@ -917,7 +1037,7 @@ final class TerminalTransitionsTest extends TestCase {
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Task', self::NAME, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::NAME, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
