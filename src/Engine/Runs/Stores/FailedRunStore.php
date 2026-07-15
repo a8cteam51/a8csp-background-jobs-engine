@@ -401,6 +401,7 @@ final readonly class FailedRunStore {
 			|| ! \is_string( $value['run_id'] ?? null )
 			|| ! \is_int( $value['failed_at'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
+			|| ! PortableArguments::is_valid( $value['start_args'] )
 			|| ! \is_int( $value['attempts'] ?? null )
 			|| ! \is_array( $value['error'] ?? null )
 			|| ! \array_key_exists( 'class', $value['error'] )

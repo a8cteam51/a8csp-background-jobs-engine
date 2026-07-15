@@ -124,6 +124,20 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertSame( 0, FailedRunStorePoison::$wakeups );
 	}
 
+	/** A persisted entry with non-portable start arguments is not available for retry. */
+	public function test_all_does_not_surface_non_portable_start_arguments_for_retry(): void {
+		$key   = 'a8csp_bgte_failed_runs-tests:non-portable-start-args';
+		$entry = self::entry( 'run-invalid', 1_700_000_001, array( 'value' => new \stdClass() ) );
+		$this->wpdb->put( $key, self::raw( array( $entry ) ) );
+
+		$result = ( new FailedRunStore( self::identity( 'non-portable-start-args' ), $this->rows ) )->all();
+		if ( $result->is_failure() ) {
+			self::fail( $result->error->message );
+		}
+
+		self::assertSame( array(), $result->value );
+	}
+
 	/**
 	 * Record and remove preserve the exact manual-retry schema under the literal key.
 	 *
