@@ -45,21 +45,12 @@ final class LogTest extends TestCase {
 	}
 
 	/**
-	 * The log channel is available on every site.
+	 * Registration adds exactly one callable for all three channel arguments.
 	 *
 	 * @return  void
 	 */
-	public function test_is_always_needed(): void {
-		self::assertTrue( ( new ErrorLogSink() )->is_needed() );
-	}
-
-	/**
-	 * Initialization registers exactly one callable for all three channel arguments.
-	 *
-	 * @return  void
-	 */
-	public function test_initialize_registers_the_default_handler(): void {
-		( new ErrorLogSink() )->initialize();
+	public function test_register_adds_the_default_handler(): void {
+		ErrorLogSink::register();
 
 		self::assertSame(
 			array(
@@ -80,7 +71,7 @@ final class LogTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_default_handler_writes_log_events_to_error_log(): void {
-		( new ErrorLogSink() )->initialize();
+		ErrorLogSink::register();
 
 		$output = $this->capture_error_log( 'info', 'Default sink enabled', array(), true );
 
@@ -98,7 +89,7 @@ final class LogTest extends TestCase {
 		$filter_values['a8csp_background_tasks/log_to_error_log'] = false;
 		$GLOBALS['a8csp_bgte_test_filter_values']                 = $filter_values;
 
-		( new ErrorLogSink() )->initialize();
+		ErrorLogSink::register();
 
 		self::assertSame(
 			'',

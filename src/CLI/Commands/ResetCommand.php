@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
@@ -124,7 +124,7 @@ final readonly class ResetCommand {
 		$output->confirm( $assoc_args );
 
 		$option_rows = $this->option_rows ?? self::runtime_option_rows();
-		$scheduler   = $this->scheduler ?? Container::get_scheduler();
+		$scheduler   = $this->scheduler ?? Component::get_scheduler();
 		if ( null === $scheduler ) {
 			$output->error( 'The background tasks scheduler is unavailable; run the command after plugins_loaded.' );
 			return;

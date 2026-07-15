@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
@@ -114,7 +113,7 @@ final class EngineComponentTest extends TestCase {
 	 */
 	public function test_front_door_publishes_one_engine_and_registers_runtime_hooks(): void {
 		$first      = \a8csp_bgte( self::OWNER );
-		$engine     = Container::get_engine();
+		$engine     = Component::get_engine();
 		$second     = \a8csp_bgte( self::OWNER );
 		$inspection = Component::get_inspection();
 		$actions    = $this->registrations( 'a8csp_bgte_test_action_registrations' );
@@ -123,10 +122,11 @@ final class EngineComponentTest extends TestCase {
 		self::assertInstanceOf( Consumer::class, $first );
 		self::assertInstanceOf( Consumer::class, $second );
 		self::assertInstanceOf( EngineFacade::class, $engine );
-		self::assertSame( $engine, Container::get_engine() );
+		self::assertSame( $engine, Component::get_engine() );
 		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame(
 			array(
+				'a8csp_background_tasks/log',
 				'a8csp_background_tasks/start',
 				'a8csp_background_tasks/continue',
 				'a8csp_background_tasks/run',
@@ -141,28 +141,28 @@ final class EngineComponentTest extends TestCase {
 			\array_column( $filters, 'hook_name' )
 		);
 		self::assertSame(
-			array( 3, 3, 4, 3, 1, 1 ),
+			array( 3, 3, 3, 4, 3, 1, 1 ),
 			\array_column( $actions, 'accepted_args' )
 		);
 	}
 
 	/**
-	 * Container reinitialization retains the engine without duplicating runtime hooks.
+	 * Component reinitialization retains the engine without duplicating runtime hooks.
 	 *
 	 * @return  void
 	 */
-	public function test_container_initialization_is_idempotent(): void {
-		Container::boot();
+	public function test_component_initialization_is_idempotent(): void {
+		( new Component() )->initialize();
 
-		$engine     = Container::get_engine();
-		$inspection = Container::get_inspection();
-		Container::boot();
+		$engine     = Component::get_engine();
+		$inspection = Component::get_inspection();
+		( new Component() )->initialize();
 
 		self::assertInstanceOf( EngineFacade::class, $engine );
 		self::assertInstanceOf( Inspection::class, $inspection );
-		self::assertSame( $engine, Container::get_engine() );
-		self::assertSame( $inspection, Container::get_inspection() );
-		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
+		self::assertSame( $engine, Component::get_engine() );
+		self::assertSame( $inspection, Component::get_inspection() );
+		self::assertCount( 7, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
 		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
 	}
 
@@ -218,7 +218,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertInstanceOf( Consumer::class, $consumer );
 		self::assertInstanceOf( Consumer::class, $resolved );
 		self::assertTrue( $resolved->tasks()->enqueue( 'filter-task' )->is_success() );
-		self::assertCount( 5, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
+		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
 		self::assertCount( 2, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
 	}
 

@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ScheduleOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
@@ -155,7 +155,7 @@ final readonly class SchedulesCommand {
 	 * @return  void
 	 */
 	private function list_schedules( ?string $owner, string $format ): void {
-		$inspection = Container::get_inspection();
+		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
 			\WP_CLI::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
 			return;

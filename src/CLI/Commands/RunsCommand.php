@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
@@ -451,7 +451,7 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function cancel_run( string $name, string $run_id ): void {
-		$engine = Container::get_engine();
+		$engine = Component::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
 			return;
@@ -484,7 +484,7 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function list_runs( string $name, string $format ): void {
-		$inspection = Container::get_inspection();
+		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
 			\WP_CLI::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
@@ -562,7 +562,7 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function retry_failed_run( string $name, string $run_id ): void {
-		$engine = Container::get_engine();
+		$engine = Component::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
 			return;

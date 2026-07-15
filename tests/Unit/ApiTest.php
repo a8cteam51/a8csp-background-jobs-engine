@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversFunction;
@@ -109,7 +109,7 @@ final class ApiTest extends TestCase {
 		$consumer->tasks()->register( $task );
 
 		self::assertInstanceOf( Consumer::class, $consumer );
-		self::assertInstanceOf( EngineFacade::class, Container::get_engine() );
+		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
 	}
 
 	/**

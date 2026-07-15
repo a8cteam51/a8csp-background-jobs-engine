@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Component as CLIComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -29,8 +29,8 @@ final class Plugin {
 	 * @var     array<int, class-string<Component>>
 	 */
 	private const COMPONENTS = array(
-		ErrorLogSink::class,
-		CLIComponent::class,
+		Engine\Component::class,
+		CLI\Component::class,
 	);
 
 	/**
@@ -73,6 +73,8 @@ final class Plugin {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @throws  \Throwable When component initialization fails.
+	 *
 	 * @return  void
 	 */
 	public function boot(): void {
@@ -82,11 +84,16 @@ final class Plugin {
 
 		$this->booted = true;
 
-		foreach ( self::COMPONENTS as $component_class ) {
-			$component = new $component_class();
-			if ( $component->is_needed() ) {
-				$component->initialize();
+		try {
+			foreach ( self::COMPONENTS as $component_class ) {
+				$component = new $component_class();
+				if ( $component->is_needed() ) {
+					$component->initialize();
+				}
 			}
+		} catch ( \Throwable $throwable ) {
+			$this->booted = false;
+			throw $throwable;
 		}
 	}
 

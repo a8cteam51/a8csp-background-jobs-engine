@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
@@ -15,7 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ErrorLogSink implements Component {
+final class ErrorLogSink {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -40,20 +39,7 @@ final class ErrorLogSink implements Component {
 
 	// endregion
 
-	// region INHERITED METHODS
-
-	/**
-	 * Keeps the channel available on every site.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function is_needed(): bool {
-		return true;
-	}
+	// region METHODS
 
 	/**
 	 * Registers the bare-install handler for the log channel.
@@ -63,8 +49,7 @@ final class ErrorLogSink implements Component {
 	 *
 	 * @return  void
 	 */
-	#[\Override]
-	public function initialize(): void {
+	public static function register(): void {
 		/**
 		 * Filters whether engine log events are written to PHP's configured error log.
 		 *

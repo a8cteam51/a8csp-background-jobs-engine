@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -18,16 +17,14 @@ final class PluginBootTest extends IntegrationTestCase {
 
 	/**
 	 * On an at-floor runtime the requirements gate passes, `plugins_loaded` is wired to the named
-	 * engine container at priority zero and the named accessor `a8csp_bgte_plugin()` directly;
-	 * WordPress ignores the accessor action callback's return value.
+	 * plugin accessor at priority zero; WordPress ignores the action callback's return value.
 	 *
 	 * @return  void
 	 */
 	public function test_plugin_boots_on_supported_runtime(): void {
 		self::assertTrue( \constant( 'A8CSP_BGTE_REQUIREMENTS' ) );
 		self::assertTrue( \function_exists( 'a8csp_bgte_plugin' ) );
-		self::assertSame( 0, has_action( 'plugins_loaded', array( Container::class, 'boot' ) ) );
-		self::assertNotFalse( has_action( 'plugins_loaded', 'a8csp_bgte_plugin' ) );
+		self::assertSame( 0, has_action( 'plugins_loaded', 'a8csp_bgte_plugin' ) );
 		self::assertInstanceOf( Plugin::class, a8csp_bgte_plugin() );
 	}
 

@@ -2,7 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches as ApiBatches;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -27,6 +36,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 
@@ -117,130 +127,205 @@ final class Component implements ComponentContract {
 
 		self::$booting = true;
 
-		global $wpdb;
+		try {
+			ErrorLogSink::register();
 
-		/**
-		 * WordPress database connection for the current site.
-		 *
-		 * @var \wpdb $wpdb
-		 */
-		$option_rows          = new OptionRows( $wpdb );
-		$work                 = new WorkRegistry();
-		$tasks                = new TaskRegistry( $work );
-		$batches              = new BatchRegistry( $work );
-		$schedules            = new ScheduleRegistry( $option_rows );
-		$logger               = new HookLogger();
-		$clock                = new SystemClock();
-		$randomizer           = new Randomizer();
-		$guard                = new OverlapGuard( $clock, $logger, $option_rows );
-		$stores               = new StoreFactory( $clock, $option_rows );
-		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
-		$scheduler            = new SchedulerFacade(
-			array(
-				new ActionSchedulerBackend(),
-				new WPCronBackend(),
-			)
-		);
-		$failure_lifecycle    = new FailureLifecycle(
-			$scheduler,
-			$clock,
-			$randomizer,
-			$logger,
-			$terminal_transitions
-		);
-		$action_deliveries    = new ActionDeliveries(
-			$tasks,
-			$batches,
-			$scheduler,
-			$stores,
-			$logger,
-			$clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle
-		);
-		$dispatcher           = new Dispatcher(
-			$tasks,
-			$batches,
-			$scheduler,
-			$guard,
-			$stores,
-			$clock,
-			$randomizer,
-			$logger,
-			$lock_windows,
-			$terminal_transitions
-		);
-		$reconciliation       = new RunReconciliation(
-			$guard,
-			$stores,
-			$clock,
-			$logger,
-			$lock_windows,
-			$terminal_transitions,
-			$tasks,
-			$batches,
-			$scheduler
-		);
-		$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
-		$occurrence_delivery  = new OccurrenceDelivery(
-			$schedules,
-			$dispatcher,
-			$occurrence_lease,
-			$scheduler,
-			$option_rows,
-			$clock,
-			$logger
-		);
-		$tasks->register(
-			WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ),
-			new MaintenanceTask(
-				$option_rows,
-				$reconciliation,
+			global $wpdb;
+
+			/**
+			 * WordPress database connection for the current site.
+			 *
+			 * @var \wpdb $wpdb
+			 */
+			$option_rows          = new OptionRows( $wpdb );
+			$work                 = new WorkRegistry();
+			$tasks                = new TaskRegistry( $work );
+			$batches              = new BatchRegistry( $work );
+			$schedules            = new ScheduleRegistry( $option_rows );
+			$logger               = new HookLogger();
+			$clock                = new SystemClock();
+			$randomizer           = new Randomizer();
+			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
+			$stores               = new StoreFactory( $clock, $option_rows );
+			$lock_windows         = new LockWindows( $clock );
+			$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
+			$scheduler            = new SchedulerFacade(
+				array(
+					new ActionSchedulerBackend(),
+					new WPCronBackend(),
+				)
+			);
+			$failure_lifecycle    = new FailureLifecycle(
+				$scheduler,
+				$clock,
+				$randomizer,
+				$logger,
+				$terminal_transitions
+			);
+			$action_deliveries    = new ActionDeliveries(
+				$tasks,
+				$batches,
+				$scheduler,
+				$stores,
+				$logger,
+				$clock,
+				$lock_windows,
+				$terminal_transitions,
+				$failure_lifecycle
+			);
+			$dispatcher           = new Dispatcher(
+				$tasks,
+				$batches,
+				$scheduler,
 				$guard,
-				$occurrence_delivery,
+				$stores,
+				$clock,
+				$randomizer,
+				$logger,
+				$lock_windows,
+				$terminal_transitions
+			);
+			$reconciliation       = new RunReconciliation(
+				$guard,
+				$stores,
+				$clock,
+				$logger,
+				$lock_windows,
+				$terminal_transitions,
+				$tasks,
+				$batches,
+				$scheduler
+			);
+			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
+			$occurrence_delivery  = new OccurrenceDelivery(
+				$schedules,
+				$dispatcher,
+				$occurrence_lease,
+				$scheduler,
+				$option_rows,
+				$clock,
 				$logger
-			)
-		);
-		$schedule_api         = new Schedules(
-			$schedules,
-			$scheduler,
-			$clock,
-			$occurrence_delivery
-		);
-		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-		$inspection           = new Inspection(
-			$schedules,
-			$tasks,
-			$batches,
-			$scheduler,
-			$guard,
-			$stores,
-			$option_rows,
-			$lock_windows,
-			$clock
-		);
-		$engine               = new EngineFacade(
-			new Tasks( $tasks, $dispatcher ),
-			$schedule_api,
-			new Batches( $batches, $dispatcher ),
-			$dispatcher,
-			$inspection
-		);
+			);
+			$tasks->register(
+				WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ),
+				new MaintenanceTask(
+					$option_rows,
+					$reconciliation,
+					$guard,
+					$occurrence_delivery,
+					$logger
+				)
+			);
+			$schedule_api         = new Schedules(
+				$schedules,
+				$scheduler,
+				$clock,
+				$occurrence_delivery
+			);
+			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
+			$inspection           = new Inspection(
+				$schedules,
+				$tasks,
+				$batches,
+				$scheduler,
+				$guard,
+				$stores,
+				$option_rows,
+				$lock_windows,
+				$clock
+			);
+			$engine               = new EngineFacade(
+				new Tasks( $tasks, $dispatcher ),
+				$schedule_api,
+				new Batches( $batches, $dispatcher ),
+				$dispatcher,
+				$inspection
+			);
 
-		$scheduler->register_hooks();
-		$action_deliveries->register_hooks();
-		$occurrence_delivery->register_hooks();
+			$scheduler->register_hooks();
+			$action_deliveries->register_hooks();
+			$occurrence_delivery->register_hooks();
 
-		self::$engine     = $engine;
-		self::$booting    = false;
-		self::$inspection = $inspection;
-		self::$scheduler  = $scheduler;
+			self::$engine     = $engine;
+			self::$inspection = $inspection;
+			self::$scheduler  = $scheduler;
+		} finally {
+			self::$booting = false;
+		}
 
 		// Late maintenance synchronization invokes scheduler filters; publication keeps a consumer
 		// resolving from one of those filters on this same graph instead of rebuilding it recursively.
 		$maintenance_schedule->register_hooks();
+	}
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Returns a supported facade set bound to one validated consumer owner.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Validated consumer owner.
+	 *
+	 * @throws  \InvalidArgumentException When the owner violates the consumer-owner contract.
+	 * @throws  \LogicException           When the internal graph is unavailable.
+	 *
+	 * @return  Consumer
+	 */
+	public static function consumer( string $owner ): Consumer {
+		WorkIdentity::validate_owner( $owner );
+		$engine = self::$engine;
+		if ( null === $engine ) {
+			throw new \LogicException(
+				'The background tasks engine graph is unavailable after engine boot.'
+			);
+		}
+
+		$identity = static fn ( string $name ): string => WorkIdentity::compose( $owner, $name );
+
+		return new Consumer(
+			$owner,
+			new ApiTasks(
+				$identity,
+				static function ( string $name, TaskInterface $task ) use ( $engine ): void {
+					$engine->tasks->register( $name, $task );
+				},
+				static fn ( string $name, array $args, int $delay, ?string $dedup_key, int $priority ) => AdmissionErrorMapper::map(
+					$engine->tasks->enqueue( $name, $args, $delay, $dedup_key, $priority )
+				)
+			),
+			new ApiBatches(
+				$identity,
+				static function ( string $name, BatchInterface $batch ) use ( $engine ): void {
+					$engine->batches->register( $name, $batch );
+				},
+				static fn ( string $name, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map(
+					$engine->batches->start( $name, $args, $existing, $priority )
+				)
+			),
+			new ApiSchedules(
+				$identity,
+				static fn ( array $declarations ) => AdmissionErrorMapper::map(
+					$engine->schedules->sync( $owner, $declarations )
+				),
+				static fn ( string $name ) => AdmissionErrorMapper::map( $engine->schedules->run_now( $name ) )
+			),
+			new ApiRuns(
+				$identity,
+				static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map(
+					$engine->retry_failed( $name, $run_id )
+				),
+				static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map(
+					$engine->cancel( $name, $run_id )
+				),
+				static fn ( string $name ) => AdmissionErrorMapper::map(
+					$engine->last_completed_run( $name )
+				)
+			)
+		);
 	}
 
 	// endregion

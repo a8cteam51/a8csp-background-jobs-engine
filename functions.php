@@ -1,7 +1,7 @@
 <?php declare( strict_types=1 );
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 
@@ -60,9 +60,9 @@ function a8csp_bgte( string $owner ): Consumer {
 		);
 	}
 
-	Container::boot();
+	a8csp_bgte_plugin();
 
-	return Container::consumer( $owner );
+	return Component::consumer( $owner );
 }
 
 // endregion
