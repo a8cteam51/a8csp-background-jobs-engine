@@ -192,6 +192,69 @@ final class FailedRunStoreTest extends TestCase {
 		$this->assert_authoritative_row( 'a8csp_bgte_failed_reports', array() );
 	}
 
+	/** Repeating a failed run keeps the first persisted payload and issues no write. */
+	public function test_record_is_first_write_wins_for_an_existing_run_id(): void {
+		$key   = 'a8csp_bgte_failed_first-write-wins';
+		$store = new FailedRunStore( 'first-write-wins', $this->rows );
+		$first = self::entry( 'run-a', 100, array( 'source' => 'first' ), 1, 'First failure.' );
+
+		self::assertTrue(
+			$store->record( 'run-a', 100, array( 'source' => 'first' ), 1, new EngineError( 'First failure.' ) )
+		);
+		$first_raw = $this->wpdb->rows[ $key ] ?? null;
+		self::assertIsString( $first_raw );
+		$this->wpdb->recorded_queries = array();
+
+		$recorded = $store->record(
+			'run-a',
+			200,
+			array( 'source' => 'second' ),
+			2,
+			new EngineError( 'Second failure.', \RuntimeException::class )
+		);
+
+		self::assertTrue( $recorded );
+		self::assertSame( $first_raw, $this->wpdb->rows[ $key ] ?? null );
+		self::assertSame( array( $first ), RawOptionDecoder::decode( $first_raw ) );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/** A rival insert for the same run ID wins without a duplicate or overwrite. */
+	public function test_interleaved_same_run_id_insert_converges_on_the_first_payload(): void {
+		$key            = 'a8csp_bgte_failed_same-run-race';
+		$store          = new FailedRunStore( 'same-run-race', $this->rows );
+		$rival_recorded = null;
+		$rival          = self::entry( 'run-a', 100, array( 'source' => 'rival' ), 1, 'Rival failure.' );
+		$this->wpdb->before_next(
+			'insert',
+			static function () use ( $store, &$rival_recorded ): void {
+				$rival_recorded = $store->record(
+					'run-a',
+					100,
+					array( 'source' => 'rival' ),
+					1,
+					new EngineError( 'Rival failure.' )
+				);
+			}
+		);
+
+		$recorded = $store->record(
+			'run-a',
+			200,
+			array( 'source' => 'requested' ),
+			2,
+			new EngineError( 'Requested failure.' )
+		);
+
+		$raw = $this->wpdb->rows[ $key ] ?? null;
+		self::assertTrue( $rival_recorded );
+		self::assertTrue( $recorded );
+		self::assertIsString( $raw );
+		self::assertSame( self::raw( array( $rival ) ), $raw );
+		self::assertSame( array( $rival ), RawOptionDecoder::decode( $raw ) );
+		self::assertSame( array(), $this->write_queries( 'UPDATE ' ) );
+	}
+
 	/**
 	 * The twenty-first failure evicts the oldest entry and retains newest-last order.
 	 *

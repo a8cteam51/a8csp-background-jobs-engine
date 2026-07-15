@@ -907,11 +907,14 @@ final class FailureLifecycleTest extends TestCase {
 				...( $throwable instanceof NonRetryableTaskException ? array() : array( 'lock:update' ) ),
 				'run:failed',
 				'failed-store',
+				'run:failed',
 				'hook:failed/' . self::NAME,
 				'hook:failed',
+				'run:failed',
+				'history',
+				'run:failed',
 				'lock:delete',
 				'run:delete',
-				'history',
 			),
 			$this->lifecycle_labels()
 		);

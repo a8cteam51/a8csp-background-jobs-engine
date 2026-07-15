@@ -35,6 +35,16 @@ final readonly class RunStore {
 	 */
 	private const OPTION_PREFIX = 'a8csp_bgte_run_';
 
+	/**
+	 * Maximum exact-row attempts before a contended terminal effect append fails safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const TERMINAL_EFFECT_ATTEMPTS = 5;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -201,6 +211,73 @@ final readonly class RunStore {
 	}
 
 	/**
+	 * Appends one terminal effect key without losing concurrently persisted progress.
+	 *
+	 * The supplied raw snapshot is the first exact compare-and-swap precondition. A lost comparison
+	 * retries from authoritative bytes, while a rival append of the same key satisfies this request.
+	 *
+	 * @internal Engine terminal-effect coordination only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id      Run identifier.
+	 * @param   RunState $expected    Typed state decoded from the supplied raw snapshot.
+	 * @param   string   $expected_raw Exact observed state.
+	 * @param   string   $effect      Non-empty terminal effect key.
+	 *
+	 * @throws  \InvalidArgumentException When the effect key is empty.
+	 *
+	 * @return  array{raw: string, state: RunState}|null Current persisted snapshot containing the key, or null when the row is absent, invalid, unreadable, or remains contended.
+	 */
+	#[\NoDiscard( 'a terminal effect persistence outcome must be handled, not dropped' )]
+	public function append_terminal_effect( string $run_id, RunState $expected, string $expected_raw, string $effect ): ?array {
+		if ( '' === $effect ) {
+			throw new \InvalidArgumentException( 'A terminal effect key cannot be empty.' );
+		}
+
+		$state = $expected;
+		$raw   = $expected_raw;
+		for ( $attempt = 0; $attempt < self::TERMINAL_EFFECT_ATTEMPTS; ++$attempt ) {
+			if ( \in_array( $effect, $state->effects, true ) ) {
+				return array(
+					'raw'   => $raw,
+					'state' => $state,
+				);
+			}
+
+			$effects         = $state->effects;
+			$effects[]       = $effect;
+			$replacement     = $state->with_effects( $effects );
+			$replacement_raw = $this->transition( $run_id, $raw, $replacement );
+			if ( null !== $replacement_raw ) {
+				return array(
+					'raw'   => $replacement_raw,
+					'state' => $replacement,
+				);
+			}
+
+			$inspected = $this->inspect( $run_id );
+			if ( $inspected->is_failure() ) {
+				return null;
+			}
+
+			$snapshot = $inspected->value;
+			if ( null === $snapshot || null === $snapshot['state'] ) {
+				return null;
+			}
+			if ( \in_array( $effect, $snapshot['state']->effects, true ) ) {
+				return $snapshot;
+			}
+
+			$raw   = $snapshot['raw'];
+			$state = $snapshot['state'];
+		}
+
+		return null;
+	}
+
+	/**
 	 * Deletes a run only while its exact terminal snapshot still matches.
 	 *
 	 * @internal Engine terminalization and maintenance only.
@@ -309,7 +386,9 @@ final readonly class RunStore {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}
+	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int},
+	 *     error?: array{class: string|null, message: string},
+	 *     effects?: non-empty-list<string>
 	 * }
 	 */
 	private static function to_option( RunState $state ): array {
@@ -326,6 +405,12 @@ final readonly class RunStore {
 		);
 		if ( null !== $state->pending ) {
 			$option['pending'] = $state->pending;
+		}
+		if ( null !== $state->error ) {
+			$option['error'] = $state->error;
+		}
+		if ( array() !== $state->effects ) {
+			$option['effects'] = $state->effects;
 		}
 
 		return $option;
@@ -371,6 +456,14 @@ final readonly class RunStore {
 		if ( null === $status ) {
 			return null;
 		}
+		$error   = $value['error'] ?? null;
+		$effects = $value['effects'] ?? array();
+		if (
+			( RunStatus::Failed !== $status && null !== $error )
+			|| ( RunStatus::Running === $status && array() !== $effects )
+		) {
+			return null;
+		}
 
 		return new RunState(
 			status: $status,
@@ -383,6 +476,8 @@ final readonly class RunStore {
 			created_at: $value['created_at'],
 			heartbeat_at: $value['heartbeat_at'],
 			pending: $value['pending'] ?? null,
+			error: $error,
+			effects: $effects,
 		);
 	}
 
@@ -402,7 +497,9 @@ final readonly class RunStore {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}
+	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int},
+	 *     error?: array{class: string|null, message: string},
+	 *     effects?: non-empty-list<string>
 	 * } $value
 	 *
 	 * @param   mixed $value Persisted option value.
@@ -423,6 +520,8 @@ final readonly class RunStore {
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )
+			|| ( \array_key_exists( 'error', $value ) && ! self::is_stored_error( $value['error'] ) )
+			|| ( \array_key_exists( 'effects', $value ) && ! self::is_stored_effects( $value['effects'] ) )
 		) {
 			return false;
 		}
@@ -467,6 +566,55 @@ final readonly class RunStore {
 		return 'async' === $value['mode']
 			? null === $value['fire_at']
 			: \is_int( $value['fire_at'] );
+	}
+
+	/**
+	 * Returns whether a value is complete durable terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-assert-if-true array{class: string|null, message: string} $value
+	 *
+	 * @param   mixed $value Persisted terminal failure detail.
+	 *
+	 * @return  bool
+	 */
+	private static function is_stored_error( mixed $value ): bool {
+		return \is_array( $value )
+			&& 2 === \count( $value )
+			&& \array_key_exists( 'class', $value )
+			&& ( null === $value['class'] || \is_string( $value['class'] ) )
+			&& \is_string( $value['message'] ?? null );
+	}
+
+	/**
+	 * Returns whether a value is a non-empty unique list of terminal effect keys.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-assert-if-true non-empty-list<string> $value
+	 *
+	 * @param   mixed $value Persisted completed terminal effect keys.
+	 *
+	 * @return  bool
+	 */
+	private static function is_stored_effects( mixed $value ): bool {
+		if ( ! \is_array( $value ) || array() === $value || ! \array_is_list( $value ) ) {
+			return false;
+		}
+
+		$seen = array();
+		foreach ( $value as $effect ) {
+			if ( ! \is_string( $effect ) || '' === $effect || isset( $seen[ $effect ] ) ) {
+				return false;
+			}
+
+			$seen[ $effect ] = true;
+		}
+
+		return true;
 	}
 
 	// endregion

@@ -473,36 +473,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$terminal_state = $state
-			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
-
-		// Completed listeners observe the terminal snapshot before exact cleanup deletes it and appends history.
-		$this->terminal_transitions->execute_terminal_transition(
-			$batch_name,
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			function () use ( $batch, $batch_name, $run_id, $state ): void {
-				try {
-					$batch->on_success( $run_id, $state->start_args );
-				} catch ( \Throwable $throwable ) {
-					$this->logger->error(
-						'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
-						array(
-							'batch_name'        => $batch_name,
-							'run_id'            => $run_id,
-							'exception_class'   => $throwable::class,
-							'exception_message' => $throwable->getMessage(),
-						)
-					);
-				}
-			},
-			true,
-			'completed'
-		);
+		$this->terminal_transitions->complete_batch( $batch, $batch_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -839,40 +810,7 @@ final readonly class ActionDeliveries {
 			)
 		);
 
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
-
-		$this->terminal_transitions->execute_terminal_transition(
-			$name,
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			function () use ( $error, $name, $run_id, $state ): void {
-				$retained = $this->stores->failed_run_store( $name )->record(
-					$run_id,
-					$this->clock->now()->getTimestamp(),
-					$state->start_args,
-					RunState::increment_attempts_safely( $state->chunk_retries ),
-					$error
-				);
-				if ( ! $retained ) {
-					$this->logger->warning(
-						\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
-						array(
-							'name'   => $name,
-							'run_id' => $run_id,
-						)
-					);
-				}
-			},
-			false,
-			'failed',
-			null,
-			$error
-		);
+		$this->terminal_transitions->fail_unregistered_run( $work_type, $name, $run_id, $state, $run_store, $error );
 	}
 
 	/**

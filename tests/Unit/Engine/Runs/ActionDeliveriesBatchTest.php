@@ -1448,11 +1448,11 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * A throwing named failed listener still permits its generic companion and terminal cleanup.
+	 * A throwing named failed listener still permits its generic companion and retains the incomplete terminal row.
 	 *
 	 * @return  void
 	 */
-	public function test_failed_named_listener_throw_still_fires_generic_hook_and_cleans_up(): void {
+	public function test_failed_named_listener_throw_still_fires_generic_hook_and_retains_terminal_row(): void {
 		$chunk_args = array( 'chunk' => 'current' );
 
 		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
@@ -1473,7 +1473,25 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		}
 
 		self::assertSame( $listener_throwable, $caught );
-		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame(
+			array(
+				'status'        => 'failed',
+				'executing'     => true,
+				'start_args'    => self::ARGS,
+				'args_hash'     => self::ARGS_HASH,
+				'queue'         => array( $chunk_args ),
+				'chunk_retries' => 1,
+				'action_seq'    => 3,
+				'created_at'    => self::NOW,
+				'heartbeat_at'  => self::NOW + 120,
+				'error'         => array(
+					'class'   => \DomainException::class,
+					'message' => 'Chunk failed.',
+				),
+				'effects'       => array( 'retention', 'callbacks', 'history' ),
+			),
+			$this->option( $this->run_option_name() )
+		);
 		self::assertNull( $this->lock() );
 		self::assertCount( 1, $this->batch->failure_calls );
 		self::assertSame(
@@ -1482,6 +1500,27 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertSame(
+			array(
+				'lock:update',
+				'run:running',
+				'batch:process',
+				'lock:update',
+				'run:running',
+				'lock:update',
+				'run:failed',
+				'failed-store',
+				'run:failed',
+				'batch:failure',
+				'run:failed',
+				'hook:failed/' . self::NAME,
+				'hook:failed',
+				'history',
+				'run:failed',
+				'lock:delete',
+			),
+			$this->lifecycle_labels()
 		);
 		$this->assert_terminal_history( RunStatus::Failed );
 	}
@@ -1536,16 +1575,19 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'run:running',
 				'run:completed',
 				'batch:success',
+				'run:completed',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
+				'run:completed',
+				'history',
+				'run:completed',
 				'lock:delete',
 				'run:delete',
-				'history',
 			),
 			$this->lifecycle_labels()
 		);
 		self::assertSame(
-			array( true, true ),
+			array( true, true, true, true, true ),
 			\array_column( $this->recorded_run_states(), 'executing' )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -1615,11 +1657,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'run:running',
 				'run:completed',
 				'batch:success',
+				'run:completed',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
+				'run:completed',
+				'history',
+				'run:completed',
 				'lock:delete',
 				'run:delete',
-				'history',
 			),
 			$this->lifecycle_labels()
 		);

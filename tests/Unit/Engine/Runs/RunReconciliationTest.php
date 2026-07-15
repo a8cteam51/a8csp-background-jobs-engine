@@ -58,11 +58,14 @@ final class RunReconciliationTest extends TestCase {
 
 	private FixedClock $clock;
 	private BatchRegistry $batches;
+	private TaskRegistry $tasks;
 	private RecordingBackend $backend;
 	private Dispatcher $dispatcher;
 	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
+	private StoreFactory $stores;
+	private TerminalTransitions $terminal_transitions;
 	private WpdbLockSpy $wpdb;
 
 	// endregion.
@@ -115,53 +118,53 @@ final class RunReconciliationTest extends TestCase {
 		$this->batches = new BatchRegistry();
 		$this->logger  = new RecordingLogger();
 		$this->wpdb    = new WpdbLockSpy();
-		$tasks         = new TaskRegistry();
-		$tasks->register( new RecordingTask( self::NAME ) );
+		$this->tasks   = new TaskRegistry();
+		$this->tasks->register( new RecordingTask( self::NAME ) );
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores                     = new StoreFactory( $this->clock, $option_rows );
+		$this->stores               = new StoreFactory( $this->clock, $option_rows );
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock );
-		$terminal_transitions       = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger );
 		$failure_lifecycle          = new FailureLifecycle(
 			$this->backend,
 			$this->clock,
 			$randomizer,
 			$this->logger,
-			$terminal_transitions
+			$this->terminal_transitions
 		);
 		$this->lifecycle_deliveries = new ActionDeliveries(
-			$tasks,
+			$this->tasks,
 			$this->batches,
 			$this->backend,
-			$stores,
+			$this->stores,
 			$this->logger,
 			$this->clock,
 			$lock_windows,
-			$terminal_transitions,
+			$this->terminal_transitions,
 			$failure_lifecycle
 		);
 		$this->dispatcher           = new Dispatcher(
-			$tasks,
+			$this->tasks,
 			$this->batches,
 			$this->backend,
 			$guard,
-			$stores,
+			$this->stores,
 			$this->clock,
 			$randomizer,
 			$this->logger,
 			$lock_windows,
-			$terminal_transitions,
+			$this->terminal_transitions,
 		);
 		$reconciliation             = new RunReconciliation(
 			$guard,
-			$stores,
+			$this->stores,
 			$this->clock,
 			$this->logger,
 			$lock_windows,
-			$terminal_transitions,
-			$tasks,
+			$this->terminal_transitions,
+			$this->tasks,
 			$this->batches,
 			$this->backend,
 		);
@@ -1466,65 +1469,325 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A terminal run beyond the sweep grace is deleted and appended to history without hooks.
+	 * A failed batch left after its terminal claim replays every missing durable effect.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_deletes_an_old_terminal_run_option(): void {
-		$run_name                           = 'a8csp_bgte_run_terminal-task_' . self::RUN_ID;
-		$options                            = $this->options();
-		$options[ $run_name ]               = array(
-			'status'        => 'completed',
-			'executing'     => true,
-			'start_args'    => self::ARGS,
-			'args_hash'     => self::ARGS_HASH,
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => self::NOW - 7_201,
-			'heartbeat_at'  => self::NOW - 3_601,
+	public function test_sweep_replays_all_effects_for_an_old_failed_batch(): void {
+		$name  = 'failed-batch';
+		$batch = new RecordingBatch( $name );
+		$this->batches->register( $batch );
+		$this->store_terminal_run(
+			$name,
+			'failed',
+			array(),
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted batch failure.',
+			),
+			3
 		);
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		self::assertArrayNotHasKey( $run_name, $options );
-		$history = $options['a8csp_bgte_history_terminal-task'] ?? null;
-		self::assertIsArray( $history );
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$failed = $options[ 'a8csp_bgte_failed_' . $name ] ?? null;
+		self::assertIsArray( $failed );
 		self::assertSame(
 			array(
 				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'completed',
+					'run_id'     => self::RUN_ID,
+					'failed_at'  => self::NOW - 3_601,
+					'start_args' => self::ARGS,
+					'attempts'   => 3,
+					'error'      => array(
+						'class'   => \RuntimeException::class,
+						'message' => 'Persisted batch failure.',
+					),
 				),
 			),
-			$history['completed'] ?? null
+			$failed
 		);
+		self::assertCount( 1, $batch->failure_calls );
+		self::assertSame( self::RUN_ID, $batch->failure_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $batch->failure_calls[0]['start_args'] ?? null );
+		self::assertSame( 'Persisted batch failure.', $batch->failure_calls[0]['error']->message );
+		self::assertSame( \RuntimeException::class, $batch->failure_calls[0]['error']->exception_class );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/failed/' . $name,
+				'a8csp_background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * Durable effect markers prevent a replay from repeating already completed batch effects.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_only_missing_failed_batch_effects(): void {
+		$name  = 'partially-effected-batch';
+		$batch = new RecordingBatch( $name );
+		$this->batches->register( $batch );
+		self::assertTrue(
+			$this->stores->failed_run_store( $name )->record(
+				self::RUN_ID,
+				self::NOW - 3_601,
+				self::ARGS,
+				2,
+				new EngineError( 'Persisted batch failure.', \RuntimeException::class )
+			)
+		);
+		$failed_option = 'a8csp_bgte_failed_' . $name;
+		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
+		self::assertIsString( $failed_raw );
+		$this->store_terminal_run(
+			$name,
+			'failed',
+			array( 'retention', 'callbacks', 'hooks' ),
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted batch failure.',
+			),
+			2
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $failed_raw, $this->wpdb->rows[ $failed_option ] ?? null );
+		self::assertSame( array(), $batch->failure_calls );
 		self::assertSame( array(), $this->fired_actions() );
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * A losing failed callback worker does not emit downstream effects after a rival finishes the row.
+	 *
+	 * @return  void
+	 */
+	public function test_failed_callback_race_stops_after_a_rival_finishes_the_terminal_row(): void {
+		$name  = 'racing-failed-batch';
+		$batch = new RecordingBatch( $name );
+		$this->store_terminal_run(
+			$name,
+			'failed',
+			array(),
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted batch failure.',
+			),
+			2
+		);
+		$run_store         = $this->stores->run_store( $name );
+		$rival_started     = false;
+		$batch->on_failure = function () use ( $batch, $name, $run_store, &$rival_started ): void {
+			if ( $rival_started ) {
+				return;
+			}
+
+			$rival_started = true;
+			$inspected     = $run_store->inspect( self::RUN_ID );
+			self::assertFalse( $inspected->is_failure() );
+			$snapshot = $inspected->value;
+			self::assertIsArray( $snapshot );
+			$state = $snapshot['state'];
+			self::assertNotNull( $state );
+			self::assertTrue(
+				$this->terminal_transitions->replay_terminal_run(
+					$name,
+					self::RUN_ID,
+					$state,
+					$snapshot['raw'],
+					$run_store,
+					'Batch',
+					$batch
+				)
+			);
+
+			throw new \RuntimeException( 'Original callback worker resumed after rival cleanup.' );
+		};
+
+		$inspected = $run_store->inspect( self::RUN_ID );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+		$state = $snapshot['state'];
+		self::assertNotNull( $state );
+		$caught = null;
+
+		try {
+			$this->terminal_transitions->replay_terminal_run(
+				$name,
+				self::RUN_ID,
+				$state,
+				$snapshot['raw'],
+				$run_store,
+				'Batch',
+				$batch
+			);
+		} catch ( \RuntimeException $throwable ) {
+			$caught = $throwable;
+		}
+
+		self::assertInstanceOf( \RuntimeException::class, $caught );
+		self::assertSame( 'Original callback worker resumed after rival cleanup.', $caught->getMessage() );
+		self::assertCount( 2, $batch->failure_calls );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/failed/' . $name,
+				'a8csp_background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$failed = $options[ 'a8csp_bgte_failed_' . $name ] ?? null;
+		self::assertIsArray( $failed );
+		self::assertCount( 1, $failed );
+		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * A completed batch left after its terminal claim replays its callback, hooks, and history.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_all_effects_for_an_old_completed_batch(): void {
+		$name  = 'completed-batch';
+		$batch = new RecordingBatch( $name );
+		$this->batches->register( $batch );
+		$this->store_terminal_run( $name, 'completed' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => self::RUN_ID,
+					'start_args' => self::ARGS,
+				),
+			),
+			$batch->success_calls
+		);
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . $name,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_history_status( $options, 'completed', $name );
+	}
+
+	/**
+	 * A completed task left after its terminal claim replays hooks and history before deletion.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_all_effects_for_an_old_completed_task(): void {
+		$this->store_terminal_run( self::NAME, 'completed' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		$this->assert_history_status( $options, 'completed' );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . self::NAME,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 	}
 
 	/**
-	 * A failed terminal delete remains retryable without a false warning or duplicate history.
+	 * A deactivated consumer cannot leave its terminal row permanently unfinished.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_does_not_report_or_record_a_failed_terminal_delete(): void {
-		$run_name                                    = 'a8csp_bgte_run_terminal-task_' . self::RUN_ID;
-		$options                                     = $this->options();
-		$options[ $run_name ]                        = array(
-			'status'        => 'completed',
-			'executing'     => true,
-			'start_args'    => self::ARGS,
-			'args_hash'     => self::ARGS_HASH,
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => self::NOW - 7_201,
-			'heartbeat_at'  => self::NOW - 3_601,
+	public function test_sweep_skips_an_unregistered_batch_callback_and_finishes_the_row(): void {
+		$name = 'deactivated-consumer';
+		$this->store_terminal_run( $name, 'completed' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$this->assert_history_status( $options, 'completed', $name );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . $name,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$options['a8csp_bgte_history_terminal-task'] = array(
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Terminal batch callback was skipped because the batch is no longer registered unambiguously.',
+				'context' => array(
+					'batch_name' => $name,
+					'run_id'     => self::RUN_ID,
+					'status'     => 'completed',
+				),
+			),
+			$this->log_record( 'Terminal batch callback was skipped because the batch is no longer registered unambiguously.' )
+		);
+	}
+
+	/**
+	 * Terminal cleanup leaves rows whose required effects have not been marked.
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_finish_is_gated_until_the_sweep_completes_missing_effects(): void {
+		$this->store_terminal_run( self::NAME, 'completed' );
+		$run_store = $this->stores->run_store( self::NAME );
+		$inspected = $run_store->inspect( self::RUN_ID );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+		$state = $snapshot['state'];
+		self::assertNotNull( $state );
+
+		self::assertFalse(
+			$this->terminal_transitions->finish_claimed_transition(
+				self::NAME,
+				self::RUN_ID,
+				$state,
+				$snapshot['raw'],
+				$run_store,
+				'Task'
+			)
+		);
+		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		$this->assert_history_status( $options, 'completed' );
+	}
+
+	/**
+	 * A failed terminal delete retries cleanup without repeating marked effects or history.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_retries_a_failed_terminal_delete_without_repeating_effects(): void {
+		$this->store_terminal_run( self::NAME, 'completed' );
+		$options                                       = $this->options();
+		$options[ 'a8csp_bgte_history_' . self::NAME ] = array(
 			'started'   => array( 'existing-run' ),
 			'completed' => array(
 				array(
@@ -1534,14 +1797,16 @@ final class RunReconciliationTest extends TestCase {
 			),
 			'by_hash'   => array(),
 		);
-		$GLOBALS['a8csp_bgte_test_options']          = $options;
+		$GLOBALS['a8csp_bgte_test_options']            = $options;
 		$this->wpdb->script_result( 'delete', false );
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		self::assertArrayHasKey( $run_name, $options );
-		$history = $options['a8csp_bgte_history_terminal-task'] ?? null;
+		$state   = $options[ $this->run_option_name() ] ?? null;
+		self::assertIsArray( $state );
+		self::assertSame( array( 'hooks', 'history' ), $state['effects'] ?? null );
+		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1549,11 +1814,31 @@ final class RunReconciliationTest extends TestCase {
 					'run_id' => 'existing-run',
 					'status' => 'completed',
 				),
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'completed',
+				),
 			),
 			$history['completed'] ?? null
 		);
+		self::assertCount( 2, $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
+
+		$this->logger->records                    = array();
+		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		self::assertIsArray( $history );
+		$completed = $history['completed'] ?? null;
+		self::assertIsArray( $completed );
+		self::assertCount( 2, $completed );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 	}
 
 	// endregion.
@@ -1580,17 +1865,54 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @param   array<array-key, mixed> $options Persisted options.
 	 * @param   string                  $status  Expected terminal status.
+	 * @param   string                  $name    Stable task or batch name.
 	 *
 	 * @return  void
 	 */
-	private function assert_history_status( array $options, string $status ): void {
-		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+	private function assert_history_status( array $options, string $status, string $name = self::NAME ): void {
+		$history = $options[ 'a8csp_bgte_history_' . $name ] ?? null;
 		self::assertIsArray( $history );
 		$completed = $history['completed'] ?? null;
 		self::assertIsArray( $completed );
 		$entry = $completed[0] ?? null;
 		self::assertIsArray( $entry );
 		self::assertSame( $status, $entry['status'] ?? null );
+	}
+
+	/**
+	 * Stores one old terminal state whose omitted optional fields exercise decoder defaults.
+	 *
+	 * @phpstan-param list<string> $effects
+	 * @phpstan-param array{class: string|null, message: string}|null $error
+	 *
+	 * @param   string     $name          Stable task or batch name.
+	 * @param   string     $status        Terminal status value.
+	 * @param   array      $effects       Completed terminal effect keys.
+	 * @param   array|null $error         Persisted terminal failure detail.
+	 * @param   int        $chunk_retries Attempts consumed by a failed run.
+	 *
+	 * @return  void
+	 */
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $chunk_retries = 0 ): void {
+		$state = array(
+			'status'        => $status,
+			'executing'     => true,
+			'start_args'    => self::ARGS,
+			'args_hash'     => self::ARGS_HASH,
+			'queue'         => array(),
+			'chunk_retries' => $chunk_retries,
+			'action_seq'    => 1,
+			'created_at'    => self::NOW - 7_201,
+			'heartbeat_at'  => self::NOW - 3_601,
+		);
+		if ( null !== $error ) {
+			$state['error'] = $error;
+		}
+		if ( array() !== $effects ) {
+			$state['effects'] = $effects;
+		}
+
+		$this->replace_run_state( $name, $state );
 	}
 
 	/**

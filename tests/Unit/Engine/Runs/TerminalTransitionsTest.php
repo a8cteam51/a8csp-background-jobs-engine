@@ -488,6 +488,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		try {
 			$this->terminal_transitions->cancel_run(
+				'Task',
 				self::NAME,
 				self::RUN_ID,
 				$snapshot['state'],
@@ -652,8 +653,10 @@ final class TerminalTransitionsTest extends TestCase {
 				'run:superseded',
 				'hook:superseded/' . self::NAME,
 				'hook:superseded',
-				'run:delete',
+				'run:superseded:hooks',
 				'history',
+				'run:superseded:hooks,history',
+				'run:delete',
 			),
 			$this->lifecycle_labels()
 		);
@@ -765,23 +768,32 @@ final class TerminalTransitionsTest extends TestCase {
 		);
 	}
 
-	/** Terminal-history failure is logged after active state cleanup completes. */
-	public function test_complete_run_logs_terminal_history_failure_and_continues(): void {
+	/** Terminal-history failure leaves a marked claim for reconciliation after active lock cleanup. */
+	public function test_complete_run_logs_terminal_history_failure_and_keeps_the_claim_for_replay(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next(
 			'update',
-			static function ( WpdbLockSpy $wpdb ): void {
+			function ( WpdbLockSpy $wpdb ): void {
+				$terminal = $this->option( $this->run_option_name() );
+				self::assertIsArray( $terminal );
+				self::assertSame( 'completed', $terminal['status'] ?? null );
+				self::assertSame( array( 'hooks' ), $terminal['effects'] ?? null );
 				$wpdb->script_result( 'update', false );
 			}
 		);
 
 		$this->terminal_transitions->complete_run( self::NAME, self::RUN_ID, $state, $run_store );
 
-		self::assertNull( $this->option( $this->run_option_name() ) );
+		$remaining = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $remaining );
+		self::assertSame( RunStatus::Completed, $remaining->status );
+		self::assertSame( array( 'hooks' ), $remaining->effects );
+		self::assertNull( $this->lock() );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/completed/' . self::NAME,
@@ -802,6 +814,72 @@ final class TerminalTransitionsTest extends TestCase {
 			),
 			$this->logger->records
 		);
+	}
+
+	/** Only the exact terminal snapshot carrying every required effect marker may be deleted. */
+	public function test_finish_claimed_transition_requires_every_effect_and_the_exact_latest_raw(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::NAME, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal  = $running
+			->with_status( RunStatus::Completed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
+		$claim_raw = $run_store->transition_state( self::RUN_ID, $running, $terminal );
+		self::assertIsString( $claim_raw );
+
+		self::assertFalse(
+			$this->terminal_transitions->finish_claimed_transition(
+				self::NAME,
+				self::RUN_ID,
+				$terminal,
+				$claim_raw,
+				$run_store,
+				'Task'
+			)
+		);
+		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
+		self::assertNull( $this->lock() );
+
+		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
+		self::assertNotNull( $hooks );
+		self::assertFalse(
+			$this->terminal_transitions->finish_claimed_transition(
+				self::NAME,
+				self::RUN_ID,
+				$hooks['state'],
+				$hooks['raw'],
+				$run_store,
+				'Task'
+			)
+		);
+
+		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
+		self::assertNotNull( $complete );
+		self::assertFalse(
+			$this->terminal_transitions->finish_claimed_transition(
+				self::NAME,
+				self::RUN_ID,
+				$complete['state'],
+				$hooks['raw'],
+				$run_store,
+				'Task'
+			)
+		);
+		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
+		self::assertTrue(
+			$this->terminal_transitions->finish_claimed_transition(
+				self::NAME,
+				self::RUN_ID,
+				$complete['state'],
+				$complete['raw'],
+				$run_store,
+				'Task'
+			)
+		);
+		self::assertNull( $run_store->get( self::RUN_ID ) );
+		self::assertSame( array(), $this->logger->records );
 	}
 
 	/**
@@ -951,6 +1029,67 @@ final class TerminalTransitionsTest extends TestCase {
 				),
 			),
 			$this->logger->records
+		);
+	}
+
+	/**
+	 * Durable terminal effects are derived from one outcome-by-work-kind table.
+	 *
+	 * @phpstan-param 'Task'|'Batch' $work_type
+	 * @phpstan-param list<string> $effects
+	 */
+	#[DataProvider( 'terminal_effect_rows' )]
+	public function test_expected_terminal_effects( string $status, string $work_type, array $effects ): void {
+		self::assertSame( $effects, TerminalTransitions::expected_effects( RunStatus::from( $status ), $work_type ) );
+	}
+
+	/**
+	 * Supplies every terminal outcome and work-kind combination.
+	 *
+	 * @return  array<string, array{status: string, work_type: 'Task'|'Batch', effects: list<string>}>
+	 */
+	public static function terminal_effect_rows(): array {
+		return array(
+			'failed batch'     => array(
+				'status'    => 'failed',
+				'work_type' => 'Batch',
+				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
+			),
+			'failed task'      => array(
+				'status'    => 'failed',
+				'work_type' => 'Task',
+				'effects'   => array( 'retention', 'hooks', 'history' ),
+			),
+			'completed batch'  => array(
+				'status'    => 'completed',
+				'work_type' => 'Batch',
+				'effects'   => array( 'callbacks', 'hooks', 'history' ),
+			),
+			'completed task'   => array(
+				'status'    => 'completed',
+				'work_type' => 'Task',
+				'effects'   => array( 'hooks', 'history' ),
+			),
+			'cancelled batch'  => array(
+				'status'    => 'cancelled',
+				'work_type' => 'Batch',
+				'effects'   => array( 'hooks', 'history' ),
+			),
+			'cancelled task'   => array(
+				'status'    => 'cancelled',
+				'work_type' => 'Task',
+				'effects'   => array( 'hooks', 'history' ),
+			),
+			'superseded batch' => array(
+				'status'    => 'superseded',
+				'work_type' => 'Batch',
+				'effects'   => array( 'hooks', 'history' ),
+			),
+			'superseded task'  => array(
+				'status'    => 'superseded',
+				'work_type' => 'Task',
+				'effects'   => array( 'hooks', 'history' ),
+			),
 		);
 	}
 
@@ -1240,8 +1379,7 @@ final class TerminalTransitionsTest extends TestCase {
 					} elseif ( 'update' === $operation ) {
 						$value = \maybe_unserialize( $event['raw'] ?? null );
 						self::assertIsArray( $value );
-						self::assertIsString( $value['status'] ?? null );
-						$labels[] = 'run:' . $value['status'];
+						$labels[] = self::run_state_label( $value );
 					}
 
 					continue;
@@ -1291,8 +1429,7 @@ final class TerminalTransitionsTest extends TestCase {
 			if ( $this->run_option_name() === $option_name ) {
 				$value = $args[1] ?? null;
 				self::assertIsArray( $value );
-				self::assertIsString( $value['status'] ?? null );
-				$labels[] = 'run:' . $value['status'];
+				$labels[] = self::run_state_label( $value );
 			} elseif ( 'a8csp_bgte_failed_' . self::NAME === $option_name ) {
 				$labels[] = 'failed-store';
 			} elseif ( 'a8csp_bgte_history_' . self::NAME === $option_name ) {
@@ -1301,6 +1438,27 @@ final class TerminalTransitionsTest extends TestCase {
 		}
 
 		return $labels;
+	}
+
+	/**
+	 * Returns a lifecycle label that includes monotonic terminal effect progress.
+	 *
+	 * @param   array<array-key, mixed> $state Persisted run state.
+	 *
+	 * @return  string
+	 */
+	private static function run_state_label( array $state ): string {
+		$status = $state['status'] ?? null;
+		self::assertIsString( $status );
+		$effects       = $state['effects'] ?? array();
+		$typed_effects = array();
+		self::assertIsArray( $effects );
+		foreach ( $effects as $effect ) {
+			self::assertIsString( $effect );
+			$typed_effects[] = $effect;
+		}
+
+		return 'run:' . $status . ( array() === $typed_effects ? '' : ':' . \implode( ',', $typed_effects ) );
 	}
 
 	/**

@@ -492,6 +492,7 @@ final readonly class Dispatcher {
 		}
 
 		$cancelled = $this->terminal_transitions->cancel_run(
+			null !== $batch ? 'Batch' : 'Task',
 			$name,
 			$run_id,
 			$state,

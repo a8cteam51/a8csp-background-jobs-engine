@@ -88,23 +88,28 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( 1_700_000_100, $stored->created_at );
 		self::assertSame( 1_700_000_100, $stored->heartbeat_at );
 		self::assertNull( $stored->pending );
-		self::assertSame(
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array( 'site_id' => 7 ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array(
-					array( 'page' => 1 ),
-					array( 'page' => 2 ),
-				),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1_700_000_100,
-				'heartbeat_at'  => 1_700_000_100,
+		self::assertNull( $stored->error );
+		self::assertSame( array(), $stored->effects );
+		$expected = array(
+			'status'        => 'running',
+			'executing'     => false,
+			'start_args'    => array( 'site_id' => 7 ),
+			'args_hash'     => 'hash-a',
+			'queue'         => array(
+				array( 'page' => 1 ),
+				array( 'page' => 2 ),
 			),
-			$this->option( 'a8csp_bgte_run_email-digest_run-123' )
+			'chunk_retries' => 0,
+			'action_seq'    => 1,
+			'created_at'    => 1_700_000_100,
+			'heartbeat_at'  => 1_700_000_100,
 		);
+		self::assertSame( $expected, $this->option( 'a8csp_bgte_run_email-digest_run-123' ) );
+		$inspection = $store->inspect( 'run-123' );
+		if ( $inspection->is_failure() ) {
+			self::fail( $inspection->error->message );
+		}
+		self::assertSame( \maybe_serialize( $expected ), $inspection->value['raw'] ?? null );
 		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_run_email-digest_run-123' ) );
 
 		$add_calls = $this->option_calls( 'add_option' );
@@ -156,6 +161,166 @@ final class RunStoreTest extends TestCase {
 		self::assertArrayNotHasKey( 'pending', $stored );
 		self::assertSame( \maybe_serialize( $legacy_shape ), $replacement_raw );
 		self::assertNull( $store->get( 'run-pending' )->pending );
+	}
+
+	/** Terminal failure detail and effect progress round-trip only while present. */
+	public function test_terminal_metadata_round_trips_and_serializes_only_while_present(): void {
+		$store = new RunStore( 'terminal-metadata', new FixedClock( 100 ), $this->rows );
+		$state = $store->create( 'run-terminal', array( 'scope' => 'all' ), 'hash-a', array() );
+		self::assertNotNull( $state );
+		$error    = array(
+			'class'   => \RuntimeException::class,
+			'message' => 'Database unavailable.',
+		);
+		$terminal = $state
+			->with_status( RunStatus::Failed )
+			->with_error( $error )
+			->with_effects( array( 'retention', 'callbacks' ) );
+
+		$terminal_raw = $store->transition_state( 'run-terminal', $state, $terminal );
+		$expected     = array(
+			'status'        => 'failed',
+			'executing'     => false,
+			'start_args'    => array( 'scope' => 'all' ),
+			'args_hash'     => 'hash-a',
+			'queue'         => array(),
+			'chunk_retries' => 0,
+			'action_seq'    => 1,
+			'created_at'    => 100,
+			'heartbeat_at'  => 100,
+			'error'         => $error,
+			'effects'       => array( 'retention', 'callbacks' ),
+		);
+		self::assertSame( \maybe_serialize( $expected ), $terminal_raw );
+		$stored = $store->get( 'run-terminal' );
+		self::assertNotNull( $stored );
+		self::assertSame( $error, $stored->error );
+		self::assertSame( array( 'retention', 'callbacks' ), $stored->effects );
+
+		$cleared     = $terminal->with_error( null )->with_effects( array() );
+		$cleared_raw = $store->transition_state( 'run-terminal', $terminal, $cleared );
+		unset( $expected['error'], $expected['effects'] );
+		self::assertSame( \maybe_serialize( $expected ), $cleared_raw );
+	}
+
+	/** Appending a terminal effect returns the exact replacement snapshot. */
+	public function test_append_terminal_effect_returns_the_exact_replacement_snapshot(): void {
+		$store = new RunStore( 'effect-append', new FixedClock( 100 ), $this->rows );
+		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
+		self::assertNotNull( $state );
+		$terminal = $state
+			->with_status( RunStatus::Failed )
+			->with_error(
+				array(
+					'class'   => null,
+					'message' => 'Failed.',
+				)
+			);
+		$raw      = $store->transition_state( 'run-effect', $state, $terminal );
+		self::assertIsString( $raw );
+
+		$appended = $store->append_terminal_effect( 'run-effect', $terminal, $raw, 'consumer-effect' );
+
+		self::assertNotNull( $appended );
+		self::assertSame( array( 'consumer-effect' ), $appended['state']->effects );
+		self::assertSame( $terminal->error, $appended['state']->error );
+		$inspection = $store->inspect( 'run-effect' );
+		if ( $inspection->is_failure() ) {
+			self::fail( $inspection->error->message );
+		}
+		self::assertSame( $appended['raw'], $inspection->value['raw'] ?? null );
+		self::assertSame( array( 'consumer-effect' ), $inspection->value['state']?->effects );
+	}
+
+	/** A rival append of the same terminal effect converges on one current snapshot. */
+	public function test_append_terminal_effect_accepts_a_rival_append_of_the_same_key(): void {
+		$store = new RunStore( 'effect-same-rival', new FixedClock( 100 ), $this->rows );
+		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
+		self::assertNotNull( $state );
+		$terminal = $state->with_status( RunStatus::Completed );
+		$raw      = $store->transition_state( 'run-effect', $state, $terminal );
+		self::assertIsString( $raw );
+		$rival = null;
+		$this->wpdb->before_next(
+			'update',
+			static function () use ( &$rival, $raw, $store, $terminal ): void {
+				$rival = $store->append_terminal_effect( 'run-effect', $terminal, $raw, 'hooks' );
+			}
+		);
+
+		$appended = $store->append_terminal_effect( 'run-effect', $terminal, $raw, 'hooks' );
+
+		self::assertNotNull( $rival );
+		self::assertNotNull( $appended );
+		self::assertSame( $rival['raw'], $appended['raw'] );
+		self::assertSame( array( 'hooks' ), $appended['state']->effects );
+	}
+
+	/** A rival terminal effect is preserved before retrying the requested append. */
+	public function test_append_terminal_effect_retries_from_a_fresh_rival_snapshot(): void {
+		$store = new RunStore( 'effect-different-rival', new FixedClock( 100 ), $this->rows );
+		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
+		self::assertNotNull( $state );
+		$terminal = $state->with_status( RunStatus::Completed );
+		$raw      = $store->transition_state( 'run-effect', $state, $terminal );
+		self::assertIsString( $raw );
+		$this->wpdb->before_next(
+			'update',
+			static function () use ( $raw, $store, $terminal ): void {
+				self::assertNotNull( $store->append_terminal_effect( 'run-effect', $terminal, $raw, 'callbacks' ) );
+			}
+		);
+
+		$appended = $store->append_terminal_effect( 'run-effect', $terminal, $raw, 'hooks' );
+
+		self::assertNotNull( $appended );
+		self::assertSame( array( 'callbacks', 'hooks' ), $appended['state']->effects );
+		self::assertSame( array( 'callbacks', 'hooks' ), $store->get( 'run-effect' )?->effects );
+	}
+
+	/** Empty terminal effect keys are not persistable identities. */
+	public function test_append_terminal_effect_rejects_an_empty_key(): void {
+		$store = new RunStore( 'effect-empty', new FixedClock( 100 ), $this->rows );
+		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
+		self::assertNotNull( $state );
+		$inspection = $store->inspect( 'run-effect' );
+		if ( $inspection->is_failure() ) {
+			self::fail( $inspection->error->message );
+		}
+		$raw = $inspection->value['raw'] ?? null;
+		self::assertIsString( $raw );
+
+		$this->expectException( \InvalidArgumentException::class );
+		(void) $store->append_terminal_effect( 'run-effect', $state, $raw, '' );
+	}
+
+	/** Terminal effect appends stop after five failed exact writes. */
+	public function test_append_terminal_effect_exhausts_its_bounded_cas_attempts(): void {
+		$store = new RunStore( 'effect-exhaustion', new FixedClock( 100 ), $this->rows );
+		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
+		self::assertNotNull( $state );
+		$inspection = $store->inspect( 'run-effect' );
+		if ( $inspection->is_failure() ) {
+			self::fail( $inspection->error->message );
+		}
+		$raw = $inspection->value['raw'] ?? null;
+		self::assertIsString( $raw );
+		$this->wpdb->recorded_queries = array();
+		for ( $attempt = 0; $attempt < 5; ++$attempt ) {
+			$this->wpdb->script_result( 'update', 0 );
+		}
+
+		$appended = $store->append_terminal_effect( 'run-effect', $state, $raw, 'hooks' );
+
+		self::assertNull( $appended );
+		self::assertCount(
+			5,
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' )
+			)
+		);
+		self::assertSame( array(), $store->get( 'run-effect' )?->effects );
 	}
 
 	/**
@@ -653,6 +818,68 @@ final class RunStoreTest extends TestCase {
 		}
 	}
 
+	/** Optional terminal metadata must use its exact canonical nested shapes. */
+	public function test_get_rejects_noncanonical_terminal_metadata(): void {
+		$store            = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
+		$key              = 'a8csp_bgte_run_corruption_run-bad';
+		$state            = array(
+			'status'        => 'failed',
+			'executing'     => false,
+			'start_args'    => array(),
+			'args_hash'     => 'hash',
+			'queue'         => array(),
+			'chunk_retries' => 0,
+			'action_seq'    => 1,
+			'created_at'    => 1,
+			'heartbeat_at'  => 1,
+		);
+		$invalid_metadata = array(
+			array( 'error' => null ),
+			array( 'error' => array( 'message' => 'Failure.' ) ),
+			array(
+				'error' => array(
+					'class'   => false,
+					'message' => 'Failure.',
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => false,
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'extra'   => true,
+				),
+			),
+			array( 'effects' => array() ),
+			array( 'effects' => array( 'key' => 'hooks' ) ),
+			array( 'effects' => array( 1 ) ),
+			array( 'effects' => array( '' ) ),
+			array( 'effects' => array( 'hooks', 'hooks' ) ),
+			array(
+				'status'  => 'running',
+				'effects' => array( 'hooks' ),
+			),
+			array(
+				'status' => 'completed',
+				'error'  => array(
+					'class'   => null,
+					'message' => 'Failure.',
+				),
+			),
+		);
+
+		foreach ( $invalid_metadata as $metadata ) {
+			$GLOBALS['a8csp_bgte_test_options'] = array( $key => array( ...$state, ...$metadata ) );
+
+			self::assertNull( $store->get( 'run-bad' ) );
+		}
+	}
+
 	/**
 	 * Asserts every persisted RunState field independently.
 	 *
@@ -672,6 +899,8 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $expected->created_at, $actual->created_at );
 		self::assertSame( $expected->heartbeat_at, $actual->heartbeat_at );
 		self::assertSame( $expected->pending, $actual->pending );
+		self::assertSame( $expected->error, $actual->error );
+		self::assertSame( $expected->effects, $actual->effects );
 	}
 
 	/**

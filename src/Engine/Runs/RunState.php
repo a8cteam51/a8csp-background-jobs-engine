@@ -34,6 +34,8 @@ final readonly class RunState {
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null $pending
+	 * @phpstan-param array{class: string|null, message: string}|null $error
+	 * @phpstan-param list<string> $effects
 	 *
 	 * @param   RunStatus                     $status          Lifecycle state.
 	 * @param   bool                          $executing       Whether one lifecycle action is executing.
@@ -46,6 +48,8 @@ final readonly class RunState {
 	 * @param   int                           $created_at      Creation timestamp.
 	 * @param   int                           $heartbeat_at    Latest liveness timestamp.
 	 * @param   array|null                    $pending         Durable successor delivery, or null when none exists. Its unique flag applies to async scheduling only; single-mode scheduling has no uniqueness parameter.
+	 * @param   array|null                    $error           Durable terminal failure detail, or null for non-failed runs.
+	 * @param   array                         $effects         Completed terminal effect keys in execution order.
 	 */
 	public function __construct(
 		public RunStatus $status,
@@ -58,6 +62,8 @@ final readonly class RunState {
 		public int $created_at,
 		public int $heartbeat_at,
 		public ?array $pending = null,
+		public ?array $error = null,
+		public array $effects = array(),
 	) {
 		$this->action_seq = $action_seq;
 	}
@@ -104,6 +110,8 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
 			pending: $this->pending,
+			error: $this->error,
+			effects: $this->effects,
 		);
 	}
 
@@ -129,6 +137,8 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
 			pending: $this->pending,
+			error: $this->error,
+			effects: $this->effects,
 		);
 	}
 
@@ -154,6 +164,8 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
 			pending: $this->pending,
+			error: $this->error,
+			effects: $this->effects,
 		);
 	}
 
@@ -180,6 +192,8 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
 			pending: $this->pending,
+			error: $this->error,
+			effects: $this->effects,
 		);
 	}
 
@@ -205,6 +219,8 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
 			pending: $this->pending,
+			error: $this->error,
+			effects: $this->effects,
 		);
 	}
 
@@ -232,6 +248,66 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
 			pending: $pending,
+			error: $this->error,
+			effects: $this->effects,
+		);
+	}
+
+	/**
+	 * Returns a copy with the supplied durable terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array{class: string|null, message: string}|null $error
+	 *
+	 * @param   array|null $error Durable terminal failure detail, or null for non-failed runs.
+	 *
+	 * @return  self
+	 */
+	public function with_error( ?array $error ): self {
+		return new self(
+			status: $this->status,
+			executing: $this->executing,
+			start_args: $this->start_args,
+			args_hash: $this->args_hash,
+			queue: $this->queue,
+			chunk_retries: $this->chunk_retries,
+			action_seq: $this->action_seq,
+			created_at: $this->created_at,
+			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
+			error: $error,
+			effects: $this->effects,
+		);
+	}
+
+	/**
+	 * Returns a copy with the supplied completed terminal effect keys.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<string> $effects
+	 *
+	 * @param   array $effects Completed terminal effect keys in execution order.
+	 *
+	 * @return  self
+	 */
+	public function with_effects( array $effects ): self {
+		return new self(
+			status: $this->status,
+			executing: $this->executing,
+			start_args: $this->start_args,
+			args_hash: $this->args_hash,
+			queue: $this->queue,
+			chunk_retries: $this->chunk_retries,
+			action_seq: $this->action_seq,
+			created_at: $this->created_at,
+			heartbeat_at: $this->heartbeat_at,
+			pending: $this->pending,
+			error: $this->error,
+			effects: $effects,
 		);
 	}
 
@@ -257,6 +333,8 @@ final readonly class RunState {
 			created_at: $this->created_at,
 			heartbeat_at: $heartbeat_at,
 			pending: $this->pending,
+			error: $this->error,
+			effects: $this->effects,
 		);
 	}
 

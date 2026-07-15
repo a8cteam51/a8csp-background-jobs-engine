@@ -96,7 +96,7 @@ final readonly class FailedRunStore {
 	 * @param   int                     $attempts   Attempts consumed before failure.
 	 * @param   EngineError             $error      Persisted failure detail.
 	 *
-	 * @return  bool True when the failed-run entry is confirmed persisted.
+	 * @return  bool True when the failed-run entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
 	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error ): bool {
@@ -107,8 +107,13 @@ final readonly class FailedRunStore {
 				return false;
 			}
 
-			$expected_raw    = $read->value;
-			$entries         = self::entries_from_option( null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw ) );
+			$expected_raw = $read->value;
+			$entries      = self::entries_from_option( null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw ) );
+			// First write wins per run identifier; live and replayed writers construct identical entries.
+			if ( \in_array( $run_id, \array_column( $entries, 'run_id' ), true ) ) {
+				return true;
+			}
+
 			$entries[]       = array(
 				'run_id'     => $run_id,
 				'failed_at'  => $failed_at,

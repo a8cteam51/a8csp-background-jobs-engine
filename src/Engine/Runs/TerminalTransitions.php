@@ -39,6 +39,33 @@ final readonly class TerminalTransitions {
 		'superseded' => 'a8csp_background_tasks/superseded',
 	);
 
+	/**
+	 * Required durable effects in their consumer-observable execution order.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<string, array<'Task'|'Batch', list<string>>>
+	 */
+	private const TERMINAL_EFFECTS = array(
+		'failed'     => array(
+			'Batch' => array( 'retention', 'callbacks', 'hooks', 'history' ),
+			'Task'  => array( 'retention', 'hooks', 'history' ),
+		),
+		'completed'  => array(
+			'Batch' => array( 'callbacks', 'hooks', 'history' ),
+			'Task'  => array( 'hooks', 'history' ),
+		),
+		'cancelled'  => array(
+			'Batch' => array( 'hooks', 'history' ),
+			'Task'  => array( 'hooks', 'history' ),
+		),
+		'superseded' => array(
+			'Batch' => array( 'hooks', 'history' ),
+			'Task'  => array( 'hooks', 'history' ),
+		),
+	);
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -66,6 +93,30 @@ final readonly class TerminalTransitions {
 	// endregion
 
 	// region METHODS
+
+	/**
+	 * Returns the required durable effects for one terminal work kind.
+	 *
+	 * @internal Engine terminalization and maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   RunStatus      $status    Terminal run status.
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 *
+	 * @throws  \InvalidArgumentException When the status is not terminal or the work type is invalid.
+	 *
+	 * @return  list<string>
+	 */
+	public static function expected_effects( RunStatus $status, string $work_type ): array {
+		$effects = self::TERMINAL_EFFECTS[ $status->value ][ $work_type ] ?? null;
+		if ( null === $effects ) {
+			throw new \InvalidArgumentException( 'Terminal effects require a terminal status and a Task or Batch work type.' );
+		}
+
+		return $effects;
+	}
 
 	/**
 	 * Fences and heartbeats one recoverable running state for a lifecycle action.
@@ -176,7 +227,7 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Marks a successful run before firing hooks and releasing its active state.
+	 * Marks a successful task before completing its durable terminal effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -194,16 +245,33 @@ final readonly class TerminalTransitions {
 			->with_status( RunStatus::Completed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null );
-		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store );
-		if ( null === $terminal_raw ) {
-			return;
-		}
 
-		try {
-			$this->fire_lifecycle_hooks( 'completed', $task_name, $run_id, $terminal_state->start_args );
-		} finally {
-			$this->finish_terminal_run( $task_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
+		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task' );
+	}
+
+	/**
+	 * Marks a successful batch before completing its durable terminal effects.
+	 *
+	 * @internal Engine product service.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   BatchInterface $batch      Completed batch.
+	 * @param   string         $batch_name Stable batch name.
+	 * @param   string         $run_id     Run identifier.
+	 * @param   RunState       $state      Running state.
+	 * @param   RunStore       $run_store  Active-run store.
+	 *
+	 * @return  void
+	 */
+	public function complete_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store ): void {
+		$terminal_state = $state
+			->with_status( RunStatus::Completed )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
+
+		$this->claim_and_execute_terminal_transition( $batch_name, $run_id, $state, $terminal_state, $run_store, 'Batch', $batch );
 	}
 
 	/**
@@ -216,92 +284,68 @@ final readonly class TerminalTransitions {
 	 *
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
-	 * @param   string   $name                  Stable task or batch name.
-	 * @param   string   $run_id                Run identifier.
-	 * @param   RunState $state                 Running state from the exact inspected snapshot.
-	 * @param   RunStore $run_store             Active-run store.
-	 * @param   string   $expected_raw          Exact pre-cancel snapshot.
-	 * @param   \Closure $clear_pending_actions Winner-only scheduler-group clear.
+	 * @param   'Task'|'Batch' $work_type            Work contract type.
+	 * @param   string         $name                 Stable task or batch name.
+	 * @param   string         $run_id               Run identifier.
+	 * @param   RunState       $state                Running state from the exact inspected snapshot.
+	 * @param   RunStore       $run_store            Active-run store.
+	 * @param   string         $expected_raw         Exact pre-cancel snapshot.
+	 * @param   \Closure       $clear_pending_actions Winner-only scheduler-group clear.
 	 *
 	 * @return  bool Whether the cancellation transition was claimed.
 	 */
-	public function cancel_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
+	public function cancel_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state
 			->with_status( RunStatus::Cancelled )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null );
-
-		return $this->execute_terminal_transition(
-			$name,
+		$terminal_raw   = $this->claim_terminal_transition(
 			$run_id,
 			$state,
 			$terminal_state,
 			$run_store,
-			$clear_pending_actions,
-			true,
-			'cancelled',
-			$expected_raw
-		);
-	}
-
-	/**
-	 * Claims and completes one winner-gated terminal transition.
-	 *
-	 * Required cleanup encloses winner effects and hooks in the finish contour so an effect failure cannot strand terminal state.
-	 * Re-drivable effects remain outside that contour so an effect failure preserves the claim for maintenance.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param 'completed'|'failed'|'cancelled'|'superseded' $event
-	 * @phpstan-param EngineError|null ...$hook_extras
-	 *
-	 * @param   string      $name                          Stable task or batch name.
-	 * @param   string      $run_id                        Run identifier.
-	 * @param   RunState    $state                         Running state.
-	 * @param   RunState    $terminal_state                Terminal replacement state.
-	 * @param   RunStore    $run_store                     Active-run store.
-	 * @param   \Closure    $pre_hook_effects              Winner-only side effects that precede lifecycle hooks.
-	 * @param   bool        $finish_despite_effect_failure Whether effect failure still finishes terminal cleanup.
-	 * @param   string      $event                         Terminal lifecycle event name.
-	 * @param   string|null $expected_raw                  Exact maintenance snapshot, or null for a live transition.
-	 * @param   mixed       ...$hook_extras                Lifecycle-hook payload after the start arguments.
-	 *
-	 * @return  bool Whether the terminal transition was claimed.
-	 */
-	public function execute_terminal_transition( string $name, string $run_id, RunState $state, RunState $terminal_state, RunStore $run_store, \Closure $pre_hook_effects, bool $finish_despite_effect_failure, string $event, ?string $expected_raw = null, mixed ...$hook_extras ): bool {
-		$terminal_raw = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw
+			$expected_raw,
 		);
 		if ( null === $terminal_raw ) {
 			return false;
 		}
 
-		if ( $finish_despite_effect_failure ) {
-			try {
-				try {
-					$pre_hook_effects();
-				} finally {
-					$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
-				}
-			} finally {
-				$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
-			}
-		} else {
-			$pre_hook_effects();
-
-			try {
-				$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, ...$hook_extras );
-			} finally {
-				$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
-			}
+		try {
+			$clear_pending_actions();
+		} finally {
+			$this->execute_claimed_transition( $name, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
 		}
 
 		return true;
+	}
+
+	/**
+	 * Fails a run whose matching work contract no longer resolves.
+	 *
+	 * @internal Engine product service.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'Task'|'Batch' $work_type  Work contract type carried by the lifecycle delivery.
+	 * @param   string         $name       Stable task or batch name.
+	 * @param   string         $run_id     Run identifier.
+	 * @param   RunState       $state      Running state.
+	 * @param   RunStore       $run_store  Active-run store.
+	 * @param   EngineError    $error      Failure detail.
+	 *
+	 * @return  void
+	 */
+	public function fail_unregistered_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+		$attempts       = RunState::increment_attempts_safely( $state->chunk_retries );
+		$terminal_state = $state
+			->with_status( RunStatus::Failed )
+			->with_chunk_retries( $attempts )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null )
+			->with_error( self::error_detail( $error ) );
+
+		$this->claim_and_execute_terminal_transition( $name, $run_id, $state, $terminal_state, $run_store, $work_type );
 	}
 
 	/**
@@ -324,46 +368,15 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?int $attempts = null, ?string $expected_raw = null ): void {
+		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->chunk_retries );
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
+			->with_chunk_retries( $attempts )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
-		$terminal_raw   = $this->claim_terminal_transition(
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			$expected_raw
-		);
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$retained = $this->stores->failed_run_store( $batch_name )->record(
-			$run_id,
-			$this->clock->now()->getTimestamp(),
-			$state->start_args,
-			$attempts ?? RunState::increment_attempts_safely( $state->chunk_retries ),
-			$error
-		);
-		if ( ! $retained ) {
-			$this->logger->warning(
-				\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
-				array(
-					'batch_name' => $batch_name,
-					'run_id'     => $run_id,
-				)
-			);
-		}
+			->with_pending( null )
+			->with_error( self::error_detail( $error ) );
 
-		try {
-			try {
-				$batch->on_failure( $run_id, $state->start_args, $error );
-			} finally {
-				$this->fire_lifecycle_hooks( 'failed', $batch_name, $run_id, $state->start_args, $error );
-			}
-		} finally {
-			$this->finish_terminal_run( $batch_name, $run_id, $terminal_state, $terminal_raw, $run_store );
-		}
+		$this->claim_and_execute_terminal_transition( $batch_name, $run_id, $state, $terminal_state, $run_store, 'Batch', $batch, $expected_raw );
 	}
 
 	/**
@@ -385,58 +398,55 @@ final readonly class TerminalTransitions {
 	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
+			->with_chunk_retries( $attempts_used )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
-			->with_pending( null );
+			->with_pending( null )
+			->with_error( self::error_detail( $error ) );
 
-		$this->execute_terminal_transition(
-			$task_name,
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			function () use ( $attempts_used, $error, $run_id, $state, $task_name ): void {
-				$retained = $this->stores->failed_run_store( $task_name )->record(
-					$run_id,
-					$this->clock->now()->getTimestamp(),
-					$state->start_args,
-					$attempts_used,
-					$error
-				);
-				if ( ! $retained ) {
-					$this->logger->warning(
-						\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
-						array(
-							'task_name' => $task_name,
-							'run_id'    => $run_id,
-						)
-					);
-				}
-			},
-			false,
-			'failed',
-			$expected_raw,
-			$error
-		);
+		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task', null, $expected_raw );
 	}
 
 	/**
-	 * Finishes an already-claimed terminal transition without another compare-and-swap.
+	 * Finishes an already-claimed terminal transition only after every required effect is marked.
 	 *
 	 * @internal Engine maintenance only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name         Stable task or batch name.
-	 * @param   string   $run_id       Run identifier.
-	 * @param   RunState $state        Terminalizing run state.
-	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore $run_store    Active-run store.
+	 * @param   string         $name         Stable task or batch name.
+	 * @param   string         $run_id       Run identifier.
+	 * @param   RunState       $state        Terminalizing run state.
+	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore       $run_store    Active-run store.
+	 * @param   'Task'|'Batch' $work_type    Work contract type.
 	 *
-	 * @return  bool Whether the run option was confirmed absent before history was appended.
+	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function finish_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
-		return $this->finish_terminal_run( $name, $run_id, $state, $terminal_raw, $run_store );
+	public function finish_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type ): bool {
+		return $this->finish_terminal_run( $name, $run_id, $state, $terminal_raw, $run_store, $work_type );
+	}
+
+	/**
+	 * Replays missing effects for one already-claimed terminal transition and attempts its finish.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string              $name         Stable task or batch name.
+	 * @param   string              $run_id       Run identifier.
+	 * @param   RunState            $state        Terminal run state.
+	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore            $run_store    Active-run store.
+	 * @param   'Task'|'Batch'      $work_type    Resolved work contract type.
+	 * @param   BatchInterface|null $batch        Resolved batch, or null when no callback is available.
+	 *
+	 * @return  bool Whether the run option is confirmed absent.
+	 */
+	public function replay_terminal_run( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
+		return $this->execute_claimed_transition( $name, $run_id, $state, $terminal_raw, $run_store, $work_type, $batch );
 	}
 
 	/**
@@ -555,11 +565,35 @@ final readonly class TerminalTransitions {
 			)
 		);
 
-		try {
-			$this->fire_lifecycle_hooks( 'superseded', $name, $run_id, $state->start_args );
-		} finally {
-			$this->finish_terminal_run( $name, $run_id, $terminal_state, $terminal_raw, $run_store );
+		$this->execute_claimed_transition( $name, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
+	}
+
+	/**
+	 * Claims a terminal state and executes only the winning transition's effects.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string              $name         Stable task or batch name.
+	 * @param   string              $run_id       Run identifier.
+	 * @param   RunState            $expected     Complete running state observed by the terminalizing path.
+	 * @param   RunState            $replacement  Terminal replacement state.
+	 * @param   RunStore            $run_store    Active-run store.
+	 * @param   'Task'|'Batch'      $work_type    Work contract type.
+	 * @param   BatchInterface|null $batch        Batch callback target, or null for a task or unresolved batch.
+	 * @param   string|null         $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 *
+	 * @return  bool Whether the terminal transition was claimed.
+	 */
+	private function claim_and_execute_terminal_transition( string $name, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, string $work_type, ?BatchInterface $batch = null, ?string $expected_raw = null ): bool {
+		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
+		if ( null === $terminal_raw ) {
+			return false;
 		}
+
+		$this->execute_claimed_transition( $name, $run_id, $replacement, $terminal_raw, $run_store, $work_type, $batch );
+
+		return true;
 	}
 
 	/**
@@ -583,45 +617,418 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Exact-deletes terminal storage before appending the existing terminal-history buffer.
+	 * Executes and marks every missing effect before attempting terminal cleanup.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name      Stable task or batch name.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Terminalizing run state.
-	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore $run_store    Active-run store.
+	 * @param   string              $name         Stable task or batch name.
+	 * @param   string              $run_id       Run identifier.
+	 * @param   RunState            $state        Terminal run state.
+	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore            $run_store    Active-run store.
+	 * @param   'Task'|'Batch'      $work_type    Work contract type.
+	 * @param   BatchInterface|null $batch        Batch callback target, or null for a task or unresolved batch.
 	 *
-	 * @return  bool Whether the run option was confirmed absent before history was appended.
+	 * @throws  \Throwable After the remaining effects and gated finish are attempted when an effect fails.
+	 *
+	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	private function finish_terminal_run( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
-		$this->overlap_guard->release( $name, $state->args_hash, $run_id );
-		if ( ! $run_store->delete_exact( $run_id, $terminal_raw ) ) {
-			$this->logger->error(
-				'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-					'status' => $state->status->value,
-				)
-			);
+	private function execute_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
+		$expected       = self::expected_effects( $state->status, $work_type );
+		$missing        = \array_values( \array_diff( $expected, $state->effects ) );
+		$error          = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'callbacks', 'hooks' ), $missing )
+			? $this->failure_error( $name, $run_id, $state )
+			: null;
+		$snapshot       = array(
+			'raw'   => $terminal_raw,
+			'state' => $state,
+		);
+		$effect_failure = null;
 
+		foreach ( $expected as $effect ) {
+			$current = $snapshot['state'];
+			if ( \in_array( $effect, $current->effects, true ) ) {
+				continue;
+			}
+
+			try {
+				$landed = $this->execute_terminal_effect( $effect, $name, $run_id, $current, $work_type, $batch, $error );
+			} catch ( \Throwable $throwable ) {
+				$effect_failure ??= $throwable;
+				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
+				if ( ! \is_array( $refreshed ) ) {
+					throw $effect_failure;
+				}
+
+				$snapshot = $refreshed;
+				continue;
+			}
+
+			if ( ! $landed ) {
+				$refreshed = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
+				if ( null === $refreshed ) {
+					if ( null !== $effect_failure ) {
+						throw $effect_failure;
+					}
+
+					return true;
+				}
+				if ( false === $refreshed ) {
+					if ( null !== $effect_failure ) {
+						throw $effect_failure;
+					}
+
+					return false;
+				}
+
+				$snapshot = $refreshed;
+				continue;
+			}
+
+			$updated = $run_store->append_terminal_effect( $run_id, $current, $snapshot['raw'], $effect );
+			if ( null === $updated ) {
+				if ( null !== $effect_failure ) {
+					throw $effect_failure;
+				}
+
+				return false;
+			}
+
+			$snapshot = $updated;
+		}
+
+		$finished = $this->finish_terminal_run( $name, $run_id, $snapshot['state'], $snapshot['raw'], $run_store, $work_type );
+		if ( null !== $effect_failure ) {
+			throw $effect_failure;
+		}
+
+		return $finished;
+	}
+
+	/**
+	 * Re-reads terminal progress before a worker continues after an effect did not land.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string    $run_id   Run identifier.
+	 * @param   RunStatus $status   Claimed terminal status.
+	 * @param   RunStore  $run_store Active-run store.
+	 *
+	 * @return  array{raw: string, state: RunState}|false|null Current terminal snapshot, false when it cannot be trusted, or null when another worker finished it.
+	 */
+	private function refresh_terminal_snapshot( string $run_id, RunStatus $status, RunStore $run_store ): array|false|null {
+		$inspected = $run_store->inspect( $run_id );
+		if ( $inspected->is_failure() ) {
 			return false;
 		}
 
-		if ( ! $this->stores->run_history( $name )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
-			$this->logger->warning(
-				'Terminal run history could not be persisted; inspection data may be incomplete.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-				)
-			);
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			return null;
 		}
 
+		$state = $snapshot['state'];
+		if ( null === $state || $status !== $state->status ) {
+			return false;
+		}
+
+		return array(
+			'raw'   => $snapshot['raw'],
+			'state' => $state,
+		);
+	}
+
+	/**
+	 * Executes one terminal effect and reports whether its durable outcome landed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string              $effect    Terminal effect key.
+	 * @param   string              $name      Stable task or batch name.
+	 * @param   string              $run_id    Run identifier.
+	 * @param   RunState            $state     Current terminal state.
+	 * @param   'Task'|'Batch'      $work_type Work contract type.
+	 * @param   BatchInterface|null $batch     Batch callback target, or null for a task or unresolved batch.
+	 * @param   EngineError|null    $error     Reconstructed failure detail.
+	 *
+	 * @throws  \LogicException When the effect table contains an unsupported key.
+	 * @throws  \Throwable      When an effect cannot complete.
+	 *
+	 * @return  bool Whether the effect landed and may be marked complete.
+	 */
+	private function execute_terminal_effect( string $effect, string $name, string $run_id, RunState $state, string $work_type, ?BatchInterface $batch, ?EngineError $error ): bool {
+		return match ( $effect ) {
+			'retention' => $this->record_failed_run( $name, $run_id, $state, $work_type, $error ),
+			'callbacks' => $this->fire_batch_callback( $name, $run_id, $state, $batch, $error ),
+			'hooks'     => $this->fire_terminal_hooks( $name, $run_id, $state, $error ),
+			'history'   => $this->record_terminal_history( $name, $run_id, $state ),
+			default     => throw new \LogicException( 'The terminal effect table contains an unsupported effect key.' ),
+		};
+	}
+
+	/**
+	 * Persists one idempotent manual-retry entry for a failed run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string           $name      Stable task or batch name.
+	 * @param   string           $run_id    Run identifier.
+	 * @param   RunState         $state     Failed terminal state.
+	 * @param   'Task'|'Batch'   $work_type Work contract type.
+	 * @param   EngineError|null $error     Reconstructed failure detail.
+	 *
+	 * @throws  \LogicException When failure detail is absent.
+	 *
+	 * @return  bool Whether the failed-run entry is confirmed persisted.
+	 */
+	private function record_failed_run( string $name, string $run_id, RunState $state, string $work_type, ?EngineError $error ): bool {
+		if ( null === $error ) {
+			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
+		}
+
+		// A failure claim overwrites chunk_retries with the consumed-attempt count, which every live path floors at one.
+		$attempts = null === $state->error
+			? RunState::increment_attempts_safely( $state->chunk_retries )
+			: \max( 1, $state->chunk_retries );
+		$retained = $this->stores->failed_run_store( $name )->record(
+			$run_id,
+			$state->heartbeat_at,
+			$state->start_args,
+			$attempts,
+			$error
+		);
+		if ( $retained ) {
+			return true;
+		}
+
+		$context_name = \strtolower( $work_type ) . '_name';
+		$this->logger->warning(
+			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
+			array(
+				$context_name => $name,
+				'run_id'      => $run_id,
+			)
+		);
+
+		return false;
+	}
+
+	/**
+	 * Fires one successful or failed batch callback with its established throwable policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string              $name   Stable batch name.
+	 * @param   string              $run_id Run identifier.
+	 * @param   RunState            $state  Terminal batch state.
+	 * @param   BatchInterface|null $batch  Registered batch, or null when the callback must be skipped.
+	 * @param   EngineError|null    $error  Reconstructed failure detail.
+	 *
+	 * @throws  \LogicException When the state cannot support a batch callback.
+	 * @throws  \Throwable      When a failed callback fails.
+	 *
+	 * @return  true
+	 */
+	private function fire_batch_callback( string $name, string $run_id, RunState $state, ?BatchInterface $batch, ?EngineError $error ): bool {
+		if ( null === $batch ) {
+			$this->logger->warning(
+				'Terminal batch callback was skipped because the batch is no longer registered unambiguously.',
+				array(
+					'batch_name' => $name,
+					'run_id'     => $run_id,
+					'status'     => $state->status->value,
+				)
+			);
+
+			return true;
+		}
+
+		if ( RunStatus::Completed === $state->status ) {
+			try {
+				$batch->on_success( $run_id, $state->start_args );
+			} catch ( \Throwable $throwable ) {
+				$this->logger->error(
+					'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
+					array(
+						'batch_name'        => $name,
+						'run_id'            => $run_id,
+						'exception_class'   => $throwable::class,
+						'exception_message' => $throwable->getMessage(),
+					)
+				);
+			}
+
+			return true;
+		}
+
+		if ( RunStatus::Failed !== $state->status || null === $error ) {
+			throw new \LogicException( 'Batch failure callbacks require a failed terminal state and failure detail.' );
+		}
+
+		$batch->on_failure( $run_id, $state->start_args, $error );
+
 		return true;
+	}
+
+	/**
+	 * Fires the lifecycle-hook pair for one terminal state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string           $name   Stable task or batch name.
+	 * @param   string           $run_id Run identifier.
+	 * @param   RunState         $state  Terminal run state.
+	 * @param   EngineError|null $error  Reconstructed failure detail.
+	 *
+	 * @throws  \LogicException When the state is not terminal.
+	 * @throws  \Throwable      When a lifecycle hook fails.
+	 *
+	 * @return  true
+	 */
+	private function fire_terminal_hooks( string $name, string $run_id, RunState $state, ?EngineError $error ): bool {
+		$event = match ( $state->status ) {
+			RunStatus::Completed  => 'completed',
+			RunStatus::Failed     => 'failed',
+			RunStatus::Cancelled  => 'cancelled',
+			RunStatus::Superseded => 'superseded',
+			RunStatus::Running    => throw new \LogicException( 'Terminal hooks require a terminal run state.' ),
+		};
+		$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, $error );
+
+		return true;
+	}
+
+	/**
+	 * Persists one idempotent terminal-history entry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $name   Stable task or batch name.
+	 * @param   string   $run_id Run identifier.
+	 * @param   RunState $state  Terminal run state.
+	 *
+	 * @return  bool Whether the history entry is confirmed persisted.
+	 */
+	private function record_terminal_history( string $name, string $run_id, RunState $state ): bool {
+		if ( $this->stores->run_history( $name )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
+			return true;
+		}
+
+		$this->logger->warning(
+			'Terminal run history could not be persisted; inspection data may be incomplete.',
+			array(
+				'name'   => $name,
+				'run_id' => $run_id,
+			)
+		);
+
+		return false;
+	}
+
+	/**
+	 * Reconstructs persisted terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $name   Stable task or batch name.
+	 * @param   string   $run_id Run identifier.
+	 * @param   RunState $state  Failed terminal state.
+	 *
+	 * @return  EngineError
+	 */
+	private function failure_error( string $name, string $run_id, RunState $state ): EngineError {
+		if ( null !== $state->error ) {
+			return new EngineError( $state->error['message'], $state->error['class'] );
+		}
+
+		$this->logger->warning(
+			'Failed terminal run has no persisted failure detail; replay uses a generic failure.',
+			array(
+				'name'   => $name,
+				'run_id' => $run_id,
+			)
+		);
+
+		return new EngineError(
+			\sprintf(
+				'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.',
+				$run_id,
+				$name
+			)
+		);
+	}
+
+	/**
+	 * Converts failure detail to the persisted terminal shape.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   EngineError $error Failure detail.
+	 *
+	 * @return  array{class: string|null, message: string}
+	 */
+	private static function error_detail( EngineError $error ): array {
+		return array(
+			'class'   => $error->exception_class,
+			'message' => $error->message,
+		);
+	}
+
+	/**
+	 * Releases owned overlap state and exact-deletes only a fully effected terminal row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string         $name         Stable task or batch name.
+	 * @param   string         $run_id       Run identifier.
+	 * @param   RunState       $state        Terminal run state.
+	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore       $run_store    Active-run store.
+	 * @param   'Task'|'Batch' $work_type    Work contract type.
+	 *
+	 * @return  bool Whether the run option is confirmed absent.
+	 */
+	private function finish_terminal_run( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type ): bool {
+		$this->overlap_guard->release( $name, $state->args_hash, $run_id );
+		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status, $work_type ), $state->effects ) ) ) {
+			return false;
+		}
+
+		if ( $run_store->delete_exact( $run_id, $terminal_raw ) ) {
+			return true;
+		}
+
+		$inspected = $run_store->inspect( $run_id );
+		if ( ! $inspected->is_failure() ) {
+			$snapshot = $inspected->value;
+			if ( null === $snapshot ) {
+				return true;
+			}
+			if ( $terminal_raw !== $snapshot['raw'] ) {
+				return false;
+			}
+		}
+
+		$this->logger->error(
+			'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
+			array(
+				'name'   => $name,
+				'run_id' => $run_id,
+				'status' => $state->status->value,
+			)
+		);
+
+		return false;
 	}
 
 	/**

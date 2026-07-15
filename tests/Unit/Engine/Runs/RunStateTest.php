@@ -15,6 +15,13 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 final class RunStateTest extends TestCase {
+	private const EFFECTS = array( 'retention', 'callbacks' );
+
+	private const ERROR = array(
+		'class'   => \RuntimeException::class,
+		'message' => 'Database unavailable.',
+	);
+
 	private const PENDING = array(
 		'stage'    => 'continue',
 		'mode'     => 'single',
@@ -69,6 +76,8 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -96,6 +105,8 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -123,6 +134,8 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -150,6 +163,8 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -177,6 +192,8 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -204,6 +221,8 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 150,
 				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -238,6 +257,63 @@ final class RunStateTest extends TestCase {
 				'created_at'    => 100,
 				'heartbeat_at'  => 125,
 				'pending'       => $pending,
+				'error'         => self::ERROR,
+				'effects'       => self::EFFECTS,
+			),
+			self::fields( $copy )
+		);
+	}
+
+	/** Error copies change only terminal failure detail. */
+	public function test_with_error_preserves_every_other_field(): void {
+		$original = self::state();
+		$error    = array(
+			'class'   => null,
+			'message' => 'Task returned an invalid result.',
+		);
+		$copy     = $original->with_error( $error );
+
+		self::assertNotSame( $original, $copy );
+		self::assertSame(
+			array(
+				'status'        => RunStatus::Running,
+				'executing'     => true,
+				'start_args'    => array( 'scope' => 'all' ),
+				'args_hash'     => 'hash-a',
+				'queue'         => array( array( 'page' => 1 ) ),
+				'chunk_retries' => 2,
+				'action_seq'    => 7,
+				'created_at'    => 100,
+				'heartbeat_at'  => 125,
+				'pending'       => self::PENDING,
+				'error'         => $error,
+				'effects'       => self::EFFECTS,
+			),
+			self::fields( $copy )
+		);
+	}
+
+	/** Effect copies change only monotonic terminal progress. */
+	public function test_with_effects_preserves_every_other_field(): void {
+		$original = self::state();
+		$effects  = array( 'retention', 'callbacks', 'hooks' );
+		$copy     = $original->with_effects( $effects );
+
+		self::assertNotSame( $original, $copy );
+		self::assertSame(
+			array(
+				'status'        => RunStatus::Running,
+				'executing'     => true,
+				'start_args'    => array( 'scope' => 'all' ),
+				'args_hash'     => 'hash-a',
+				'queue'         => array( array( 'page' => 1 ) ),
+				'chunk_retries' => 2,
+				'action_seq'    => 7,
+				'created_at'    => 100,
+				'heartbeat_at'  => 125,
+				'pending'       => self::PENDING,
+				'error'         => self::ERROR,
+				'effects'       => $effects,
 			),
 			self::fields( $copy )
 		);
@@ -260,6 +336,8 @@ final class RunStateTest extends TestCase {
 			created_at: 100,
 			heartbeat_at: 125,
 			pending: self::PENDING,
+			error: self::ERROR,
+			effects: self::EFFECTS,
 		);
 	}
 
@@ -278,7 +356,9 @@ final class RunStateTest extends TestCase {
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
-	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null
+	 *     pending: array{stage: string, mode: 'async'|'single', fire_at: int|null, unique: bool, priority: int}|null,
+	 *     error: array{class: string|null, message: string}|null,
+	 *     effects: list<string>
 	 * }
 	 */
 	private static function fields( RunState $state ): array {
@@ -293,6 +373,8 @@ final class RunStateTest extends TestCase {
 			'created_at'    => $state->created_at,
 			'heartbeat_at'  => $state->heartbeat_at,
 			'pending'       => $state->pending,
+			'error'         => $state->error,
+			'effects'       => $state->effects,
 		);
 	}
 }

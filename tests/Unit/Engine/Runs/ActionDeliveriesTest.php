@@ -272,9 +272,11 @@ final class ActionDeliveriesTest extends TestCase {
 				'run:completed',
 				'hook:completed/' . self::NAME,
 				'hook:completed',
+				'run:completed',
+				'history',
+				'run:completed',
 				'lock:delete',
 				'run:delete',
-				'history',
 			),
 			$this->lifecycle_labels()
 		);

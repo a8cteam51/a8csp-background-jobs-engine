@@ -334,7 +334,22 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		if ( $this->terminal_transitions->finish_claimed_transition( $name, $run_id, $state, $snapshot['raw'], $run_store ) ) {
+		$task           = $this->tasks->get( $name );
+		$batch          = $this->batches->get( $name );
+		$resolved_batch = null;
+		if ( null !== $batch && null === $task ) {
+			$work_type      = 'Batch';
+			$resolved_batch = $batch;
+		} elseif ( null !== $task && null === $batch ) {
+			$work_type = 'Task';
+		} else {
+			// The callback superset lets an unresolved terminal row converge without inventing a persisted work-kind field.
+			$work_type = \in_array( $state->status, array( RunStatus::Completed, RunStatus::Failed ), true )
+				? 'Batch'
+				: 'Task';
+		}
+
+		if ( $this->terminal_transitions->replay_terminal_run( $name, $run_id, $state, $snapshot['raw'], $run_store, $work_type, $resolved_batch ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(

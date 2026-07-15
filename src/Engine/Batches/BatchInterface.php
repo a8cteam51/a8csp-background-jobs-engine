@@ -13,8 +13,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryab
  * Contract for background work split into independently processed chunks.
  *
  * Queue generation defines the initial chunks, and processing handles one chunk. The engine invokes
- * at most one terminal callback for each run: `on_success()` after every chunk succeeds or
- * `on_failure()` after the run fails.
+ * `on_success()` after every chunk succeeds or `on_failure()` after the run fails. Terminal callbacks
+ * are at-least-once across crash recovery, replayed durably under Action Scheduler and best-effort
+ * under the WP-Cron fallback, because a process can stop after the callback returns but
+ * before its completion marker persists; implementations use the run identifier to converge replays.
+ * A throwing `on_failure()` remains pending for a later maintenance attempt.
  *
  * A cancelled or superseded run ends without either callback; those outcomes surface through engine
  * hooks.
