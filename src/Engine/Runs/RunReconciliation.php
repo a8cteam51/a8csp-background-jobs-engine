@@ -65,7 +65,7 @@ final readonly class RunReconciliation {
 	// region METHODS
 
 	/**
-	 * Reclaims a stale lock only after confirming its owning run option remains absent.
+	 * Reclaims a stale lock only when no valid run state matches its run identifier and arguments hash.
 	 *
 	 * @internal Engine maintenance only.
 	 *
@@ -174,7 +174,7 @@ final readonly class RunReconciliation {
 			$batch     = 'batch' === $kind ? $this->batches->get( $name ) : null;
 			$work_type = 'batch' === $kind ? 'Batch' : 'Task';
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
-				// A transferred lock can appear while the incumbent is still inside its callback; a fresh run heartbeat leaves terminalization to that worker's next ownership fence.
+				// A transferred lock can appear while the displaced incumbent is still inside its callback; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 					return new Success( $state->args_hash );
 				}

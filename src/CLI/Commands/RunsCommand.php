@@ -96,10 +96,13 @@ final readonly class RunsCommand {
 	}
 
 	/**
-	 * Lists live run state and bounded recent history for one background-work identity.
+	 * Lists retained run state for one background-work identity.
 	 *
 	 * An executing phase that outlives the staleness window is reclaimed by maintenance; the stale
 	 * heartbeat suffix identifies that condition.
+	 *
+	 * Table, JSON, and YAML include live state plus bounded recent history. CSV includes live state
+	 * only, and count is the number of live runs.
 	 *
 	 * ## OPTIONS
 	 *

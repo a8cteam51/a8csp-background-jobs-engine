@@ -90,7 +90,7 @@ final readonly class RunStore {
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
 	public function create( string $run_id, array $start_args, string $args_hash, array $queue, ?array $pending = null ): ?RunState {
-		// Run options persist Unix-second integers.
+		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState(
 			status: RunStatus::Running,
@@ -242,7 +242,7 @@ final readonly class RunStore {
 	 *
 	 * @throws  \InvalidArgumentException When the effect key is empty.
 	 *
-	 * @return  array{raw: string, state: RunState}|null Current persisted snapshot containing the key, or null when the row is absent, invalid, unreadable, or remains contended.
+	 * @return  array{raw: string, state: RunState}|null Caller-supplied snapshot when it already contains the key, which can omit concurrent effects; otherwise a persisted snapshot containing the key, or null when the row is absent, invalid, unreadable, or remains contended.
 	 */
 	#[\NoDiscard( 'a terminal effect persistence outcome must be handled, not dropped' )]
 	public function append_terminal_effect( string $run_id, RunState $expected, string $expected_raw, string $effect ): ?array {

@@ -282,6 +282,9 @@ final readonly class TerminalTransitions {
 	/**
 	 * Claims a retained run as Cancelled before clearing its pending scheduler group and firing hooks.
 	 *
+	 * The scheduler-group clear is best-effort. The cancelled state fences later delivery, so any
+	 * leftover action is dropped when it observes the terminal run.
+	 *
 	 * @internal Engine product service.
 	 *
 	 * @since   1.0.0
@@ -490,9 +493,10 @@ final readonly class TerminalTransitions {
 	/**
 	 * Aborts a delivery when its owner-scoped heartbeat is lost, stale, or indeterminate.
 	 *
-	 * Confirmed loss claims a Superseded transition. A stale delivery generation or indeterminate
-	 * authoritative read leaves the running state untouched for a later delivery or the staleness
-	 * sweep to resolve.
+	 * Confirmed loss attempts a Superseded transition and always aborts the delivery; a rival terminal
+	 * compare-and-swap can prevent that transition from being claimed. A stale delivery generation or
+	 * indeterminate authoritative read leaves the running state untouched for a later delivery or the
+	 * staleness sweep to resolve.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -652,7 +656,7 @@ final readonly class TerminalTransitions {
 	 * @param   'Task'|'Batch'      $work_type    Work contract type.
 	 * @param   BatchInterface|null $batch        Batch callback target, or null for a task or unresolved batch.
 	 *
-	 * @throws  \Throwable After the remaining effects and gated finish are attempted when an effect fails.
+	 * @throws  \Throwable When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */

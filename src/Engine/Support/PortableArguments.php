@@ -21,8 +21,7 @@ final class PortableArguments {
 	/**
 	 * Returns whether values satisfy the portability rule within the permitted array depth.
 	 *
-	 * JSON encoding runs before unbounded callers use this traversal so recursive arrays do not
-	 * reach it. The optional depth bound rejects excessive nesting independently of encoding.
+	 * The remaining-depth bound terminates traversal regardless of caller preprocessing.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

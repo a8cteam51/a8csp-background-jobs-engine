@@ -68,14 +68,14 @@ final readonly class OccurrenceLease {
 	// region METHODS
 
 	/**
-	 * Claims one occurrence identity or reports a fresh concurrent holder.
+	 * Claims one occurrence identity or reports that ownership cannot be established.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  string|null Exact claimed row bytes for release, or null when another holder wins.
+	 * @return  string|null Exact claimed row bytes for release, or null when another holder wins or the claim cannot be verified against storage.
 	 */
 	public function claim( string $registration_key ): ?string {
 		$key = self::option_name( $registration_key );

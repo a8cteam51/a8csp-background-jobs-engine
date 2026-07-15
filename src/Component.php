@@ -7,8 +7,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
 /**
  * Contract for a self-contained plugin component.
  *
- * Implementations are constructed with no arguments. `initialize()` is called at most once,
- * only when `is_needed()` returns true, during `plugins_loaded`.
+ * The methods define the component's availability gate and WordPress wiring semantics. Components
+ * invoked outside `Plugin::COMPONENTS` must make `initialize()` idempotent.
  *
  * @internal
  *

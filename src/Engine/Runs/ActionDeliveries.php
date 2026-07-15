@@ -447,9 +447,10 @@ final readonly class ActionDeliveries {
 	/**
 	 * Handles terminal success for one drained batch run.
 	 *
-	 * Once success handling begins, every remaining write touches only this run's rows, and lock release
-	 * self-guards against a new owner. The outcome remains Completed regardless of current lock ownership;
-	 * recording another outcome would lie.
+	 * Once success handling begins, remaining writes are exact-CAS or owner-guarded. The identity-shared
+	 * run-history row is CAS-guarded and idempotent, and lock release self-guards against a new owner, so
+	 * skipping the fence recheck remains safe. The outcome remains Completed regardless of current lock
+	 * ownership; recording another outcome would lie.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

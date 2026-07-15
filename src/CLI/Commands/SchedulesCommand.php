@@ -23,8 +23,9 @@ final readonly class SchedulesCommand {
 	/**
 	 * Lists persisted recurring schedule registrations and their observable runtime state.
 	 *
-	 * The `scheduled` column reflects backends that are currently ready; an occurrence on an
-	 * unavailable backend is dormant and not shown.
+	 * The `scheduled` column reflects occurrence visibility on backends that are currently ready.
+	 * `scheduled: no` means no occurrence is visible there. A present but unavailable backend
+	 * candidate is reported separately as dormant and does not establish absence.
 	 *
 	 * ## OPTIONS
 	 *
@@ -42,10 +43,11 @@ final readonly class SchedulesCommand {
 	 *     $ wp background-tasks schedules list
 	 *     $ wp background-tasks schedules list --owner=consumer-plugin --format=json
 	 *
-	 * An overdue `next_due` with `scheduled: no` means the backend chain is absent; the next sync
-	 * recreates it unless the consumer no longer declares the schedule. `scheduled: yes` means the
-	 * ready backend has not delivered it yet. A held lock identifies overlapping work, while rising
-	 * `misfires` or `skips` identifies grace-policy or overlap-policy drops.
+	 * An overdue `next_due` with `scheduled: no` means no occurrence is visible on currently-ready
+	 * backends. A separately reported dormant backend candidate may retain an occurrence outside that
+	 * ready set and is not absence. `scheduled: yes` means the ready backend has not delivered it yet.
+	 * A held lock identifies overlapping work, while rising `misfires` or `skips` identifies
+	 * grace-policy or overlap-policy drops.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

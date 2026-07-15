@@ -12,6 +12,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSin
  * component is a class with `is_needed()` and `initialize()`, and the boot is a foreach you can
  * read. This is the one file you edit to wire a component in.
  *
+ * The `plugins_loaded` boot initializes each needed `COMPONENTS` entry at most once.
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

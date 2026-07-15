@@ -83,7 +83,7 @@ final readonly class LockWindows {
 	}
 
 	/**
-	 * Resolves the per-run lock window above twice the continue delay.
+	 * Resolves the per-run lock window at least twice the continue delay.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

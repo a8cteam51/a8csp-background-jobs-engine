@@ -34,7 +34,7 @@ interface BackendInterface {
 	 * @param   bool        $unique              Whether an identical recurring chain is retained instead of duplicated.
 	 * @param   int         $priority            Advisory execution priority.
 	 *
-	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the recurring hook is scheduled.
+	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the hook identity is present or queued on that backend, including a pre-existing occurrence; it does not identify occurrence kind or prove a fresh enqueue.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult;
@@ -71,7 +71,7 @@ interface BackendInterface {
 	 * @param   bool        $unique   Whether an identical queued or running hook is retained instead of duplicated.
 	 * @param   int         $priority Advisory execution priority.
 	 *
-	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the hook is queued or an identical unique hook already exists.
+	 * @return  AbstractResult<true, SchedulingError> Success carrying true when the hook identity is present or queued on that backend, including a pre-existing occurrence; it does not identify occurrence kind or prove a fresh enqueue.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function enqueue_async( string $hook, array $args = array(), string $group = '', bool $unique = false, int $priority = 10 ): AbstractResult;
@@ -86,7 +86,7 @@ interface BackendInterface {
 	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
 	 * @param   string      $group Backend grouping label.
 	 *
-	 * @return  AbstractResult<true, SchedulingError> Success carrying true when every matching hook is confirmed absent across the currently-ready backends.
+	 * @return  AbstractResult<true, SchedulingError> Success carrying true when every matching hook is confirmed absent from that backend's store.
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult;
