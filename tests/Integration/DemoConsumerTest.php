@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\CommentCountRecountBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\DemoConsumer;
@@ -207,9 +208,16 @@ final class DemoConsumerTest extends IntegrationTestCase {
 			\has_action( 'init', array( $consumer, 'register_background_work' ) ),
 			'The demo entry point must register its declarations from init'
 		);
+		$api = null;
+		\add_action(
+			'init',
+			static function () use ( &$api ): void {
+				$api = \a8csp_bgte( DemoConsumer::OWNER );
+			},
+			\PHP_INT_MAX
+		);
 		\do_action( 'init' );
-
-		$api = \a8csp_bgte( DemoConsumer::OWNER );
+		self::assertInstanceOf( Consumer::class, $api );
 
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
 		$manual      = $api->tasks()->enqueue( SiteHealthPingTask::NAME, $manual_args );

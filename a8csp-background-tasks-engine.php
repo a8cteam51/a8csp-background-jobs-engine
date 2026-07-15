@@ -132,5 +132,10 @@ if ( is_wp_error( A8CSP_BGTE_REQUIREMENTS ) ) {
 	a8csp_bgte_output_requirements_error( A8CSP_BGTE_REQUIREMENTS );
 } else {
 	require_once A8CSP_BGTE_DIR_PATH . '/functions.php';
-	add_action( 'plugins_loaded', 'a8csp_bgte_plugin', 0 ); // @phpstan-ignore return.void
+	// Activation includes this file after plugins_loaded has fired, so boot immediately on that request.
+	if ( 0 < did_action( 'plugins_loaded' ) ) {
+		a8csp_bgte_plugin();
+	} else {
+		add_action( 'plugins_loaded', 'a8csp_bgte_plugin', 0 ); // @phpstan-ignore return.void
+	}
 }

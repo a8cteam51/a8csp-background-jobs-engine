@@ -2,7 +2,6 @@
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 
 \defined( 'ABSPATH' ) || exit;
@@ -36,10 +35,10 @@ function a8csp_bgte_plugin(): Plugin {
 /**
  * Returns the owner-bound background-work consumer.
  *
- * Call from `plugins_loaded` or later. Resolution during any `plugins_loaded` priority initializes
- * the engine graph on demand, so consumer ordering within that hook is immaterial. Use the calling
- * plugin's lowercase slug as the owner; owner exclusivity is a consumer convention, while the
- * `a8csp-bgte` prefix is enforced as the engine's reserved namespace.
+ * Available from `init` or later. By `init`, the engine's `plugins_loaded` priority-zero boot has
+ * always run in every standard load path. Use the calling plugin's lowercase slug as the owner;
+ * owner exclusivity is a consumer convention, while the `a8csp-bgte` prefix is enforced as the
+ * engine's reserved namespace.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -52,15 +51,11 @@ function a8csp_bgte_plugin(): Plugin {
  * @return  Consumer
  */
 function a8csp_bgte( string $owner ): Consumer {
-	WorkIdentity::validate_owner( $owner );
-
-	if ( 0 === did_action( 'plugins_loaded' ) && ! doing_action( 'plugins_loaded' ) ) {
+	if ( 0 === did_action( 'init' ) && ! doing_action( 'init' ) ) {
 		throw new \LogicException(
-			'The background tasks consumer is available from the plugins_loaded hook; call a8csp_bgte() from a plugins_loaded callback or later.'
+			'The background tasks consumer is available from the init hook; call a8csp_bgte() from an init callback or later.'
 		);
 	}
-
-	a8csp_bgte_plugin();
 
 	return Component::consumer( $owner );
 }

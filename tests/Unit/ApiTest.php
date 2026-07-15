@@ -49,7 +49,7 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Resets the lifecycle and storage ledgers.
+	 * Resets the lifecycle and storage ledgers, then simulates the eager plugin boot.
 	 *
 	 * @return  void
 	 */
@@ -75,6 +75,8 @@ final class ApiTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
 		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
 		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
+
+		\a8csp_bgte_plugin();
 	}
 
 	// endregion.
@@ -86,23 +88,23 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_access_before_plugins_loaded_throws_with_the_earliest_safe_hook(): void {
+	public function test_access_before_init_throws_with_the_earliest_safe_hook(): void {
 		$this->expectException( \LogicException::class );
 		$this->expectExceptionMessageIs(
-			'The background tasks consumer is available from the plugins_loaded hook; call a8csp_bgte() from a plugins_loaded callback or later.'
+			'The background tasks consumer is available from the init hook; call a8csp_bgte() from an init callback or later.'
 		);
 
 		\a8csp_bgte( 'consumer-plugin' );
 	}
 
 	/**
-	 * Resolution from inside plugins_loaded boots lazily and returns a usable owner-bound facade.
+	 * Resolution from inside init returns a usable owner-bound facade at any priority.
 	 *
 	 * @return  void
 	 */
-	public function test_access_during_plugins_loaded_returns_a_working_consumer_at_any_priority(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions']   = array( 'plugins_loaded' => 1 );
-		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'plugins_loaded' );
+	public function test_access_during_init_returns_a_working_consumer_at_any_priority(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions']   = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 
 		$consumer = \a8csp_bgte( 'consumer-plugin' );
 		$task     = new RecordingTask( 'sync' );
@@ -113,12 +115,12 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Resolution remains available after plugins_loaded completes.
+	 * Resolution remains available after init completes.
 	 *
 	 * @return  void
 	 */
-	public function test_access_after_plugins_loaded_returns_a_consumer(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+	public function test_access_after_init_returns_a_consumer(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
 		self::assertInstanceOf( Consumer::class, \a8csp_bgte( 'consumer-plugin' ) );
 	}
@@ -129,7 +131,7 @@ final class ApiTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_two_owners_can_register_enqueue_and_run_the_same_local_task_name(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
 		$left       = \a8csp_bgte( 'owner-left' );
 		$right      = \a8csp_bgte( 'owner-right' );
@@ -205,8 +207,8 @@ final class ApiTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_owners' )]
 	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
-		$GLOBALS['a8csp_bgte_test_did_actions']   = array( 'plugins_loaded' => 1 );
-		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'plugins_loaded' );
+		$GLOBALS['a8csp_bgte_test_did_actions']   = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 
 		$this->expectException( \InvalidArgumentException::class );
 		\a8csp_bgte( $owner );
@@ -354,7 +356,7 @@ final class ApiTest extends TestCase {
 
 	/** Completed runs under another owner are invisible to the bound facade. */
 	public function test_last_completed_run_is_isolated_by_owner(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
 		$owner_a = \a8csp_bgte( 'owner-a' );
 		$owner_b = \a8csp_bgte( 'owner-b' );
@@ -482,7 +484,7 @@ final class ApiTest extends TestCase {
 	 * @return  Consumer
 	 */
 	private function consumer(): Consumer {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
 		return \a8csp_bgte( 'consumer-plugin' );
 	}

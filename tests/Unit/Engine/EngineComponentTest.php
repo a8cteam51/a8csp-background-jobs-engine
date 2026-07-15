@@ -24,7 +24,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the retained engine composition root through the owner-bound public front door.
+ * Exercises the retained engine composition root through plugin boot and the owner-bound front door.
  *
  */
 #[CoversClass( Component::class )]
@@ -107,11 +107,17 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * The public front door publishes one engine through owner-bound consumers and registers runtime hooks.
+	 * Eager plugin boot publishes one engine, and the front door returns owner-bound consumers.
 	 *
 	 * @return  void
 	 */
-	public function test_front_door_publishes_one_engine_and_registers_runtime_hooks(): void {
+	public function test_eager_boot_publishes_one_engine_and_front_door_returns_consumers(): void {
+		\a8csp_bgte_plugin();
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+			'plugins_loaded' => 1,
+			'init'           => 1,
+		);
+
 		$first      = \a8csp_bgte( self::OWNER );
 		$engine     = Component::get_engine();
 		$second     = \a8csp_bgte( self::OWNER );
@@ -177,7 +183,7 @@ final class EngineComponentTest extends TestCase {
 			'init'           => 1,
 		);
 
-		\a8csp_bgte( self::OWNER );
+		\a8csp_bgte_plugin();
 
 		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
 		self::assertNotContains( 'init', $hook_names, 'A late boot must not leave a deferred sync behind' );
@@ -212,6 +218,7 @@ final class EngineComponentTest extends TestCase {
 			}
 		);
 
+		\a8csp_bgte_plugin();
 		$resolved = \a8csp_bgte( self::OWNER );
 
 		self::assertTrue( $reentered );
@@ -234,7 +241,7 @@ final class EngineComponentTest extends TestCase {
 		);
 		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 
-		\a8csp_bgte( self::OWNER );
+		\a8csp_bgte_plugin();
 
 		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
 		self::assertContains( 'wp_loaded', $hook_names, 'A mid-init boot must defer the sync until init completes' );
@@ -257,7 +264,7 @@ final class EngineComponentTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_blog_switch_calls']  = array();
 		$GLOBALS['a8csp_bgte_test_blog_restore_calls'] = array();
 
-		\a8csp_bgte( self::OWNER );
+		\a8csp_bgte_plugin();
 
 		$init_registrations = \array_values(
 			\array_filter(
@@ -290,8 +297,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_live_wp_cron_graph_round_trips_public_task_schedule_batch_and_retry_apis(): void {
-		$consumer = \a8csp_bgte( self::OWNER );
-		self::assertInstanceOf( Consumer::class, $consumer );
+		\a8csp_bgte_plugin();
 
 		// Boot defers the engine's own maintenance sync to init; fire it the way WordPress would.
 		$init_registrations = \array_values(
@@ -313,6 +319,13 @@ final class EngineComponentTest extends TestCase {
 		$init_callback = $init_registrations[0]['callback'] ?? null;
 		self::assertIsCallable( $init_callback );
 		$init_callback();
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+			'plugins_loaded' => 1,
+			'init'           => 1,
+		);
+
+		$consumer = \a8csp_bgte( self::OWNER );
+		self::assertInstanceOf( Consumer::class, $consumer );
 
 		$task_identity    = self::OWNER . ':email-digest';
 		$batch_identity   = self::OWNER . ':catalog-sync';
@@ -458,6 +471,7 @@ final class EngineComponentTest extends TestCase {
 			'action_scheduler_init' => 1,
 		);
 
+		\a8csp_bgte_plugin();
 		$consumer = \a8csp_bgte( self::OWNER );
 		self::assertInstanceOf( Consumer::class, $consumer );
 		$as_calls = $GLOBALS['a8csp_bgte_test_as_calls'] ?? null;

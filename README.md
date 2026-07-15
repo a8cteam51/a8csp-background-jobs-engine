@@ -48,7 +48,6 @@ namespace Acme\BackgroundTasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
@@ -57,18 +56,13 @@ final class BackgroundTasksRegistration {
 	private const OWNER = 'acme-background-work';
 
 	private const SCHEDULE_NAME = 'site-health-ping';
-	private static Consumer $consumer;
-
-	public static function boot(): void {
-		self::$consumer = \a8csp_bgte( self::OWNER );
-		\add_action( 'init', array( self::class, 'register' ) );
-	}
 
 	public static function register(): void {
-		self::$consumer->tasks()->register( new SiteHealthPingTask() );
-		self::$consumer->batches()->register( new CommentCountRecountBatch() );
+		$consumer = \a8csp_bgte( self::OWNER );
+		$consumer->tasks()->register( new SiteHealthPingTask() );
+		$consumer->batches()->register( new CommentCountRecountBatch() );
 
-		$synced = self::$consumer->schedules()->sync(
+		$synced = $consumer->schedules()->sync(
 			array(
 				new Schedule(
 					name: self::SCHEDULE_NAME,
@@ -87,16 +81,18 @@ final class BackgroundTasksRegistration {
 	}
 }
 
-\add_action( 'plugins_loaded', array( BackgroundTasksRegistration::class, 'boot' ) );
+\add_action( 'init', array( BackgroundTasksRegistration::class, 'register' ) );
 ```
 
 `SiteHealthPingTask` and `CommentCountRecountBatch` are consumer-owned implementations of the contracts below. See the tested version of this example in [`DemoConsumer`](tests/Support/Fixtures/DemoConsumer.php), [`SiteHealthPingTask`](tests/Support/Fixtures/SiteHealthPingTask.php), and [`CommentCountRecountBatch`](tests/Support/Fixtures/CommentCountRecountBatch.php).
 
-`a8csp_bgte()` is available from inside `plugins_loaded` at any priority, and later. Calling it before `plugins_loaded` throws a `LogicException` naming that earliest safe hook. Pass the consumer plugin slug once; owners match `[a-z0-9][a-z0-9-]*`, are at most 32 bytes, and cannot start with the engine-reserved `a8csp-bgte` prefix. Owner exclusivity is a convention, so plugins use their own slug.
+`a8csp_bgte()` is available from inside `init` at any priority, and later. Calling it before `init` throws a `LogicException` directing the caller to an `init` callback or later. Action Scheduler's stores initialize at `init:1`; allowing earlier enqueues would silently divert them to WP-Cron. By `init`, the engine's eager `plugins_loaded:0` boot has run in every standard load path. Pass the consumer plugin slug once; owners match `[a-z0-9][a-z0-9-]*`, are at most 32 bytes, and cannot start with the engine-reserved `a8csp-bgte` prefix. Owner exclusivity is a convention, so plugins use their own slug.
 
 Task, Batch, and Schedule local names match `[a-z0-9_-]+` and are at most 64 bytes. The API composes the owner and local name once at the facade boundary. The complete identity is therefore at most 97 bytes and remains inside WordPress's 191-character `option_name` boundary for every derived store key.
 
-Schedule synchronization treats the passed array as the bound owner's complete declaration, so call it on every `init`. After `init` registers the contracts, enqueue the Task or start the Batch through an owner-bound consumer:
+Schedule synchronization treats the passed array as the bound owner's complete declaration, so call it on every `init`. Register every Task and Batch from an `init` callback on every request. Run delivery through WP-Cron, Action Scheduler, and WP-CLI begins only after `init` completes, so an `init`-time registration at any priority is always in place before its runs deliver. A run delivered for a name with no registration in that request fails terminally with `UnknownWork`; after registering, retry it with `runs()->retry_failed()`.
+
+After registration, enqueue the Task or start the Batch through an owner-bound consumer:
 
 ```php
 $consumer = \a8csp_bgte( 'acme-background-work' );
