@@ -785,7 +785,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$terminal_transitions   = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->clock->timestamp = self::NOW + 90 + WorkInterface::DEFAULT_MAX_RUNTIME + 901;
 		$credit                 = $this->clock->timestamp + WorkInterface::DEFAULT_MAX_RUNTIME;
-		$replacement_state      = $terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $action_seq, $stores->run_store( self::IDENTITY ), static fn (): int => $credit );
+		$replacement_state      = $terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $action_seq, $stores->run_store( self::IDENTITY ), static fn (): int => $credit );
 		self::assertInstanceOf( RunState::class, $replacement_state );
 
 		return $credit;

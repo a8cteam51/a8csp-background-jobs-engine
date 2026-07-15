@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\SkippedTaskDispatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
@@ -17,8 +17,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -272,7 +272,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		);
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( TaskDispatchSkipped::class, $result->value );
+		self::assertInstanceOf( SkippedTaskDispatch::class, $result->value );
 		self::assertSame( 'run-incumbent', $result->value->running_run_id );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertFalse( $accepted );

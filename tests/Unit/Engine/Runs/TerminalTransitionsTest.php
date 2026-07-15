@@ -232,10 +232,10 @@ final class TerminalTransitionsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_active_run_state_drops_a_fresh_same_sequence_delivery(): void {
+	public function test_claim_delivery_ownership_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$first     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 		$expected_run  = $this->option( $this->run_option_name() );
@@ -246,7 +246,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
-		$duplicate = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$duplicate = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 
 		self::assertNull( $duplicate );
 		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
@@ -275,17 +275,17 @@ final class TerminalTransitionsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_active_run_state_admits_and_refences_a_stale_execution_marker(): void {
+	public function test_claim_delivery_ownership_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$first     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 
 		$this->clock->timestamp = self::NOW + 991;
 		$this->logger->records  = array();
 
-		$reclaimed = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
 
 		self::assertInstanceOf( RunState::class, $reclaimed );
 		self::assertTrue( $reclaimed->executing );
@@ -300,11 +300,11 @@ final class TerminalTransitionsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_active_run_state_drops_a_stale_sequence_after_the_incumbent_advances(): void {
+	public function test_claim_delivery_ownership_drops_a_stale_sequence_after_the_incumbent_advances(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
-		$incumbent = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, static fn (): int => $credit_at );
+		$incumbent = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, static fn (): int => $credit_at );
 		self::assertInstanceOf( RunState::class, $incumbent );
 
 		$reset_at               = $credit_at + 901;
@@ -318,7 +318,7 @@ final class TerminalTransitionsTest extends TestCase {
 			}
 		);
 
-		$reclaimed = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $incumbent->action_seq, $run_store, static fn (): int => $reset_at + 300 );
+		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $incumbent->action_seq, $run_store, static fn (): int => $reset_at + 300 );
 
 		self::assertNull( $reclaimed );
 		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
@@ -909,7 +909,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 */
 	private function handle_task_run_action( string $run_id, int $action_seq ): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}

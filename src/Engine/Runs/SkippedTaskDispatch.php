@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class TaskDispatchSkipped {
+final readonly class SkippedTaskDispatch {
 	// region MAGIC METHODS
 
 	/**

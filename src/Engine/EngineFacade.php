@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -51,13 +51,13 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-	public function last_completed_run( string $name ): AbstractResult {
-		return $this->inspection->last_completed_run( $name );
+	public function last_completed_run( string $identity ): AbstractResult {
+		return $this->inspection->last_completed_run( $identity );
 	}
 
 	/**
@@ -66,14 +66,14 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Complete owner-qualified task or batch identity.
-	 * @param   string $run_id Retained failed-run identifier.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $run_id   Retained failed-run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		return $this->dispatcher->retry_failed( $name, $run_id );
+	public function retry_failed( string $identity, string $run_id ): AbstractResult {
+		return $this->dispatcher->retry_failed( $identity, $run_id );
 	}
 
 	/**
@@ -82,14 +82,14 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Complete owner-qualified task or batch identity.
-	 * @param   string $run_id Retained run identifier.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $run_id   Retained run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-	public function cancel( string $name, string $run_id ): AbstractResult {
-		return $this->dispatcher->cancel( $name, $run_id );
+	public function cancel( string $identity, string $run_id ): AbstractResult {
+		return $this->dispatcher->cancel( $identity, $run_id );
 	}
 
 	// endregion

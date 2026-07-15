@@ -11,8 +11,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -102,12 +102,12 @@ final readonly class Schedules {
 		WorkIdentity::validate_owner( $owner, true );
 
 		$declared = array();
-		foreach ( $declarations as $registration_key => $declaration ) {
-			if ( ! \is_string( $registration_key ) ) {
+		foreach ( $declarations as $schedule_identity => $declaration ) {
+			if ( ! \is_string( $schedule_identity ) ) {
 				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical owner-qualified schedule identities.' );
 			}
 
-			$registration_parts = WorkIdentity::parts( $registration_key );
+			$registration_parts = WorkIdentity::parts( $schedule_identity );
 			if ( null === $registration_parts || $owner !== $registration_parts[0] ) {
 				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound owner.' );
 			}
@@ -131,7 +131,7 @@ final readonly class Schedules {
 				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object task names.' );
 			}
 
-			$declared[ $registration_key ] = array(
+			$declared[ $schedule_identity ] = array(
 				'schedule' => $schedule,
 				'task'     => $task,
 			);
@@ -145,15 +145,15 @@ final readonly class Schedules {
 		$existing             = $registrations->value;
 		$interval_by_identity = array();
 		$next_due_by_identity = array();
-		foreach ( $declared as $registration_key => $declaration ) {
+		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$interval = $schedule->recurrence->interval();
 			if ( null === $interval ) {
 				return $this->cron_failure( $schedule );
 			}
 
-			$interval_by_identity[ $registration_key ] = $interval;
-			$current                                   = $existing[ $registration_key ] ?? null;
+			$interval_by_identity[ $schedule_identity ] = $interval;
+			$current                                    = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
 				continue;
 			}
@@ -173,19 +173,19 @@ final readonly class Schedules {
 				);
 			}
 
-			$next_due_by_identity[ $registration_key ] = $next_due;
+			$next_due_by_identity[ $schedule_identity ] = $next_due;
 		}
 
 		$next = $existing;
-		foreach ( $declared as $registration_key => $declaration ) {
+		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
-			$current  = $existing[ $registration_key ] ?? null;
+			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				if ( $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ) ) {
+				if ( $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity ) ) {
 					continue;
 				}
 
-				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $registration_key ], array( $registration_key ), $current['next_due'], $registration_key, priority: $schedule->priority );
+				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: $schedule->priority );
 				if ( $recreated->is_failure() ) {
 					return $recreated;
 				}
@@ -193,17 +193,17 @@ final readonly class Schedules {
 				continue;
 			}
 
-			$backend_occurrence_exists = null === $current && $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
+			$backend_occurrence_exists = null === $current && $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 			if ( null !== $current || $backend_occurrence_exists ) {
-				$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
+				$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 				if ( $removed->is_failure() ) {
 					return $this->replacement_clear_failure( $schedule );
 				}
 			}
 
-			$interval                  = $interval_by_identity[ $registration_key ];
-			$next_due                  = $next_due_by_identity[ $registration_key ];
-			$next[ $registration_key ] = array(
+			$interval                   = $interval_by_identity[ $schedule_identity ];
+			$next_due                   = $next_due_by_identity[ $schedule_identity ];
+			$next[ $schedule_identity ] = array(
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => $next_due,
 				'last_fired'  => null,
@@ -214,7 +214,7 @@ final readonly class Schedules {
 				return $this->registry_persist_failure( $owner );
 			}
 
-			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $registration_key ), $next_due, $registration_key, priority: $schedule->priority );
+			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority );
 			if ( $scheduled->is_failure() ) {
 				// A scheduling failure leaves the benign registration-without-chain that the fingerprint-match fast path
 				// recreates; rolling back can race a delivery and manufacture chain-without-registration, the exact orphan
@@ -223,13 +223,13 @@ final readonly class Schedules {
 			}
 		}
 
-		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $registration_key ) {
-			$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
+		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $schedule_identity ) {
+			$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 			if ( $removed->is_failure() ) {
 				return $removed;
 			}
 
-			unset( $next[ $registration_key ] );
+			unset( $next[ $schedule_identity ] );
 			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
 				return $this->registry_persist_failure( $owner );
 			}

@@ -15,9 +15,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -248,7 +248,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->wpdb->before_next(
 			'update',
 			function () use ( &$admitted, $run_id, $run_store ): void {
-				$admitted = $this->terminal_transitions->active_run_state( 'Task', self::TASK_IDENTITY, $run_id, 1, $run_store );
+				$admitted = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::TASK_IDENTITY, $run_id, 1, $run_store );
 			}
 		);
 
@@ -275,7 +275,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$admitted = $this->terminal_transitions->active_run_state( 'Task', self::TASK_IDENTITY, $run_id, 1, $run_store );
+		$admitted = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::TASK_IDENTITY, $run_id, 1, $run_store );
 
 		self::assertNull( $admitted );
 		self::assertInstanceOf( Success::class, $cancel_result );

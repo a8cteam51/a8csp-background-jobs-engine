@@ -121,7 +121,7 @@ final readonly class ActionDeliveries {
 			? fn (): int => $this->execution_lease_at( $registered_batch )
 			: null;
 		$run_store        = $this->stores->run_store( $batch_name );
-		$state            = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store, $liveness_at );
+		$state            = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
@@ -207,7 +207,7 @@ final readonly class ActionDeliveries {
 	 */
 	public function handle_continue_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -272,7 +272,7 @@ final readonly class ActionDeliveries {
 			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
 		}
 		$run_store = $this->stores->run_store( $name );
-		$state     = $this->terminal_transitions->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store, $liveness_at );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( $work_type, $name, $run_id, $received_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
@@ -346,7 +346,7 @@ final readonly class ActionDeliveries {
 	 */
 	public function handle_cleanup_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}

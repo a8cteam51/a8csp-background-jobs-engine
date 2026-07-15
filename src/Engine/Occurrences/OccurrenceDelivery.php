@@ -8,12 +8,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\RegistrationUpdate
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\SkippedTaskDispatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -354,7 +354,7 @@ final readonly class OccurrenceDelivery {
 		}
 
 		$registration['next_due'] = $next_due;
-		if ( $dispatched->value instanceof TaskDispatchSkipped ) {
+		if ( $dispatched->value instanceof SkippedTaskDispatch ) {
 			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfires` counts Skip-policy drops, `skips` counts overlap skips.
 			$registration['skips'] = self::increment_counter( $registration['skips'] );
 			$this->persist_delivery_state( $registration_key, $owner, $registration );
@@ -452,7 +452,7 @@ final readonly class OccurrenceDelivery {
 			return $dispatched;
 		}
 
-		if ( $dispatched->value instanceof TaskDispatchSkipped ) {
+		if ( $dispatched->value instanceof SkippedTaskDispatch ) {
 			return new Failure( $dispatched->value->error );
 		}
 

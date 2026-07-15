@@ -3,8 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;

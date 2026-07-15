@@ -1,9 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\AbstractTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
@@ -12,7 +13,7 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Reconciles abandoned execution locks and active-run options on an hourly engine schedule.
+ * Reconciles engine-wide run state, execution locks, and schedule-cleanup intents.
  *
  * @internal Engine wiring only.
  *

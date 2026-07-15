@@ -30,8 +30,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -841,7 +841,7 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	private function handle_failed_task_attempt(): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, fn (): int => $this->clock->timestamp + $this->task->max_runtime() );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, fn (): int => $this->clock->timestamp + $this->task->max_runtime() );
 		if ( null === $state ) {
 			return;
 		}

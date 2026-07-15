@@ -47,7 +47,7 @@ final readonly class TerminalTransitions {
 	// region METHODS
 
 	/**
-	 * Fences and heartbeats one recoverable running state for a lifecycle action.
+	 * Claims delivery ownership of one recoverable running state for a lifecycle action.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -65,7 +65,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  RunState|null
 	 */
-	public function active_run_state( string $work_type, string $name, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
+	public function claim_delivery_ownership( string $work_type, string $name, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
 		$state        = $run_store->get( $run_id );
 		$context_name = \strtolower( $work_type ) . '_name';
 		if ( null === $state ) {

@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -50,8 +50,7 @@ final readonly class MaintenanceSchedule {
 	 * @return  void
 	 */
 	public function register_hooks(): void {
-		// Action Scheduler becomes ready at init:1, while WP_Hook does not visit callbacks appended
-		// to the priority bucket it is currently traversing.
+		// Post-init boot must synchronize immediately because a callback registered for completed init can never run.
 		if ( 0 < \did_action( 'init' ) && ! \doing_action( 'init' ) ) {
 			$this->sync_maintenance_schedule();
 			return;

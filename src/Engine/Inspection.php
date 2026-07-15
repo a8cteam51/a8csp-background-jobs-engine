@@ -117,15 +117,15 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
-	public function last_completed_run( string $name ): AbstractResult {
-		$entries = $this->stores->run_history( $name )->terminal_entries();
+	public function last_completed_run( string $identity ): AbstractResult {
+		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $name ), ) );
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
 		}
 
 		return new Success( \array_find( \array_reverse( $entries ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] )['run_id'] ?? null );
@@ -192,7 +192,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @phpstan-return array{
 	 *     observed_at: int,
@@ -205,18 +205,18 @@ final readonly class Inspection {
 	 *
 	 * @return  array
 	 */
-	public function runs( string $name ): array {
+	public function runs( string $identity ): array {
 		$observed_at = $this->clock->now()->getTimestamp();
-		$run_store   = $this->stores->run_store( $name );
-		$prefix      = RunIdentity::option_name_prefix( $name );
+		$run_store   = $this->stores->run_store( $identity );
+		$prefix      = RunIdentity::option_name_prefix( $identity );
 		$page        = $this->option_rows->option_names_page(
 			$prefix,
 			\strlen( $prefix ) + RunIdentity::LENGTH,
 			self::LIVE_RUN_LIMIT,
-			static function ( string $option_name ) use ( $name ): bool {
-				$identity = RunIdentity::from_option_name( $option_name );
+			static function ( string $option_name ) use ( $identity ): bool {
+				$run_identity = RunIdentity::from_option_name( $option_name );
 
-				return null !== $identity && $name === $identity['name'];
+				return null !== $run_identity && $identity === $run_identity['name'];
 			}
 		);
 		if ( null === $page ) {
@@ -230,16 +230,16 @@ final readonly class Inspection {
 			);
 		}
 
-		$kind = $this->work_kind( $name );
+		$kind = $this->work_kind( $identity );
 		$live = array();
 
 		foreach ( $page['names'] as $option_name ) {
-			$identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $identity || $name !== $identity['name'] ) {
+			$run_identity = RunIdentity::from_option_name( $option_name );
+			if ( null === $run_identity || $identity !== $run_identity['name'] ) {
 				continue;
 			}
 
-			$run_id    = $identity['run_id'];
+			$run_id    = $run_identity['run_id'];
 			$inspected = $run_store->inspect( $run_id );
 			if ( $inspected->is_failure() ) {
 				return array(
@@ -258,7 +258,7 @@ final readonly class Inspection {
 				continue;
 			}
 
-			$staleness = $this->lock_windows->lock_staleness( $name, $run_id );
+			$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
 			$live[]    = array(
 				'run_id'       => $run_id,
 				'kind'         => $kind,
@@ -274,7 +274,7 @@ final readonly class Inspection {
 		return array(
 			'observed_at'      => $observed_at,
 			'live'             => $live,
-			'history'          => $this->history( $name ),
+			'history'          => $this->history( $identity ),
 			'live_error'       => null,
 			'live_scanned'     => \count( $page['names'] ),
 			'live_uninspected' => \max( 0, $page['total'] - \count( $page['names'] ) ),
@@ -349,17 +349,17 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified background-work identity.
+	 * @param   string $identity Complete owner-qualified background-work identity.
 	 *
 	 * @return  'batch'|'task'|'unknown'
 	 */
-	private function work_kind( string $name ): string {
-		$kind = $this->tasks->kind( $name );
+	private function work_kind( string $identity ): string {
+		$kind = $this->tasks->kind( $identity );
 		if ( 'task' === $kind ) {
-			return null === $this->tasks->get( $name ) ? 'unknown' : 'task';
+			return null === $this->tasks->get( $identity ) ? 'unknown' : 'task';
 		}
 		if ( 'batch' === $kind ) {
-			return null === $this->batches->get( $name ) ? 'unknown' : 'batch';
+			return null === $this->batches->get( $identity ) ? 'unknown' : 'batch';
 		}
 
 		return 'unknown';
@@ -371,18 +371,18 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified background-work identity.
+	 * @param   string $identity Complete owner-qualified background-work identity.
 	 *
 	 * @phpstan-return list<HistoryEntry>|null
 	 *
 	 * @return  array|null Null when authoritative failed-run or history inspection fails.
 	 */
-	private function history( string $name ): ?array {
-		$history     = $this->stores->run_history( $name );
+	private function history( string $identity ): ?array {
+		$history     = $this->stores->run_history( $identity );
 		$failed_ids  = array();
 		$entries     = array();
 		$seen        = array();
-		$failed_runs = $this->stores->failed_run_store( $name )->all();
+		$failed_runs = $this->stores->failed_run_store( $identity )->all();
 		if ( $failed_runs->is_failure() ) {
 			return null;
 		}
