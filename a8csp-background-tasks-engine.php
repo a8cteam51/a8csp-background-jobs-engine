@@ -41,20 +41,19 @@ add_filter(
 			return $update;
 		}
 
-		$transient_key       = 'a8csp_bgte_github_latest_release';
-		$latest_release_info = get_transient( $transient_key );
+		$latest_release_info = get_transient( 'a8csp_bgte_github_latest_release' );
 		if ( false === $latest_release_info ) {
-			// A prerelease install follows every published release; a stable install follows only the
+			// A prerelease installation follows every published release; a stable installation follows only the
 			// stable channel, which the latest-release endpoint provides by definition.
-			$release_url_path    = \str_contains( (string) ( $plugin_data['Version'] ?? '' ), '-' )
-				? 'releases?per_page=10'
-				: 'releases/latest';
+			$release_url_path    = \str_contains( (string) ( $plugin_data['Version'] ?? '' ), '-' ) ? 'releases?per_page=10' : 'releases/latest';
 			$response            = wp_remote_get( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/' . $release_url_path );
 			$latest_release_info = is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ? array() : \json_decode( wp_remote_retrieve_body( $response ), true );
 		}
+
 		if ( ! \is_array( $latest_release_info ) ) {
 			$latest_release_info = array();
 		}
+
 		if ( array() !== $latest_release_info && \array_is_list( $latest_release_info ) ) {
 			// The release list arrives newest first; the first non-draft entry is the channel's latest.
 			$channel_latest = null;
@@ -64,6 +63,7 @@ add_filter(
 					break;
 				}
 			}
+
 			$latest_release_info = \is_array( $channel_latest ) ? $channel_latest : array();
 		}
 
@@ -89,13 +89,14 @@ add_filter(
 		$release_is_usable = \is_string( $release_tag ) && \is_string( $release_url ) && \is_string( $release_asset );
 		if ( isset( $response ) ) {
 			set_transient(
-				$transient_key,
+				'a8csp_bgte_github_latest_release',
 				$release_is_usable ? $latest_release_info : array(),
 				$release_is_usable ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS
 			);
 		}
+
 		if ( ! $release_is_usable ) {
-			return $update;
+			return false;
 		}
 
 		$latest_release_version = \ltrim( $release_tag, 'v' );
