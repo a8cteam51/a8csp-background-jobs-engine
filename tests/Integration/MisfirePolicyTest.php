@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
@@ -394,11 +395,23 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$clock,
 			$occurrence_delivery
 		);
+		$inspection           = new Inspection(
+			$schedule_registry,
+			$tasks,
+			$batches,
+			$scheduler,
+			$guard,
+			$stores,
+			$rows,
+			$lock_windows,
+			$clock
+		);
 		$engine               = new Engine(
 			new Tasks( $tasks, $dispatcher ),
 			$schedules,
 			new Batches( $batches, $dispatcher ),
-			$dispatcher
+			$dispatcher,
+			$inspection
 		);
 
 		\remove_all_actions( 'a8csp_background_tasks/start' );

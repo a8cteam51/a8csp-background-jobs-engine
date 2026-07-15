@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Container;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -256,6 +257,143 @@ final class ApiTest extends TestCase {
 		self::assert_api_failure( $result, ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 
+	/** The latest completed run follows terminal recording order. */
+	public function test_last_completed_run_returns_the_most_recent_completion(): void {
+		$consumer = $this->consumer();
+		$task     = new RecordingTask( 'sync' );
+		$consumer->tasks()->register( $task );
+
+		self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'sequence' => 1 ) );
+		$latest = self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'sequence' => 2 ) );
+
+		$result = $consumer->runs()->last_completed_run( 'sync' );
+		if ( $result->is_failure() ) {
+			self::fail( 'The retained completed-run lookup returned an unexpected failure.' );
+		}
+
+		self::assertSame( $latest, $result->value );
+	}
+
+	/** Completed notifications observe the previously recorded completion. */
+	public function test_last_completed_run_inside_a_completed_hook_returns_the_previous_completion(): void {
+		$consumer = $this->consumer();
+		$consumer->tasks()->register( new RecordingTask( 'sync' ) );
+		$observed = array();
+
+		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
+			'a8csp_background_tasks/completed/consumer-plugin:sync' => static function () use ( $consumer, &$observed ): void {
+				$result = $consumer->runs()->last_completed_run( 'sync' );
+				if ( $result->is_failure() ) {
+					self::fail( 'The completed-hook inspection returned an unexpected failure.' );
+				}
+
+				$observed[] = $result->value;
+			},
+		);
+
+		$first  = self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'sequence' => 1 ) );
+		$second = self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'sequence' => 2 ) );
+
+		self::assertSame( array( null, $first ), $observed );
+		$result = $consumer->runs()->last_completed_run( 'sync' );
+		if ( $result->is_failure() ) {
+			self::fail( 'The post-completion inspection returned an unexpected failure.' );
+		}
+		self::assertSame( $second, $result->value );
+	}
+
+	/** A later failed run does not displace the last completion. */
+	public function test_last_completed_run_ignores_a_later_failure(): void {
+		$consumer = $this->consumer();
+		$task     = new RecordingTask( 'sync' );
+		$consumer->tasks()->register( $task );
+
+		$completed       = self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'outcome' => 'completed' ) );
+		$task->throwable = new NonRetryableTaskException( 'Scripted terminal failure.' );
+		self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'outcome' => 'failed' ) );
+
+		$result = $consumer->runs()->last_completed_run( 'sync' );
+		if ( $result->is_failure() ) {
+			self::fail( 'The retained completed-run lookup returned an unexpected failure.' );
+		}
+
+		self::assertSame( $completed, $result->value );
+	}
+
+	/** An identity without a retained completion returns a successful absence. */
+	public function test_last_completed_run_returns_null_when_none_is_retained(): void {
+		$result = $this->consumer()->runs()->last_completed_run( 'sync' );
+		if ( $result->is_failure() ) {
+			self::fail( 'An absent completed run must remain a successful lookup.' );
+		}
+
+		self::assertNull( $result->value );
+	}
+
+	/** An authoritative history read failure maps to the public storage failure. */
+	public function test_last_completed_run_maps_an_authoritative_read_failure(): void {
+		$consumer = $this->consumer();
+		$wpdb     = $GLOBALS['wpdb'];
+		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
+		$wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'consumer-controlled database detail';
+			}
+		);
+
+		$result = $consumer->runs()->last_completed_run( 'sync' );
+
+		self::assert_api_failure( $result, ApiErrorCode::StorageFailure, array( 'option_name' ) );
+		if ( ! $result->is_failure() ) {
+			self::fail( 'The storage read failure must remain result data.' );
+		}
+		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'option_name' => 'a8csp_bgte_history_consumer-plugin:sync' ), $result->error->context );
+	}
+
+	/** Completed runs under another owner are invisible to the bound facade. */
+	public function test_last_completed_run_is_isolated_by_owner(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+
+		$owner_a = \a8csp_bgte( 'owner-a' );
+		$owner_b = \a8csp_bgte( 'owner-b' );
+		$owner_b->tasks()->register( new RecordingTask( 'sync' ) );
+		$owner_b_run = self::enqueue_and_run_task( $owner_b, 'owner-b:sync' );
+
+		$owner_a_result = $owner_a->runs()->last_completed_run( 'sync' );
+		$owner_b_result = $owner_b->runs()->last_completed_run( 'sync' );
+		if ( $owner_a_result->is_failure() || $owner_b_result->is_failure() ) {
+			self::fail( 'Owner-isolated completed-run lookups returned an unexpected failure.' );
+		}
+
+		self::assertNull( $owner_a_result->value );
+		self::assertSame( $owner_b_run, $owner_b_result->value );
+	}
+
+	/** A completion evicted from the configured history window is reported as absent. */
+	public function test_last_completed_run_reports_an_evicted_completion_as_absent(): void {
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp_background_tasks/history_size' => 2 );
+		$consumer                                 = $this->consumer();
+		$consumer->tasks()->register( new RecordingTask( 'sync' ) );
+
+		self::enqueue_and_run_task( $consumer, 'consumer-plugin:sync', array( 'outcome' => 'completed' ) );
+		for ( $index = 1; $index <= 2; ++$index ) {
+			$run_id = self::enqueue_task( $consumer, array( 'cancelled' => $index ) );
+			$cancel = $consumer->runs()->cancel( 'sync', $run_id );
+			if ( $cancel->is_failure() ) {
+				self::fail( 'The retention fixture could not cancel its pending run.' );
+			}
+		}
+
+		$result = $consumer->runs()->last_completed_run( 'sync' );
+		if ( $result->is_failure() ) {
+			self::fail( 'The retained completed-run lookup returned an unexpected failure.' );
+		}
+
+		self::assertNull( $result->value );
+	}
+
 	/** Failed-run retry maps an absent retained run to the public admission error. */
 	public function test_run_retry_maps_its_internal_failure_at_the_facade_boundary(): void {
 		$consumer = $this->consumer();
@@ -347,6 +485,50 @@ final class ApiTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
 
 		return \a8csp_bgte( 'consumer-plugin' );
+	}
+
+	/**
+	 * Enqueues and delivers one task through the public consumer graph.
+	 *
+	 * @param   Consumer                $consumer Owner-bound public facade.
+	 * @param   string                  $identity Complete task identity.
+	 * @param   array<array-key, mixed> $args     Task arguments.
+	 *
+	 * @return  string
+	 */
+	private static function enqueue_and_run_task( Consumer $consumer, string $identity, array $args = array() ): string {
+		$run_id = self::enqueue_task( $consumer, $args );
+
+		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
+		$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'];
+		foreach ( $registrations as $registration ) {
+			if ( 'a8csp_background_tasks/run' !== $registration['hook_name'] ) {
+				continue;
+			}
+
+			$registration['callback']( $identity, $run_id, 1 );
+
+			return $run_id;
+		}
+
+		self::fail( 'The task-delivery callback was not registered.' );
+	}
+
+	/**
+	 * Enqueues one task and returns its narrowed run identifier.
+	 *
+	 * @param   Consumer                $consumer Owner-bound public facade.
+	 * @param   array<array-key, mixed> $args     Task arguments.
+	 *
+	 * @return  string
+	 */
+	private static function enqueue_task( Consumer $consumer, array $args = array() ): string {
+		$result = $consumer->tasks()->enqueue( 'sync', $args );
+		if ( $result->is_failure() ) {
+			self::fail( 'The task fixture returned an unexpected enqueue failure.' );
+		}
+
+		return $result->value;
 	}
 
 	/**

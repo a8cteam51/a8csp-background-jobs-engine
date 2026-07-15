@@ -448,6 +448,36 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
+	 * Last-completed inspection follows recording order and skips every other terminal outcome.
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_run_uses_terminal_recording_order(): void {
+		$identity          = 'owner:recording-order';
+		$recorded_first    = self::run_id( 99 );
+		$recorded_last     = self::run_id( 1 );
+		$terminal_outcomes = array(
+			array( $recorded_first, RunStatus::Completed ),
+			array( $recorded_last, RunStatus::Completed ),
+			array( self::run_id( 100 ), RunStatus::Failed ),
+			array( self::run_id( 101 ), RunStatus::Cancelled ),
+			array( self::run_id( 102 ), RunStatus::Superseded ),
+		);
+		$history           = $this->stores->run_history( $identity );
+
+		foreach ( $terminal_outcomes as [ $run_id, $status ] ) {
+			self::assertTrue( $history->record_terminal( $run_id, 'shared-hash', $status ) );
+		}
+
+		$result = $this->inspection->last_completed_run( $identity );
+		if ( $result->is_failure() ) {
+			self::fail( 'The recording-order inspection returned an unexpected failure.' );
+		}
+
+		self::assertSame( $recorded_last, $result->value );
+	}
+
+	/**
 	 * An unreadable failed-run store marks history unavailable instead of reporting no history.
 	 *
 	 * @return  void

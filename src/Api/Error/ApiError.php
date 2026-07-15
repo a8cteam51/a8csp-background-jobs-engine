@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Consumer-visible failure returned when a background-work command is not admitted.
+ * Consumer-visible failure returned when a background-work operation cannot complete.
  *
  * The message is engine-authored and excludes raw consumer exception text. Context contains only
  * structured detail safe for consumer diagnostics.

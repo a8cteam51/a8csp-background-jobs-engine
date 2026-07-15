@@ -211,12 +211,6 @@ final class Component implements ComponentContract {
 			$occurrence_delivery
 		);
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-		$engine               = new EngineFacade(
-			new Tasks( $tasks, $dispatcher ),
-			$schedule_api,
-			new Batches( $batches, $dispatcher ),
-			$dispatcher
-		);
 		$inspection           = new Inspection(
 			$schedules,
 			$tasks,
@@ -227,6 +221,13 @@ final class Component implements ComponentContract {
 			$option_rows,
 			$lock_windows,
 			$clock
+		);
+		$engine               = new EngineFacade(
+			new Tasks( $tasks, $dispatcher ),
+			$schedule_api,
+			new Batches( $batches, $dispatcher ),
+			$dispatcher,
+			$inspection
 		);
 
 		$scheduler->register_hooks();

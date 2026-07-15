@@ -22,19 +22,45 @@ final readonly class Runs {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                   $identity     Owner-qualified identity composer.
-	 * @param   \Closure(string, string): AbstractResult<string, ApiError> $retry_failed Failed-run retry delegate.
-	 * @param   \Closure(string, string): AbstractResult<string, ApiError> $cancel       Run cancellation delegate.
+	 * @param   \Closure(string): string                                   $identity           Owner-qualified identity composer.
+	 * @param   \Closure(string, string): AbstractResult<string, ApiError> $retry_failed       Failed-run retry delegate.
+	 * @param   \Closure(string, string): AbstractResult<string, ApiError> $cancel             Run cancellation delegate.
+	 * @param   \Closure(string): AbstractResult<string|null, ApiError>    $last_completed_run Last-completed-run inspection delegate.
 	 */
 	public function __construct(
 		private \Closure $identity,
 		private \Closure $retry_failed,
 		private \Closure $cancel,
+		private \Closure $last_completed_run,
 	) {}
 
 	// endregion
 
 	// region METHODS
+
+	/**
+	 * Returns the most recently recorded completed run retained for one background-work name.
+	 *
+	 * The lookup covers only the retained history window. Each history buffer retains at most the
+	 * positive `a8csp_background_tasks/history_size` filter value, 30 by default. A completed run
+	 * older than that window returns `Success(null)` as if absent. Consumers needing indefinite
+	 * retention keep their own pointer from `on_success()` or the completed lifecycle hook. History
+	 * is recorded after those notifications, so a lookup inside either observes the previous retained
+	 * completion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Owner-local task or batch name.
+	 *
+	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
+	 *
+	 * @return  AbstractResult<string|null, ApiError>
+	 */
+	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
+	public function last_completed_run( string $name ): AbstractResult {
+		return ( $this->last_completed_run )( $this->identity( $name ) );
+	}
 
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.

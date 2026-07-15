@@ -58,7 +58,12 @@ final class ConsumerTest extends TestCase {
 		$tasks     = new Tasks( $identity, static function (): void {}, static fn (): Success => new Success( 'task-run' ) );
 		$batches   = new Batches( $identity, static function (): void {}, static fn (): Success => new Success( 'batch-run' ) );
 		$schedules = new Schedules( $identity, static fn (): Success => new Success( true ), static fn (): Success => new Success( 'schedule-run' ) );
-		$runs      = new Runs( $identity, static fn (): Success => new Success( 'retry-run' ), static fn (): Success => new Success( 'cancelled-run' ) );
+		$runs      = new Runs(
+			$identity,
+			static fn (): Success => new Success( 'retry-run' ),
+			static fn (): Success => new Success( 'cancelled-run' ),
+			static fn (): Success => new Success( null )
+		);
 		$consumer  = new Consumer( 'consumer-plugin', $tasks, $batches, $schedules, $runs );
 
 		self::assertSame( $tasks, $consumer->tasks() );
@@ -182,11 +187,11 @@ final class ConsumerTest extends TestCase {
 	}
 
 	/**
-	 * Run mutations can address only identities under the bound owner.
+	 * Run inspection and mutations can address only identities under the bound owner.
 	 *
 	 * @return  void
 	 */
-	public function test_runs_retry_and_cancel_owner_qualified_work(): void {
+	public function test_runs_inspect_retry_and_cancel_owner_qualified_work(): void {
 		$calls = array();
 		$runs  = new Runs(
 			self::identity( 'consumer-plugin' ),
@@ -197,11 +202,19 @@ final class ConsumerTest extends TestCase {
 			static function ( string $identity, string $run_id ) use ( &$calls ): Success {
 				$calls[] = array( 'cancel', $identity, $run_id );
 				return new Success( $run_id );
+			},
+			static function ( string $identity ) use ( &$calls ): Success {
+				$calls[] = array( 'last_completed_run', $identity );
+				return new Success( 'completed-run' );
 			}
 		);
 
-		$retry  = $runs->retry_failed( 'sync', 'failed-run' );
-		$cancel = $runs->cancel( 'sync', 'live-run' );
+		$completed = $runs->last_completed_run( 'sync' );
+		$retry     = $runs->retry_failed( 'sync', 'failed-run' );
+		$cancel    = $runs->cancel( 'sync', 'live-run' );
+		if ( $completed->is_failure() ) {
+			self::fail( 'The completed-run facade returned an unexpected failure.' );
+		}
 		if ( $retry->is_failure() ) {
 			self::fail( 'The retry facade returned an unexpected failure.' );
 		}
@@ -209,15 +222,22 @@ final class ConsumerTest extends TestCase {
 			self::fail( 'The cancel facade returned an unexpected failure.' );
 		}
 
+		self::assertSame( 'completed-run', $completed->value );
 		self::assertSame( 'replacement-run', $retry->value );
 		self::assertSame( 'live-run', $cancel->value );
 		self::assertSame(
 			array(
+				array( 'last_completed_run', 'consumer-plugin:sync' ),
 				array( 'retry_failed', 'consumer-plugin:sync', 'failed-run' ),
 				array( 'cancel', 'consumer-plugin:sync', 'live-run' ),
 			),
 			$calls
 		);
+
+		foreach ( ( new \ReflectionClass( Runs::class ) )->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
+			self::assertNotContains( 'owner', \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $method->getParameters() ) );
+		}
+		self::assertSame( array( 'name' ), self::parameter_names( Runs::class, 'last_completed_run' ) );
 	}
 
 	/**
@@ -231,12 +251,13 @@ final class ConsumerTest extends TestCase {
 		$tasks     = new Tasks( $identity, static function (): void {}, static fn () => $failure );
 		$batches   = new Batches( $identity, static function (): void {}, static fn () => $failure );
 		$schedules = new Schedules( $identity, static fn () => $failure, static fn () => $failure );
-		$runs      = new Runs( $identity, static fn () => $failure, static fn () => $failure );
+		$runs      = new Runs( $identity, static fn () => $failure, static fn () => $failure, static fn () => $failure );
 
 		self::assertSame( $failure, $tasks->enqueue( 'sync' ) );
 		self::assertSame( $failure, $batches->start( 'sync' ) );
 		self::assertSame( $failure, $schedules->sync( array() ) );
 		self::assertSame( $failure, $schedules->run_now( 'nightly' ) );
+		self::assertSame( $failure, $runs->last_completed_run( 'sync' ) );
 		self::assertSame( $failure, $runs->retry_failed( 'sync', 'failed-run' ) );
 		self::assertSame( $failure, $runs->cancel( 'sync', 'live-run' ) );
 	}
@@ -488,6 +509,7 @@ final class ConsumerTest extends TestCase {
 			array( Batches::class, 'start' ),
 			array( Schedules::class, 'sync' ),
 			array( Schedules::class, 'run_now' ),
+			array( Runs::class, 'last_completed_run' ),
 			array( Runs::class, 'retry_failed' ),
 			array( Runs::class, 'cancel' ),
 		);

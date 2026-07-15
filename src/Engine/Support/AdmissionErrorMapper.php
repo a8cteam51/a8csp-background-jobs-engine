@@ -12,7 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorRea
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Translates internal command-admission failures into the sole public failure value.
+ * Translates internal operation failures into the sole public failure value.
  *
  * @internal Public facade boundary only.
  *
@@ -88,7 +88,7 @@ final class AdmissionErrorMapper {
 	// region HELPERS
 
 	/**
-	 * Maps one supported internal failure without inspecting its message.
+	 * Maps one supported internal operation failure without inspecting its message.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

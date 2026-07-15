@@ -99,6 +99,9 @@ final class Container {
 				),
 				static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map(
 					$engine->cancel( $name, $run_id )
+				),
+				static fn ( string $name ) => AdmissionErrorMapper::map(
+					$engine->last_completed_run( $name )
 				)
 			)
 		);

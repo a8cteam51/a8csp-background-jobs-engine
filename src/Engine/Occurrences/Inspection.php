@@ -8,11 +8,17 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Clock\ClockInterface;
 
@@ -122,6 +128,38 @@ final readonly class Inspection {
 	// endregion
 
 	// region METHODS
+
+	/**
+	 * Returns the last completed run in the retained terminal recording order.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Stable task or batch name.
+	 *
+	 * @return  AbstractResult<string|null, EngineError>
+	 */
+	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
+	public function last_completed_run( string $name ): AbstractResult {
+		$entries = $this->stores->run_history( $name )->terminal_entries();
+		if ( null === $entries ) {
+			return new Failure(
+				new EngineError(
+					'Authoritative option-row read failed; repair WordPress option reads and retry.',
+					reason: EngineErrorReason::StorageFailure,
+					context: array( 'option_name' => RunHistory::OPTION_PREFIX . $name ),
+				)
+			);
+		}
+
+		foreach ( \array_reverse( $entries ) as $entry ) {
+			if ( RunStatus::Completed->value === $entry['status'] ) {
+				return new Success( $entry['run_id'] );
+			}
+		}
+
+		return new Success( null );
+	}
 
 	/**
 	 * Returns persisted schedule registrations with their currently observable live state.

@@ -127,7 +127,7 @@ A Task deduplication key is an optional opaque byte string scoped to that Task. 
 
 `ExistingRunPolicy::Replace` is the default Batch policy: a start with matching arguments takes over a fresh incumbent's overlap lock, and the incumbent stops at its next fence. `ExistingRunPolicy::Reject` instead returns `OverlapHeld` and leaves the incumbent in place.
 
-Scheduling, retry, and cancellation methods return `Success` or `Failure<ApiError>`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property. Failed results expose a stable `ApiErrorCode` through `$result->error->code`; `context` contains redaction-safe structured details such as the incumbent `run_id` for `OverlapHeld`.
+Scheduling, run-inspection, retry, and cancellation methods return `Success` or `Failure<ApiError>`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property. Failed results expose a stable `ApiErrorCode` through `$result->error->code`; `context` contains redaction-safe structured details such as the incumbent `run_id` for `OverlapHeld`.
 
 Deterministic contract violations detected before engine side effects throw `InvalidArgumentException`: invalid or reserved identities, priorities outside 0–255, negative task delays, empty or over-64-byte Task deduplication keys, non-portable Task or Batch arguments, and cross-kind registration. Valid commands rejected by registration or runtime state—including unknown work, held locks, backend refusal, and storage failure—return `Failure<ApiError>`.
 
@@ -139,7 +139,7 @@ The supported facade methods are:
 | `Api\Task\Tasks` | `register(TaskInterface)`, `enqueue(string $name, array $args = [], int $delay = 0, ?string $dedup_key = null, int $priority = 10)` |
 | `Api\Batch\Batches` | `register(BatchInterface)`, `start(string $name, array $start_args = [], ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10)` |
 | `Api\Schedule\Schedules` | `sync(array $schedules)`, `run_now(string $name)` |
-| `Api\Run\Runs` | `retry_failed(string $name, string $run_id)`, `cancel(string $name, string $run_id)` |
+| `Api\Run\Runs` | `last_completed_run(string $name)`, `retry_failed(string $name, string $run_id)`, `cancel(string $name, string $run_id)` |
 
 ## The three contracts
 
@@ -322,7 +322,11 @@ Public start and enqueue arguments are validated as JSON-encodable portable argu
 
 Bulk data belongs in storage that the Task or Batch reads by key. Pass identifying keys in action arguments. The tested Task carries its transient key. The tested Batch carries a `post_type` key, queries post IDs during queue generation, and puts one ID in each chunk.
 
-## Failure, retry, and cancellation
+## Run inspection, failure, retry, and cancellation
+
+`$consumer->runs()->last_completed_run( $name )` returns the most recently recorded `Completed` run ID for the owner-local Task or Batch name. A successful lookup carries the run ID or `null` when no completed run remains in the retained history window; a failed, cancelled, or superseded run recorded later does not displace a retained completion. The lookup follows terminal recording order and does not re-sort the timestamp-prefixed run IDs.
+
+Each history buffer retains at most the positive `a8csp_background_tasks/history_size` filter value, 30 by default. Once later terminal outcomes evict a completion, the lookup returns `Success(null)` as if that completion were absent. Consumers needing an indefinite checkpoint persist their own pointer from a Batch's `on_success()` callback or the completed lifecycle hook. Terminal history is recorded after those notifications, so a lookup from either intentionally returns the previous retained completion.
 
 A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total, including the first, a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw an exception implementing `NonRetryableExceptionInterface` to bypass the remaining attempts for a permanent failure.
 

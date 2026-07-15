@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
@@ -150,12 +151,24 @@ final class EngineTest extends TestCase {
 			$logger
 		);
 		$schedules  = new Schedules( $registry, $this->backend, $clock, $delivery );
+		$inspection = new Inspection(
+			$registry,
+			$tasks,
+			$batches,
+			new SchedulerFacade( array( $this->backend ) ),
+			$guard,
+			$stores,
+			new OptionRows( $this->wpdb ),
+			$lock_windows,
+			$clock
+		);
 
 		$this->engine = new Engine(
 			new Tasks( $tasks, $dispatcher ),
 			$schedules,
 			new Batches( $batches, $dispatcher ),
 			$dispatcher,
+			$inspection,
 		);
 	}
 

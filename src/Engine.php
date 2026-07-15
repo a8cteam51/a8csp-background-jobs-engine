@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
@@ -33,17 +34,34 @@ final readonly class Engine {
 	 * @param   Schedules  $schedules  Schedule API.
 	 * @param   Batches    $batches    Batch API.
 	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
+	 * @param   Inspection $inspection Read-only run inspection.
 	 */
 	public function __construct(
 		private Tasks $tasks,
 		private Schedules $schedules,
 		private Batches $batches,
 		private Dispatcher $dispatcher,
+		private Inspection $inspection,
 	) {}
 
 	// endregion
 
 	// region METHODS
+
+	/**
+	 * Returns the last completed run retained for one background-work name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Stable task or batch name.
+	 *
+	 * @return  AbstractResult<string|null, EngineError>
+	 */
+	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
+	public function last_completed_run( string $name ): AbstractResult {
+		return $this->inspection->last_completed_run( $name );
+	}
 
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
