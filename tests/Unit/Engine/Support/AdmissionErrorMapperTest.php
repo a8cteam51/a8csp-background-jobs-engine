@@ -17,16 +17,25 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the exhaustive internal-to-public admission failure translation.
+ * Exercises consumer-visible admission outcomes and the context-redaction boundary.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( AdmissionErrorMapper::class )]
 #[UsesClass( ApiError::class )]
 #[UsesClass( EngineError::class )]
+#[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
+#[UsesClass( Success::class )]
 final class AdmissionErrorMapperTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -37,32 +46,140 @@ final class AdmissionErrorMapperTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
-	 * Every classified engine failure maps to its one public code and retains safe context.
+	 * Every engine admission reason maps to its stable public classification.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The admission boundary's engine classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $reason        Internal engine-reason backing value.
-	 * @param   string $expected_code Public error-code backing value.
+	 * @param   string $expected_code Consumer-visible classification.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'engine_failure_mappings' )]
-	public function test_maps_every_engine_failure_reason( string $reason, string $expected_code ): void {
-		$context = array( 'run_id' => 'run-7' );
-		$result  = AdmissionErrorMapper::map( new Failure( new EngineError( message: 'Engine-authored corrective detail.', reason: EngineErrorReason::from( $reason ), context: $context, ) ) );
+	#[DataProvider( 'engine_failure_codes' )]
+	public function test_engine_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
+		$result = AdmissionErrorMapper::map( new Failure( new EngineError( message: 'Engine-authored corrective detail.', reason: EngineErrorReason::from( $reason ), context: array( 'run_id' => 'run-7' ), ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored corrective detail.', $result->error->message );
-		self::assertSame( $context, $result->error->context );
+		self::assertSame( array( 'run_id' => 'run-7' ), $result->error->context );
 	}
 
 	/**
-	 * Supplies the complete internal engine-reason mapping table.
+	 * Every scheduling admission reason maps to its stable public classification.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The admission boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $reason        Internal scheduling-reason backing value.
+	 * @param   string $expected_code Consumer-visible classification.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'scheduling_failure_codes' )]
+	public function test_scheduling_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
+		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_background_tasks/run' ) ) ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
+		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run' ), $result->error->context );
+	}
+
+	/**
+	 * Successful values cross the admission boundary without allocation or payload changes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_preserves_a_success_result_instance(): void {
+		$success = new Success( 'run-7' );
+
+		self::assertSame( $success, AdmissionErrorMapper::map( $success ) );
+	}
+
+	/**
+	 * An unclassified internal failure fails closed at the admission boundary.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale An unclassified internal failure must fail loudly at the admission boundary rather than silently reach a consumer; no public seam can construct the unclassified state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_rejects_an_unclassified_engine_failure(): void {
+		$this->expectException( \LogicException::class );
+		$this->expectExceptionMessageIs( 'An internal engine failure reached the admission boundary without a public classification.' );
+
+		$result = AdmissionErrorMapper::map( new Failure( new EngineError( 'Unclassified failure.' ) ) );
+		self::fail( 'The unclassified failure was unexpectedly mapped: ' . \get_debug_type( $result ) );
+	}
+
+	/**
+	 * Database diagnostics never cross the admission boundary into consumer error context.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Database drivers expose arbitrary external text only inside the internal scheduling failure; public facades cannot inject that hostile context to prove the mapper strips it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_database_detail_does_not_reach_consumer_error_context(): void {
+		$secret = 'password=hunter2';
+		$result = AdmissionErrorMapper::map(
+			new Failure(
+				new SchedulingError(
+					SchedulingErrorReason::StorageFailure,
+					'The schedule registry could not be persisted.',
+					array(
+						'owner'         => 'consumer-plugin',
+						'storage_error' => $secret,
+						'wp_error'      => $secret,
+					)
+				)
+			)
+		);
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( array( 'owner' => 'consumer-plugin' ), $result->error->context );
+		self::assertArrayNotHasKey( 'storage_error', $result->error->context );
+		self::assertArrayNotHasKey( 'wp_error', $result->error->context );
+	}
+
+	// endregion.
+
+	// region PROVIDERS.
+
+	/**
+	 * Supplies every engine admission reason and its public classification.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array<string, array{reason: string, expected_code: string}>
 	 */
-	public static function engine_failure_mappings(): array {
+	public static function engine_failure_codes(): array {
 		return array(
 			'engine unavailable'    => array(
 				'reason'        => 'engine_unavailable',
@@ -108,31 +225,14 @@ final class AdmissionErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Every scheduling reason maps without message inspection.
+	 * Supplies every scheduling admission reason and its public classification.
 	 *
-	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Public error-code backing value.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'scheduling_failure_mappings' )]
-	public function test_maps_every_scheduling_failure_reason( string $reason, string $expected_code ): void {
-		$context = array( 'hook' => 'a8csp_background_tasks/run' );
-		$result  = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', $context ) ) );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
-		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
-		self::assertSame( $context, $result->error->context );
-	}
-
-	/**
-	 * Supplies the complete internal scheduling-reason mapping table.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array<string, array{reason: string, expected_code: string}>
 	 */
-	public static function scheduling_failure_mappings(): array {
+	public static function scheduling_failure_codes(): array {
 		return array(
 			'backend not ready'      => array(
 				'reason'        => 'backend_not_ready',
@@ -165,53 +265,5 @@ final class AdmissionErrorMapperTest extends TestCase {
 		);
 	}
 
-	/**
-	 * Successful values cross the boundary without allocation or payload changes.
-	 *
-	 * @return  void
-	 */
-	public function test_preserves_a_success_result_instance(): void {
-		$success = new Success( 'run-7' );
-
-		self::assertSame( $success, AdmissionErrorMapper::map( $success ) );
-	}
-
-	/**
-	 * An unclassified engine failure fails closed instead of guessing from prose.
-	 *
-	 * @return  void
-	 */
-	public function test_rejects_an_unclassified_engine_failure(): void {
-		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs( 'An internal engine failure reached the admission boundary without a public classification.' );
-
-		$result = AdmissionErrorMapper::map( new Failure( new EngineError( 'Unclassified failure.' ) ) );
-		self::fail( 'The unclassified failure was unexpectedly mapped: ' . \get_debug_type( $result ) );
-	}
-
-	/**
-	 * Internal diagnostic fields that can contain arbitrary external text do not cross the boundary.
-	 *
-	 * @return  void
-	 */
-	public function test_removes_context_fields_that_are_not_redaction_safe(): void {
-		$result = AdmissionErrorMapper::map(
-			new Failure(
-				new SchedulingError(
-					SchedulingErrorReason::ScheduleFailed,
-					'Engine-authored scheduling detail.',
-					array(
-						'hook'          => 'a8csp_background_tasks/run',
-						'expression'    => 'consumer-controlled expression',
-						'storage_error' => 'external storage detail',
-						'wp_error'      => 'external storage detail',
-					)
-				)
-			)
-		);
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run' ), $result->error->context );
-	}
+	// endregion.
 }

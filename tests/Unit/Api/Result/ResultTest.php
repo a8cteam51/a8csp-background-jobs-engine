@@ -2,14 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api\Result;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,8 +18,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( AbstractResult::class )]
 #[CoversClass( Success::class )]
 #[CoversClass( Failure::class )]
-#[UsesClass( SchedulingError::class )]
-#[UsesClass( SchedulingErrorReason::class )]
 final class ResultTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
@@ -49,7 +46,7 @@ final class ResultTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_failure_truth_table(): void {
-		$this->assert_truth_table( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry with a supported schedule.' ) ), false );
+		$this->assert_truth_table( new Failure( new class() implements ErrorInterface {} ), false );
 	}
 
 	/**
@@ -79,12 +76,12 @@ final class ResultTest extends TestCase {
 	}
 
 	/**
-	 * A failure exposes the same scheduling error instance supplied by its caller.
+	 * A failure exposes the same contract-compatible error instance supplied by its caller.
 	 *
 	 * @return  void
 	 */
 	public function test_failure_carries_its_exact_error(): void {
-		$error  = new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use an interval greater than zero.' );
+		$error  = new class() implements ErrorInterface {};
 		$result = new Failure( $error );
 
 		self::assertSame( $error, $result->error );
@@ -108,7 +105,7 @@ final class ResultTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_predicate_branches_expose_the_narrowed_payload(): void {
-		$error = new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' );
+		$error = new ApiError( ApiErrorCode::BackendUnavailable, 'Load a supported scheduling backend.' );
 
 		self::assertSame( 42, $this->read_narrowed_result( new Success( 42 ) ) );
 		self::assertSame( $error->message, $this->read_narrowed_result( new Failure( $error ) ) );
@@ -117,7 +114,7 @@ final class ResultTest extends TestCase {
 	/**
 	 * Reads the payload selected by the result predicate.
 	 *
-	 * @phpstan-param AbstractResult<int, SchedulingError> $result
+	 * @phpstan-param AbstractResult<int, ApiError> $result
 	 *
 	 * @param   AbstractResult $result Result to consume.
 	 *

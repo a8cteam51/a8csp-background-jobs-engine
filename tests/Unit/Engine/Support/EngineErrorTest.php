@@ -3,24 +3,32 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the engine failure detail and its absent exception-class default.
+ * Exercises consumer-visible terminal failure detail and its throwable redaction boundary.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( EngineError::class )]
+#[CoversClass( RunFailure::class )]
 #[UsesClass( SchedulingError::class )]
 final class EngineErrorTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
-	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
+	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -31,106 +39,145 @@ final class EngineErrorTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
-	 * Message and exception class retain the caller's exact values.
+	 * Consumer-visible terminal detail retains its stable summary and classification.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_carries_message_and_exception_class_unchanged(): void {
-		$error = new EngineError( message: 'Index refresh failed.', exception_class: \RuntimeException::class, );
+	public function test_public_failure_carries_summary_and_code_unchanged(): void {
+		$failure = self::failure( ApiErrorCode::ExecutionFailed, 'Index refresh failed.' );
 
-		self::assertSame( 'Index refresh failed.', $error->message );
-		self::assertSame( \RuntimeException::class, $error->exception_class );
-		self::assertNull( $error->reason );
-		self::assertSame( array(), $error->context );
+		self::assertSame( 'Index refresh failed.', $failure->summary );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 	}
 
 	/**
-	 * Callers without an exception class receive a null default.
+	 * Terminal failures without a failed batch chunk expose null through the public value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_defaults_exception_class(): void {
-		$error = new EngineError( 'Work failed.' );
+	public function test_public_failure_carries_an_absent_chunk_as_null(): void {
+		$failure = self::failure( ApiErrorCode::ExecutionFailed, 'Work failed.' );
 
-		self::assertSame( 'Work failed.', $error->message );
-		self::assertNull( $error->exception_class );
-		self::assertNull( $error->reason );
-		self::assertSame( array(), $error->context );
+		self::assertNull( $failure->failed_chunk );
 	}
 
 	/**
-	 * Throwable conversion names the class without retaining consumer-controlled message content.
+	 * Throwable-derived terminal detail never retains arbitrary throwable text or source paths.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Callback and retry throwables cross an internal terminalization boundary; public values cannot reveal whether raw throwable content was retained before redacted projection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string     $boundary         Throwable boundary under test.
+	 * @param   \Throwable $throwable        Throwable carrying prohibited diagnostic content.
+	 * @param   string     $secret           Content that must not be retained.
+	 * @param   string     $expected_class   Redaction-safe throwable class name.
+	 * @param   string     $corrective_prose Engine-authored corrective message anchor.
 	 *
 	 * @return  void
 	 */
-	public function test_from_throwable_omits_the_throwable_message(): void {
-		$error = EngineError::from_throwable( new \RuntimeException( 'Bearer secret-token' ) );
+	#[DataProvider( 'throwable_redaction_scenarios' )]
+	public function test_throwable_content_is_redacted_before_terminal_detail_is_retained( string $boundary, \Throwable $throwable, string $secret, string $expected_class, string $corrective_prose ): void {
+		$error = match ( $boundary ) {
+			'callback', 'anonymous callback' => EngineError::from_throwable( $throwable ),
+			'retry policy'                   => EngineError::retry_policy( 'Task', 'email-digest', $throwable ),
+			'retry preparation'              => EngineError::retry_preparation( 'Batch', 'catalog-sync', $throwable ),
+			default                          => self::fail( 'Unknown throwable boundary: ' . $boundary ),
+		};
 
-		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $error->message );
-		self::assertSame( \RuntimeException::class, $error->exception_class );
-		self::assertStringNotContainsString( 'secret-token', $error->message );
+		self::assertSame( $expected_class, $error->exception_class );
+		self::assertNotSame( '', $error->message );
+		self::assertStringContainsString( $corrective_prose, $error->message );
+		self::assertStringNotContainsString( $secret, $error->message );
+		self::assertStringNotContainsString( $secret, $error->exception_class ?? '' );
+		self::assertStringNotContainsString( "\0", $error->exception_class ?? '' );
+		self::assertStringNotContainsString( __DIR__, $error->exception_class ?? '' );
 	}
 
 	/**
-	 * Anonymous throwable diagnostics do not retain their synthetic source-path class suffix.
+	 * Scheduling terminalization scenarios expose their consumer-visible classifications.
 	 *
-	 * @return  void
-	 */
-	public function test_from_throwable_uses_a_path_free_anonymous_class_type(): void {
-		$throwable = new class( 'Bearer secret-token' ) extends \RuntimeException {};
-
-		$error = EngineError::from_throwable( $throwable );
-
-		self::assertSame( 'Background-work execution failed because RuntimeException@anonymous was thrown.', $error->message );
-		self::assertSame( 'RuntimeException@anonymous', $error->exception_class );
-		self::assertStringNotContainsString( "\0", $error->exception_class );
-		self::assertStringNotContainsString( __DIR__, $error->exception_class );
-	}
-
-	/**
-	 * Retry-policy conversion retains corrective engine prose without consumer message content.
+	 * @load-bearing security
+	 * @pin-rationale The terminalization boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
 	 *
-	 * @return  void
-	 */
-	public function test_retry_policy_omits_the_throwable_message(): void {
-		$error = EngineError::retry_policy( 'Task', 'email-digest', new \DomainException( 'user@example.com' ) );
-
-		self::assertSame( 'Task "email-digest" could not resolve the retry policy because DomainException was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $error->message );
-		self::assertSame( \DomainException::class, $error->exception_class );
-		self::assertStringNotContainsString( 'user@example.com', $error->message );
-	}
-
-	/**
-	 * Retry-preparation conversion retains corrective engine prose without consumer message content.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_preparation_omits_the_throwable_message(): void {
-		$error = EngineError::retry_preparation( 'Batch', 'catalog-sync', new \UnexpectedValueException( 'password=hunter2' ) );
-
-		self::assertSame( 'Batch "catalog-sync" could not prepare the retry action because UnexpectedValueException was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.', $error->message );
-		self::assertSame( \UnexpectedValueException::class, $error->exception_class );
-		self::assertStringNotContainsString( 'password=hunter2', $error->message );
-	}
-
-	/**
-	 * Scheduling reasons map to the public availability classification without message inspection.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Consumer-visible classification backing value.
+	 * @param   string $expected_code Consumer-visible terminal classification.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'scheduling_code_mappings' )]
-	public function test_maps_scheduling_reasons_to_api_codes( string $reason, string $expected_code ): void {
+	public function test_scheduling_failures_expose_public_codes( string $reason, string $expected_code ): void {
 		$error = new SchedulingError( SchedulingErrorReason::from( $reason ), 'Corrective engine prose.' );
 
 		self::assertSame( ApiErrorCode::from( $expected_code ), EngineError::api_code_for_scheduling( $error ) );
 	}
 
+	// endregion.
+
+	// region PROVIDERS.
+
+	/**
+	 * Supplies every throwable boundary that produces retained terminal detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{boundary: string, throwable: \Throwable, secret: string, expected_class: string, corrective_prose: string}>
+	 */
+	public static function throwable_redaction_scenarios(): array {
+		return array(
+			'callback'           => array(
+				'boundary'         => 'callback',
+				'throwable'        => new \RuntimeException( 'Bearer secret-token' ),
+				'secret'           => 'secret-token',
+				'expected_class'   => \RuntimeException::class,
+				'corrective_prose' => 'Background-work execution failed because RuntimeException was thrown.',
+			),
+			'anonymous callback' => array(
+				'boundary'         => 'anonymous callback',
+				'throwable'        => new class( 'Bearer secret-token' ) extends \RuntimeException {},
+				'secret'           => 'secret-token',
+				'expected_class'   => 'RuntimeException@anonymous',
+				'corrective_prose' => 'Background-work execution failed because RuntimeException@anonymous was thrown.',
+			),
+			'retry policy'       => array(
+				'boundary'         => 'retry policy',
+				'throwable'        => new \DomainException( 'user@example.com' ),
+				'secret'           => 'user@example.com',
+				'expected_class'   => \DomainException::class,
+				'corrective_prose' => 'Fix the retry policy provider or filter before retrying the failed run manually.',
+			),
+			'retry preparation'  => array(
+				'boundary'         => 'retry preparation',
+				'throwable'        => new \UnexpectedValueException( 'password=hunter2' ),
+				'secret'           => 'password=hunter2',
+				'expected_class'   => \UnexpectedValueException::class,
+				'corrective_prose' => 'Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+			),
+		);
+	}
+
 	/**
 	 * Supplies every scheduling reason and its consumer-visible classification.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array<string, array{reason: string, expected_code: string}>
 	 */
@@ -166,4 +213,25 @@ final class EngineErrorTest extends TestCase {
 			),
 		);
 	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Creates one public terminal-failure value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ApiErrorCode $code    Consumer-visible classification.
+	 * @param   string       $summary Engine-authored redacted summary.
+	 *
+	 * @return  RunFailure
+	 */
+	private static function failure( ApiErrorCode $code, string $summary ): RunFailure {
+		return new RunFailure( name: 'consumer-plugin:sync', run_id: 'run-7', attempts: 1, stage: 'scheduling', code: $code, summary: $summary, failed_chunk: null, );
+	}
+
+	// endregion.
 }

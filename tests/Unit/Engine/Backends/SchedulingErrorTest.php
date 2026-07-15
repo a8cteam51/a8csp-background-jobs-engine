@@ -2,20 +2,36 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Backends;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the scheduling failure payload and its closed reason vocabulary.
+ * Exercises consumer-visible scheduling failures through the admission boundary.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( SchedulingError::class )]
-#[CoversClass( SchedulingErrorReason::class )]
+#[UsesClass( ApiError::class )]
+#[UsesClass( AdmissionErrorMapper::class )]
+#[UsesClass( Failure::class )]
+#[UsesClass( SchedulingErrorReason::class )]
 final class SchedulingErrorTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -26,91 +42,155 @@ final class SchedulingErrorTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
-	 * The error exposes the exact reason, message, and structured context supplied by its caller.
+	 * Admission exposes the public code, message, and redaction-safe structured context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_carries_reason_message_and_context_unchanged(): void {
+	public function test_carries_code_message_and_context_unchanged(): void {
 		$context = array(
-			'backend' => 'action_scheduler',
-			'attempt' => 2,
+			'hook'     => 'a8csp_background_tasks/run',
+			'priority' => 10,
 		);
-		$error   = new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context );
+		$result  = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
 
-		self::assertSame( SchedulingErrorReason::ScheduleFailed, $error->reason );
-		self::assertSame( 'Retry after the backend becomes available.', $error->message );
-		self::assertSame( $context, $error->context );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::BackendRejected, $result->error->code );
+		self::assertSame( 'Retry after the backend becomes available.', $result->error->message );
+		self::assertSame( $context, $result->error->context );
 	}
 
 	/**
-	 * Callers that have no structured detail receive an empty context.
+	 * Scheduling failures without safe structured detail expose an empty context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_context_defaults_to_an_empty_array(): void {
-		$error = new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' );
+		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
 
-		self::assertSame( array(), $error->context );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::BackendUnavailable, $result->error->code );
+		self::assertSame( 'Load a supported scheduling backend.', $result->error->message );
+		self::assertSame( array(), $result->error->context );
 	}
 
 	/**
-	 * Registry read failures describe an authoritative storage read.
+	 * Registry read failures surface as storage failures with safe owner context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registry_read_failure_names_the_failed_read(): void {
-		$error = SchedulingError::registry_read_failure( 'owner-a' );
+	public function test_registry_read_failure_surfaces_as_storage_failure(): void {
+		$result = AdmissionErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'owner-a' ) ) );
 
-		self::assertSame( SchedulingErrorReason::StorageFailure, $error->reason );
-		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $error->message );
-		self::assertSame( array( 'owner' => 'owner-a' ), $error->context );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 	}
 
 	/**
-	 * Registry persist failures describe the failed durable write.
+	 * Registry persist failures surface as storage failures with safe owner context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registry_persist_failure_names_the_failed_write(): void {
-		$error = SchedulingError::registry_persist_failure( 'owner-a' );
+	public function test_registry_persist_failure_surfaces_as_storage_failure(): void {
+		$result = AdmissionErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'owner-a' ) ) );
 
-		self::assertSame( SchedulingErrorReason::StorageFailure, $error->reason );
-		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $error->message );
-		self::assertSame( array( 'owner' => 'owner-a' ), $error->context );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
+		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 	}
 
 	/**
-	 * The reason set and its log-facing values remain an explicit closed contract.
+	 * Each scheduling rejection scenario exposes its stable public classification.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The admission boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $reason        Internal scheduling-reason backing value.
+	 * @param   string $expected_code Consumer-visible scheduling classification.
 	 *
 	 * @return  void
 	 */
-	public function test_reason_set_and_backing_values_are_exact(): void {
-		$reasons = SchedulingErrorReason::cases();
+	#[DataProvider( 'scheduling_failure_codes' )]
+	public function test_scheduling_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
+		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_background_tasks/run' ) ) ) );
 
-		self::assertSame(
-			array(
-				SchedulingErrorReason::BackendNotReady,
-				SchedulingErrorReason::UnsupportedGroup,
-				SchedulingErrorReason::UnsupportedRecurrence,
-				SchedulingErrorReason::InvalidTimeInput,
-				SchedulingErrorReason::InvalidPayload,
-				SchedulingErrorReason::ScheduleFailed,
-				SchedulingErrorReason::StorageFailure,
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( 'Correct the scheduling request and retry.', $result->error->message );
+		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run' ), $result->error->context );
+	}
+
+	// endregion.
+
+	// region PROVIDERS.
+
+	/**
+	 * Supplies each scheduling rejection scenario and its public classification.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{reason: string, expected_code: string}>
+	 */
+	public static function scheduling_failure_codes(): array {
+		return array(
+			'backend not ready'      => array(
+				'reason'        => 'backend_not_ready',
+				'expected_code' => 'backend_unavailable',
 			),
-			$reasons
-		);
-		self::assertSame(
-			array(
-				'backend_not_ready',
-				'unsupported_group',
-				'unsupported_recurrence',
-				'invalid_time_input',
-				'invalid_payload',
-				'schedule_failed',
-				'storage_failure',
+			'unsupported group'      => array(
+				'reason'        => 'unsupported_group',
+				'expected_code' => 'unsupported_operation',
 			),
-			\array_map( static fn ( SchedulingErrorReason $reason ): string => $reason->value, $reasons )
+			'unsupported recurrence' => array(
+				'reason'        => 'unsupported_recurrence',
+				'expected_code' => 'unsupported_operation',
+			),
+			'invalid time input'     => array(
+				'reason'        => 'invalid_time_input',
+				'expected_code' => 'payload_rejected',
+			),
+			'invalid payload'        => array(
+				'reason'        => 'invalid_payload',
+				'expected_code' => 'payload_rejected',
+			),
+			'schedule failed'        => array(
+				'reason'        => 'schedule_failed',
+				'expected_code' => 'backend_rejected',
+			),
+			'storage failure'        => array(
+				'reason'        => 'storage_failure',
+				'expected_code' => 'storage_failure',
+			),
 		);
 	}
+
+	// endregion.
 }
