@@ -56,9 +56,7 @@ final class WorkRegistry {
 		}
 		if ( null !== $existing ) {
 			// Exception values are diagnostic data, not rendered output.
-			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-			throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', $identity, $existing, $kind ) );
-			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', $identity, $existing, $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
 		$this->kinds[ $identity ] = $kind;

@@ -48,9 +48,7 @@ final class AdmissionValidator {
 		}
 
 		// Exception values are diagnostic data, not rendered output.
-		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		throw new \InvalidArgumentException( \sprintf( '%1$s priority %2$d is invalid; pass a value from 0 through %3$d.', $context, $priority, self::MAX_PRIORITY ) );
-		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		throw new \InvalidArgumentException( \sprintf( '%1$s priority %2$d is invalid; pass a value from 0 through %3$d.', $context, $priority, self::MAX_PRIORITY ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	/**
@@ -78,9 +76,7 @@ final class AdmissionValidator {
 		}
 
 		// Exception values are diagnostic data, not rendered output.
-		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		throw new \InvalidArgumentException( \sprintf( '%s arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $context ) );
-		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		throw new \InvalidArgumentException( \sprintf( '%s arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $context ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	// endregion
