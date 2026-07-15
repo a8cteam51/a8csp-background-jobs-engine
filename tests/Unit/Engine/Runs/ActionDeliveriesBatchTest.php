@@ -437,7 +437,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( 'Started listener exploded.', $error->message );
+		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $error->message );
 		self::assertSame( \RuntimeException::class, $error->exception_class );
 		self::assertSame(
 			array(
@@ -464,7 +464,36 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
-		$this->assert_terminal_start_error( 'Queue generation exploded.', \RuntimeException::class );
+		$this->assert_terminal_start_error(
+			'Background-work execution failed because RuntimeException was thrown.',
+			\RuntimeException::class
+		);
+	}
+
+	/**
+	 * A lazy queue throwable discards every yielded chunk before terminal failure.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_fails_terminally_when_lazy_queue_iteration_throws(): void {
+		$throwable = new \RuntimeException( 'Lazy queue token secret.' );
+
+		$this->batch->generate_queue_factory = static function () use ( $throwable ): iterable {
+			yield array( 'chunk' => 'must-not-persist' );
+
+			throw $throwable;
+		};
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		$this->assert_terminal_start_error(
+			'Background-work execution failed because RuntimeException was thrown.',
+			\RuntimeException::class
+		);
+		self::assertStringNotContainsString( 'token secret', $this->batch->failure_calls[0]['error']->message );
 	}
 
 	/**
@@ -552,6 +581,33 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			'Batch queue filter returned a non-array value; return one argument array per chunk.',
 			\UnexpectedValueException::class
 		);
+	}
+
+	/**
+	 * A queue-filter throwable discards the generated queue before terminal failure.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_fails_terminally_when_queue_filter_throws(): void {
+		$throwable          = new \DomainException( 'Queue filter credential secret.' );
+		$this->batch->queue = array( array( 'chunk' => 'must-not-persist' ) );
+		$this->set_filter_value(
+			'a8csp_background_tasks/queue/' . self::NAME,
+			static function () use ( $throwable ): never {
+				throw $throwable;
+			}
+		);
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+
+		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		$this->assert_terminal_start_error(
+			'Background-work execution failed because DomainException was thrown.',
+			\DomainException::class
+		);
+		self::assertStringNotContainsString( 'credential secret', $this->batch->failure_calls[0]['error']->message );
 	}
 
 	/**
@@ -1267,7 +1323,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( 'Continue-delay filter exploded.', $error->message );
+		self::assertSame( 'Background-work execution failed because DomainException was thrown.', $error->message );
 		self::assertSame( \DomainException::class, $error->exception_class );
 		$this->assert_terminal_history( RunStatus::Failed );
 	}
@@ -1656,7 +1712,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'heartbeat_at'  => self::NOW + 120,
 				'error'         => array(
 					'class'   => \DomainException::class,
-					'message' => 'Chunk failed.',
+					'message' => 'Background-work execution failed because DomainException was thrown.',
 				),
 				'effects'       => array( 'retention', 'callbacks', 'history' ),
 			),
@@ -1799,10 +1855,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'level'   => 'error',
 					'message' => 'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
 					'context' => array(
-						'batch_name'        => self::NAME,
-						'run_id'            => self::RUN_ID,
-						'exception_class'   => $success_throwable::class,
-						'exception_message' => 'Success callback exploded.',
+						'batch_name' => self::NAME,
+						'run_id'     => self::RUN_ID,
+						'exception'  => $success_throwable,
 					),
 				),
 			),

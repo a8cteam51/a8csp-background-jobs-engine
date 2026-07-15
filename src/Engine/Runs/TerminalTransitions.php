@@ -855,10 +855,9 @@ final readonly class TerminalTransitions {
 				$this->logger->error(
 					'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
 					array(
-						'batch_name'        => $name,
-						'run_id'            => $run_id,
-						'exception_class'   => $throwable::class,
-						'exception_message' => $throwable->getMessage(),
+						'batch_name' => $name,
+						'run_id'     => $run_id,
+						'exception'  => $throwable,
 					)
 				);
 			}

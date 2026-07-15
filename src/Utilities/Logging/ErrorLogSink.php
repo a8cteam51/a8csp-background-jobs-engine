@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -13,6 +14,30 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Component;
  * @version 1.0.0
  */
 final class ErrorLogSink implements Component {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Maximum array levels retained from one context value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_CONTEXT_ARRAY_DEPTH = 8;
+
+	/**
+	 * Hexadecimal characters retained from one exception trace digest.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const TRACE_HASH_LENGTH = 16;
+
+	// endregion
+
 	// region INHERITED METHODS
 
 	/**
@@ -68,7 +93,11 @@ final class ErrorLogSink implements Component {
 
 		if ( array() !== $context ) {
 			try {
-				$encoded_context = \wp_json_encode( $context, \JSON_THROW_ON_ERROR );
+				$encoded_context = \wp_json_encode(
+					self::normalize_context( $context ),
+					\JSON_THROW_ON_ERROR,
+					self::MAX_CONTEXT_ARRAY_DEPTH + 1
+				);
 			} catch ( \Throwable ) {
 				$encoded_context = false;
 			}
@@ -80,7 +109,74 @@ final class ErrorLogSink implements Component {
 			}
 		}
 
-		\call_user_func( 'error_log', $line );
+		try {
+			\call_user_func( 'error_log', $line );
+		} catch ( \Throwable ) {
+			// The channel of last resort has no further fallback, so a failing error_log ends the attempt silently.
+			return;
+		}
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Retains only bounded scalar context and projects the reserved exception value safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $context Structured context.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function normalize_context( array $context ): array {
+		$normalized = array();
+		foreach ( $context as $key => $value ) {
+			// Only the PSR-3 reserved key receives the structured projection; a throwable under any other key collapses to its type.
+			if ( 'exception' === $key && $value instanceof \Throwable ) {
+				$normalized[ $key ] = self::normalize_exception( $value );
+				continue;
+			}
+
+			if (
+				null === $value
+				|| \is_scalar( $value )
+				|| ( \is_array( $value ) && ScalarTree::is_valid( $value, self::MAX_CONTEXT_ARRAY_DEPTH ) )
+			) {
+				$normalized[ $key ] = $value;
+				continue;
+			}
+
+			$normalized[ $key ] = \get_debug_type( $value );
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Returns message-free exception fields for host-log correlation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Caught exception or error.
+	 *
+	 * @return  array{class: string, code: int|string, file: string, trace_hash: string}
+	 */
+	private static function normalize_exception( \Throwable $throwable ): array {
+		$code = $throwable->getCode();
+		if ( ! \is_int( $code ) && ! \is_string( $code ) ) {
+			$code = \get_debug_type( $code );
+		}
+
+		return array(
+			'class'      => \get_debug_type( $throwable ),
+			'code'       => $code,
+			'file'       => \basename( $throwable->getFile() ) . ':' . $throwable->getLine(),
+			'trace_hash' => \substr( \hash( 'sha256', $throwable->getTraceAsString() ), 0, self::TRACE_HASH_LENGTH ),
+		);
 	}
 
 	// endregion

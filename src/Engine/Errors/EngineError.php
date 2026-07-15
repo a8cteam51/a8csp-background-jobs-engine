@@ -95,7 +95,15 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function from_throwable( \Throwable $throwable ): self {
-		return new self( $throwable->getMessage(), $throwable::class );
+		$exception_type = \get_debug_type( $throwable );
+
+		return new self(
+			\sprintf(
+				'Background-work execution failed because %s was thrown.',
+				$exception_type
+			),
+			$exception_type
+		);
 	}
 
 	/**
@@ -130,14 +138,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function retry_policy( string $work_type, string $name, \Throwable $throwable ): self {
+		$exception_type = \get_debug_type( $throwable );
+
 		return new self(
 			\sprintf(
-				'%1$s "%2$s" could not resolve the retry policy: %3$s Fix the retry policy provider or filter before retrying the failed run manually.',
+				'%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.',
 				$work_type,
 				$name,
-				$throwable->getMessage()
+				$exception_type
 			),
-			$throwable::class
+			$exception_type
 		);
 	}
 
@@ -154,14 +164,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function retry_preparation( string $work_type, string $name, \Throwable $throwable ): self {
+		$exception_type = \get_debug_type( $throwable );
+
 		return new self(
 			\sprintf(
-				'%1$s "%2$s" could not prepare the retry action: %3$s Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+				'%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
 				$work_type,
 				$name,
-				$throwable->getMessage()
+				$exception_type
 			),
-			$throwable::class
+			$exception_type
 		);
 	}
 

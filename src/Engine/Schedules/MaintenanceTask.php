@@ -139,10 +139,9 @@ final class MaintenanceTask extends AbstractTask {
 				$this->logger->warning(
 					'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 					array(
-						'name'              => $identity[0],
-						'run_id'            => $identity[1],
-						'exception_class'   => $throwable::class,
-						'exception_message' => $throwable->getMessage(),
+						'name'      => $identity[0],
+						'run_id'    => $identity[1],
+						'exception' => $throwable,
 					)
 				);
 
@@ -218,11 +217,10 @@ final class MaintenanceTask extends AbstractTask {
 				$this->logger->warning(
 					'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
 					array(
-						'name'              => $name,
-						'args_hash'         => $args_hash,
-						'run_id'            => $run_id,
-						'exception_class'   => $throwable::class,
-						'exception_message' => $throwable->getMessage(),
+						'name'      => $name,
+						'args_hash' => $args_hash,
+						'run_id'    => $run_id,
+						'exception' => $throwable,
 					)
 				);
 

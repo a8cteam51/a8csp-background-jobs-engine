@@ -224,7 +224,11 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertCount( 1, $generic_failed, 'The generic failed hook must fire exactly once' );
 		$error = $named_failed[0][2] ?? null;
 		self::assertInstanceOf( EngineError::class, $error );
-		self::assertSame( 'The remote record no longer exists.', $error->message );
+		$expected_message = \sprintf(
+			'Background-work execution failed because %s was thrown.',
+			NonRetryableTaskException::class
+		);
+		self::assertSame( $expected_message, $error->message );
 		self::assertSame( NonRetryableTaskException::class, $error->exception_class );
 		self::assertSame(
 			array( array( $run_id, $args, $error ) ),
@@ -305,7 +309,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'class'   => NonRetryableTaskException::class,
-				'message' => 'The remote record no longer exists.',
+				'message' => $expected_message,
 			),
 			$failed_entry['error'] ?? null
 		);

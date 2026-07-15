@@ -229,7 +229,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 
 		$error = $recorded_named_failed[0][2] ?? null;
 		self::assertInstanceOf( EngineError::class, $error );
-		self::assertSame( 'The upstream service remains unavailable.', $error->message );
+		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $error->message );
 		self::assertSame( \RuntimeException::class, $error->exception_class );
 		self::assertSame(
 			array( array( $failed_run_id, $args, $error ) ),
@@ -284,7 +284,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'class'   => \RuntimeException::class,
-				'message' => 'The upstream service remains unavailable.',
+				'message' => 'Background-work execution failed because RuntimeException was thrown.',
 			),
 			$failed_entry['error'] ?? null
 		);

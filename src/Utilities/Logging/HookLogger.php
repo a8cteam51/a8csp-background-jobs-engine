@@ -41,7 +41,7 @@ final class HookLogger extends AbstractLogger {
 
 		$replacements = array();
 		foreach ( $context as $key => $value ) {
-			if ( ! \is_scalar( $value ) && ! $value instanceof \Stringable ) {
+			if ( $value instanceof \Throwable || ( ! \is_scalar( $value ) && ! $value instanceof \Stringable ) ) {
 				continue;
 			}
 
@@ -72,11 +72,10 @@ final class HookLogger extends AbstractLogger {
 			try {
 				$breadcrumb = \strtr(
 					\sprintf(
-						'a8csp-background-tasks-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s] %s',
+						'a8csp-background-tasks-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]',
 						'a8csp_background_tasks/log',
 						$rendered_level,
-						\get_debug_type( $throwable ),
-						$throwable->getMessage()
+						\get_debug_type( $throwable )
 					),
 					array(
 						"\0" => '\\0',

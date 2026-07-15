@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\Exceptions\InvalidBatchChunkException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableExceptionInterface;
@@ -81,7 +82,9 @@ final readonly class FailureLifecycle {
 		}
 
 		$attempts_used = $state->chunk_retries + 1;
-		$error         = EngineError::from_throwable( $throwable );
+		$error         = 'Batch' === $work_type && $throwable instanceof InvalidBatchChunkException
+			? new EngineError( InvalidBatchChunkException::MESSAGE, \InvalidArgumentException::class )
+			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
 			$terminal_failure( $state, $error, $attempts_used );
 

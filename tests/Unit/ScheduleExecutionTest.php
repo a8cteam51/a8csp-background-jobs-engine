@@ -391,9 +391,11 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_misfire_listener_failure_is_logged_after_state_persists(): void {
+		$throwable = new \RuntimeException( 'listener failed' );
+
 		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/misfired/' . self::NAME => new \RuntimeException( 'listener failed' ),
+			'a8csp_background_tasks/misfired/' . self::NAME => $throwable,
 		);
 		$this->clock->timestamp                       = self::NOW + self::INTERVAL + 901;
 
@@ -408,7 +410,18 @@ final class ScheduleExecutionTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
+		self::assertSame(
+			array(
+				'level'   => 'error',
+				'message' => 'Misfired schedule listener failed after the occurrence state was persisted; fix the hook listener.',
+				'context' => array(
+					'owner'     => self::OWNER,
+					'name'      => self::NAME,
+					'exception' => $throwable,
+				),
+			),
+			$this->logger->records[0] ?? null
+		);
 	}
 
 	/**
@@ -553,6 +566,70 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $scan_failures );
 		self::assertCount( 1, $this->wpdb->recorded_queries );
+	}
+
+	/**
+	 * A throwable during intent enumeration is retained as structured log context.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_logs_an_enumeration_throwable_as_exception_context(): void {
+		$throwable = new \RuntimeException( 'Intent enumeration secret.' );
+		$this->wpdb->before_next(
+			'scan',
+			static function () use ( $throwable ): void {
+				throw $throwable;
+			}
+		);
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertSame(
+			array(
+				'level'   => 'debug',
+				'message' => 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
+				'context' => array( 'exception' => $throwable ),
+			),
+			$this->logger->records[0] ?? null
+		);
+	}
+
+	/**
+	 * A throwable during one intent convergence is retained with its schedule identity.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_logs_a_convergence_throwable_as_exception_context(): void {
+		$raw = \maybe_serialize(
+			array(
+				'key'        => self::REGISTRATION_KEY,
+				'created_at' => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->wpdb->put( $this->intent_option_name(), $raw );
+		$throwable = new \RuntimeException( 'Intent convergence secret.' );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function () use ( $throwable ): void {
+				throw $throwable;
+			}
+		);
+
+		$this->delivery->converge_pending_intents();
+
+		self::assertSame(
+			array(
+				'level'   => 'debug',
+				'message' => 'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
+				'context' => array(
+					'registration_key' => self::REGISTRATION_KEY,
+					'exception'        => $throwable,
+				),
+			),
+			$this->logger->records[0] ?? null
+		);
 	}
 
 	/**

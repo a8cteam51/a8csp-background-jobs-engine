@@ -806,13 +806,14 @@ final readonly class Dispatcher {
 		try {
 			$this->terminal_transitions->fire_started( $task_name, $run_id, $args );
 		} catch ( \Throwable $throwable ) {
-			$error = new EngineError(
+			$exception_type = \get_debug_type( $throwable );
+			$error          = new EngineError(
 				\sprintf(
-					'Task "%1$s" started listener failed: %2$s Fix the started-hook listener before enqueueing the task again.',
+					'Task "%1$s" started listener failed because %2$s was thrown. Fix the started-hook listener before enqueueing the task again.',
 					$task_name,
-					$throwable->getMessage()
+					$exception_type
 				),
-				$throwable::class
+				$exception_type
 			);
 			$this->terminal_transitions->fail_run( $task_name, $run_id, $state, $run_store, $error, 1 );
 
@@ -902,7 +903,7 @@ final readonly class Dispatcher {
 		try {
 			$encoded = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
 		} catch ( \JsonException $exception ) {
-			$exception_class = $exception::class;
+			$exception_class = \get_debug_type( $exception );
 		}
 
 		if ( ! \is_string( $encoded ) || ! ScalarTree::is_valid( $args ) ) {

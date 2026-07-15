@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\Exceptions\InvalidBatchChunkException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Helpers\ScalarTree;
 
 \defined( 'ABSPATH' ) || exit;
@@ -147,15 +148,13 @@ final class BatchContext implements BatchContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Chunk arguments.
 	 *
-	 * @throws  \InvalidArgumentException When the chunk is not a scalar tree.
+	 * @throws  InvalidBatchChunkException When the chunk is not a scalar tree.
 	 *
 	 * @return  void
 	 */
 	private static function assert_valid_chunk( array $chunk_args ): void {
 		if ( ! ScalarTree::is_valid( $chunk_args ) ) {
-			throw new \InvalidArgumentException(
-				'Batch chunk arguments must contain only null, scalar, or nested array values.'
-			);
+			throw new InvalidBatchChunkException();
 		}
 	}
 

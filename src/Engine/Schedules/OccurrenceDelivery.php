@@ -137,10 +137,7 @@ final readonly class OccurrenceDelivery {
 		} catch ( \Throwable $throwable ) {
 			$this->log_pending_intent(
 				'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
-				array(
-					'exception_class'   => $throwable::class,
-					'exception_message' => $throwable->getMessage(),
-				)
+				array( 'exception' => $throwable )
 			);
 
 			return;
@@ -153,9 +150,8 @@ final readonly class OccurrenceDelivery {
 				$this->log_pending_intent(
 					'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
 					array(
-						'registration_key'  => $registration_key,
-						'exception_class'   => $throwable::class,
-						'exception_message' => $throwable->getMessage(),
+						'registration_key' => $registration_key,
+						'exception'        => $throwable,
 					)
 				);
 			}
@@ -339,10 +335,9 @@ final readonly class OccurrenceDelivery {
 				$this->logger->error(
 					'Misfired schedule listener failed after the occurrence state was persisted; fix the hook listener.',
 					array(
-						'owner'             => $owner,
-						'name'              => $name,
-						'exception_class'   => $throwable::class,
-						'exception_message' => $throwable->getMessage(),
+						'owner'     => $owner,
+						'name'      => $name,
+						'exception' => $throwable,
 					)
 				);
 			}

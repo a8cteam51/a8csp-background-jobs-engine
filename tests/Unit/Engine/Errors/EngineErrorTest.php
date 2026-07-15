@@ -53,4 +53,76 @@ final class EngineErrorTest extends TestCase {
 		self::assertNull( $error->exception_class );
 		self::assertObjectNotHasProperty( 'context', $error );
 	}
+
+	/**
+	 * Throwable conversion names the class without retaining consumer-controlled message content.
+	 *
+	 * @return  void
+	 */
+	public function test_from_throwable_omits_the_throwable_message(): void {
+		$error = EngineError::from_throwable( new \RuntimeException( 'Bearer secret-token' ) );
+
+		self::assertSame(
+			'Background-work execution failed because RuntimeException was thrown.',
+			$error->message
+		);
+		self::assertSame( \RuntimeException::class, $error->exception_class );
+		self::assertStringNotContainsString( 'secret-token', $error->message );
+	}
+
+	/**
+	 * Anonymous throwable diagnostics do not retain their synthetic source-path class suffix.
+	 *
+	 * @return  void
+	 */
+	public function test_from_throwable_uses_a_path_free_anonymous_class_type(): void {
+		$throwable = new class( 'Bearer secret-token' ) extends \RuntimeException {};
+
+		$error = EngineError::from_throwable( $throwable );
+
+		self::assertSame( 'Background-work execution failed because RuntimeException@anonymous was thrown.', $error->message );
+		self::assertSame( 'RuntimeException@anonymous', $error->exception_class );
+		self::assertStringNotContainsString( "\0", $error->exception_class );
+		self::assertStringNotContainsString( __DIR__, $error->exception_class );
+	}
+
+	/**
+	 * Retry-policy conversion retains corrective engine prose without consumer message content.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_policy_omits_the_throwable_message(): void {
+		$error = EngineError::retry_policy(
+			'Task',
+			'email-digest',
+			new \DomainException( 'user@example.com' )
+		);
+
+		self::assertSame(
+			'Task "email-digest" could not resolve the retry policy because DomainException was thrown. Fix the retry policy provider or filter before retrying the failed run manually.',
+			$error->message
+		);
+		self::assertSame( \DomainException::class, $error->exception_class );
+		self::assertStringNotContainsString( 'user@example.com', $error->message );
+	}
+
+	/**
+	 * Retry-preparation conversion retains corrective engine prose without consumer message content.
+	 *
+	 * @return  void
+	 */
+	public function test_retry_preparation_omits_the_throwable_message(): void {
+		$error = EngineError::retry_preparation(
+			'Batch',
+			'catalog-sync',
+			new \UnexpectedValueException( 'password=hunter2' )
+		);
+
+		self::assertSame(
+			'Batch "catalog-sync" could not prepare the retry action because UnexpectedValueException was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+			$error->message
+		);
+		self::assertSame( \UnexpectedValueException::class, $error->exception_class );
+		self::assertStringNotContainsString( 'password=hunter2', $error->message );
+	}
 }

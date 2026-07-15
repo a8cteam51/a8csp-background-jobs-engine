@@ -49,6 +49,9 @@ final class RecordingBatch implements BatchInterface {
 	/** Throwable raised after queue generation is recorded and observed. */
 	public ?\Throwable $generate_throwable = null;
 
+	/** @var (\Closure(): iterable<array-key, array<array-key, mixed>>)|null Lazy generated queue factory. */
+	public ?\Closure $generate_queue_factory = null;
+
 	/** Throwable raised after chunk processing is recorded and observed. */
 	public ?\Throwable $process_throwable = null;
 
@@ -131,6 +134,9 @@ final class RecordingBatch implements BatchInterface {
 
 		if ( null !== $this->generate_throwable ) {
 			throw $this->generate_throwable;
+		}
+		if ( null !== $this->generate_queue_factory ) {
+			return ( $this->generate_queue_factory )();
 		}
 
 		return $this->queue;

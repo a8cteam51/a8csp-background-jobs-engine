@@ -315,7 +315,7 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame(
-			'Task "email-digest" started listener failed: Started listener exploded. Fix the started-hook listener before enqueueing the task again.',
+			'Task "email-digest" started listener failed because RuntimeException was thrown. Fix the started-hook listener before enqueueing the task again.',
 			$result->error->message
 		);
 		self::assertCount( 1, $this->backend->calls );

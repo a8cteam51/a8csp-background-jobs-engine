@@ -855,13 +855,12 @@ final class RunReconciliationTest extends TestCase {
 				'level'   => 'warning',
 				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 				'context' => array(
-					'name'              => self::NAME,
-					'run_id'            => self::RUN_ID,
-					'exception_class'   => \RuntimeException::class,
-					'exception_message' => 'Run staleness filter exploded.',
+					'name'      => self::NAME,
+					'run_id'    => self::RUN_ID,
+					'exception' => $throwable,
 				),
 			),
-			$this->exception_diagnostic( 'Run staleness filter exploded.' )
+			$this->exception_diagnostic( $throwable )
 		);
 	}
 
@@ -906,13 +905,12 @@ final class RunReconciliationTest extends TestCase {
 				'level'   => 'warning',
 				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 				'context' => array(
-					'name'              => self::NAME,
-					'run_id'            => self::RUN_ID,
-					'exception_class'   => \RuntimeException::class,
-					'exception_message' => 'Run continue-delay filter exploded.',
+					'name'      => self::NAME,
+					'run_id'    => self::RUN_ID,
+					'exception' => $throwable,
 				),
 			),
-			$this->exception_diagnostic( 'Run continue-delay filter exploded.' )
+			$this->exception_diagnostic( $throwable )
 		);
 
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array();
@@ -1225,7 +1223,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$this->set_run_fields( self::NAME, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
-		$throwing_batch->failure_throwable = new \RuntimeException( 'Batch failure callback exploded.' );
+		$throwable                         = new \RuntimeException( 'Batch failure callback exploded.' );
+		$throwing_batch->failure_throwable = $throwable;
 
 		$this->maintenance->handle( array() );
 
@@ -1249,13 +1248,12 @@ final class RunReconciliationTest extends TestCase {
 				'level'   => 'warning',
 				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 				'context' => array(
-					'name'              => $throwing_name,
-					'run_id'            => self::RUN_ID,
-					'exception_class'   => \RuntimeException::class,
-					'exception_message' => 'Batch failure callback exploded.',
+					'name'      => $throwing_name,
+					'run_id'    => self::RUN_ID,
+					'exception' => $throwable,
 				),
 			),
-			$this->exception_diagnostic( 'Batch failure callback exploded.' )
+			$this->exception_diagnostic( $throwable )
 		);
 	}
 
@@ -1310,14 +1308,13 @@ final class RunReconciliationTest extends TestCase {
 				'level'   => 'warning',
 				'message' => 'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
 				'context' => array(
-					'name'              => $throwing_name,
-					'args_hash'         => $throwing_hash,
-					'run_id'            => null,
-					'exception_class'   => \RuntimeException::class,
-					'exception_message' => 'Lock cleanup exploded.',
+					'name'      => $throwing_name,
+					'args_hash' => $throwing_hash,
+					'run_id'    => null,
+					'exception' => $throwable,
 				),
 			),
-			$this->exception_diagnostic( 'Lock cleanup exploded.' )
+			$this->exception_diagnostic( $throwable )
 		);
 	}
 
@@ -2068,15 +2065,15 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Returns one caught-exception diagnostic by its exact message.
+	 * Returns one caught-exception diagnostic by object identity.
 	 *
-	 * @param   string $exception_message Exception message.
+	 * @param   \Throwable $throwable Expected exception or error.
 	 *
 	 * @return  array{level: mixed, message: string, context: array<array-key, mixed>}
 	 */
-	private function exception_diagnostic( string $exception_message ): array {
+	private function exception_diagnostic( \Throwable $throwable ): array {
 		foreach ( $this->logger->records as $record ) {
-			if ( ( $record['context']['exception_message'] ?? null ) === $exception_message ) {
+			if ( ( $record['context']['exception'] ?? null ) === $throwable ) {
 				return $record;
 			}
 		}

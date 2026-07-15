@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Retry;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\Exceptions\InvalidBatchChunkException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
@@ -41,6 +42,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( FailureLifecycle::class )]
+#[UsesClass( InvalidBatchChunkException::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LatestRunPointer::class )]
@@ -545,7 +547,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertIsArray( $stored_error );
 		self::assertSame( \DomainException::class, $stored_error['class'] ?? null );
 		self::assertSame(
-			'Task "email-digest" could not resolve the retry policy: Retry policy filter exploded. Fix the retry policy provider or filter before retrying the failed run manually.',
+			'Task "email-digest" could not resolve the retry policy because DomainException was thrown. Fix the retry policy provider or filter before retrying the failed run manually.',
 			$stored_error['message'] ?? null
 		);
 		self::assertSame(
@@ -620,7 +622,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertIsArray( $stored_error );
 		self::assertSame( \RuntimeException::class, $stored_error['class'] ?? null );
 		self::assertSame(
-			'Task "email-digest" could not prepare the retry action: Retrying listener exploded. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+			'Task "email-digest" could not prepare the retry action because RuntimeException was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
 			$stored_error['message'] ?? null
 		);
 		self::assertSame(
@@ -756,6 +758,17 @@ final class FailureLifecycleTest extends TestCase {
 		$this->assert_terminal_task_failure( new NonRetryableTaskException( 'The request is permanently invalid.' ) );
 	}
 
+	/**
+	 * A batch-only validation subtype remains a generic consumer failure on the task path.
+	 *
+	 * @return  void
+	 */
+	public function test_batch_validation_exception_is_not_reclassified_on_the_task_path(): void {
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
+
+		$this->assert_terminal_task_failure( new InvalidBatchChunkException() );
+	}
+
 	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
 	// endregion.
 
@@ -860,6 +873,10 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable = $throwable;
 		$this->prepare_run_action();
 		$this->randomizer->calls = array();
+		$expected_message        = \sprintf(
+			'Background-work execution failed because %s was thrown.',
+			\get_debug_type( $throwable )
+		);
 
 		$this->handle_failed_task_attempt();
 
@@ -877,7 +894,7 @@ final class FailureLifecycleTest extends TestCase {
 					'attempts'   => 1,
 					'error'      => array(
 						'class'   => $throwable::class,
-						'message' => $throwable->getMessage(),
+						'message' => $expected_message,
 					),
 				),
 			),
@@ -890,7 +907,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( self::RUN_ID, $actions[0]['args'][0] );
 		self::assertSame( self::ARGS, $actions[0]['args'][1] );
 		self::assertInstanceOf( EngineError::class, $actions[0]['args'][2] );
-		self::assertSame( $throwable->getMessage(), $actions[0]['args'][2]->message );
+		self::assertSame( $expected_message, $actions[0]['args'][2]->message );
 		self::assertSame( $throwable::class, $actions[0]['args'][2]->exception_class );
 		self::assertSame( 'a8csp_background_tasks/failed', $actions[1]['hook_name'] );
 		self::assertSame(

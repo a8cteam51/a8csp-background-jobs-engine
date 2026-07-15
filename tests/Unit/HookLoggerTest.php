@@ -82,6 +82,36 @@ final class HookLoggerTest extends TestCase {
 	}
 
 	/**
+	 * Throwable context reaches subscribers unchanged without entering placeholder interpolation.
+	 *
+	 * @return  void
+	 */
+	public function test_log_passes_throwable_context_without_interpolating_it(): void {
+		$throwable = new \RuntimeException( 'Consumer token secret.' );
+		$context   = array(
+			'exception' => $throwable,
+			'task'      => 'email-digest',
+		);
+
+		( new HookLogger() )->error( 'Task {task} failed with {exception}.', $context );
+
+		self::assertSame(
+			array(
+				array(
+					'hook_name' => 'a8csp_background_tasks/log',
+					'args'      => array(
+						'error',
+						'Task email-digest failed with {exception}.',
+						$context,
+					),
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_fired_actions']
+		);
+		self::assertSame( $throwable, $GLOBALS['a8csp_bgte_test_fired_actions'][0]['args'][2]['exception'] );
+	}
+
+	/**
 	 * A failing Stringable context value leaves its placeholder intact without aborting dispatch.
 	 *
 	 * @return  void
@@ -191,10 +221,12 @@ final class HookLoggerTest extends TestCase {
 		);
 
 		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine: log dispatch failed [hook=a8csp_background_tasks/log] [level=warning] [exception=RuntimeException] Subscriber failed.\nRetry is unsafe.',
+			'a8csp-background-tasks-engine: log dispatch failed [hook=a8csp_background_tasks/log] [level=warning] [exception=RuntimeException]',
 			$output
 		);
 		self::assertStringNotContainsString( 'do-not-log', $output );
+		self::assertStringNotContainsString( 'Subscriber failed', $output );
+		self::assertStringNotContainsString( 'Retry is unsafe', $output );
 		$fired = $GLOBALS['a8csp_bgte_test_fired_actions'];
 		self::assertIsArray( $fired );
 		self::assertCount( 1, $fired );
@@ -221,9 +253,10 @@ final class HookLoggerTest extends TestCase {
 		);
 
 		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine: log dispatch failed [hook=a8csp_background_tasks/log] [level=error] [exception=RuntimeException@anonymous] Message conversion failed.',
+			'a8csp-background-tasks-engine: log dispatch failed [hook=a8csp_background_tasks/log] [level=error] [exception=RuntimeException@anonymous]',
 			$output
 		);
+		self::assertStringNotContainsString( 'Message conversion failed', $output );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_fired_actions'] );
 	}
 
@@ -248,9 +281,10 @@ final class HookLoggerTest extends TestCase {
 		);
 
 		$this->assert_error_log_line(
-			'a8csp-background-tasks-engine: log dispatch failed [hook=a8csp_background_tasks/log] [level=<unrenderable:Stringable@anonymous>] [exception=RuntimeException] Level conversion failed.',
+			'a8csp-background-tasks-engine: log dispatch failed [hook=a8csp_background_tasks/log] [level=<unrenderable:Stringable@anonymous>] [exception=RuntimeException]',
 			$output
 		);
+		self::assertStringNotContainsString( 'Level conversion failed', $output );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_fired_actions'] );
 	}
 

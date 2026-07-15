@@ -141,6 +141,25 @@ final readonly class ActionDeliveries {
 
 		try {
 			$queue = $this->materialize_queue( $batch->generate_queue( $state->start_args ) );
+		} catch ( \Throwable $throwable ) {
+			$this->fail_batch_start_action(
+				$batch,
+				$batch_name,
+				$run_id,
+				$state,
+				$run_store,
+				EngineError::from_throwable( $throwable )
+			);
+
+			return;
+		}
+		if ( $queue instanceof EngineError ) {
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue );
+
+			return;
+		}
+
+		try {
 			$queue = $this->materialize_filtered_queue(
 				\apply_filters(
 					'a8csp_background_tasks/queue/' . $batch_name,
@@ -150,16 +169,7 @@ final readonly class ActionDeliveries {
 				)
 			);
 		} catch ( \Throwable $throwable ) {
-			$reset_at = $this->clock->now()->getTimestamp();
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
-				return;
-			}
-			$state = $run_store->refresh_heartbeat( $run_id, $state, $reset_at );
-			if ( null === $state ) {
-				return;
-			}
-
-			$this->terminal_transitions->fail_batch(
+			$this->fail_batch_start_action(
 				$batch,
 				$batch_name,
 				$run_id,
@@ -167,6 +177,11 @@ final readonly class ActionDeliveries {
 				$run_store,
 				EngineError::from_throwable( $throwable )
 			);
+
+			return;
+		}
+		if ( $queue instanceof EngineError ) {
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue );
 
 			return;
 		}
@@ -497,6 +512,41 @@ final readonly class ActionDeliveries {
 	// region HELPERS
 
 	/**
+	 * Fails batch startup after preserving its post-callback liveness fence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   BatchInterface $batch      Registered batch.
+	 * @param   string         $batch_name Stable batch name.
+	 * @param   string         $run_id     Run identifier.
+	 * @param   RunState       $state      Fenced running state.
+	 * @param   RunStore       $run_store  Active-run store.
+	 * @param   EngineError    $error      Terminal failure detail.
+	 *
+	 * @return  void
+	 */
+	private function fail_batch_start_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+		$reset_at = $this->clock->now()->getTimestamp();
+		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+			return;
+		}
+		$state = $run_store->refresh_heartbeat( $run_id, $state, $reset_at );
+		if ( null === $state ) {
+			return;
+		}
+
+		$this->terminal_transitions->fail_batch(
+			$batch,
+			$batch_name,
+			$run_id,
+			$state,
+			$run_store,
+			$error
+		);
+	}
+
+	/**
 	 * Executes one task run after shared-hook dispatch.
 	 *
 	 * @since   1.0.0
@@ -822,14 +872,13 @@ final readonly class ActionDeliveries {
 	 *
 	 * @param   mixed $chunks Filtered queue value.
 	 *
-	 * @throws  \UnexpectedValueException When the filter does not return an array.
-	 *
-	 * @return  list<array<array-key, mixed>>
+	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
-	private function materialize_filtered_queue( mixed $chunks ): array {
+	private function materialize_filtered_queue( mixed $chunks ): array|EngineError {
 		if ( ! \is_array( $chunks ) ) {
-			throw new \UnexpectedValueException(
-				'Batch queue filter returned a non-array value; return one argument array per chunk.'
+			return new EngineError(
+				'Batch queue filter returned a non-array value; return one argument array per chunk.',
+				\UnexpectedValueException::class
 			);
 		}
 
@@ -844,30 +893,29 @@ final readonly class ActionDeliveries {
 	 *
 	 * @param   iterable<mixed> $chunks Generated or filtered chunks.
 	 *
-	 * @throws  \UnexpectedValueException When one chunk is not an argument array or scalar tree.
+	 * @throws  \Throwable When the iterable fails during traversal.
 	 *
-	 * @return  list<array<array-key, mixed>>
+	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
-	private function materialize_queue( iterable $chunks ): array {
+	private function materialize_queue( iterable $chunks ): array|EngineError {
 		$queue = array();
 		foreach ( $chunks as $chunk_args ) {
 			$index = \count( $queue );
-			// Exception values are diagnostic data, not rendered output.
-			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			if ( ! \is_array( $chunk_args ) ) {
-				throw new \UnexpectedValueException(
-					\sprintf( 'Batch queue chunk at index %d must be an argument array.', $index )
+				return new EngineError(
+					\sprintf( 'Batch queue chunk at index %d must be an argument array.', $index ),
+					\UnexpectedValueException::class
 				);
 			}
 			if ( ! ScalarTree::is_valid( $chunk_args ) ) {
-				throw new \UnexpectedValueException(
+				return new EngineError(
 					\sprintf(
 						'Batch queue chunk at index %d must contain only null, scalar, or nested array values.',
 						$index
-					)
+					),
+					\UnexpectedValueException::class
 				);
 			}
-			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 			$queue[] = $chunk_args;
 		}

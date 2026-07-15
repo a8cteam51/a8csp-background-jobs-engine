@@ -106,7 +106,11 @@ final class NonRetryableTest extends IntegrationTestCase {
 
 		$error = $named_failed[0][2] ?? null;
 		self::assertInstanceOf( EngineError::class, $error );
-		self::assertSame( 'The requested record is permanently unavailable.', $error->message );
+		$expected_message = \sprintf(
+			'Background-work execution failed because %s was thrown.',
+			NonRetryableTaskException::class
+		);
+		self::assertSame( $expected_message, $error->message );
 		self::assertSame( NonRetryableTaskException::class, $error->exception_class );
 		self::assertSame(
 			array( array( $run_id, $args, $error ) ),
@@ -196,7 +200,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'class'   => NonRetryableTaskException::class,
-				'message' => 'The requested record is permanently unavailable.',
+				'message' => $expected_message,
 			),
 			$failed_entry['error'] ?? null
 		);
