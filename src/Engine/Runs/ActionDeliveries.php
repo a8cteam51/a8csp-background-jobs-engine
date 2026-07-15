@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
@@ -549,27 +548,13 @@ final readonly class ActionDeliveries {
 		try {
 			$task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failed_attempt(
-				'Task',
+			$this->failure_lifecycle->handle_task_failure(
+				$task,
 				$task_name,
 				$run_id,
 				$state,
 				$run_store,
-				$throwable,
-				static fn (): RetryPolicy => $task->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $task_name, $run_id, $run_store ): void {
-					$this->terminal_transitions->fail_run(
-						$task_name,
-						$run_id,
-						$failure_state,
-						$run_store,
-						$error,
-						$attempts_used,
-						$stage,
-						$code,
-						$failed_chunk
-					);
-				}
+				$throwable
 			);
 
 			return;
@@ -602,28 +587,13 @@ final readonly class ActionDeliveries {
 		try {
 			$batch->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failed_attempt(
-				'Batch',
+			$this->failure_lifecycle->handle_batch_failure(
+				$batch,
 				$batch_name,
 				$run_id,
 				$state,
 				$run_store,
 				$throwable,
-				static fn (): RetryPolicy => $batch->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $batch, $batch_name, $run_id, $run_store ): void {
-					$this->terminal_transitions->fail_batch(
-						$batch,
-						$batch_name,
-						$run_id,
-						$failure_state,
-						$run_store,
-						$error,
-						$stage,
-						$code,
-						$failed_chunk,
-						$attempts_used
-					);
-				},
 				$chunk_args
 			);
 

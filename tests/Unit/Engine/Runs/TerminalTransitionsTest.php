@@ -1239,27 +1239,13 @@ final class TerminalTransitionsTest extends TestCase {
 		try {
 			$this->task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failed_attempt(
-				'Task',
+			$this->failure_lifecycle->handle_task_failure(
+				$this->task,
 				self::IDENTITY,
 				$run_id,
 				$state,
 				$run_store,
-				$throwable,
-				fn (): RetryPolicy => $this->task->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk ) use ( $run_id, $run_store ): void {
-					$this->terminal_transitions->fail_run(
-						self::IDENTITY,
-						$run_id,
-						$failure_state,
-						$run_store,
-						$error,
-						$attempts_used,
-						$stage,
-						$code,
-						$failed_chunk
-					);
-				}
+				$throwable
 			);
 
 			return;

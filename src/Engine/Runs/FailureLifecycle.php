@@ -3,7 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableExceptionInterface;
@@ -52,30 +54,63 @@ final readonly class FailureLifecycle {
 	// region METHODS
 
 	/**
-	 * Applies the retry decision ladder after one task or batch attempt fails.
+	 * Applies the retry decision ladder after one task attempt fails.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(): RetryPolicy $policy_provider
-	 * @phpstan-param \Closure(RunState, EngineError, int, string, ApiErrorCode, array<array-key, mixed>|null): void $terminal_failure
-	 *
-	 * @param   'Task'|'Batch'               $work_type        Work contract type.
-	 * @param   string                       $name             Complete owner-qualified task or batch identity.
-	 * @param   string                       $run_id           Run identifier.
-	 * @param   RunState                     $state            Fenced running state.
-	 * @param   RunStore                     $run_store        Active-run store.
-	 * @param   \Throwable                   $throwable        Failed attempt detail.
-	 * @param   \Closure                     $policy_provider  Lazy contract-policy provider.
-	 * @param   \Closure                     $terminal_failure Terminal failure transition.
-	 * @param   array<array-key, mixed>|null $chunk_args       Batch chunk arguments, or null for a task.
-	 *
-	 * @throws  \Throwable When a terminal failure callback or lifecycle listener fails.
+	 * @param   TaskInterface $task      Failed task contract.
+	 * @param   string        $task_name Complete owner-qualified task identity.
+	 * @param   string        $run_id    Run identifier.
+	 * @param   RunState      $state     Fenced running state.
+	 * @param   RunStore      $run_store Active-run store.
+	 * @param   \Throwable    $throwable Failed attempt detail.
 	 *
 	 * @return  void
 	 */
-	public function handle_failed_attempt( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, \Closure $policy_provider, \Closure $terminal_failure, ?array $chunk_args = null ): void {
-		$reset_at = $this->clock->now()->getTimestamp();
+	public function handle_task_failure( TaskInterface $task, string $task_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
+		$this->handle_failure( $task, $task_name, $run_id, $state, $run_store, $throwable );
+	}
+
+	/**
+	 * Applies the retry decision ladder after one batch chunk attempt fails.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   BatchInterface          $batch      Failed batch contract.
+	 * @param   string                  $batch_name Complete owner-qualified batch identity.
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   RunState                $state      Fenced running state.
+	 * @param   RunStore                $run_store  Active-run store.
+	 * @param   \Throwable              $throwable  Failed attempt detail.
+	 * @param   array<array-key, mixed> $chunk_args Batch chunk arguments.
+	 *
+	 * @return  void
+	 */
+	public function handle_batch_failure( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, array $chunk_args ): void {
+		$this->handle_failure( $batch, $batch_name, $run_id, $state, $run_store, $throwable, $chunk_args );
+	}
+
+	/**
+	 * Applies the shared retry decision ladder after one work attempt fails.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   TaskInterface|BatchInterface $contract   Failed work contract.
+	 * @param   string                       $name       Complete owner-qualified work identity.
+	 * @param   string                       $run_id     Run identifier.
+	 * @param   RunState                     $state      Fenced running state.
+	 * @param   RunStore                     $run_store  Active-run store.
+	 * @param   \Throwable                   $throwable  Failed attempt detail.
+	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
+	 *
+	 * @return  void
+	 */
+	private function handle_failure( TaskInterface|BatchInterface $contract, string $name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
+		$work_type = $contract instanceof BatchInterface ? 'Batch' : 'Task';
+		$reset_at  = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
@@ -89,20 +124,24 @@ final readonly class FailureLifecycle {
 			? new EngineError( InvalidBatchChunkException::MESSAGE, \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
-			$terminal_failure( $state, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $contract, $name, $run_id, $state, $run_store, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
 
 		try {
-			$policy = $this->retry_policy( $name, $policy_provider() );
+			$policy = $this->retry_policy( $name, $contract->get_retry_policy() );
 		} catch ( \Throwable $retry_policy_failure ) {
 			if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
-			$terminal_failure(
+			$this->fail_terminally(
+				$contract,
+				$name,
+				$run_id,
 				$state,
+				$run_store,
 				EngineError::retry_policy( $work_type, $name, $retry_policy_failure ),
 				$attempts_used,
 				'execution',
@@ -118,7 +157,7 @@ final readonly class FailureLifecycle {
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$terminal_failure( $state, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $contract, $name, $run_id, $state, $run_store, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -139,8 +178,12 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$terminal_failure(
+			$this->fail_terminally(
+				$contract,
+				$name,
+				$run_id,
 				$retry_state,
+				$run_store,
 				$retry_failure['error'],
 				$attempts_used,
 				$retry_failure['stage'],
@@ -148,6 +191,56 @@ final readonly class FailureLifecycle {
 				$chunk_args
 			);
 		}
+	}
+
+	/**
+	 * Dispatches one terminal failure through its contract-specific transition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   TaskInterface|BatchInterface $contract     Failed work contract.
+	 * @param   string                       $name         Complete owner-qualified work identity.
+	 * @param   string                       $run_id       Run identifier.
+	 * @param   RunState                     $state        Fenced running state.
+	 * @param   RunStore                     $run_store    Active-run store.
+	 * @param   EngineError                  $error        Terminal failure detail.
+	 * @param   int                          $attempts_used Attempts consumed by the invocation.
+	 * @param   string                       $stage        Terminalization stage.
+	 * @param   ApiErrorCode                 $code         Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null $chunk_args   Batch chunk arguments, or null for a task.
+	 *
+	 * @return  void
+	 */
+	private function fail_terminally( TaskInterface|BatchInterface $contract, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $chunk_args ): void {
+		if ( $contract instanceof BatchInterface ) {
+			$this->terminal_transitions->fail_batch(
+				$contract,
+				$name,
+				$run_id,
+				$state,
+				$run_store,
+				$error,
+				$stage,
+				$code,
+				$chunk_args,
+				$attempts_used
+			);
+
+			return;
+		}
+
+		$this->terminal_transitions->fail_run(
+			$name,
+			$run_id,
+			$state,
+			$run_store,
+			$error,
+			$attempts_used,
+			$stage,
+			$code,
+			$chunk_args
+		);
 	}
 
 	/**
