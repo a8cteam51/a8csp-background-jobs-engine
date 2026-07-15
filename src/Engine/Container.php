@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSched
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine as EngineFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
@@ -128,6 +129,20 @@ final class Container {
 	 */
 	public static function get_inspection(): ?Inspection {
 		return Component::get_inspection();
+	}
+
+	/**
+	 * Returns the initialized scheduling facade.
+	 *
+	 * @internal CLI development reset only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  SchedulerFacade|null
+	 */
+	public static function get_scheduler(): ?SchedulerFacade {
+		return Component::get_scheduler();
 	}
 
 	// endregion

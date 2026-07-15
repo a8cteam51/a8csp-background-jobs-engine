@@ -197,7 +197,7 @@ final readonly class Schedules {
 			$current  = $existing[ $registration_key ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
 				if ( $this->scheduler->is_scheduled(
-					'a8csp_background_tasks/schedule_due',
+					OccurrenceDelivery::SCHEDULE_HOOK,
 					array( $registration_key ),
 					$registration_key
 				) ) {
@@ -205,7 +205,7 @@ final readonly class Schedules {
 				}
 
 				$recreated = $this->scheduler->schedule_recurring(
-					'a8csp_background_tasks/schedule_due',
+					OccurrenceDelivery::SCHEDULE_HOOK,
 					$interval_by_identity[ $registration_key ],
 					array( $registration_key ),
 					$current['next_due'],
@@ -221,13 +221,13 @@ final readonly class Schedules {
 			}
 
 			$backend_occurrence_exists = null === $current && $this->scheduler->is_scheduled(
-				'a8csp_background_tasks/schedule_due',
+				OccurrenceDelivery::SCHEDULE_HOOK,
 				array( $registration_key ),
 				$registration_key
 			);
 			if ( null !== $current || $backend_occurrence_exists ) {
 				$removed = $this->scheduler->unschedule(
-					'a8csp_background_tasks/schedule_due',
+					OccurrenceDelivery::SCHEDULE_HOOK,
 					array( $registration_key ),
 					$registration_key
 				);
@@ -250,7 +250,7 @@ final readonly class Schedules {
 			}
 
 			$scheduled = $this->scheduler->schedule_recurring(
-				'a8csp_background_tasks/schedule_due',
+				OccurrenceDelivery::SCHEDULE_HOOK,
 				$interval,
 				array( $registration_key ),
 				$next_due,
@@ -268,7 +268,7 @@ final readonly class Schedules {
 
 		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $registration_key ) {
 			$removed = $this->scheduler->unschedule(
-				'a8csp_background_tasks/schedule_due',
+				OccurrenceDelivery::SCHEDULE_HOOK,
 				array( $registration_key ),
 				$registration_key
 			);

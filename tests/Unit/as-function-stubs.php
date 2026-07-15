@@ -171,6 +171,33 @@ if ( ! \function_exists( 'as_unschedule_all_actions' ) ) {
 	}
 }
 
+if ( ! \function_exists( 'as_get_scheduled_actions' ) ) {
+	/**
+	 * Records and resolves a scheduled-action query.
+	 *
+	 * @param   array<string, mixed> $args          Query arguments.
+	 * @param   string               $return_format Return format.
+	 *
+	 * @return  list<int>
+	 */
+	function as_get_scheduled_actions( $args = array(), $return_format = OBJECT ) {
+		a8csp_bgte_test_record_as_call( 'as_get_scheduled_actions', array( $args, $return_format ) );
+
+		$result = a8csp_bgte_test_scripted_as_result( 'as_get_scheduled_actions', array() );
+		if ( ! \is_array( $result ) || ! \array_is_list( $result ) ) {
+			throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with a list result.' );
+		}
+
+		foreach ( $result as $action_id ) {
+			if ( ! \is_int( $action_id ) ) {
+				throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with integer action identifiers.' );
+			}
+		}
+
+		return $result;
+	}
+}
+
 if ( ! \function_exists( 'as_next_scheduled_action' ) ) {
 	/**
 	 * Records and resolves a next-scheduled query.

@@ -40,7 +40,17 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @var     string
 	 */
-	private const INTENT_PREFIX = 'a8csp_bgte_cleanup_';
+	public const INTENT_PREFIX = 'a8csp_bgte_cleanup_';
+
+	/**
+	 * Internal recurring-occurrence delivery hook.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	public const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
 
 	// endregion
 
@@ -84,7 +94,7 @@ final readonly class OccurrenceDelivery {
 	 */
 	public function register_hooks(): void {
 		\add_action(
-			'a8csp_background_tasks/schedule_due',
+			self::SCHEDULE_HOOK,
 			array( $this, 'handle_schedule_due' ),
 			10,
 			1
@@ -704,7 +714,7 @@ final readonly class OccurrenceDelivery {
 		}
 
 		$clearance = $this->scheduler->unschedule_for_convergence(
-			'a8csp_background_tasks/schedule_due',
+			self::SCHEDULE_HOOK,
 			array( $registration_key ),
 			$registration_key
 		);

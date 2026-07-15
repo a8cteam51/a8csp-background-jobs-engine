@@ -37,7 +37,8 @@ final class RecordingBackend implements BackendInterface {
 	 *     schedule_recurring?: AbstractResult<true, SchedulingError>,
 	 *     schedule_single?: AbstractResult<true, SchedulingError>,
 	 *     enqueue_async?: AbstractResult<true, SchedulingError>,
-	 *     unschedule?: AbstractResult<true, SchedulingError>
+	 *     unschedule?: AbstractResult<true, SchedulingError>,
+	 *     unschedule_hooks?: AbstractResult<int, SchedulingError>
 	 * }
 	 */
 	public array $results = array();
@@ -56,6 +57,13 @@ final class RecordingBackend implements BackendInterface {
 
 	/** Whether the backend adapter exposes calendar cron expressions. */
 	public bool $cron_supported = false;
+
+	/**
+	 * Pending action counts keyed by hook.
+	 *
+	 * @var array<string, int>
+	 */
+	public array $pending_actions = array();
 
 	/**
 	 * Readiness answers returned in call order before the stable readiness value.
@@ -193,10 +201,44 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
+	 * Records hook-wide clearance and removes every matching pending action.
+	 *
+	 * @phpstan-param list<non-empty-string> $hooks
+	 *
+	 * @param   array $hooks Hooks to unschedule.
+	 *
+	 * @return  AbstractResult<int, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_hooks( array $hooks ): AbstractResult {
+		$this->calls[] = array(
+			'verb' => 'unschedule_hooks',
+			'args' => array( 'hooks' => $hooks ),
+		);
+		$this->run_before( 'unschedule_hooks' );
+
+		$result = $this->results['unschedule_hooks'] ?? null;
+		if ( null !== $result && $result->is_failure() ) {
+			return $result;
+		}
+
+		$count = 0;
+		foreach ( \array_unique( $hooks ) as $hook ) {
+			$count += $this->pending_actions[ $hook ] ?? 0;
+			unset( $this->pending_actions[ $hook ] );
+		}
+
+		return $result ?? new Success( $count );
+	}
+
+	/**
 	 * Registers an interleaving before the next matching write result resolves.
 	 *
-	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb     Write verb.
-	 * @param   callable(self): void                                                $callback Interleaving callback.
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_hooks' $verb
+	 *
+	 * @param   string               $verb     Write verb.
+	 * @param   callable(self): void $callback Interleaving callback.
 	 *
 	 * @return  void
 	 */
@@ -301,7 +343,9 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Returns the scripted result for a write verb.
 	 *
-	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb Write verb.
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb
+	 *
+	 * @param   string $verb Write verb.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
@@ -321,7 +365,9 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Runs and consumes the next matching interleaving callback.
 	 *
-	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb Write verb.
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_hooks' $verb
+	 *
+	 * @param   string $verb Write verb.
 	 *
 	 * @return  void
 	 */

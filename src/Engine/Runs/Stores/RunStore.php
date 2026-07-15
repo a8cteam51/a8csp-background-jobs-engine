@@ -37,7 +37,7 @@ final readonly class RunStore {
 	 *
 	 * @var     string
 	 */
-	private const OPTION_PREFIX = 'a8csp_bgte_run_';
+	public const OPTION_PREFIX = 'a8csp_bgte_run_';
 
 	/**
 	 * Maximum exact-row attempts before a contended terminal effect append fails safely.

@@ -32,7 +32,7 @@ final class ScheduleRegistry {
 	 *
 	 * @var     string
 	 */
-	private const OPTION_NAME = 'a8csp_bgte_schedules';
+	public const OPTION_NAME = 'a8csp_bgte_schedules';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended write fails safely.

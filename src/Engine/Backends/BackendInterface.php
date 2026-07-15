@@ -92,6 +92,19 @@ interface BackendInterface {
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult;
 
 	/**
+	 * Unschedules every pending action for the supplied hooks, regardless of arguments or groups.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<non-empty-string> $hooks Hooks to unschedule.
+	 *
+	 * @return  AbstractResult<int, SchedulingError> Success carries the number of matching pending actions removed.
+	 */
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_hooks( array $hooks ): AbstractResult;
+
+	/**
 	 * Returns whether a matching hook is scheduled.
 	 *
 	 * @since   1.0.0

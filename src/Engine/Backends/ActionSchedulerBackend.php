@@ -37,6 +37,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	private const REQUIRED_FUNCTIONS = array(
 		'as_enqueue_async_action',
+		'as_get_scheduled_actions',
 		'as_schedule_recurring_action',
 		'as_schedule_single_action',
 		'as_unschedule_all_actions',
@@ -287,6 +288,69 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		}
 
 		return new Success( true );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<int, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_hooks( array $hooks ): AbstractResult {
+		if ( ! $this->is_ready() ) {
+			return $this->backend_not_ready( $this->readiness_facts() );
+		}
+
+		foreach ( array( 'as_get_scheduled_actions', 'as_unschedule_all_actions' ) as $function_name ) {
+			$function_failure = $this->missing_function_failure( $function_name );
+			if ( null !== $function_failure ) {
+				return $function_failure;
+			}
+		}
+
+		$count = 0;
+		foreach ( \array_values( \array_unique( $hooks ) ) as $hook ) {
+			$pending = \as_get_scheduled_actions(
+				array(
+					'hook'     => $hook,
+					'status'   => 'pending',
+					'per_page' => -1,
+					'orderby'  => 'none',
+				),
+				'ids'
+			);
+			$count  += \count( $pending );
+
+			\as_unschedule_all_actions( $hook );
+
+			$remaining = \as_get_scheduled_actions(
+				array(
+					'hook'     => $hook,
+					'status'   => 'pending',
+					'per_page' => 1,
+					'orderby'  => 'none',
+				),
+				'ids'
+			);
+			if ( array() !== $remaining ) {
+				return new Failure(
+					new SchedulingError(
+						SchedulingErrorReason::ScheduleFailed,
+						\sprintf(
+							'Action Scheduler still reports a pending action for hook "%s"; retry after the queue store accepts cancellation.',
+							$hook
+						),
+						array( 'hook' => $hook ),
+					)
+				);
+			}
+		}
+
+		return new Success( $count );
 	}
 
 	/**

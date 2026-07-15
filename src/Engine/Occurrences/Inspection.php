@@ -87,16 +87,6 @@ final readonly class Inspection {
 	 */
 	private const RUN_ID_LENGTH = 40;
 
-	/**
-	 * Hook shared by every recurring schedule occurrence.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	private const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
-
 	// endregion
 
 	// region MAGIC METHODS
@@ -177,7 +167,7 @@ final readonly class Inspection {
 				'misfires'   => $registration['misfires'],
 				'skips'      => $registration['skips'],
 				'scheduled'  => $this->scheduler->is_scheduled(
-					self::SCHEDULE_HOOK,
+					OccurrenceDelivery::SCHEDULE_HOOK,
 					array( $registration_key ),
 					$registration_key
 				),

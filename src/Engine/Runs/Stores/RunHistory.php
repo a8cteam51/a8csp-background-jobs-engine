@@ -47,7 +47,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     string
 	 */
-	private const OPTION_PREFIX = 'a8csp_bgte_history_';
+	public const OPTION_PREFIX = 'a8csp_bgte_history_';
 
 	/**
 	 * Distinct argument identities are evicted least-recently-recorded past this count; without

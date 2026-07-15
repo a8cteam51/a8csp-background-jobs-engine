@@ -141,6 +141,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			static fn ( ActionSchedulerBackend $candidate ): AbstractResult => $candidate->schedule_single( self::HOOK, 1_700_000_000 ),
 			static fn ( ActionSchedulerBackend $candidate ): AbstractResult => $candidate->enqueue_async( self::HOOK ),
 			static fn ( ActionSchedulerBackend $candidate ): AbstractResult => $candidate->unschedule( self::HOOK ),
+			static fn ( ActionSchedulerBackend $candidate ): AbstractResult => $candidate->unschedule_hooks( array( self::HOOK ) ),
 		);
 
 		foreach ( $writes as $write ) {
@@ -165,6 +166,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			'as_schedule_single_action'    => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->schedule_single( self::HOOK, 1_700_000_000 ),
 			'as_enqueue_async_action'      => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->enqueue_async( self::HOOK ),
 			'as_unschedule_all_actions'    => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->unschedule( self::HOOK ),
+			'as_get_scheduled_actions'     => static fn ( ActionSchedulerBackend $backend ): AbstractResult => $backend->unschedule_hooks( array( self::HOOK ) ),
 		);
 
 		foreach ( $writes as $function_name => $write ) {
@@ -697,6 +699,83 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * Hook-wide clearance counts and removes every pending action regardless of its arguments.
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_hooks_counts_and_clears_every_pending_action(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_get_scheduled_actions' => array(
+				array( 11, 12 ),
+				array(),
+				array( 13 ),
+				array(),
+			),
+		);
+
+		$result = $this->backend( self::READY_FACTS )->unschedule_hooks(
+			array( self::HOOK, 'a8csp_bgte_sibling_hook' )
+		);
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( 3, $result->value );
+		self::assertSame(
+			array(
+				array( self::HOOK, array(), '' ),
+				array( 'a8csp_bgte_sibling_hook', array(), '' ),
+			),
+			\array_map(
+				static fn ( array $call ): array => $call['args'],
+				$this->as_calls( 'as_unschedule_all_actions' )
+			)
+		);
+		self::assertSame(
+			array(
+				array(
+					array(
+						'hook'     => self::HOOK,
+						'status'   => 'pending',
+						'per_page' => -1,
+						'orderby'  => 'none',
+					),
+					'ids',
+				),
+				array(
+					array(
+						'hook'     => self::HOOK,
+						'status'   => 'pending',
+						'per_page' => 1,
+						'orderby'  => 'none',
+					),
+					'ids',
+				),
+				array(
+					array(
+						'hook'     => 'a8csp_bgte_sibling_hook',
+						'status'   => 'pending',
+						'per_page' => -1,
+						'orderby'  => 'none',
+					),
+					'ids',
+				),
+				array(
+					array(
+						'hook'     => 'a8csp_bgte_sibling_hook',
+						'status'   => 'pending',
+						'per_page' => 1,
+						'orderby'  => 'none',
+					),
+					'ids',
+				),
+			),
+			\array_map(
+				static fn ( array $call ): array => $call['args'],
+				$this->as_calls( 'as_get_scheduled_actions' )
+			)
+		);
+	}
+
+	/**
 	 * Reads normalize timestamps, running-state true, and absence without losing group identity.
 	 *
 	 * @return  void
@@ -820,7 +899,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	/**
 	 * Returns a result's scheduling error after checking its reason.
 	 *
-	 * @phpstan-param AbstractResult<true, SchedulingError> $result
+	 * @phpstan-param AbstractResult<int|true, SchedulingError> $result
 	 *
 	 * @param   AbstractResult        $result Result to inspect.
 	 * @param   SchedulingErrorReason $reason Expected reason.

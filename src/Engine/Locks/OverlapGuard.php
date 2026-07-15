@@ -54,7 +54,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @var     string
 	 */
-	private const OPTION_PREFIX = 'a8csp_bgte_lock_';
+	public const OPTION_PREFIX = 'a8csp_bgte_lock_';
 
 	// endregion
 

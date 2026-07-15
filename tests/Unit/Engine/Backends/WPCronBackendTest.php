@@ -679,6 +679,44 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
+	 * Hook-wide clearance counts all arguments while preserving unrelated cron hooks.
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_hooks_counts_and_clears_every_pending_event(): void {
+		self::assertTrue( \wp_schedule_single_event( 1_700_000_000, self::HOOK, array( 'a' ), true ) );
+		self::assertTrue( \wp_schedule_single_event( 1_700_000_601, self::HOOK, array( 'b' ), true ) );
+		self::assertTrue(
+			\wp_schedule_single_event( 1_700_000_100, 'a8csp_bgte_sibling_hook', array( 'c' ), true )
+		);
+		self::assertTrue(
+			\wp_schedule_single_event( 1_700_000_200, 'a8csp_bgte_unrelated_hook', array( 'd' ), true )
+		);
+		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
+
+		$result = ( new WPCronBackend() )->unschedule_hooks(
+			array( self::HOOK, 'a8csp_bgte_sibling_hook' )
+		);
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( 3, $result->value );
+		self::assertSame(
+			array(
+				array( self::HOOK, true ),
+				array( 'a8csp_bgte_sibling_hook', true ),
+			),
+			\array_map(
+				static fn ( array $call ): array => $call['args'],
+				$this->cron_calls( 'wp_unschedule_hook' )
+			)
+		);
+		self::assertSame(
+			1_700_000_200,
+			\wp_next_scheduled( 'a8csp_bgte_unrelated_hook', array( 'd' ) )
+		);
+	}
+
+	/**
 	 * A successful-looking clear that makes no progress is reported instead of looping forever.
 	 *
 	 * @return  void

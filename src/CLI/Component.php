@@ -2,6 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\RunsCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\SchedulesCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
 
 \defined( 'ABSPATH' ) || exit;
@@ -40,7 +43,10 @@ final class Component implements ComponentContract {
 	 */
 	#[\Override]
 	public function initialize(): void {
-		\WP_CLI::add_command( 'background-tasks', BackgroundTasksCommand::class );
+		// The last registration supplies the namespace description, so the inspection surface registers last.
+		\WP_CLI::add_command( 'background-tasks', SchedulesCommand::class );
+		\WP_CLI::add_command( 'background-tasks', ResetCommand::class );
+		\WP_CLI::add_command( 'background-tasks', RunsCommand::class );
 	}
 
 	// endregion

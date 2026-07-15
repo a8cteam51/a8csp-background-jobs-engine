@@ -612,6 +612,62 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Hook-wide clearance aggregates exact pending counts across every ready backend.
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_hooks_aggregates_counts_across_every_ready_backend(): void {
+		$first                   = new RecordingBackend();
+		$second                  = new RecordingBackend();
+		$first->pending_actions  = array( self::HOOK => 2 );
+		$second->pending_actions = array(
+			self::HOOK                  => 1,
+			'a8csp_bgte_sibling_hook'   => 3,
+			'a8csp_bgte_unrelated_hook' => 4,
+		);
+
+		$result = ( new SchedulerFacade( array( $first, $second ) ) )->unschedule_hooks(
+			array( self::HOOK, 'a8csp_bgte_sibling_hook' )
+		);
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( 6, $result->value );
+		self::assertSame( array(), $first->pending_actions );
+		self::assertSame( array( 'a8csp_bgte_unrelated_hook' => 4 ), $second->pending_actions );
+		self::assertSame(
+			array( 'is_ready', 'unschedule_hooks' ),
+			$this->call_verbs( $first )
+		);
+		self::assertSame(
+			array( 'is_ready', 'unschedule_hooks' ),
+			$this->call_verbs( $second )
+		);
+	}
+
+	/**
+	 * Hook-wide clearance refuses a partial backend view before mutating a ready store.
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_hooks_rejects_a_present_dormant_backend_before_clearing(): void {
+		$dormant        = new RecordingBackend();
+		$dormant->ready = false;
+
+		$ready = new RecordingBackend();
+
+		$ready->pending_actions = array( self::HOOK => 2 );
+
+		$result = ( new SchedulerFacade( array( $dormant, $ready ) ) )->unschedule_hooks( array( self::HOOK ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::BackendNotReady, $result->error->reason );
+		self::assertSame( array( 'is_ready', 'is_absent' ), $this->call_verbs( $dormant ) );
+		self::assertSame( array( 'is_ready' ), $this->call_verbs( $ready ) );
+		self::assertSame( array( self::HOOK => 2 ), $ready->pending_actions );
+	}
+
+	/**
 	 * The earliest failure wins after every ready backend receives the clear.
 	 *
 	 * @return  void

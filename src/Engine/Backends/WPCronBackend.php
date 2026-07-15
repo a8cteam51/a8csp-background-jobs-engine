@@ -216,6 +216,42 @@ final class WPCronBackend implements BackendInterface {
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<int, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_hooks( array $hooks ): AbstractResult {
+		$count = 0;
+		foreach ( \array_values( \array_unique( $hooks ) ) as $hook ) {
+			$result = \wp_unschedule_hook( $hook, true );
+			if ( $result instanceof \WP_Error ) {
+				return $this->failure_for_wp_error( $result, $hook, 'unschedule' );
+			}
+			if ( ! \is_int( $result ) || 0 !== $this->hook_occurrence_count( $hook ) ) {
+				return new Failure(
+					new SchedulingError(
+						SchedulingErrorReason::ScheduleFailed,
+						\sprintf(
+							'WP-Cron still has hook "%s" scheduled; repair the WordPress cron event and retry unscheduling.',
+							$hook
+						),
+						array( 'hook' => $hook ),
+					)
+				);
+			}
+
+			$count += $result;
+		}
+
+		return new Success( $count );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 */
 	#[\Override]
 	public function is_scheduled( string $hook, array $args = array(), string $group = '' ): bool {
@@ -456,6 +492,32 @@ final class WPCronBackend implements BackendInterface {
 	}
 
 	/**
+	 * Counts every stored occurrence of one hook regardless of arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook Hook to count.
+	 *
+	 * @return  int
+	 */
+	private function hook_occurrence_count( string $hook ): int {
+		$count = 0;
+		foreach ( $this->cron_array() as $hooks ) {
+			if ( ! \is_array( $hooks ) ) {
+				continue;
+			}
+
+			$events = $hooks[ $hook ] ?? null;
+			if ( \is_array( $events ) ) {
+				$count += \count( $events );
+			}
+		}
+
+		return $count;
+	}
+
+	/**
 	 * Maps a WordPress write result into the backend's result contract.
 	 *
 	 * @since   1.0.0
@@ -486,6 +548,22 @@ final class WPCronBackend implements BackendInterface {
 			);
 		}
 
+		return $this->failure_for_wp_error( $result, $hook, $operation );
+	}
+
+	/**
+	 * Maps one WordPress cron write error to the engine scheduling error contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \WP_Error $result    WordPress cron error.
+	 * @param   string    $hook      Hook being written.
+	 * @param   string    $operation Write operation.
+	 *
+	 * @return  Failure<SchedulingError>
+	 */
+	private function failure_for_wp_error( \WP_Error $result, string $hook, string $operation ): Failure {
 		$message = match ( $result->get_error_code() ) {
 			'duplicate_event' => \sprintf(
 				'WP-Cron could not %1$s hook "%2$s": an identical hook+args event exists within WP-Cron\'s ten-minute duplicate window; make the args unique or use unique: true to accept deduplication.',

@@ -74,6 +74,16 @@ final class Component implements ComponentContract {
 	 */
 	private static ?Inspection $inspection = null;
 
+	/**
+	 * Scheduling facade published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     SchedulerFacade|null
+	 */
+	private static ?SchedulerFacade $scheduler = null;
+
 	// endregion
 
 	// region INHERITED METHODS
@@ -226,6 +236,7 @@ final class Component implements ComponentContract {
 		self::$engine     = $engine;
 		self::$booting    = false;
 		self::$inspection = $inspection;
+		self::$scheduler  = $scheduler;
 
 		// Late maintenance synchronization invokes scheduler filters; publication keeps a consumer
 		// resolving from one of those filters on this same graph instead of rebuilding it recursively.
@@ -260,6 +271,20 @@ final class Component implements ComponentContract {
 	 */
 	public static function get_inspection(): ?Inspection {
 		return self::$inspection;
+	}
+
+	/**
+	 * Returns the initialized scheduling facade, or null before component boot.
+	 *
+	 * @internal CLI development reset only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  SchedulerFacade|null
+	 */
+	public static function get_scheduler(): ?SchedulerFacade {
+		return self::$scheduler;
 	}
 
 	// endregion

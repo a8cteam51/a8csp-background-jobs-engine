@@ -166,6 +166,7 @@ final class RecordingBackendTest extends TestCase {
 			'schedule_single',
 			'enqueue_async',
 			'unschedule',
+			'unschedule_hooks',
 		);
 
 		foreach ( $types as $type ) {

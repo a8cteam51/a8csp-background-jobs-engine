@@ -46,7 +46,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @var     string
 	 */
-	private const OPTION_PREFIX = 'a8csp_bgte_failed_';
+	public const OPTION_PREFIX = 'a8csp_bgte_failed_';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended update fails safely.

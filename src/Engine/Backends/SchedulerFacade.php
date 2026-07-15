@@ -130,6 +130,45 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 *
+	 * Hook-wide clearance requires every present backend to be ready because reset callers cannot
+	 * retain dormant pending work safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<int, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_hooks( array $hooks ): AbstractResult {
+		$ready_backends = $this->ready_backends();
+		if ( ! $this->snapshot_is_authoritative( $ready_backends ) ) {
+			return new Failure(
+				new SchedulingError(
+					SchedulingErrorReason::BackendNotReady,
+					'Every present scheduling backend must be ready before hook-wide clearance; initialize the dormant backend and retry.'
+				)
+			);
+		}
+
+		$count         = 0;
+		$first_failure = null;
+		foreach ( $ready_backends as $backend ) {
+			$result = $backend->unschedule_hooks( $hooks );
+			if ( $result->is_failure() ) {
+				$first_failure ??= $result;
+				continue;
+			}
+
+			$count += $result->value;
+		}
+
+		return $first_failure ?? new Success( $count );
+	}
+
+	/**
 	 * Returns whether any configured backend is present but unavailable for reads.
 	 *
 	 * @internal Read-only engine inspection.

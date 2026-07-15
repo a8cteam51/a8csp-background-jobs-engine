@@ -2,7 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\CLI;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\BackgroundTasksCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\RunsCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\SchedulesCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\FailedRunOutput;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ScheduleOutput;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -10,8 +14,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the WP-free command decisions and failed-run row formatting.
  */
-#[CoversClass( BackgroundTasksCommand::class )]
-final class BackgroundTasksCommandTest extends TestCase {
+#[CoversClass( RunsCommand::class )]
+#[CoversClass( SchedulesCommand::class )]
+#[CoversClass( FailedRunOutput::class )]
+#[CoversClass( RunOutput::class )]
+#[CoversClass( ScheduleOutput::class )]
+final class CommandsAndOutputTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
@@ -42,7 +50,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'name'   => 'consumer-plugin:email-digest',
 				'run_id' => 'run-1',
 			),
-			BackgroundTasksCommand::cancel_request_from_args(
+			RunsCommand::cancel_request_from_args(
 				array( 'consumer-plugin:email-digest', 'run-1' ),
 				array()
 			)
@@ -60,7 +68,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'action'  => 'error',
 				'message' => 'Cancel name is invalid; use a composed {owner}:{name} identity.',
 			),
-			BackgroundTasksCommand::cancel_request_from_args( array( 'email-digest', 'run-1' ), array() )
+			RunsCommand::cancel_request_from_args( array( 'email-digest', 'run-1' ), array() )
 		);
 	}
 
@@ -81,7 +89,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'action'  => 'error',
 				'message' => 'Cancel requires exactly a name and run_id; use wp background-tasks cancel <name> <run_id>.',
 			),
-			BackgroundTasksCommand::cancel_request_from_args( $args, $assoc_args )
+			RunsCommand::cancel_request_from_args( $args, $assoc_args )
 		);
 	}
 
@@ -91,7 +99,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_rows_are_shaped_and_ordered_deterministically(): void {
-		$rows = BackgroundTasksCommand::rows_from_entries(
+		$rows = FailedRunOutput::rows_from_entries(
 			array(
 				'owner-z:zeta-task'  => array(
 					array(
@@ -201,7 +209,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 					'error_message' => 'Owner A failure.',
 				),
 			),
-			BackgroundTasksCommand::rows_from_entries(
+			FailedRunOutput::rows_from_entries(
 				array(
 					'owner-a:task'  => array(
 						array(
@@ -239,7 +247,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_empty_entries_produce_an_empty_row_list(): void {
-		self::assertSame( array(), BackgroundTasksCommand::rows_from_entries( array() ) );
+		self::assertSame( array(), FailedRunOutput::rows_from_entries( array() ) );
 	}
 
 	/**
@@ -250,7 +258,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	public function test_discovered_option_names_are_filtered_deduplicated_and_sorted(): void {
 		self::assertSame(
 			array( 'a8csp-bgte:maintenance', 'alpha:alpha-task', 'alpha:alpha_task', 'zeta:task' ),
-			BackgroundTasksCommand::names_from_option_names(
+			RunsCommand::names_from_option_names(
 				array(
 					'a8csp_bgte_failed_zeta:task',
 					42,
@@ -282,7 +290,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	 */
 	#[DataProvider( 'valid_requests' )]
 	public function test_valid_requests_are_parsed( array $args, array $assoc_args, array $expected ): void {
-		self::assertSame( $expected, BackgroundTasksCommand::request_from_args( $args, $assoc_args ) );
+		self::assertSame( $expected, RunsCommand::failed_request_from_args( $args, $assoc_args ) );
 	}
 
 	/**
@@ -303,7 +311,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'action'  => 'error',
 				'message' => $message,
 			),
-			BackgroundTasksCommand::request_from_args( $args, $assoc_args )
+			RunsCommand::failed_request_from_args( $args, $assoc_args )
 		);
 	}
 
@@ -319,7 +327,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	public function test_valid_schedule_requests_are_parsed( array $assoc_args, array $expected ): void {
 		self::assertSame(
 			$expected,
-			BackgroundTasksCommand::schedules_request_from_args( array( 'list' ), $assoc_args )
+			SchedulesCommand::request_from_args( array( 'list' ), $assoc_args )
 		);
 	}
 
@@ -341,7 +349,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'action'  => 'error',
 				'message' => $message,
 			),
-			BackgroundTasksCommand::schedules_request_from_args( $args, $assoc_args )
+			SchedulesCommand::request_from_args( $args, $assoc_args )
 		);
 	}
 
@@ -361,7 +369,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'name'   => 'consumer-plugin:email_digest-2',
 				'format' => $format,
 			),
-			BackgroundTasksCommand::runs_request_from_args(
+			RunsCommand::runs_request_from_args(
 				array( 'list', 'consumer-plugin:email_digest-2' ),
 				$assoc_args
 			)
@@ -386,7 +394,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 				'action'  => 'error',
 				'message' => $message,
 			),
-			BackgroundTasksCommand::runs_request_from_args( $args, $assoc_args )
+			RunsCommand::runs_request_from_args( $args, $assoc_args )
 		);
 	}
 
@@ -396,7 +404,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_rows_shape_honest_declared_orphan_and_lock_wording(): void {
-		$rows = BackgroundTasksCommand::schedule_rows_from_entries(
+		$rows = ScheduleOutput::rows_from_entries(
 			array(
 				array(
 					'owner'      => 'owner-b',
@@ -457,9 +465,9 @@ final class BackgroundTasksCommandTest extends TestCase {
 		);
 		self::assertSame(
 			'note: a scheduling backend is not ready; dormant occurrences are not visible.',
-			BackgroundTasksCommand::dormant_backend_note( true )
+			ScheduleOutput::dormant_backend_note( true )
 		);
-		self::assertNull( BackgroundTasksCommand::dormant_backend_note( false ) );
+		self::assertNull( ScheduleOutput::dormant_backend_note( false ) );
 	}
 
 	/**
@@ -468,22 +476,22 @@ final class BackgroundTasksCommandTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_lock_labels_are_discriminated(): void {
-		self::assertSame( 'free', BackgroundTasksCommand::schedule_lock_label( array( 'state' => 'free' ) ) );
+		self::assertSame( 'free', ScheduleOutput::lock_label( array( 'state' => 'free' ) ) );
 		self::assertSame(
 			'unknown (not declared this request)',
-			BackgroundTasksCommand::schedule_lock_label( array( 'state' => 'not_declared' ) )
+			ScheduleOutput::lock_label( array( 'state' => 'not_declared' ) )
 		);
 		self::assertSame(
 			'unknown (lock read failed)',
-			BackgroundTasksCommand::schedule_lock_label( array( 'state' => 'read_failed' ) )
+			ScheduleOutput::lock_label( array( 'state' => 'read_failed' ) )
 		);
 		self::assertSame(
 			'not blocking (overlap allowed)',
-			BackgroundTasksCommand::schedule_lock_label( array( 'state' => 'overlap_allowed' ) )
+			ScheduleOutput::lock_label( array( 'state' => 'overlap_allowed' ) )
 		);
 		self::assertSame(
 			'unknown (invalid lock row)',
-			BackgroundTasksCommand::schedule_lock_label( array( 'state' => 'invalid' ) )
+			ScheduleOutput::lock_label( array( 'state' => 'invalid' ) )
 		);
 	}
 
@@ -520,7 +528,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 					'heartbeat' => '5s ago',
 				),
 			),
-			BackgroundTasksCommand::live_run_rows_from_entries(
+			RunOutput::live_rows_from_entries(
 				array(
 					array(
 						'run_id'       => 'run-executing',
@@ -569,7 +577,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 					'retained' => '—',
 				),
 			),
-			BackgroundTasksCommand::history_rows_from_entries(
+			RunOutput::history_rows_from_entries(
 				array(
 					array(
 						'run_id'   => 'run-failed',
@@ -594,22 +602,22 @@ final class BackgroundTasksCommandTest extends TestCase {
 	public function test_live_run_listing_honesty_messages_are_explicit(): void {
 		self::assertSame(
 			'Live-run state is unknown (run enumeration failed); resolve the database error and try again.',
-			BackgroundTasksCommand::live_run_error_message( 'enumeration_failed' )
+			RunOutput::error_message( 'enumeration_failed' )
 		);
 		self::assertSame(
 			'Live-run state is unknown (run read failed); resolve the database error and try again.',
-			BackgroundTasksCommand::live_run_error_message( 'read_failed' )
+			RunOutput::error_message( 'read_failed' )
 		);
-		self::assertNull( BackgroundTasksCommand::live_run_error_message( null ) );
+		self::assertNull( RunOutput::error_message( null ) );
 		self::assertSame(
 			'Showing first 20 matching run rows; 4 more were not inspected.',
-			BackgroundTasksCommand::live_run_truncation_message( 20, 4 )
+			RunOutput::truncation_message( 20, 4 )
 		);
 		self::assertSame(
 			'Showing first 20 matching run rows; 1 more was not inspected.',
-			BackgroundTasksCommand::live_run_truncation_message( 20, 1 )
+			RunOutput::truncation_message( 20, 1 )
 		);
-		self::assertNull( BackgroundTasksCommand::live_run_truncation_message( 20, 0 ) );
+		self::assertNull( RunOutput::truncation_message( 20, 0 ) );
 	}
 
 	/**
@@ -624,7 +632,7 @@ final class BackgroundTasksCommandTest extends TestCase {
 	public function test_heartbeat_time_boundaries( int $heartbeat_at, string $expected ): void {
 		self::assertSame(
 			$expected,
-			BackgroundTasksCommand::heartbeat_label( $heartbeat_at, 86_400, false )
+			RunOutput::heartbeat_label( $heartbeat_at, 86_400, false )
 		);
 	}
 
@@ -636,15 +644,15 @@ final class BackgroundTasksCommandTest extends TestCase {
 	public function test_schedule_due_time_boundaries_are_utc_and_directional(): void {
 		self::assertSame(
 			'1970-01-02T00:01:00+00:00 (in 1m)',
-			BackgroundTasksCommand::schedule_due_label( 86_460, 86_400 )
+			ScheduleOutput::due_label( 86_460, 86_400 )
 		);
 		self::assertSame(
 			'1970-01-02T00:00:00+00:00 (due now)',
-			BackgroundTasksCommand::schedule_due_label( 86_400, 86_400 )
+			ScheduleOutput::due_label( 86_400, 86_400 )
 		);
 		self::assertSame(
 			'1970-01-01T23:00:00+00:00 (overdue 1h)',
-			BackgroundTasksCommand::schedule_due_label( 82_800, 86_400 )
+			ScheduleOutput::due_label( 82_800, 86_400 )
 		);
 	}
 
@@ -654,10 +662,10 @@ final class BackgroundTasksCommandTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_heartbeat_clock_skew_and_integer_extremes_are_safe(): void {
-		self::assertSame( '0s ago', BackgroundTasksCommand::heartbeat_label( 86_401, 86_400, false ) );
+		self::assertSame( '0s ago', RunOutput::heartbeat_label( 86_401, 86_400, false ) );
 		self::assertSame(
 			\intdiv( \PHP_INT_MAX, 86_400 ) . 'd ago (stale)',
-			BackgroundTasksCommand::heartbeat_label( \PHP_INT_MIN, \PHP_INT_MAX, true )
+			RunOutput::heartbeat_label( \PHP_INT_MIN, \PHP_INT_MAX, true )
 		);
 	}
 
