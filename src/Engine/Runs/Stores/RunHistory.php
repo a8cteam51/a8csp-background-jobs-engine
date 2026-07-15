@@ -92,7 +92,8 @@ final readonly class RunHistory {
 	 * @param   string $run_id    Run identifier.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists or serialization fails.
+	 * @throws  \LogicException When no authoritative database connection exists, the current site
+	 *                          differs from the bound site, or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
@@ -112,7 +113,8 @@ final readonly class RunHistory {
 	 * @param   RunStatus $status    Terminal run status.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
-	 * @throws  \LogicException           When no authoritative database connection exists or serialization fails.
+	 * @throws  \LogicException           When no authoritative database connection exists, the current
+	 *                                     site differs from the bound site, or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
@@ -129,7 +131,8 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists to read from.
+	 * @throws  \LogicException When no authoritative database connection exists to read from or the
+	 *                          current site differs from the bound site.
 	 *
 	 * @return  list<string>|null Null when the authoritative row read fails.
 	 */
@@ -147,7 +150,8 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists to read from.
+	 * @throws  \LogicException When no authoritative database connection exists to read from or the
+	 *                          current site differs from the bound site.
 	 *
 	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>|null Null when the authoritative row read fails.
 	 */
@@ -172,7 +176,8 @@ final readonly class RunHistory {
 	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
-	 * @throws  \LogicException           When no authoritative database connection exists or serialization fails.
+	 * @throws  \LogicException           When no authoritative database connection exists, the current
+	 *                                     site differs from the bound site, or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
@@ -193,6 +198,7 @@ final readonly class RunHistory {
 			$history      = self::history_from_option(
 				null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw )
 			);
+			// Per-hash entries preserve record() idempotency for replayed terminal writes after global-buffer eviction and remain query-internal.
 			$hash_history = $history['by_hash'][ $args_hash ] ?? array(
 				'started'   => array(),
 				'completed' => array(),
@@ -319,7 +325,8 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists to read from.
+	 * @throws  \LogicException When no authoritative database connection exists to read from or the
+	 *                          current site differs from the bound site.
 	 *
 	 * @return  array{
 	 *     started: list<string>,

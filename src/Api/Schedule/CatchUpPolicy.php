@@ -13,8 +13,11 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 enum CatchUpPolicy: string {
 	// region FIELDS AND CONSTANTS
 
+	/** Dispatches one occurrence after the schedule is discovered beyond its grace window. */
 	case RunOnce = 'run_once';
-	case Skip    = 'skip';
+
+	/** Drops a beyond-grace occurrence and advances to the next due instant. */
+	case Skip = 'skip';
 
 	// endregion
 }

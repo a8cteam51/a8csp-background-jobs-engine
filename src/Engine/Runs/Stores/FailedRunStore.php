@@ -103,6 +103,9 @@ final readonly class FailedRunStore {
 	 * @param   EngineError             $error      Persisted failure detail.
 	 * @param   RunFailure              $failure    Consumer terminal-failure value.
 	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the entries to a string.
+	 *
 	 * @return  bool True when the failed-run entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
@@ -170,6 +173,8 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @throws  \LogicException When the current site differs from the bound site.
+	 *
 	 * @return  AbstractResult<list<array{
 	 *     run_id: string,
 	 *     failed_at: int,
@@ -199,6 +204,9 @@ final readonly class FailedRunStore {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Run identifier.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the entries to a string.
 	 *
 	 * @return  bool True when no retained entry has the requested run identifier.
 	 */
@@ -254,6 +262,8 @@ final readonly class FailedRunStore {
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  int|null Deleted valid-entry count, or null when the authoritative operation fails.
 	 */

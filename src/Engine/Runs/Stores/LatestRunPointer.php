@@ -82,6 +82,9 @@ final readonly class LatestRunPointer {
 	 * @param   string $run_id    Run identifier.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the pointer to a string.
+	 *
 	 * @return  bool True when the requested pointer state is confirmed persisted.
 	 */
 	#[\NoDiscard( 'a latest-run pointer persistence failure must be handled, not dropped' )]
@@ -101,6 +104,9 @@ final readonly class LatestRunPointer {
 	 *
 	 * @param   string $run_id    Authoritative lock owner.
 	 * @param   string $args_hash Stable single-flight identity owned by the run.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the pointer to a string.
 	 *
 	 * @return  bool True when the requested pointer state is confirmed persisted.
 	 */

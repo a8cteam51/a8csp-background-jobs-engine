@@ -67,6 +67,9 @@ interface BatchInterface extends WorkInterface {
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 *
+	 * @throws  \Throwable When queue generation fails; the engine terminalizes the run as a
+	 *                     queue-generation failure.
+	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
 	public function generate_queue( array $start_args ): iterable;
@@ -90,10 +93,10 @@ interface BatchInterface extends WorkInterface {
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
 	 * @param   BatchContextInterface   $context    Controlled access to this chunk's run.
 	 *
-	 * @return  void
-	 *
 	 * @throws  \Throwable When the chunk attempt fails. Throwables implementing
 	 *                     NonRetryableExceptionInterface bypass remaining retry attempts.
+	 *
+	 * @return  void
 	 */
 	public function process_chunk( array $chunk_args, BatchContextInterface $context ): void;
 
@@ -122,6 +125,9 @@ interface BatchInterface extends WorkInterface {
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   RunFailure              $failure    Persisted terminal-failure value.
+	 *
+	 * @throws  \Throwable When failure handling fails; the callback effect remains pending for
+	 *                     at-least-once replay by terminal maintenance.
 	 *
 	 * @return  void
 	 */

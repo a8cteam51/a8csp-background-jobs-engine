@@ -61,10 +61,10 @@ interface TaskInterface extends WorkInterface {
 	 *
 	 * @param   array<array-key, mixed> $args Invocation arguments.
 	 *
-	 * @return  void
-	 *
 	 * @throws  \Throwable When task handling fails. Throwables implementing
 	 *                     NonRetryableExceptionInterface bypass remaining retry attempts.
+	 *
+	 * @return  void
 	 */
 	public function handle( array $args ): void;
 

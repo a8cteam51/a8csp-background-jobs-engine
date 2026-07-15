@@ -59,9 +59,9 @@ final readonly class RetryPolicy {
 	 *
 	 * @param   int $attempt One-indexed number of the just-failed attempt.
 	 *
-	 * @return  int
-	 *
 	 * @throws  \InvalidArgumentException When the attempt has no following attempt.
+	 *
+	 * @return  int
 	 */
 	public function delay_ceiling_for_attempt( int $attempt ): int {
 		if ( 1 > $attempt || $attempt >= $this->max_attempts ) {

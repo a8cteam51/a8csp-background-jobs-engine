@@ -13,8 +13,13 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 enum OverlapPolicy: string {
 	// region FIELDS AND CONSTANTS
 
-	case Allow   = 'allow';
-	case Skip    = 'skip';
+	/** Admits the occurrence with a per-run identity even while matching work runs. */
+	case Allow = 'allow';
+
+	/** Leaves matching work running and records the occurrence as skipped. */
+	case Skip = 'skip';
+
+	/** Transfers overlap ownership to the occurrence and fences matching work. */
 	case Replace = 'replace';
 
 	// endregion

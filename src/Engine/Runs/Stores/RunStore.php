@@ -186,6 +186,9 @@ final readonly class RunStore {
 	 * @param   string   $expected_raw Exact observed state.
 	 * @param   RunState $replacement Replacement state.
 	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
+	 *
 	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
 	 */
 	public function transition( string $run_id, string $expected_raw, RunState $replacement ): ?string {
@@ -208,6 +211,9 @@ final readonly class RunStore {
 	 * @param   string   $run_id      Run identifier.
 	 * @param   RunState $expected    Complete state observed before the transition.
 	 * @param   RunState $replacement Complete replacement state.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
 	 *
 	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
 	 */
@@ -241,6 +247,8 @@ final readonly class RunStore {
 	 * @param   string   $effect      Non-empty terminal effect key.
 	 *
 	 * @throws  \InvalidArgumentException When the effect key is empty.
+	 * @throws  \LogicException           When the current site differs from the bound site or WordPress
+	 *                                     does not serialize the run state to a string.
 	 *
 	 * @return  array{raw: string, state: RunState}|null Caller-supplied snapshot when it already contains the key, which can omit concurrent effects; otherwise a persisted snapshot containing the key, or null when the row is absent, invalid, unreadable, or remains contended.
 	 */

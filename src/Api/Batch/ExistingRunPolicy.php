@@ -16,7 +16,10 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch;
 enum ExistingRunPolicy: string {
 	// region FIELDS AND CONSTANTS
 
-	case Reject  = 'reject';
+	/** Refuses the start while a matching fresh run holds the overlap lock. */
+	case Reject = 'reject';
+
+	/** Transfers overlap ownership to the new run and fences the incumbent. */
 	case Replace = 'replace';
 
 	// endregion
