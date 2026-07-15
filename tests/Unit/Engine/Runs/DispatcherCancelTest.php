@@ -409,12 +409,12 @@ final class DispatcherCancelTest extends TestCase {
 			self::TASK_IDENTITY,
 			$run_id,
 			static fn ( RunState $current ): RunState => $current
-				->with_chunk_retries( 1 )
+				->with_failed_attempts( 1 )
 				->with_heartbeat_at( self::NOW + 30 )
 				->with_action_seq( 2 )
 				->with_executing( false )
 		);
-		self::assertSame( 1, $state->chunk_retries );
+		self::assertSame( 1, $state->failed_attempts );
 		self::assertSame( self::NOW + 30, $state->heartbeat_at );
 		self::assertFalse( $state->executing );
 		$this->reset_observations();

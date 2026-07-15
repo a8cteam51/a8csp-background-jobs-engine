@@ -977,7 +977,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$state['queue']
 		);
 		self::assertFalse( $state['executing'] );
-		self::assertSame( 0, $state['chunk_retries'] );
+		self::assertSame( 0, $state['failed_attempts'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
 		self::assertSame(
@@ -1428,7 +1428,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( 'running', $state['status'] );
 		self::assertFalse( $state['executing'] );
 		self::assertSame( array( $chunk_args, $remaining ), $state['queue'] );
-		self::assertSame( 1, $state['chunk_retries'] );
+		self::assertSame( 1, $state['failed_attempts'] );
 		self::assertSame( 4, $state['action_seq'] );
 		self::assertSame( self::NOW + 131, $state['heartbeat_at'] );
 		self::assertSame(
@@ -1565,23 +1565,23 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->clock->timestamp         = self::NOW + 120;
 		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_a, $this->action_seq() );
 
-		$observed_retries = array();
+		$observed_attempts = array();
 
 		$this->batch->process_throwable = null;
 		$this->batch->on_process        = function (
 			array $chunk_args,
 			BatchContextInterface $context
-		) use ( &$observed_retries ): void {
+		) use ( &$observed_attempts ): void {
 			$chunk_name = $chunk_args['chunk'] ?? null;
 			self::assertIsString( $chunk_name );
-			$observed_retries[ $chunk_name ] = $this->run_state()['chunk_retries'];
+			$observed_attempts[ $chunk_name ] = $this->run_state()['failed_attempts'];
 		};
 
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 125;
 		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $chunk_a, $this->action_seq() );
 
-		self::assertSame( 0, $this->run_state()['chunk_retries'] );
+		self::assertSame( 0, $this->run_state()['failed_attempts'] );
 		self::assertSame( array( $chunk_b ), $this->run_state()['queue'] );
 		self::assertFalse( $this->run_state()['executing'] );
 
@@ -1597,7 +1597,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 				'a' => 1,
 				'b' => 0,
 			),
-			$observed_retries
+			$observed_attempts
 		);
 		self::assertSame(
 			array( $chunk_a, $chunk_a, $chunk_b ),
@@ -1720,23 +1720,23 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( $listener_throwable, $caught );
 		self::assertSame(
 			array(
-				'status'        => 'failed',
-				'executing'     => true,
-				'start_args'    => self::ARGS,
-				'args_hash'     => self::ARGS_HASH,
-				'queue'         => array( $chunk_args ),
-				'chunk_retries' => 1,
-				'action_seq'    => 3,
-				'created_at'    => self::NOW,
-				'heartbeat_at'  => self::NOW + 120,
-				'error'         => array(
+				'status'          => 'failed',
+				'executing'       => true,
+				'start_args'      => self::ARGS,
+				'args_hash'       => self::ARGS_HASH,
+				'queue'           => array( $chunk_args ),
+				'failed_attempts' => 1,
+				'action_seq'      => 3,
+				'created_at'      => self::NOW,
+				'heartbeat_at'    => self::NOW + 120,
+				'error'           => array(
 					'class'        => \DomainException::class,
 					'message'      => 'Background-work execution failed because DomainException was thrown.',
 					'stage'        => 'execution',
 					'code'         => ApiErrorCode::ExecutionFailed->value,
 					'failed_chunk' => $chunk_args,
 				),
-				'effects'       => array( 'retention', 'callbacks', 'history' ),
+				'effects'         => array( 'retention', 'callbacks', 'history' ),
 			),
 			$this->option( $this->run_option_name() )
 		);
@@ -2199,7 +2199,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
+	 *     failed_attempts: int,
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
@@ -2598,7 +2598,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
+	 *     failed_attempts: int,
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
@@ -2620,7 +2620,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
+	 *     failed_attempts: int,
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
@@ -2629,22 +2629,22 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	private function typed_run_state( mixed $state ): array {
 		self::assertIsArray( $state );
-		$status        = $state['status'] ?? null;
-		$executing     = $state['executing'] ?? null;
-		$start_args    = $state['start_args'] ?? null;
-		$args_hash     = $state['args_hash'] ?? null;
-		$raw_queue     = $state['queue'] ?? null;
-		$chunk_retries = $state['chunk_retries'] ?? null;
-		$action_seq    = $state['action_seq'] ?? null;
-		$created_at    = $state['created_at'] ?? null;
-		$heartbeat_at  = $state['heartbeat_at'] ?? null;
-		$pending       = $state['pending'] ?? null;
+		$status          = $state['status'] ?? null;
+		$executing       = $state['executing'] ?? null;
+		$start_args      = $state['start_args'] ?? null;
+		$args_hash       = $state['args_hash'] ?? null;
+		$raw_queue       = $state['queue'] ?? null;
+		$failed_attempts = $state['failed_attempts'] ?? null;
+		$action_seq      = $state['action_seq'] ?? null;
+		$created_at      = $state['created_at'] ?? null;
+		$heartbeat_at    = $state['heartbeat_at'] ?? null;
+		$pending         = $state['pending'] ?? null;
 		self::assertIsString( $status );
 		self::assertIsBool( $executing );
 		self::assertIsArray( $start_args );
 		self::assertIsString( $args_hash );
 		self::assertIsArray( $raw_queue );
-		self::assertIsInt( $chunk_retries );
+		self::assertIsInt( $failed_attempts );
 		self::assertIsInt( $action_seq );
 		self::assertIsInt( $created_at );
 		self::assertIsInt( $heartbeat_at );
@@ -2677,16 +2677,16 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		}
 
 		return array(
-			'status'        => $status,
-			'executing'     => $executing,
-			'start_args'    => $start_args,
-			'args_hash'     => $args_hash,
-			'queue'         => $queue,
-			'chunk_retries' => $chunk_retries,
-			'action_seq'    => $action_seq,
-			'created_at'    => $created_at,
-			'heartbeat_at'  => $heartbeat_at,
-			'pending'       => $typed_pending,
+			'status'          => $status,
+			'executing'       => $executing,
+			'start_args'      => $start_args,
+			'args_hash'       => $args_hash,
+			'queue'           => $queue,
+			'failed_attempts' => $failed_attempts,
+			'action_seq'      => $action_seq,
+			'created_at'      => $created_at,
+			'heartbeat_at'    => $heartbeat_at,
+			'pending'         => $typed_pending,
 		);
 	}
 
@@ -2699,7 +2699,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
+	 *     failed_attempts: int,
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,

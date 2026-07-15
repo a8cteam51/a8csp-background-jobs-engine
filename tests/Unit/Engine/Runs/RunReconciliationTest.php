@@ -571,9 +571,9 @@ final class RunReconciliationTest extends TestCase {
 		$this->set_run_fields(
 			self::IDENTITY,
 			array(
-				'heartbeat_at'  => self::NOW - 901,
-				'chunk_retries' => 1,
-				'pending'       => array(
+				'heartbeat_at'    => self::NOW - 901,
+				'failed_attempts' => 1,
+				'pending'         => array(
 					'stage'    => 'run',
 					'mode'     => 'single',
 					'fire_at'  => $fire_at,
@@ -1468,7 +1468,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_saturates_task_failure_attempts_at_php_int_max(): void {
 		$this->create_running_run();
 		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
-		$this->set_run_chunk_retries( $this->run_option_name(), \PHP_INT_MAX );
+		$this->set_run_failed_attempts( $this->run_option_name(), \PHP_INT_MAX );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 
 		$this->maintenance->handle( array() );
@@ -1492,7 +1492,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		$run_name = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
 		$this->set_run_fields( $name, array( 'executing' => true ) );
-		$this->set_run_chunk_retries( $run_name, \PHP_INT_MAX );
+		$this->set_run_failed_attempts( $run_name, \PHP_INT_MAX );
 		unset( $this->wpdb->rows[ 'a8csp_bgte_lock_' . $name . '_' . self::ARGS_HASH ] );
 
 		$this->maintenance->handle( array() );
@@ -2053,25 +2053,25 @@ final class RunReconciliationTest extends TestCase {
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 *
-	 * @param   string     $name          Stable task or batch name.
-	 * @param   string     $status        Terminal status value.
-	 * @param   array      $effects       Completed terminal effect keys.
-	 * @param   array|null $error         Persisted terminal failure detail.
-	 * @param   int        $chunk_retries Attempts consumed by a failed run.
+	 * @param   string     $name            Stable task or batch name.
+	 * @param   string     $status          Terminal status value.
+	 * @param   array      $effects         Completed terminal effect keys.
+	 * @param   array|null $error           Persisted terminal failure detail.
+	 * @param   int        $failed_attempts Attempts consumed by a failed run.
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $chunk_retries = 0 ): void {
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0 ): void {
 		$state = array(
-			'status'        => $status,
-			'executing'     => true,
-			'start_args'    => self::ARGS,
-			'args_hash'     => self::ARGS_HASH,
-			'queue'         => array(),
-			'chunk_retries' => $chunk_retries,
-			'action_seq'    => 1,
-			'created_at'    => self::NOW - 7_201,
-			'heartbeat_at'  => self::NOW - 3_601,
+			'status'          => $status,
+			'executing'       => true,
+			'start_args'      => self::ARGS,
+			'args_hash'       => self::ARGS_HASH,
+			'queue'           => array(),
+			'failed_attempts' => $failed_attempts,
+			'action_seq'      => 1,
+			'created_at'      => self::NOW - 7_201,
+			'heartbeat_at'    => self::NOW - 3_601,
 		);
 		if ( null !== $error ) {
 			$state['error'] = $error;
@@ -2170,18 +2170,18 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Sets one persisted run's retry counter without changing any other field.
+	 * Sets one persisted run's failed-attempt count without changing any other field.
 	 *
-	 * @param   string $option_name    Run option name.
-	 * @param   int    $chunk_retries  Retry count to persist.
+	 * @param   string $option_name     Run option name.
+	 * @param   int    $failed_attempts Failed-attempt count to persist.
 	 *
 	 * @return  void
 	 */
-	private function set_run_chunk_retries( string $option_name, int $chunk_retries ): void {
+	private function set_run_failed_attempts( string $option_name, int $failed_attempts ): void {
 		$options = $this->options();
 		$state   = $options[ $option_name ] ?? null;
 		self::assertIsArray( $state );
-		$state['chunk_retries']             = $chunk_retries;
+		$state['failed_attempts']           = $failed_attempts;
 		$options[ $option_name ]            = $state;
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 	}

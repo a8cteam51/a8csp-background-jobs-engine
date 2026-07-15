@@ -46,7 +46,7 @@ final readonly class RunState {
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
 	 * @param   string                        $args_hash       Stable single-flight identity derived from arguments or a task deduplication key.
 	 * @param   list<array<array-key, mixed>> $queue           Persisted processing queue, oldest uncommitted chunk first.
-	 * @param   int                           $chunk_retries   Failed attempts consumed by the current batch chunk; for
+	 * @param   int                           $failed_attempts Failed attempts consumed by the current batch chunk; for
 	 *                                                         a task, failed handle() attempts in this run.
 	 * @param   int                           $action_seq      Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at      Creation timestamp.
@@ -61,7 +61,7 @@ final readonly class RunState {
 		public array $start_args,
 		public string $args_hash,
 		public array $queue,
-		public int $chunk_retries,
+		public int $failed_attempts,
 		int $action_seq,
 		public int $created_at,
 		public int $heartbeat_at,
@@ -82,14 +82,14 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $chunk_retries Failed attempts already consumed.
+	 * @param   int $failed_attempts Failed attempts already consumed.
 	 *
 	 * @return  int
 	 */
-	public static function increment_attempts_safely( int $chunk_retries ): int {
-		return \PHP_INT_MAX === $chunk_retries
+	public static function increment_attempts_safely( int $failed_attempts ): int {
+		return \PHP_INT_MAX === $failed_attempts
 			? \PHP_INT_MAX
-			: \max( 1, $chunk_retries + 1 );
+			: \max( 1, $failed_attempts + 1 );
 	}
 
 	/**
@@ -109,7 +109,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -136,7 +136,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -163,7 +163,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -179,19 +179,19 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $chunk_retries Failed attempts consumed by the current batch chunk; for a task, failed handle()
-	 *                              attempts in this run.
+	 * @param   int $failed_attempts Failed attempts consumed by the current batch chunk; for a task, failed handle()
+	 *                                attempts in this run.
 	 *
 	 * @return  self
 	 */
-	public function with_chunk_retries( int $chunk_retries ): self {
+	public function with_failed_attempts( int $failed_attempts ): self {
 		return new self(
 			status: $this->status,
 			executing: $this->executing,
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $chunk_retries,
+			failed_attempts: $failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -218,7 +218,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -247,7 +247,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -276,7 +276,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -305,7 +305,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $this->heartbeat_at,
@@ -332,7 +332,7 @@ final readonly class RunState {
 			start_args: $this->start_args,
 			args_hash: $this->args_hash,
 			queue: $this->queue,
-			chunk_retries: $this->chunk_retries,
+			failed_attempts: $this->failed_attempts,
 			action_seq: $this->action_seq,
 			created_at: $this->created_at,
 			heartbeat_at: $heartbeat_at,

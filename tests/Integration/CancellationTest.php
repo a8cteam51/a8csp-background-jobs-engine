@@ -169,7 +169,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$run_state       = \get_option( 'a8csp_bgte_run_' . self::BACKOFF_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
-		self::assertSame( 1, $run_state['chunk_retries'] ?? null );
+		self::assertSame( 1, $run_state['failed_attempts'] ?? null );
 		self::assertSame( 2, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The persisted backoff window must be cancellable' );
 

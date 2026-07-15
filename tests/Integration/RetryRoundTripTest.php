@@ -198,7 +198,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$run_state = \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
-		self::assertSame( 1, $run_state['chunk_retries'] ?? null );
+		self::assertSame( 1, $run_state['failed_attempts'] ?? null );
 		self::assertSame( 2, $run_state['action_seq'] ?? null );
 		self::assertSame( $scheduled_at, $run_state['heartbeat_at'] ?? null );
 		$lock = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );

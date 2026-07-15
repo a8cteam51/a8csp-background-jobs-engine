@@ -708,7 +708,7 @@ final readonly class ActionDeliveries {
 		$fire_at     = $now + $delay;
 		$replacement = $state
 			->with_queue( $context->get_queue() )
-			->with_chunk_retries( 0 )
+			->with_failed_attempts( 0 )
 			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 )
 			->with_executing( false )
@@ -768,7 +768,7 @@ final readonly class ActionDeliveries {
 	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, string $stage, ApiErrorCode $code ): void {
 		$replacement = $state
 			->with_queue( $queue )
-			->with_chunk_retries( 0 )
+			->with_failed_attempts( 0 )
 			->with_heartbeat_at( $reset_at )
 			->with_action_seq( $state->action_seq + 1 )
 			->with_executing( false )

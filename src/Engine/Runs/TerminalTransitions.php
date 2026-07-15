@@ -246,7 +246,7 @@ final readonly class TerminalTransitions {
 	 */
 	public function complete_run( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$terminal_state = $state
-			->with_chunk_retries( 0 )
+			->with_failed_attempts( 0 )
 			->with_status( RunStatus::Completed )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null );
@@ -345,10 +345,10 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function fail_unregistered_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
-		$attempts       = RunState::increment_attempts_safely( $state->chunk_retries );
+		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
-			->with_chunk_retries( $attempts )
+			->with_failed_attempts( $attempts )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null )
 			->with_error(
@@ -388,10 +388,10 @@ final readonly class TerminalTransitions {
 	 * @return  void
 	 */
 	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
-		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->chunk_retries );
+		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
-			->with_chunk_retries( $attempts )
+			->with_failed_attempts( $attempts )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null )
 			->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
@@ -423,7 +423,7 @@ final readonly class TerminalTransitions {
 	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state
 			->with_status( RunStatus::Failed )
-			->with_chunk_retries( $attempts_used )
+			->with_failed_attempts( $attempts_used )
 			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
 			->with_pending( null )
 			->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
@@ -980,7 +980,7 @@ final readonly class TerminalTransitions {
 				'failure' => new RunFailure(
 					name: $name,
 					run_id: $run_id,
-					attempts: \max( 1, $state->chunk_retries ),
+					attempts: \max( 1, $state->failed_attempts ),
 					stage: $state->error['stage'],
 					// Store read-validation guarantees the persisted code backs a known case, so from() cannot throw here.
 					code: ApiErrorCode::from( $state->error['code'] ),
@@ -1011,7 +1011,7 @@ final readonly class TerminalTransitions {
 			'failure' => new RunFailure(
 				name: $name,
 				run_id: $run_id,
-				attempts: RunState::increment_attempts_safely( $state->chunk_retries ),
+				attempts: RunState::increment_attempts_safely( $state->failed_attempts ),
 				stage: 'crash-reclaim',
 				code: ApiErrorCode::StorageFailure,
 				summary: $error->message,

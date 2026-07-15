@@ -310,7 +310,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertIsArray( $state );
 		self::assertSame( 'running', $state['status'] ?? null );
 		self::assertFalse( $state['executing'] ?? null );
-		self::assertSame( 1, $state['chunk_retries'] ?? null );
+		self::assertSame( 1, $state['failed_attempts'] ?? null );
 		self::assertSame( 2, $state['action_seq'] ?? null );
 		self::assertSame( self::NOW + 107, $state['heartbeat_at'] ?? null );
 		self::assertSame(

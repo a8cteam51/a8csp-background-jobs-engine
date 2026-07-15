@@ -208,16 +208,16 @@ final class DispatcherTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => self::ARGS,
-				'args_hash'     => self::ARGS_HASH,
-				'queue'         => array( self::ARGS ),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => self::NOW,
-				'heartbeat_at'  => self::NOW,
-				'pending'       => array(
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => self::ARGS,
+				'args_hash'       => self::ARGS_HASH,
+				'queue'           => array( self::ARGS ),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => self::NOW,
+				'heartbeat_at'    => self::NOW,
+				'pending'         => array(
 					'stage'    => 'run',
 					'mode'     => 'async',
 					'fire_at'  => null,
@@ -871,7 +871,7 @@ final class DispatcherTest extends TestCase {
 		$new_state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $new_run_id );
 		self::assertIsArray( $new_state );
 		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
-		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
+		self::assertSame( 0, $new_state['failed_attempts'] ?? null );
 	}
 
 	/** A failed retained-entry removal is logged without changing a successful retry outcome. */

@@ -304,7 +304,7 @@ final readonly class RunReconciliation {
 				}
 			}
 
-			$attempts     = RunState::increment_attempts_safely( $state->chunk_retries );
+			$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
 			$failed_chunk = 'Batch' === $work_type && 'run' === ( $state->pending['stage'] ?? null )
 				? ( $state->queue[0] ?? null )
 				: null;

@@ -84,7 +84,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		$attempts_used = $state->chunk_retries + 1;
+		$attempts_used = $state->failed_attempts + 1;
 		$error         = 'Batch' === $work_type && $throwable instanceof InvalidBatchChunkException
 			? new EngineError( InvalidBatchChunkException::MESSAGE, \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
@@ -233,7 +233,7 @@ final readonly class FailureLifecycle {
 
 		try {
 			$replacement = $state
-				->with_chunk_retries( $attempt )
+				->with_failed_attempts( $attempt )
 				->with_heartbeat_at( $fire_at )
 				->with_action_seq( $state->action_seq + 1 )
 				->with_executing( false )

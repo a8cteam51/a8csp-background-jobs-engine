@@ -552,7 +552,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->clock->timestamp = self::NOW + 95;
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
-		self::assertSame( 0, $this->recorded_run_state( 'completed' )['chunk_retries'] );
+		self::assertSame( 0, $this->recorded_run_state( 'completed' )['failed_attempts'] );
 		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
 	}
 
@@ -1320,7 +1320,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 *     start_args: mixed,
 	 *     args_hash: mixed,
 	 *     queue: mixed,
-	 *     chunk_retries: mixed,
+	 *     failed_attempts: mixed,
 	 *     action_seq: mixed,
 	 *     created_at: mixed,
 	 *     heartbeat_at: mixed
@@ -1342,15 +1342,15 @@ final class TerminalTransitionsTest extends TestCase {
 				self::assertArrayNotHasKey( 'pending', $state );
 
 				return array(
-					'status'        => $state['status'] ?? null,
-					'executing'     => $state['executing'] ?? null,
-					'start_args'    => $state['start_args'] ?? null,
-					'args_hash'     => $state['args_hash'] ?? null,
-					'queue'         => $state['queue'] ?? null,
-					'chunk_retries' => $state['chunk_retries'] ?? null,
-					'action_seq'    => $state['action_seq'] ?? null,
-					'created_at'    => $state['created_at'] ?? null,
-					'heartbeat_at'  => $state['heartbeat_at'] ?? null,
+					'status'          => $state['status'] ?? null,
+					'executing'       => $state['executing'] ?? null,
+					'start_args'      => $state['start_args'] ?? null,
+					'args_hash'       => $state['args_hash'] ?? null,
+					'queue'           => $state['queue'] ?? null,
+					'failed_attempts' => $state['failed_attempts'] ?? null,
+					'action_seq'      => $state['action_seq'] ?? null,
+					'created_at'      => $state['created_at'] ?? null,
+					'heartbeat_at'    => $state['heartbeat_at'] ?? null,
 				);
 			}
 		}
@@ -1374,15 +1374,15 @@ final class TerminalTransitionsTest extends TestCase {
 				self::assertArrayNotHasKey( 'pending', $state );
 
 				return array(
-					'status'        => $state['status'] ?? null,
-					'executing'     => $state['executing'] ?? null,
-					'start_args'    => $state['start_args'] ?? null,
-					'args_hash'     => $state['args_hash'] ?? null,
-					'queue'         => $state['queue'] ?? null,
-					'chunk_retries' => $state['chunk_retries'] ?? null,
-					'action_seq'    => $state['action_seq'] ?? null,
-					'created_at'    => $state['created_at'] ?? null,
-					'heartbeat_at'  => $state['heartbeat_at'] ?? null,
+					'status'          => $state['status'] ?? null,
+					'executing'       => $state['executing'] ?? null,
+					'start_args'      => $state['start_args'] ?? null,
+					'args_hash'       => $state['args_hash'] ?? null,
+					'queue'           => $state['queue'] ?? null,
+					'failed_attempts' => $state['failed_attempts'] ?? null,
+					'action_seq'      => $state['action_seq'] ?? null,
+					'created_at'      => $state['created_at'] ?? null,
+					'heartbeat_at'    => $state['heartbeat_at'] ?? null,
 				);
 			}
 		}

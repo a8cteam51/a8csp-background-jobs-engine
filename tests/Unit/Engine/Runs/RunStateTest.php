@@ -67,18 +67,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Failed,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Failed,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -96,18 +96,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => false,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => false,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -125,18 +125,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 2 ), array( 'page' => 3 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 2 ), array( 'page' => 3 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -147,25 +147,25 @@ final class RunStateTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_with_chunk_retries_preserves_every_other_field(): void {
+	public function test_with_failed_attempts_preserves_every_other_field(): void {
 		$original = self::state();
-		$copy     = $original->with_chunk_retries( 3 );
+		$copy     = $original->with_failed_attempts( 3 );
 
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 3,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 3,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -183,18 +183,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 8,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 8,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -212,18 +212,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 150,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 150,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -247,18 +247,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => $pending,
-				'error'         => self::ERROR,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => $pending,
+				'error'           => self::ERROR,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -279,18 +279,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => $error,
-				'effects'       => self::EFFECTS,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => $error,
+				'effects'         => self::EFFECTS,
 			),
 			self::fields( $copy )
 		);
@@ -305,18 +305,18 @@ final class RunStateTest extends TestCase {
 		self::assertNotSame( $original, $copy );
 		self::assertSame(
 			array(
-				'status'        => RunStatus::Running,
-				'executing'     => true,
-				'start_args'    => array( 'scope' => 'all' ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array( array( 'page' => 1 ) ),
-				'chunk_retries' => 2,
-				'action_seq'    => 7,
-				'created_at'    => 100,
-				'heartbeat_at'  => 125,
-				'pending'       => self::PENDING,
-				'error'         => self::ERROR,
-				'effects'       => $effects,
+				'status'          => RunStatus::Running,
+				'executing'       => true,
+				'start_args'      => array( 'scope' => 'all' ),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'page' => 1 ) ),
+				'failed_attempts' => 2,
+				'action_seq'      => 7,
+				'created_at'      => 100,
+				'heartbeat_at'    => 125,
+				'pending'         => self::PENDING,
+				'error'           => self::ERROR,
+				'effects'         => $effects,
 			),
 			self::fields( $copy )
 		);
@@ -334,7 +334,7 @@ final class RunStateTest extends TestCase {
 			start_args: array( 'scope' => 'all' ),
 			args_hash: 'hash-a',
 			queue: array( array( 'page' => 1 ) ),
-			chunk_retries: 2,
+			failed_attempts: 2,
 			action_seq: 7,
 			created_at: 100,
 			heartbeat_at: 125,
@@ -355,7 +355,7 @@ final class RunStateTest extends TestCase {
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
+	 *     failed_attempts: int,
 	 *     action_seq: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
@@ -366,18 +366,18 @@ final class RunStateTest extends TestCase {
 	 */
 	private static function fields( RunState $state ): array {
 		return array(
-			'status'        => $state->status,
-			'executing'     => $state->executing,
-			'start_args'    => $state->start_args,
-			'args_hash'     => $state->args_hash,
-			'queue'         => $state->queue,
-			'chunk_retries' => $state->chunk_retries,
-			'action_seq'    => $state->action_seq,
-			'created_at'    => $state->created_at,
-			'heartbeat_at'  => $state->heartbeat_at,
-			'pending'       => $state->pending,
-			'error'         => $state->error,
-			'effects'       => $state->effects,
+			'status'          => $state->status,
+			'executing'       => $state->executing,
+			'start_args'      => $state->start_args,
+			'args_hash'       => $state->args_hash,
+			'queue'           => $state->queue,
+			'failed_attempts' => $state->failed_attempts,
+			'action_seq'      => $state->action_seq,
+			'created_at'      => $state->created_at,
+			'heartbeat_at'    => $state->heartbeat_at,
+			'pending'         => $state->pending,
+			'error'           => $state->error,
+			'effects'         => $state->effects,
 		);
 	}
 }

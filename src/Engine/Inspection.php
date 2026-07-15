@@ -279,7 +279,7 @@ final readonly class Inspection {
 				'kind'         => $kind,
 				'status'       => 'running',
 				'executing'    => $state->executing,
-				'attempts'     => $state->chunk_retries,
+				'attempts'     => $state->failed_attempts,
 				'queue_depth'  => 'task' === $kind ? null : \count( $state->queue ),
 				'heartbeat_at' => $state->heartbeat_at,
 				'stale'        => self::heartbeat_is_stale( $state->heartbeat_at, $observed_at, $staleness ),

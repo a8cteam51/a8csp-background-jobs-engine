@@ -125,18 +125,18 @@ final class RunStoreTest extends TestCase {
 		self::assertNull( $stored->error );
 		self::assertSame( array(), $stored->effects );
 		$expected = array(
-			'status'        => 'running',
-			'executing'     => false,
-			'start_args'    => array( 'site_id' => 7 ),
-			'args_hash'     => 'hash-a',
-			'queue'         => array(
+			'status'          => 'running',
+			'executing'       => false,
+			'start_args'      => array( 'site_id' => 7 ),
+			'args_hash'       => 'hash-a',
+			'queue'           => array(
 				array( 'page' => 1 ),
 				array( 'page' => 2 ),
 			),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => 1_700_000_100,
-			'heartbeat_at'  => 1_700_000_100,
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => 1_700_000_100,
+			'heartbeat_at'    => 1_700_000_100,
 		);
 		self::assertSame( $expected, $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-123' ) );
 		$inspection = $store->inspect( 'run-123' );
@@ -180,15 +180,15 @@ final class RunStoreTest extends TestCase {
 		$stored = $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-pending' );
 		self::assertIsArray( $stored );
 		$legacy_shape = array(
-			'status'        => 'running',
-			'executing'     => false,
-			'start_args'    => array( 'site_id' => 7 ),
-			'args_hash'     => 'hash-a',
-			'queue'         => array( array( 'site_id' => 7 ) ),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => 1_700_000_100,
-			'heartbeat_at'  => 1_700_000_100,
+			'status'          => 'running',
+			'executing'       => false,
+			'start_args'      => array( 'site_id' => 7 ),
+			'args_hash'       => 'hash-a',
+			'queue'           => array( array( 'site_id' => 7 ) ),
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => 1_700_000_100,
+			'heartbeat_at'    => 1_700_000_100,
 		);
 		self::assertSame( $legacy_shape, $stored );
 		self::assertArrayNotHasKey( 'pending', $stored );
@@ -214,17 +214,17 @@ final class RunStoreTest extends TestCase {
 
 		$terminal_raw = $store->transition_state( 'run-terminal', $state, $terminal );
 		$expected     = array(
-			'status'        => 'failed',
-			'executing'     => false,
-			'start_args'    => array( 'scope' => 'all' ),
-			'args_hash'     => 'hash-a',
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => 100,
-			'heartbeat_at'  => 100,
-			'error'         => $error,
-			'effects'       => array( 'retention', 'callbacks' ),
+			'status'          => 'failed',
+			'executing'       => false,
+			'start_args'      => array( 'scope' => 'all' ),
+			'args_hash'       => 'hash-a',
+			'queue'           => array(),
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => 100,
+			'heartbeat_at'    => 100,
+			'error'           => $error,
+			'effects'         => array( 'retention', 'callbacks' ),
 		);
 		self::assertSame( \maybe_serialize( $expected ), $terminal_raw );
 		$stored = $store->get( 'run-terminal' );
@@ -419,15 +419,15 @@ final class RunStoreTest extends TestCase {
 			$this->stored_state( $store, 'run-rmw' )->queue
 		);
 
-		$replacement = $state->with_chunk_retries( $state->chunk_retries + 1 );
+		$replacement = $state->with_failed_attempts( $state->failed_attempts + 1 );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
-		self::assertSame( 1, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
+		self::assertSame( 1, $this->stored_state( $store, 'run-rmw' )->failed_attempts );
 
-		$replacement = $state->with_chunk_retries( 0 );
+		$replacement = $state->with_failed_attempts( 0 );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
-		self::assertSame( 0, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
+		self::assertSame( 0, $this->stored_state( $store, 'run-rmw' )->failed_attempts );
 
 		$replacement = $state->with_action_seq( 2 );
 		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
@@ -594,15 +594,15 @@ final class RunStoreTest extends TestCase {
 	public function test_get_ignores_a_stale_options_view(): void {
 		$key   = 'a8csp_bgte_run_runs-tests:authoritative_run-current';
 		$state = array(
-			'status'        => 'running',
-			'executing'     => false,
-			'start_args'    => array(),
-			'args_hash'     => 'hash',
-			'queue'         => array( array( 'page' => 1 ) ),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => 1,
-			'heartbeat_at'  => 1,
+			'status'          => 'running',
+			'executing'       => false,
+			'start_args'      => array(),
+			'args_hash'       => 'hash',
+			'queue'           => array( array( 'page' => 1 ) ),
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => 1,
+			'heartbeat_at'    => 1,
 		);
 
 		$GLOBALS['a8csp_bgte_test_options'] = array( $key => $state );
@@ -630,15 +630,15 @@ final class RunStoreTest extends TestCase {
 		$key = 'a8csp_bgte_run_runs-tests:read-failure_run-current';
 		$raw = \maybe_serialize(
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			)
 		);
 		self::assertIsString( $raw );
@@ -664,17 +664,17 @@ final class RunStoreTest extends TestCase {
 		$key = 'a8csp_bgte_run_runs-tests:poisoned_run-object';
 		$raw = \maybe_serialize(
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(
 					array( 'private-payload' => new RunStoreWakeupProbe() ),
 				),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			)
 		);
 		self::assertIsString( $raw );
@@ -717,164 +717,164 @@ final class RunStoreTest extends TestCase {
 			'not an array',
 			array( 'status' => 'running' ),
 			array(
-				'status'        => 'unknown',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'unknown',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => 'false',
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => 'false',
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array( 'not-a-list' => array() ),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array( 'not-a-list' => array() ),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array( 'not-an-array' ),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array( 'not-an-array' ),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => 'not-an-array',
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => 'not-an-array',
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => false,
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => false,
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => '0',
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => '0',
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1.0,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1.0,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => '1',
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => '1',
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => '1',
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => '1',
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
-				'pending'       => null,
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
+				'pending'         => null,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
-				'pending'       => array(
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
+				'pending'         => array(
 					'stage'    => 'run',
 					'mode'     => 'single',
 					'priority' => 10,
 				),
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
-				'pending'       => array(
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash',
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => 1,
+				'heartbeat_at'    => 1,
+				'pending'         => array(
 					'stage'    => 'unknown',
 					'mode'     => 'async',
 					'fire_at'  => null,
@@ -899,15 +899,15 @@ final class RunStoreTest extends TestCase {
 		$store           = new RunStore( self::identity( 'corruption' ), new FixedClock( 123 ), $this->rows );
 		$key             = 'a8csp_bgte_run_runs-tests:corruption_run-bad';
 		$state           = array(
-			'status'        => 'running',
-			'executing'     => false,
-			'start_args'    => array(),
-			'args_hash'     => 'hash',
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => 1,
-			'heartbeat_at'  => 1,
+			'status'          => 'running',
+			'executing'       => false,
+			'start_args'      => array(),
+			'args_hash'       => 'hash',
+			'queue'           => array(),
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => 1,
+			'heartbeat_at'    => 1,
 		);
 		$invalid_pending = array(
 			array(
@@ -960,15 +960,15 @@ final class RunStoreTest extends TestCase {
 		$store            = new RunStore( self::identity( 'corruption' ), new FixedClock( 123 ), $this->rows );
 		$key              = 'a8csp_bgte_run_runs-tests:corruption_run-bad';
 		$state            = array(
-			'status'        => 'failed',
-			'executing'     => false,
-			'start_args'    => array(),
-			'args_hash'     => 'hash',
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => 1,
-			'heartbeat_at'  => 1,
+			'status'          => 'failed',
+			'executing'       => false,
+			'start_args'      => array(),
+			'args_hash'       => 'hash',
+			'queue'           => array(),
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => 1,
+			'heartbeat_at'    => 1,
 		);
 		$invalid_metadata = array(
 			array( 'error' => null ),
@@ -1031,7 +1031,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $expected->start_args, $actual->start_args );
 		self::assertSame( $expected->args_hash, $actual->args_hash );
 		self::assertSame( $expected->queue, $actual->queue );
-		self::assertSame( $expected->chunk_retries, $actual->chunk_retries );
+		self::assertSame( $expected->failed_attempts, $actual->failed_attempts );
 		self::assertSame( $expected->action_seq, $actual->action_seq );
 		self::assertSame( $expected->created_at, $actual->created_at );
 		self::assertSame( $expected->heartbeat_at, $actual->heartbeat_at );

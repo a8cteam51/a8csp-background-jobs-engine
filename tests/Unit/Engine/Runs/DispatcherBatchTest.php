@@ -199,16 +199,16 @@ final class DispatcherBatchTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => self::ARGS,
-				'args_hash'     => self::ARGS_HASH,
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => self::NOW,
-				'heartbeat_at'  => self::NOW,
-				'pending'       => array(
+				'status'          => 'running',
+				'executing'       => false,
+				'start_args'      => self::ARGS,
+				'args_hash'       => self::ARGS_HASH,
+				'queue'           => array(),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => self::NOW,
+				'heartbeat_at'    => self::NOW,
+				'pending'         => array(
 					'stage'    => 'start',
 					'mode'     => 'async',
 					'fire_at'  => null,
@@ -328,7 +328,7 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertIsArray( $new_state );
 		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
 		self::assertSame( array(), $new_state['queue'] ?? null );
-		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
+		self::assertSame( 0, $new_state['failed_attempts'] ?? null );
 		self::assertSame( 1, $new_state['action_seq'] ?? null );
 		self::assertSame(
 			array(
