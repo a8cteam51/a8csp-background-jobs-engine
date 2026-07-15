@@ -394,8 +394,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array( $failed_run_id, $successful_run_id ),
-				'completed' => array(
+				'started'  => array( $failed_run_id, $successful_run_id ),
+				'terminal' => array(
 					array(
 						'run_id' => $failed_run_id,
 						'status' => 'failed',
@@ -405,10 +405,10 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 						'status' => 'completed',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					$args_hash => array(
-						'started'   => array( $failed_run_id, $successful_run_id ),
-						'completed' => array(
+						'started'  => array( $failed_run_id, $successful_run_id ),
+						'terminal' => array(
 							array(
 								'run_id' => $failed_run_id,
 								'status' => 'failed',

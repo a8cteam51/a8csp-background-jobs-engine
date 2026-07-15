@@ -353,7 +353,7 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'completed',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		self::assertSame(
 			array(
@@ -519,7 +519,7 @@ final class CancellationTest extends IntegrationTestCase {
 	private static function terminal_entries( string $name ): array {
 		$history = \get_option( 'a8csp_bgte_history_' . $name, null );
 		self::assertIsArray( $history );
-		$entries = $history['completed'] ?? null;
+		$entries = $history['terminal'] ?? null;
 		self::assertIsArray( $entries );
 
 		return $entries;

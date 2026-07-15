@@ -95,17 +95,17 @@ final class RunHistoryTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( 'run-a' ),
-				'completed' => array(
+				'started'  => array( 'run-a' ),
+				'terminal' => array(
 					array(
 						'run_id' => 'run-a',
 						'status' => 'completed',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => array( 'run-a' ),
-						'completed' => array(
+						'started'  => array( 'run-a' ),
+						'terminal' => array(
 							array(
 								'run_id' => 'run-a',
 								'status' => 'completed',
@@ -134,17 +134,17 @@ final class RunHistoryTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( 'run-a' ),
-				'completed' => array(
+				'started'  => array( 'run-a' ),
+				'terminal' => array(
 					array(
 						'run_id' => 'run-a',
 						'status' => 'completed',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => array( 'run-a' ),
-						'completed' => array(
+						'started'  => array( 'run-a' ),
+						'terminal' => array(
 							array(
 								'run_id' => 'run-a',
 								'status' => 'completed',
@@ -169,12 +169,12 @@ final class RunHistoryTest extends TestCase {
 			\range( 1, 30 )
 		);
 		$stored           = array(
-			'started'   => $started,
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => $started,
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-a' => array(
-					'started'   => $started,
-					'completed' => array(),
+					'started'  => $started,
+					'terminal' => array(),
 				),
 			),
 		);
@@ -187,12 +187,12 @@ final class RunHistoryTest extends TestCase {
 			'run-outer',
 		);
 		$expected         = array(
-			'started'   => $expected_started,
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => $expected_started,
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-a' => array(
-					'started'   => $expected_started,
-					'completed' => array(),
+					'started'  => $expected_started,
+					'terminal' => array(),
 				),
 			),
 		);
@@ -234,40 +234,40 @@ final class RunHistoryTest extends TestCase {
 	public function test_started_write_retries_a_lost_cas_and_preserves_the_rival_write(): void {
 		$key          = 'a8csp_bgte_history_runs-tests:lost-cas';
 		$stored       = array(
-			'started'   => array( 'run-existing' ),
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => array( 'run-existing' ),
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-a' => array(
-					'started'   => array( 'run-existing' ),
-					'completed' => array(),
+					'started'  => array( 'run-existing' ),
+					'terminal' => array(),
 				),
 			),
 		);
 		$rival        = array(
-			'started'   => array( 'run-existing', 'run-rival' ),
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => array( 'run-existing', 'run-rival' ),
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-a'     => array(
-					'started'   => array( 'run-existing' ),
-					'completed' => array(),
+					'started'  => array( 'run-existing' ),
+					'terminal' => array(),
 				),
 				'hash-rival' => array(
-					'started'   => array( 'run-rival' ),
-					'completed' => array(),
+					'started'  => array( 'run-rival' ),
+					'terminal' => array(),
 				),
 			),
 		);
 		$expected     = array(
-			'started'   => array( 'run-existing', 'run-rival', 'run-outer' ),
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => array( 'run-existing', 'run-rival', 'run-outer' ),
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-rival' => array(
-					'started'   => array( 'run-rival' ),
-					'completed' => array(),
+					'started'  => array( 'run-rival' ),
+					'terminal' => array(),
 				),
 				'hash-a'     => array(
-					'started'   => array( 'run-existing', 'run-outer' ),
-					'completed' => array(),
+					'started'  => array( 'run-existing', 'run-outer' ),
+					'terminal' => array(),
 				),
 			),
 		);
@@ -319,12 +319,12 @@ final class RunHistoryTest extends TestCase {
 	public function test_started_write_returns_false_when_a_failed_update_leaves_the_raw_row_unchanged(): void {
 		$key        = 'a8csp_bgte_history_runs-tests:update-failure';
 		$stored     = array(
-			'started'   => array( 'run-existing' ),
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => array( 'run-existing' ),
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-a' => array(
-					'started'   => array( 'run-existing' ),
-					'completed' => array(),
+					'started'  => array( 'run-existing' ),
+					'terminal' => array(),
 				),
 			),
 		);
@@ -348,12 +348,12 @@ final class RunHistoryTest extends TestCase {
 	public function test_duplicate_started_identifier_returns_true_without_writing(): void {
 		$key        = 'a8csp_bgte_history_runs-tests:duplicate';
 		$stored     = array(
-			'started'   => array( 'run-a' ),
-			'completed' => array(),
-			'by_hash'   => array(
+			'started'  => array( 'run-a' ),
+			'terminal' => array(),
+			'by_hash'  => array(
 				'hash-a' => array(
-					'started'   => array( 'run-a' ),
-					'completed' => array(),
+					'started'  => array( 'run-a' ),
+					'terminal' => array(),
 				),
 			),
 		);
@@ -382,11 +382,11 @@ final class RunHistoryTest extends TestCase {
 			self::assertTrue( $history->record_terminal( 'completed-' . $suffix, 'hash-a', RunStatus::Completed ) );
 		}
 
-		$expected_started   = \array_map(
+		$expected_started  = \array_map(
 			static fn ( int $index ): string => 'started-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
 			\range( 1, 30 )
 		);
-		$expected_completed = \array_map(
+		$expected_terminal = \array_map(
 			static fn ( int $index ): array => array(
 				'run_id' => 'completed-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
 				'status' => 'completed',
@@ -396,12 +396,12 @@ final class RunHistoryTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => $expected_started,
-				'completed' => $expected_completed,
-				'by_hash'   => array(
+				'started'  => $expected_started,
+				'terminal' => $expected_terminal,
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => $expected_started,
-						'completed' => $expected_completed,
+						'started'  => $expected_started,
+						'terminal' => $expected_terminal,
 					),
 				),
 			),
@@ -432,8 +432,8 @@ final class RunHistoryTest extends TestCase {
 		$option = $this->option( 'a8csp_bgte_history_runs-tests:imports' );
 		self::assertSame(
 			array(
-				'started'   => array( 'started-b2', 'started-a3' ),
-				'completed' => array(
+				'started'  => array( 'started-b2', 'started-a3' ),
+				'terminal' => array(
 					array(
 						'run_id' => 'completed-a2',
 						'status' => 'completed',
@@ -445,10 +445,10 @@ final class RunHistoryTest extends TestCase {
 				),
 				// by_hash keys are ordered by recording recency (the LRU eviction order);
 				// the final write re-inserted hash-a at the tail.
-				'by_hash'   => array(
+				'by_hash'  => array(
 					'hash-b' => array(
-						'started'   => array( 'started-b1', 'started-b2' ),
-						'completed' => array(
+						'started'  => array( 'started-b1', 'started-b2' ),
+						'terminal' => array(
 							array(
 								'run_id' => 'completed-b1',
 								'status' => 'completed',
@@ -460,8 +460,8 @@ final class RunHistoryTest extends TestCase {
 						),
 					),
 					'hash-a' => array(
-						'started'   => array( 'started-a2', 'started-a3' ),
-						'completed' => array(
+						'started'  => array( 'started-a2', 'started-a3' ),
+						'terminal' => array(
 							array(
 								'run_id' => 'completed-a1',
 								'status' => 'completed',
@@ -495,8 +495,8 @@ final class RunHistoryTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( 'started-a1', 'started-b1', 'started-a2' ),
-				'completed' => array(
+				'started'  => array( 'started-a1', 'started-b1', 'started-a2' ),
+				'terminal' => array(
 					array(
 						'run_id' => 'completed-b1',
 						'status' => 'failed',
@@ -510,10 +510,10 @@ final class RunHistoryTest extends TestCase {
 						'status' => 'cancelled',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => array( 'started-a1', 'started-a2' ),
-						'completed' => array(
+						'started'  => array( 'started-a1', 'started-a2' ),
+						'terminal' => array(
 							array(
 								'run_id' => 'completed-a1',
 								'status' => 'superseded',
@@ -521,8 +521,8 @@ final class RunHistoryTest extends TestCase {
 						),
 					),
 					'hash-b' => array(
-						'started'   => array( 'started-b1' ),
-						'completed' => array(
+						'started'  => array( 'started-b1' ),
+						'terminal' => array(
 							array(
 								'run_id' => 'completed-b1',
 								'status' => 'failed',
@@ -559,12 +559,12 @@ final class RunHistoryTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array(),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
+				'started'  => array(),
+				'terminal' => array( $entry ),
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => array(),
-						'completed' => array( $entry ),
+						'started'  => array(),
+						'terminal' => array( $entry ),
 					),
 				),
 			),
@@ -609,8 +609,8 @@ final class RunHistoryTest extends TestCase {
 		$this->put_option(
 			'a8csp_bgte_history_runs-tests:inspection',
 			array(
-				'started'   => array( 'started-a', 42, 'started-b', false ),
-				'completed' => array(
+				'started'  => array( 'started-a', 42, 'started-b', false ),
+				'terminal' => array(
 					array(
 						'run_id' => 'failed-a',
 						'status' => 'failed',
@@ -625,7 +625,7 @@ final class RunHistoryTest extends TestCase {
 					),
 					array( 'run_id' => 'missing-status' ),
 				),
-				'by_hash'   => array(),
+				'by_hash'  => array(),
 			)
 		);
 
@@ -680,9 +680,9 @@ final class RunHistoryTest extends TestCase {
 		RunHistoryWakeupProbe::$woke = false;
 		$raw                         = \maybe_serialize(
 			array(
-				'started'   => array( 'started-safe', new RunHistoryWakeupProbe() ),
-				'completed' => array(),
-				'by_hash'   => array(),
+				'started'  => array( 'started-safe', new RunHistoryWakeupProbe() ),
+				'terminal' => array(),
+				'by_hash'  => array(),
 			)
 		);
 		self::assertIsString( $raw );
@@ -703,15 +703,15 @@ final class RunHistoryTest extends TestCase {
 		RunHistoryWakeupProbe::$woke = false;
 		$raw                         = \maybe_serialize(
 			array(
-				'started'   => array(),
-				'completed' => array(
+				'started'  => array(),
+				'terminal' => array(
 					array(
 						'run_id' => 'terminal-safe',
 						'status' => 'failed',
 					),
 					new RunHistoryWakeupProbe(),
 				),
-				'by_hash'   => array(),
+				'by_hash'  => array(),
 			)
 		);
 		self::assertIsString( $raw );
@@ -777,12 +777,12 @@ final class RunHistoryTest extends TestCase {
 		$this->put_option(
 			'a8csp_bgte_history_runs-tests:decode',
 			array(
-				'started'   => array( 'existing-run', 42 ),
-				'completed' => $persisted_entries,
-				'by_hash'   => array(
+				'started'  => array( 'existing-run', 42 ),
+				'terminal' => $persisted_entries,
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => array( 'existing-run', false ),
-						'completed' => $persisted_entries,
+						'started'  => array( 'existing-run', false ),
+						'terminal' => $persisted_entries,
 					),
 					'broken' => 'not-a-buffer',
 				),
@@ -795,12 +795,12 @@ final class RunHistoryTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( 'existing-run', 'new-run' ),
-				'completed' => $terminal_entries,
-				'by_hash'   => array(
+				'started'  => array( 'existing-run', 'new-run' ),
+				'terminal' => $terminal_entries,
+				'by_hash'  => array(
 					'hash-a' => array(
-						'started'   => array( 'existing-run', 'new-run' ),
-						'completed' => $terminal_entries,
+						'started'  => array( 'existing-run', 'new-run' ),
+						'terminal' => $terminal_entries,
 					),
 				),
 			),
@@ -828,22 +828,22 @@ final class RunHistoryTest extends TestCase {
 		$expected_by_hash = array();
 		foreach ( \range( 3, 20 ) as $index ) {
 			$expected_by_hash[ "hash-{$index}" ] = array(
-				'started'   => array( "run-{$index}" ),
-				'completed' => array(),
+				'started'  => array( "run-{$index}" ),
+				'terminal' => array(),
 			);
 		}
 		$expected_by_hash['hash-1']  = array(
-			'started'   => array( 'run-1', 'run-1b' ),
-			'completed' => array(),
+			'started'  => array( 'run-1', 'run-1b' ),
+			'terminal' => array(),
 		);
 		$expected_by_hash['hash-21'] = array(
-			'started'   => array( 'run-21' ),
-			'completed' => array(),
+			'started'  => array( 'run-21' ),
+			'terminal' => array(),
 		);
 
 		self::assertSame(
 			array(
-				'started'   => array(
+				'started'  => array(
 					...\array_map(
 						static fn ( int $index ): string => "run-{$index}",
 						\range( 1, 20 )
@@ -851,8 +851,8 @@ final class RunHistoryTest extends TestCase {
 					'run-1b',
 					'run-21',
 				),
-				'completed' => array(),
-				'by_hash'   => $expected_by_hash,
+				'terminal' => array(),
+				'by_hash'  => $expected_by_hash,
 			),
 			$this->option( 'a8csp_bgte_history_runs-tests:sync' )
 		);

@@ -102,12 +102,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array( $run_a ),
-				'completed' => array(),
-				'by_hash'   => array(
+				'started'  => array( $run_a ),
+				'terminal' => array(),
+				'by_hash'  => array(
 					$args_hash => array(
-						'started'   => array( $run_a ),
-						'completed' => array(),
+						'started'  => array( $run_a ),
+						'terminal' => array(),
 					),
 				),
 			),
@@ -347,8 +347,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::RECLAIM_IDENTITY, false ) );
 		self::assertSame(
 			array(
-				'started'   => array( $run_a, $run_b ),
-				'completed' => array(
+				'started'  => array( $run_a, $run_b ),
+				'terminal' => array(
 					array(
 						'run_id' => $run_a,
 						'status' => 'superseded',
@@ -358,10 +358,10 @@ final class OverlapLockTest extends IntegrationTestCase {
 						'status' => 'completed',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					$args_hash => array(
-						'started'   => array( $run_a, $run_b ),
-						'completed' => array(
+						'started'  => array( $run_a, $run_b ),
+						'terminal' => array(
 							array(
 								'run_id' => $run_a,
 								'status' => 'superseded',

@@ -1987,17 +1987,17 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array( self::RUN_ID, $replacement_run_id ),
-				'completed' => array(
+				'started'  => array( self::RUN_ID, $replacement_run_id ),
+				'terminal' => array(
 					array(
 						'run_id' => self::RUN_ID,
 						'status' => RunStatus::Completed->value,
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID, $replacement_run_id ),
-						'completed' => array(
+						'started'  => array( self::RUN_ID, $replacement_run_id ),
+						'terminal' => array(
 							array(
 								'run_id' => self::RUN_ID,
 								'status' => RunStatus::Completed->value,
@@ -2557,12 +2557,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
+				'started'  => array( self::RUN_ID ),
+				'terminal' => array( $entry ),
+				'by_hash'  => array(
 					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array( $entry ),
+						'started'  => array( self::RUN_ID ),
+						'terminal' => array( $entry ),
 					),
 				),
 			),

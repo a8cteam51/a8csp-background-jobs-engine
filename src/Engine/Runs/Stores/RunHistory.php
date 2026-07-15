@@ -71,12 +71,12 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name Complete owner-qualified task or batch identity.
-	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, or null to resolve the global connection.
+	 * @param   string     $name Complete owner-qualified task or batch identity.
+	 * @param   OptionRows $rows Authoritative raw option-row I/O.
 	 */
 	public function __construct(
 		private string $name,
-		private ?OptionRows $rows = null,
+		private OptionRows $rows,
 	) {}
 
 	// endregion
@@ -92,8 +92,7 @@ final readonly class RunHistory {
 	 * @param   string $run_id    Run identifier.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists, the current site
-	 *                          differs from the bound site, or serialization fails.
+	 * @throws  \LogicException When the current site differs from the bound site or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
@@ -113,8 +112,7 @@ final readonly class RunHistory {
 	 * @param   RunStatus $status    Terminal run status.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
-	 * @throws  \LogicException           When no authoritative database connection exists, the current
-	 *                                     site differs from the bound site, or serialization fails.
+	 * @throws  \LogicException           When the current site differs from the bound site or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
@@ -131,8 +129,7 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists to read from or the
-	 *                          current site differs from the bound site.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  list<string>|null Null when the authoritative row read fails.
 	 */
@@ -150,15 +147,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists to read from or the
-	 *                          current site differs from the bound site.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>|null Null when the authoritative row read fails.
 	 */
 	public function terminal_entries(): ?array {
 		$history = $this->history_from_raw_row();
 
-		return null === $history ? null : $history['completed'];
+		return null === $history ? null : $history['terminal'];
 	}
 
 	// endregion
@@ -176,8 +172,7 @@ final readonly class RunHistory {
 	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
-	 * @throws  \LogicException           When no authoritative database connection exists, the current
-	 *                                     site differs from the bound site, or serialization fails.
+	 * @throws  \LogicException           When the current site differs from the bound site or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
@@ -186,7 +181,7 @@ final readonly class RunHistory {
 			throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
 		}
 
-		$rows = $this->option_rows();
+		$rows = $this->rows;
 		$key  = $this->option_name();
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$selected = $rows->read( $key );
@@ -200,8 +195,8 @@ final readonly class RunHistory {
 			);
 			// Per-hash entries preserve record() idempotency for replayed terminal writes after global-buffer eviction and remain query-internal.
 			$hash_history = $history['by_hash'][ $args_hash ] ?? array(
-				'started'   => array(),
-				'completed' => array(),
+				'started'  => array(),
+				'terminal' => array(),
 			);
 			if ( null === $status ) {
 				if (
@@ -215,8 +210,8 @@ final readonly class RunHistory {
 				$hash_history['started'][] = $run_id;
 			} else {
 				if (
-					\in_array( $run_id, self::terminal_run_ids( $history['completed'] ), true )
-					|| \in_array( $run_id, self::terminal_run_ids( $hash_history['completed'] ), true )
+					\in_array( $run_id, self::terminal_run_ids( $history['terminal'] ), true )
+					|| \in_array( $run_id, self::terminal_run_ids( $hash_history['terminal'] ), true )
 				) {
 					return true;
 				}
@@ -226,8 +221,8 @@ final readonly class RunHistory {
 					'status' => $status->value,
 				);
 
-				$history['completed'][]      = $entry;
-				$hash_history['completed'][] = $entry;
+				$history['terminal'][]      = $entry;
+				$hash_history['terminal'][] = $entry;
 			}
 
 			// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
@@ -235,13 +230,13 @@ final readonly class RunHistory {
 			$history['by_hash'][ $args_hash ] = $hash_history;
 			$history['by_hash']               = \array_slice( $history['by_hash'], -self::MAX_HASH_BUCKETS, null, true );
 
-			$size                 = $this->history_size();
-			$history['started']   = self::tail( $history['started'], $size );
-			$history['completed'] = self::tail( $history['completed'], $size );
+			$size                = $this->history_size();
+			$history['started']  = self::tail( $history['started'], $size );
+			$history['terminal'] = self::tail( $history['terminal'], $size );
 			foreach ( $history['by_hash'] as $hash => $buffers ) {
 				$history['by_hash'][ $hash ] = array(
-					'started'   => self::tail( $buffers['started'], $size ),
-					'completed' => self::tail( $buffers['completed'], $size ),
+					'started'  => self::tail( $buffers['started'], $size ),
+					'terminal' => self::tail( $buffers['terminal'], $size ),
 				);
 			}
 
@@ -297,48 +292,24 @@ final readonly class RunHistory {
 	}
 
 	/**
-	 * Returns authoritative option-row I/O from the injected seam or the global connection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @throws  \LogicException When no authoritative database connection exists.
-	 *
-	 * @return  OptionRows
-	 */
-	private function option_rows(): OptionRows {
-		if ( null !== $this->rows ) {
-			return $this->rows;
-		}
-
-		$wpdb = $GLOBALS['wpdb'] ?? null;
-		if ( ! $wpdb instanceof \wpdb ) {
-			throw new \LogicException( 'Run-history inspection requires authoritative option-row I/O.' );
-		}
-
-		return new OptionRows( $wpdb );
-	}
-
-	/**
 	 * Returns validated history from the authoritative raw row without constructing serialized classes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When no authoritative database connection exists to read from or the
-	 *                          current site differs from the bound site.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
 	 *     by_hash: array<array-key, array{
 	 *         started: list<string>,
-	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
 	 *     }>
 	 * }|null Null when the authoritative row read fails.
 	 */
 	private function history_from_raw_row(): ?array {
-		$selected = $this->option_rows()->read( $this->option_name() );
+		$selected = $this->rows->read( $this->option_name() );
 		if ( $selected->is_failure() ) {
 			return null;
 		}
@@ -379,19 +350,19 @@ final readonly class RunHistory {
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
 	 *     by_hash: array<array-key, array{
 	 *         started: list<string>,
-	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
 	 *     }>
 	 * }
 	 */
 	private static function history_from_option( mixed $value ): array {
 		if ( ! \is_array( $value ) ) {
 			return array(
-				'started'   => array(),
-				'completed' => array(),
-				'by_hash'   => array(),
+				'started'  => array(),
+				'terminal' => array(),
+				'by_hash'  => array(),
 			);
 		}
 
@@ -403,16 +374,16 @@ final readonly class RunHistory {
 				}
 
 				$by_hash[ $args_hash ] = array(
-					'started'   => self::string_list( $buffers['started'] ?? null ),
-					'completed' => self::terminal_list( $buffers['completed'] ?? null ),
+					'started'  => self::string_list( $buffers['started'] ?? null ),
+					'terminal' => self::terminal_list( $buffers['terminal'] ?? null ),
 				);
 			}
 		}
 
 		return array(
-			'started'   => self::string_list( $value['started'] ?? null ),
-			'completed' => self::terminal_list( $value['completed'] ?? null ),
-			'by_hash'   => $by_hash,
+			'started'  => self::string_list( $value['started'] ?? null ),
+			'terminal' => self::terminal_list( $value['terminal'] ?? null ),
+			'by_hash'  => $by_hash,
 		);
 	}
 

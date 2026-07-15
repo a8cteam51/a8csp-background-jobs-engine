@@ -1079,12 +1079,12 @@ final class FailureLifecycleTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
+				'started'  => array( self::RUN_ID ),
+				'terminal' => array( $entry ),
+				'by_hash'  => array(
 					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array( $entry ),
+						'started'  => array( self::RUN_ID ),
+						'terminal' => array( $entry ),
 					),
 				),
 			),

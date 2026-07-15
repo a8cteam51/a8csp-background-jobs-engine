@@ -1286,17 +1286,17 @@ final class TerminalTransitionsTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array(
+				'started'  => array( self::RUN_ID ),
+				'terminal' => array(
 					array(
 						'run_id' => self::RUN_ID,
 						'status' => $status,
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array(
+						'started'  => array( self::RUN_ID ),
+						'terminal' => array(
 							array(
 								'run_id' => self::RUN_ID,
 								'status' => $status,

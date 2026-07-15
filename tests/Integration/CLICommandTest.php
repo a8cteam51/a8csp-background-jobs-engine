@@ -139,7 +139,7 @@ final class CLICommandTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 	}
 

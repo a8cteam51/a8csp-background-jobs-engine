@@ -223,17 +223,17 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array( $run_id ),
-				'completed' => array(
+				'started'  => array( $run_id ),
+				'terminal' => array(
 					array(
 						'run_id' => $run_id,
 						'status' => 'completed',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					$args_hash => array(
-						'started'   => array( $run_id ),
-						'completed' => array(
+						'started'  => array( $run_id ),
+						'terminal' => array(
 							array(
 								'run_id' => $run_id,
 								'status' => 'completed',

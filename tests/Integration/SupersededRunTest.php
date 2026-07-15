@@ -322,8 +322,8 @@ final class SupersededRunTest extends IntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array( $run_a, $run_b ),
-				'completed' => array(
+				'started'  => array( $run_a, $run_b ),
+				'terminal' => array(
 					array(
 						'run_id' => $run_a,
 						'status' => 'superseded',
@@ -333,10 +333,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 						'status' => 'completed',
 					),
 				),
-				'by_hash'   => array(
+				'by_hash'  => array(
 					$args_hash => array(
-						'started'   => array( $run_a, $run_b ),
-						'completed' => array(
+						'started'  => array( $run_a, $run_b ),
+						'terminal' => array(
 							array(
 								'run_id' => $run_a,
 								'status' => 'superseded',

@@ -664,12 +664,12 @@ final class DispatcherCancelTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'started'   => array( $run_id ),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
+				'started'  => array( $run_id ),
+				'terminal' => array( $entry ),
+				'by_hash'  => array(
 					self::ARGS_HASH => array(
-						'started'   => array( $run_id ),
-						'completed' => array( $entry ),
+						'started'  => array( $run_id ),
+						'terminal' => array( $entry ),
 					),
 				),
 			),

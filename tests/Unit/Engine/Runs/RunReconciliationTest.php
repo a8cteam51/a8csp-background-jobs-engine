@@ -1103,7 +1103,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'superseded',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		$lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock );
@@ -1145,7 +1145,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'superseded',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 	}
 
@@ -1240,7 +1240,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::IDENTITY, $options );
 		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame( array(), $history['completed'] ?? null );
+		self::assertSame( array(), $history['terminal'] ?? null );
 		self::assertSame( array(), $this->fired_actions() );
 	}
 
@@ -1330,7 +1330,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'failed',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		self::assertSame(
 			array(
@@ -1548,7 +1548,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'superseded',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		$lock = \maybe_unserialize( $this->wpdb->rows[ $this->lock_option_name() ] ?? '' );
 		self::assertIsArray( $lock );
@@ -1953,14 +1953,14 @@ final class RunReconciliationTest extends TestCase {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
 		$options = $this->options();
 		$options[ 'a8csp_bgte_history_' . self::IDENTITY ] = array(
-			'started'   => array( 'existing-run' ),
-			'completed' => array(
+			'started'  => array( 'existing-run' ),
+			'terminal' => array(
 				array(
 					'run_id' => 'existing-run',
 					'status' => 'completed',
 				),
 			),
-			'by_hash'   => array(),
+			'by_hash'  => array(),
 		);
 		$GLOBALS['a8csp_bgte_test_options']                = $options;
 		$this->wpdb->script_result( 'delete', false );
@@ -1984,7 +1984,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'completed',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		self::assertCount( 2, $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
@@ -1998,9 +1998,9 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
 		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		$completed = $history['completed'] ?? null;
-		self::assertIsArray( $completed );
-		self::assertCount( 2, $completed );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		self::assertCount( 2, $terminal );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -2048,9 +2048,9 @@ final class RunReconciliationTest extends TestCase {
 	private function assert_history_status( array $options, string $status, string $name = self::IDENTITY ): void {
 		$history = $options[ 'a8csp_bgte_history_' . $name ] ?? null;
 		self::assertIsArray( $history );
-		$completed = $history['completed'] ?? null;
-		self::assertIsArray( $completed );
-		$entry = $completed[0] ?? null;
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		$entry = $terminal[0] ?? null;
 		self::assertIsArray( $entry );
 		self::assertSame( $status, $entry['status'] ?? null );
 	}
@@ -2152,7 +2152,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'failed',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 	}
 

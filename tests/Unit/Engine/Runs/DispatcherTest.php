@@ -239,12 +239,12 @@ final class DispatcherTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array(),
-				'by_hash'   => array(
+				'started'  => array( self::RUN_ID ),
+				'terminal' => array(),
+				'by_hash'  => array(
 					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array(),
+						'started'  => array( self::RUN_ID ),
+						'terminal' => array(),
 					),
 				),
 			),
