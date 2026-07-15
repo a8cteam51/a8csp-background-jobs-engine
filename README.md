@@ -137,6 +137,86 @@ The supported facade methods are:
 | `Api\Schedule\Schedules` | `sync(array $schedules)`, `run_now(string $name)` |
 | `Api\Run\Runs` | `last_completed_run(string $name)`, `retry_failed(string $name, string $run_id)`, `cancel(string $name, string $run_id)` |
 
+## Migrating from Action Scheduler
+
+Register a Task for each former action hook, then resolve the owner-bound consumer from `init` or later. The examples below assume `$consumer = \a8csp_bgte( 'my-plugin' )`, with `Schedule` and `Recurrence` imported from `Api\Schedule`.
+
+| Action Scheduler call | Engine equivalent |
+| --- | --- |
+| `as_enqueue_async_action( $hook, $args, $group )` | `\a8csp_bgte( 'my-plugin' )->tasks()->enqueue( 'name', $args )` |
+| `as_schedule_single_action( $timestamp, $hook, $args, $group )` | `$consumer->tasks()->enqueue( 'name', $args, delay: \max( 0, $timestamp - \time() ) )`; `enqueue()` accepts a non-negative delay in seconds, not an absolute timestamp. |
+| `as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args, $group )` | Include `new Schedule( name: 'hourly-refresh', recurrence: Recurrence::every( $interval_in_seconds ), task: 'refresh', args: $args )` in the owner's complete array passed to `$consumer->schedules()->sync( ... )`. `Schedule` has no first-run timestamp field. |
+| `as_schedule_cron_action( $timestamp, $schedule, $hook, $args, $group )` | Use `Recurrence::cron( $schedule )` in the corresponding `Schedule` declaration and synchronize the complete set. The current backends reject cron-expression synchronization, so migrate these calls to a fixed interval or provide a capable backend before relying on them. |
+| `as_unschedule_action( $hook, $args, $group )` | Omit the named `Schedule` from the next complete `sync()` declaration. To stop an already admitted run, retain its run ID and call `$consumer->runs()->cancel( 'name', $run_id )`. |
+| `as_unschedule_all_actions( $hook, $args, $group )` | Use the same declarative removal for recurring work; `$consumer->schedules()->sync( array() )` removes every Schedule owned by this consumer. Directly enqueued runs require individual `cancel()` calls with known run IDs. |
+| `as_next_scheduled_action( $hook, $args, $group )` | There is no public next-due inspection method. `$consumer->runs()->last_completed_run( 'name' )` reports only the latest retained completed run and is not a next-scheduled replacement. |
+| `as_has_scheduled_action( $hook, $args, $group )` | There is no public pending-or-running boolean query. Treat the complete declaration supplied to a successful `sync()` as the source of truth for recurring schedules. |
+
+Action Scheduler's optional `$group` defaults to `''`, leaving ownership implicit. The engine requires the consumer owner at the front door and composes it into every identity; it refuses the ownerless ambiguity that makes cross-plugin actions easy to query or cancel accidentally.
+
+## Testing your consumer
+
+The public `Consumer` and facade constructors accept closures, so a consumer test can record calls without booting a scheduling backend. This example makes Task enqueue succeed and makes every unrelated operation return a scripted failure:
+
+```php
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+
+$calls    = array();
+$identity = static fn ( string $name ): string => 'my-plugin:' . $name;
+$accepted = new Success( 'run-test' );
+$rejected = new Failure(
+	new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' )
+);
+
+$consumer = new Consumer(
+	'my-plugin',
+	new Tasks(
+		$identity,
+		static function ( string $identity, TaskInterface $task ) use ( &$calls ): void {
+			$calls[] = array( 'register', $identity, $task );
+		},
+		static function ( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ) use ( &$calls, $accepted ): Success {
+			$calls[] = array( 'enqueue', $identity, $args, $delay, $dedup_key, $priority );
+			return $accepted;
+		}
+	),
+	new Batches(
+		$identity,
+		static function ( string $identity, BatchInterface $batch ): void {},
+		static fn ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ): Failure => $rejected
+	),
+	new Schedules(
+		$identity,
+		static fn ( array $declarations ): Failure => $rejected,
+		static fn ( string $identity ): Failure => $rejected
+	),
+	new Runs(
+		$identity,
+		static fn ( string $identity, string $run_id ): Failure => $rejected,
+		static fn ( string $identity, string $run_id ): Failure => $rejected,
+		static fn ( string $identity ): Success => new Success( null )
+	)
+);
+
+$result = $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ), delay: 30 );
+
+\assert( $accepted === $result );
+\assert( array( array( 'enqueue', 'my-plugin:refresh', array( 'site_id' => 7 ), 30, null, 10 ) ) === $calls );
+```
+
+Alternatively, an isolated test can stub the global `a8csp_bgte()` function before the engine's `functions.php` loads and return this fake `Consumer` to exercise code that resolves its dependency internally.
+
 ## The three contracts
 
 ### Task
