@@ -73,7 +73,11 @@ interface BatchInterface extends WorkInterface {
 	/**
 	 * Processes one queued chunk.
 	 *
-	 * A normal return marks the chunk successful, while throwing marks the attempt failed.
+	 * A normal return marks the chunk successful, while throwing marks the attempt failed. Chunk
+	 * execution is at-least-once: queue advancement persists only after this method returns, so a
+	 * process that stops between the chunk's side effects and that persistence redelivers the same
+	 * chunk. Implementations MUST be idempotent per chunk and carry the stable business identifiers
+	 * that let a replayed chunk converge inside the chunk arguments.
 	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{name}` with the exact signature
 	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
 	 * by `a8csp_background_tasks/retrying` with the batch name prepended to the same payload.

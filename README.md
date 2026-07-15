@@ -128,7 +128,7 @@ interface TaskInterface extends WorkInterface {
 
 ### Batch and batch context
 
-`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives a terminal callback after success or failure, and supplies the retry policy used independently for each failed chunk. Terminal callbacks are at-least-once across crash recovery — durable under Action Scheduler, best-effort under the WP-Cron fallback, whose sweeps only run while site traffic triggers them: a process can stop after the callback returns but before its completion marker persists, so implementations use the run ID to converge a replay. Cancellation and supersession invoke neither callback.
+`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives a terminal callback after success or failure, and supplies the retry policy used independently for each failed chunk. Chunk execution is at-least-once: queue advancement persists only after `process_chunk()` returns, so a crash in between redelivers the same chunk, and implementations converge replays through stable business identifiers carried in the chunk arguments. Terminal callbacks are likewise at-least-once across crash recovery — durable under Action Scheduler, best-effort under the WP-Cron fallback, whose sweeps only run while site traffic triggers them: a process can stop after the callback returns but before its completion marker persists, so implementations use the run ID to converge a replay. Cancellation and supersession invoke neither callback.
 
 ```php
 interface BatchInterface extends WorkInterface {
@@ -191,7 +191,7 @@ Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization.
 
 ## Idempotency invariant
 
-Schedule-driven tasks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and lifecycle hooks have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. A throwing failure callback or lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
+Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and lifecycle hooks have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. A throwing failure callback or lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
 
 ## Overlap and catch-up policies
 
