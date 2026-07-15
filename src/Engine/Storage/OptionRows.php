@@ -70,7 +70,7 @@ final readonly class OptionRows {
 	 *
 	 * @return  bool
 	 */
-	public function insert( string $key, string $raw ): bool {
+	public function insert_if_absent( string $key, string $raw ): bool {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
@@ -282,7 +282,7 @@ final readonly class OptionRows {
 	 *
 	 * @return  bool
 	 */
-	public function replace( string $key, string $expected_raw, string $replacement_raw ): bool {
+	public function compare_and_swap( string $key, string $expected_raw, string $replacement_raw ): bool {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
@@ -326,7 +326,7 @@ final readonly class OptionRows {
 	 *
 	 * @return  bool
 	 */
-	public function delete( string $key, string $expected_raw ): bool {
+	public function delete_if_value_matches( string $key, string $expected_raw ): bool {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 

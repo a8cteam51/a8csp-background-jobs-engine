@@ -144,14 +144,14 @@ final readonly class FailedRunStore {
 			$replacement_raw = self::serialize_entries( \array_slice( $entries, -self::ENTRY_LIMIT ) );
 
 			if ( null === $expected_raw ) {
-				if ( $this->rows->insert( $key, $replacement_raw ) ) {
+				if ( $this->rows->insert_if_absent( $key, $replacement_raw ) ) {
 					return true;
 				}
 
 				continue;
 			}
 
-			if ( $this->rows->replace( $key, $expected_raw, $replacement_raw ) ) {
+			if ( $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
 				return true;
 			}
 
@@ -236,7 +236,7 @@ final readonly class FailedRunStore {
 			}
 
 			$replacement_raw = self::serialize_entries( \array_slice( $remaining, -self::ENTRY_LIMIT ) );
-			if ( $this->rows->replace( $key, $expected_raw, $replacement_raw ) ) {
+			if ( $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
 				return true;
 			}
 
@@ -281,7 +281,7 @@ final readonly class FailedRunStore {
 
 		for ( $attempt = 0; $attempt < self::PURGE_ATTEMPTS; ++$attempt ) {
 			$count = \count( self::entries_from_option( RawOptionDecoder::decode( $raw ) ) );
-			if ( $this->rows->delete( $key, $raw ) ) {
+			if ( $this->rows->delete_if_value_matches( $key, $raw ) ) {
 				return $count;
 			}
 

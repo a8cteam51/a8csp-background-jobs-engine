@@ -39,29 +39,29 @@ final class OptionRowsTest extends TestCase {
 	}
 
 	/** An UPDATE-only replacement cannot recreate a row deleted before the CAS. */
-	public function test_replace_is_insertless_when_the_expected_row_is_absent(): void {
+	public function test_compare_and_swap_is_insertless_when_the_expected_row_is_absent(): void {
 		$wpdb = new WpdbLockSpy();
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->replace( self::KEY, 'expected-raw', 'replacement-raw' ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, 'expected-raw', 'replacement-raw' ) );
 		self::assertArrayNotHasKey( self::KEY, $wpdb->rows );
 		self::assertCount( 1, $wpdb->recorded_queries );
 		self::assertStringStartsWith( 'UPDATE ', $wpdb->recorded_queries[0] );
 	}
 
 	/** Replacement and deletion require byte-identical expected values. */
-	public function test_replace_and_delete_use_binary_expected_values(): void {
+	public function test_compare_and_swap_and_delete_if_value_matches_use_binary_expected_values(): void {
 		$wpdb = new WpdbLockSpy();
 		$wpdb->put( self::KEY, 'Run-State' );
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->replace( self::KEY, 'run-state', 'replacement-raw' ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, 'run-state', 'replacement-raw' ) );
 		$found = $rows->read( self::KEY );
 		self::assertFalse( $found->is_failure() );
 		self::assertSame( 'Run-State', $found->value );
-		self::assertTrue( $rows->replace( self::KEY, 'Run-State', 'replacement-raw' ) );
-		self::assertFalse( $rows->delete( self::KEY, 'Run-State' ) );
-		self::assertTrue( $rows->delete( self::KEY, 'replacement-raw' ) );
+		self::assertTrue( $rows->compare_and_swap( self::KEY, 'Run-State', 'replacement-raw' ) );
+		self::assertFalse( $rows->delete_if_value_matches( self::KEY, 'Run-State' ) );
+		self::assertTrue( $rows->delete_if_value_matches( self::KEY, 'replacement-raw' ) );
 		$missing = $rows->read( self::KEY );
 		self::assertFalse( $missing->is_failure() );
 		self::assertNull( $missing->value );
@@ -70,10 +70,10 @@ final class OptionRowsTest extends TestCase {
 	}
 
 	/** Already-absent exact deletion is a loss rather than idempotent success. */
-	public function test_delete_reports_loss_when_the_row_is_already_absent(): void {
+	public function test_delete_if_value_matches_reports_loss_when_the_row_is_already_absent(): void {
 		$rows = new OptionRows( new WpdbLockSpy() );
 
-		self::assertFalse( $rows->delete( self::KEY, 'expected-raw' ) );
+		self::assertFalse( $rows->delete_if_value_matches( self::KEY, 'expected-raw' ) );
 	}
 
 	/** Literal wildcard characters are escaped and imprecise database matches are filtered. */
@@ -179,13 +179,13 @@ final class OptionRowsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_insert_models_exclusive_core_lock_statement(): void {
+	public function test_insert_if_absent_models_exclusive_core_lock_statement(): void {
 		$wpdb = new WpdbLockSpy();
 		$rows = new OptionRows( $wpdb );
 		$row  = self::row( 'run-owner', 100, 100 );
 
-		self::assertTrue( $rows->insert( self::KEY, self::raw( $row ) ) );
-		self::assertFalse( $rows->insert( self::KEY, self::raw( self::row( 'run-rival', 200, 200 ) ) ) );
+		self::assertTrue( $rows->insert_if_absent( self::KEY, self::raw( $row ) ) );
+		self::assertFalse( $rows->insert_if_absent( self::KEY, self::raw( self::row( 'run-rival', 200, 200 ) ) ) );
 
 		self::assertSame( self::raw( $row ), $wpdb->rows[ self::KEY ] );
 		self::assertSame( 'off', $wpdb->autoload[ self::KEY ] );
@@ -223,7 +223,7 @@ final class OptionRowsTest extends TestCase {
 		$key  = self::KEY . '-%s';
 		$row  = self::row( 'run-%s-owner', 100, 100 );
 
-		self::assertTrue( $rows->insert( $key, self::raw( $row ) ) );
+		self::assertTrue( $rows->insert_if_absent( $key, self::raw( $row ) ) );
 		self::assertSame( self::raw( $row ), $wpdb->rows[ $key ] );
 	}
 
@@ -232,7 +232,7 @@ final class OptionRowsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_replace_is_an_exact_raw_value_compare_and_swap(): void {
+	public function test_compare_and_swap_is_an_exact_raw_value_compare_and_swap(): void {
 		$wpdb    = new WpdbLockSpy();
 		$old_row = self::row( 'run-owner', 100, 100 );
 		$new_row = self::row( 'run-owner', 100, 200 );
@@ -240,9 +240,9 @@ final class OptionRowsTest extends TestCase {
 		$wpdb->put( self::KEY, $old_raw );
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->replace( self::KEY, self::raw( self::row( 'run-loser', 50, 50 ) ), self::raw( $new_row ) ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, self::raw( self::row( 'run-loser', 50, 50 ) ), self::raw( $new_row ) ) );
 		self::assertSame( $old_raw, $wpdb->rows[ self::KEY ] );
-		self::assertTrue( $rows->replace( self::KEY, $old_raw, self::raw( $new_row ) ) );
+		self::assertTrue( $rows->compare_and_swap( self::KEY, $old_raw, self::raw( $new_row ) ) );
 		self::assertSame( self::raw( $new_row ), $wpdb->rows[ self::KEY ] );
 		self::assertStringContainsString( 'WHERE `option_name` = ', $wpdb->recorded_queries[0] );
 		self::assertStringContainsString( 'AND BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
@@ -253,14 +253,14 @@ final class OptionRowsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_replace_confirms_an_identical_value_after_zero_affected_rows(): void {
+	public function test_compare_and_swap_confirms_an_identical_value_after_zero_affected_rows(): void {
 		$wpdb = new WpdbLockSpy();
 		$row  = self::row( 'run-owner', 100, 100 );
 		$raw  = self::raw( $row );
 		$wpdb->put( self::KEY, $raw );
 		$rows = new OptionRows( $wpdb );
 
-		self::assertTrue( $rows->replace( self::KEY, $raw, $raw ) );
+		self::assertTrue( $rows->compare_and_swap( self::KEY, $raw, $raw ) );
 		self::assertSame( 0, $wpdb->rows_affected );
 		self::assertCount( 2, $wpdb->recorded_queries );
 		self::assertStringStartsWith( 'UPDATE ', $wpdb->recorded_queries[0] );
@@ -272,7 +272,7 @@ final class OptionRowsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_replace_rejects_a_lost_identical_value_compare_and_swap(): void {
+	public function test_compare_and_swap_rejects_a_lost_identical_value_compare_and_swap(): void {
 		$wpdb       = new WpdbLockSpy();
 		$row        = self::row( 'run-owner', 100, 100 );
 		$raw        = self::raw( $row );
@@ -286,7 +286,7 @@ final class OptionRowsTest extends TestCase {
 		);
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->replace( self::KEY, $raw, $raw ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, $raw, $raw ) );
 		self::assertSame( $winner_raw, $wpdb->rows[ self::KEY ] );
 	}
 
@@ -298,15 +298,15 @@ final class OptionRowsTest extends TestCase {
 		$wpdb->put( self::KEY, $winner_raw );
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->replace( self::KEY, $expected_raw, self::raw( self::row( 'run-owner', 100, 200 ) ) ) );
-		self::assertFalse( $rows->delete( self::KEY, $expected_raw ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, $expected_raw, self::raw( self::row( 'run-owner', 100, 200 ) ) ) );
+		self::assertFalse( $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 		self::assertSame( $winner_raw, $wpdb->rows[ self::KEY ] );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[1] );
 	}
 
 	/** A database error is not the zero-row identical-update case and does not trigger confirmation. */
-	public function test_replace_does_not_confirm_an_identical_value_after_a_database_error(): void {
+	public function test_compare_and_swap_does_not_confirm_an_identical_value_after_a_database_error(): void {
 		$wpdb = new WpdbLockSpy();
 		$row  = self::row( 'run-owner', 100, 100 );
 		$raw  = self::raw( $row );
@@ -315,7 +315,7 @@ final class OptionRowsTest extends TestCase {
 		$rows = new OptionRows( $wpdb );
 		self::prime_stale_caches();
 
-		self::assertFalse( $rows->replace( self::KEY, $raw, $raw ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, $raw, $raw ) );
 		self::assertCount( 1, $wpdb->recorded_queries );
 		self::assertStringStartsWith( 'UPDATE ', $wpdb->recorded_queries[0] );
 		self::assert_cache_purge();
@@ -326,15 +326,15 @@ final class OptionRowsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_delete_is_an_exact_raw_value_compare_and_swap(): void {
+	public function test_delete_if_value_matches_is_an_exact_raw_value_compare_and_swap(): void {
 		$wpdb = new WpdbLockSpy();
 		$raw  = self::raw( self::row( 'run-owner', 100, 100 ) );
 		$wpdb->put( self::KEY, $raw );
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->delete( self::KEY, self::raw( self::row( 'run-loser', 50, 50 ) ) ) );
+		self::assertFalse( $rows->delete_if_value_matches( self::KEY, self::raw( self::row( 'run-loser', 50, 50 ) ) ) );
 		self::assertSame( $raw, $wpdb->rows[ self::KEY ] );
-		self::assertTrue( $rows->delete( self::KEY, $raw ) );
+		self::assertTrue( $rows->delete_if_value_matches( self::KEY, $raw ) );
 		self::assertArrayNotHasKey( self::KEY, $wpdb->rows );
 		self::assertStringContainsString( 'WHERE `option_name` = ', $wpdb->recorded_queries[0] );
 		self::assertStringContainsString( 'AND BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
@@ -351,16 +351,16 @@ final class OptionRowsTest extends TestCase {
 		$row  = self::row( 'run-owner', 100, 100 );
 
 		self::prime_stale_caches();
-		$rows->insert( self::KEY, self::raw( $row ) );
+		$rows->insert_if_absent( self::KEY, self::raw( $row ) );
 		self::assert_cache_purge();
 
 		self::prime_stale_caches();
 		$raw = $wpdb->rows[ self::KEY ];
-		$rows->replace( self::KEY, $raw, self::raw( self::row( 'run-owner', 100, 200 ) ) );
+		$rows->compare_and_swap( self::KEY, $raw, self::raw( self::row( 'run-owner', 100, 200 ) ) );
 		self::assert_cache_purge();
 
 		self::prime_stale_caches();
-		$rows->delete( self::KEY, $wpdb->rows[ self::KEY ] );
+		$rows->delete_if_value_matches( self::KEY, $wpdb->rows[ self::KEY ] );
 		self::assert_cache_purge();
 	}
 
@@ -373,15 +373,15 @@ final class OptionRowsTest extends TestCase {
 		$wpdb->put( self::KEY, $raw );
 
 		self::prime_stale_caches();
-		self::assertFalse( $rows->insert( self::KEY, self::raw( self::row( 'run-rival', 200, 200 ) ) ) );
+		self::assertFalse( $rows->insert_if_absent( self::KEY, self::raw( self::row( 'run-rival', 200, 200 ) ) ) );
 		self::assert_cache_purge();
 
 		self::prime_stale_caches();
-		self::assertFalse( $rows->replace( self::KEY, 'stale-raw', self::raw( self::row( 'run-owner', 100, 200 ) ) ) );
+		self::assertFalse( $rows->compare_and_swap( self::KEY, 'stale-raw', self::raw( self::row( 'run-owner', 100, 200 ) ) ) );
 		self::assert_cache_purge();
 
 		self::prime_stale_caches();
-		self::assertFalse( $rows->delete( self::KEY, 'stale-raw' ) );
+		self::assertFalse( $rows->delete_if_value_matches( self::KEY, 'stale-raw' ) );
 		self::assert_cache_purge();
 	}
 
@@ -420,10 +420,10 @@ final class OptionRowsTest extends TestCase {
 		$row_raw      = 'replacement-raw';
 		$expected_raw = 'expected-raw';
 
-		yield 'insert' => array( static fn ( OptionRows $rows ): bool => $rows->insert( self::KEY, $row_raw ) );
+		yield 'insert_if_absent' => array( static fn ( OptionRows $rows ): bool => $rows->insert_if_absent( self::KEY, $row_raw ) );
 		yield 'read' => array( static fn ( OptionRows $rows ): AbstractResult => $rows->read( self::KEY ) );
-		yield 'replace' => array( static fn ( OptionRows $rows ): bool => $rows->replace( self::KEY, $expected_raw, $row_raw ) );
-		yield 'delete' => array( static fn ( OptionRows $rows ): bool => $rows->delete( self::KEY, $expected_raw ) );
+		yield 'compare_and_swap' => array( static fn ( OptionRows $rows ): bool => $rows->compare_and_swap( self::KEY, $expected_raw, $row_raw ) );
+		yield 'delete_if_value_matches' => array( static fn ( OptionRows $rows ): bool => $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 	}
 
 	/**

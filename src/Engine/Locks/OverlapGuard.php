@@ -101,7 +101,7 @@ final readonly class OverlapGuard {
 		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
-		if ( $this->rows->insert( $key, self::serialize( $new_lock ) ) ) {
+		if ( $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
 			return LockClaimOutcome::Claimed;
 		}
 
@@ -130,7 +130,7 @@ final readonly class OverlapGuard {
 
 		$lock['heartbeat_at'] = $now;
 
-		return $this->rows->replace( $key, $raw, self::serialize( $lock ) )
+		return $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) )
 			? LockClaimOutcome::Claimed
 			: LockClaimOutcome::Held;
 	}
@@ -189,7 +189,7 @@ final readonly class OverlapGuard {
 
 		$now = $this->clock->now()->getTimestamp();
 
-		return $this->rows->replace( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
+		return $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
 	}
 
 	/**
@@ -241,7 +241,7 @@ final readonly class OverlapGuard {
 		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
 
 		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
-		if ( $this->rows->replace( $key, $raw, self::serialize( $lock ) ) ) {
+		if ( $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) ) ) {
 			return HeartbeatOutcome::Owned;
 		}
 
@@ -287,7 +287,7 @@ final readonly class OverlapGuard {
 			return;
 		}
 
-		$this->rows->delete( $key, $raw );
+		$this->rows->delete_if_value_matches( $key, $raw );
 	}
 
 	/**
@@ -374,7 +374,7 @@ final readonly class OverlapGuard {
 	 * @return  bool Whether the inspected row was deleted.
 	 */
 	public function delete_persisted_lock( string $name, string $args_hash, string $expected_raw ): bool {
-		return $this->rows->delete( $this->option_name( $name, $args_hash ), $expected_raw );
+		return $this->rows->delete_if_value_matches( $this->option_name( $name, $args_hash ), $expected_raw );
 	}
 
 	/**
@@ -552,7 +552,7 @@ final readonly class OverlapGuard {
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			if ( $this->rows->insert( $key, self::serialize( $replacement ) ) ) {
+			if ( $this->rows->insert_if_absent( $key, self::serialize( $replacement ) ) ) {
 				return RedriveFenceOutcome::Ready;
 			}
 
@@ -561,7 +561,7 @@ final readonly class OverlapGuard {
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			if ( $this->rows->replace( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
+			if ( $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
 				return RedriveFenceOutcome::Ready;
 			}
 
@@ -578,7 +578,7 @@ final readonly class OverlapGuard {
 		}
 
 		$replacement['claimed_at'] = $lock['claimed_at'];
-		if ( $this->rows->replace( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
+		if ( $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
 			return RedriveFenceOutcome::Ready;
 		}
 
@@ -647,7 +647,7 @@ final readonly class OverlapGuard {
 	 * @return  LockClaimOutcome
 	 */
 	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $name, string $args_hash, string $run_id ): LockClaimOutcome {
-		if ( ! $this->rows->delete( $key, $raw ) || ! $this->rows->insert( $key, self::serialize( $new_lock ) ) ) {
+		if ( ! $this->rows->delete_if_value_matches( $key, $raw ) || ! $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
 			return LockClaimOutcome::Held;
 		}
 

@@ -87,7 +87,7 @@ final readonly class OccurrenceLease {
 		);
 		$raw = self::serialize( $row );
 
-		if ( $this->rows->insert( $key, $raw ) ) {
+		if ( $this->rows->insert_if_absent( $key, $raw ) ) {
 			$selected = $this->rows->read( $key );
 			if ( $selected->is_failure() ) {
 				return null;
@@ -111,7 +111,7 @@ final readonly class OccurrenceLease {
 			return null;
 		}
 
-		return $this->rows->replace( $key, $expected_raw, $raw ) ? $raw : null;
+		return $this->rows->compare_and_swap( $key, $expected_raw, $raw ) ? $raw : null;
 	}
 
 	/**
@@ -126,7 +126,7 @@ final readonly class OccurrenceLease {
 	 * @return  void
 	 */
 	public function release( string $registration_key, string $expected_raw ): void {
-		$this->rows->delete( self::option_name( $registration_key ), $expected_raw );
+		$this->rows->delete_if_value_matches( self::option_name( $registration_key ), $expected_raw );
 	}
 
 	// endregion

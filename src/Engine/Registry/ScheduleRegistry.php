@@ -166,7 +166,7 @@ final class ScheduleRegistry {
 				}
 
 				$replacement_raw = self::serialize_registry( array( $owner => $owner_registrations ) );
-				if ( $this->rows->insert( self::OPTION_NAME, $replacement_raw ) ) {
+				if ( $this->rows->insert_if_absent( self::OPTION_NAME, $replacement_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return true;
@@ -194,7 +194,7 @@ final class ScheduleRegistry {
 			}
 
 			if ( array() === $next ) {
-				if ( $this->rows->delete( self::OPTION_NAME, $expected_raw ) ) {
+				if ( $this->rows->delete_if_value_matches( self::OPTION_NAME, $expected_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return true;
@@ -220,7 +220,7 @@ final class ScheduleRegistry {
 			}
 
 			$replacement_raw = self::serialize_registry( $next );
-			if ( $this->rows->replace( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
+			if ( $this->rows->compare_and_swap( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
 				$this->retain_owner( $owner, $schedules );
 
 				return true;
@@ -348,7 +348,7 @@ final class ScheduleRegistry {
 			$owner_rows[ $registration_key ] = $registration;
 			$stored[ $owner ]                = $owner_rows;
 			$replacement_raw                 = self::serialize_registry( $stored );
-			if ( $this->rows->replace( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
+			if ( $this->rows->compare_and_swap( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
 				return RegistrationUpdateOutcome::Updated;
 			}
 

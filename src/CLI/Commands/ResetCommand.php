@@ -144,7 +144,7 @@ final readonly class ResetCommand {
 
 		$deleted = 0;
 		foreach ( $persisted_rows as $option_name => $raw ) {
-			if ( ! $option_rows->delete( $option_name, $raw ) ) {
+			if ( ! $option_rows->delete_if_value_matches( $option_name, $raw ) ) {
 				$message = $option_rows->last_delete_failed()
 					? \sprintf(
 						'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.',

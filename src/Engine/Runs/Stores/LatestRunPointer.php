@@ -197,14 +197,14 @@ final readonly class LatestRunPointer {
 			}
 
 			if ( null === $expected_raw ) {
-				if ( $this->rows->insert( $option_name, $replacement_raw ) ) {
+				if ( $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					return true;
 				}
 
 				continue;
 			}
 
-			if ( $this->rows->replace( $option_name, $expected_raw, $replacement_raw ) ) {
+			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
 				return true;
 			}
 

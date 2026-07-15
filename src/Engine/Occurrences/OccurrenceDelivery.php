@@ -600,7 +600,7 @@ final readonly class OccurrenceDelivery {
 			throw new \LogicException( 'WordPress must serialize an unknown-schedule cleanup intent to a string.' );
 		}
 
-		$this->option_rows->insert( self::intent_option_name( $registration_key ), $raw );
+		$this->option_rows->insert_if_absent( self::intent_option_name( $registration_key ), $raw );
 	}
 
 	/**
@@ -629,7 +629,7 @@ final readonly class OccurrenceDelivery {
 	 * @return  bool
 	 */
 	private function clear_intent( string $registration_key, string $expected_raw ): bool {
-		if ( $this->option_rows->delete( self::intent_option_name( $registration_key ), $expected_raw ) ) {
+		if ( $this->option_rows->delete_if_value_matches( self::intent_option_name( $registration_key ), $expected_raw ) ) {
 			return true;
 		}
 

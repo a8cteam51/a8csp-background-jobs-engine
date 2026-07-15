@@ -194,7 +194,7 @@ final readonly class RunStore {
 	 */
 	public function transition( string $run_id, string $expected_raw, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->replace( RunIdentity::option_name( $this->name, $run_id ), $expected_raw, $replacement_raw ) ) {
+		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->name, $run_id ), $expected_raw, $replacement_raw ) ) {
 			return null;
 		}
 
@@ -220,7 +220,7 @@ final readonly class RunStore {
 	 */
 	public function transition_state( string $run_id, RunState $expected, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->replace(
+		if ( ! $this->rows->compare_and_swap(
 			RunIdentity::option_name( $this->name, $run_id ),
 			self::serialize_state( $expected ),
 			$replacement_raw
@@ -314,7 +314,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_exact( string $run_id, string $expected_raw ): bool {
-		return $this->rows->delete( RunIdentity::option_name( $this->name, $run_id ), $expected_raw );
+		return $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->name, $run_id ), $expected_raw );
 	}
 
 	/**

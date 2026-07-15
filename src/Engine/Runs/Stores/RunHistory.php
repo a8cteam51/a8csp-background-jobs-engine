@@ -242,14 +242,14 @@ final readonly class RunHistory {
 
 			$replacement_raw = self::serialize_history( $history );
 			if ( null === $expected_raw ) {
-				if ( $rows->insert( $key, $replacement_raw ) ) {
+				if ( $rows->insert_if_absent( $key, $replacement_raw ) ) {
 					return true;
 				}
 
 				continue;
 			}
 
-			if ( $rows->replace( $key, $expected_raw, $replacement_raw ) ) {
+			if ( $rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
 				return true;
 			}
 
