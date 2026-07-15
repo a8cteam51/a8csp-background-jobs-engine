@@ -81,7 +81,7 @@ final readonly class OccurrenceLease {
 		$key = self::option_name( $registration_key );
 		$now = $this->clock->now()->getTimestamp();
 		$row = array(
-			'run_id'       => \sprintf( '%019d', $this->randomizer->int( 0, \PHP_INT_MAX ) ),
+			'claim_token'  => \sprintf( '%019d', $this->randomizer->int( 0, \PHP_INT_MAX ) ),
 			'claimed_at'   => $now,
 			'heartbeat_at' => $now,
 		);
@@ -169,7 +169,7 @@ final readonly class OccurrenceLease {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{run_id: string, claimed_at: int, heartbeat_at: int} $row
+	 * @phpstan-param array{claim_token: string, claimed_at: int, heartbeat_at: int} $row
 	 *
 	 * @param   array $row Complete occurrence-lease state.
 	 *
@@ -194,7 +194,7 @@ final readonly class OccurrenceLease {
 	 *
 	 * @param   string $raw Exact persisted option value.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @return  array{claim_token: string, claimed_at: int, heartbeat_at: int}|null
 	 */
 	private static function parse( string $raw ): ?array {
 		$value = RawOptionDecoder::decode( $raw );
@@ -202,7 +202,7 @@ final readonly class OccurrenceLease {
 		if (
 			! \is_array( $value )
 			|| 3 !== \count( $value )
-			|| ! \is_string( $value['run_id'] ?? null )
+			|| ! \is_string( $value['claim_token'] ?? null )
 			|| ! \is_int( $value['claimed_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 		) {
@@ -210,7 +210,7 @@ final readonly class OccurrenceLease {
 		}
 
 		return array(
-			'run_id'       => $value['run_id'],
+			'claim_token'  => $value['claim_token'],
 			'claimed_at'   => $value['claimed_at'],
 			'heartbeat_at' => $value['heartbeat_at'],
 		);

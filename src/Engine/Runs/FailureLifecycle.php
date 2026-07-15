@@ -79,7 +79,7 @@ final readonly class FailureLifecycle {
 		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
-		$state = $run_store->refresh_heartbeat( $run_id, $state, $reset_at );
+		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
 		if ( null === $state ) {
 			return;
 		}

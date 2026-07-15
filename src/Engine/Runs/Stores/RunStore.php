@@ -329,7 +329,7 @@ final readonly class RunStore {
 	 *
 	 * @return  RunState|null Null when the run is absent, invalid, or changed concurrently.
 	 */
-	public function refresh_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): ?RunState {
+	public function mark_executing_with_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): ?RunState {
 		$raw = null;
 		if ( null === $expected ) {
 			$inspected = $this->inspect( $run_id );

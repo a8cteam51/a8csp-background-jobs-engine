@@ -209,7 +209,7 @@ final readonly class TerminalTransitions {
 			return null;
 		}
 
-		$state = $run_store->refresh_heartbeat( $run_id, $state, $at );
+		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $at );
 		if ( null === $state ) {
 			return null;
 		}

@@ -157,20 +157,20 @@ final class OccurrenceLeaseTest extends TestCase {
 	/**
 	 * Returns the decoded lease row.
 	 *
-	 * @return array{run_id: string, claimed_at: int, heartbeat_at: int}
+	 * @return  array{claim_token: string, claimed_at: int, heartbeat_at: int}
 	 */
 	private function stored_lease(): array {
 		$row = \maybe_unserialize( $this->wpdb->rows[ self::option_name() ] ?? '' );
 		self::assertIsArray( $row );
-		$run_id       = $row['run_id'] ?? null;
+		$claim_token  = $row['claim_token'] ?? null;
 		$claimed_at   = $row['claimed_at'] ?? null;
 		$heartbeat_at = $row['heartbeat_at'] ?? null;
-		self::assertIsString( $run_id );
+		self::assertIsString( $claim_token );
 		self::assertIsInt( $claimed_at );
 		self::assertIsInt( $heartbeat_at );
 
 		return array(
-			'run_id'       => $run_id,
+			'claim_token'  => $claim_token,
 			'claimed_at'   => $claimed_at,
 			'heartbeat_at' => $heartbeat_at,
 		);
@@ -179,15 +179,15 @@ final class OccurrenceLeaseTest extends TestCase {
 	/**
 	 * Returns one exact raw lease row.
 	 *
-	 * @param   string $claim_id      Lease claim identifier.
+	 * @param   string $claim_token   Lease claim token.
 	 * @param   int    $heartbeat_at  Lease heartbeat timestamp.
 	 *
 	 * @return  string
 	 */
-	private static function raw_lease( string $claim_id, int $heartbeat_at ): string {
+	private static function raw_lease( string $claim_token, int $heartbeat_at ): string {
 		$raw = \maybe_serialize(
 			array(
-				'run_id'       => $claim_id,
+				'claim_token'  => $claim_token,
 				'claimed_at'   => $heartbeat_at,
 				'heartbeat_at' => $heartbeat_at,
 			)

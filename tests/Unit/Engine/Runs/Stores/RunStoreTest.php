@@ -461,7 +461,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( RunStatus::Failed, $this->stored_state( $store, 'run-rmw' )->status );
 
 		$clock->timestamp = 200;
-		$state            = $store->refresh_heartbeat( 'run-rmw', $state );
+		$state            = $store->mark_executing_with_heartbeat( 'run-rmw', $state );
 		self::assertNotNull( $state );
 		self::assertTrue( $this->stored_state( $store, 'run-rmw' )->executing );
 		self::assertSame( 200, $this->stored_state( $store, 'run-rmw' )->heartbeat_at );
@@ -493,15 +493,15 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Heartbeat refresh leaves missing and corrupted options untouched.
+	 * Executing-heartbeat transition leaves missing and corrupted options untouched.
 	 *
 	 * @return  void
 	 */
-	public function test_refresh_heartbeat_does_not_recreate_unrecoverable_runs(): void {
+	public function test_mark_executing_with_heartbeat_does_not_recreate_unrecoverable_runs(): void {
 		$clock = new FixedClock( 200 );
 		$store = new RunStore( self::identity( 'heartbeat' ), $clock, $this->rows );
 
-		self::assertNull( $store->refresh_heartbeat( 'missing' ) );
+		self::assertNull( $store->mark_executing_with_heartbeat( 'missing' ) );
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( array(), $this->all_option_calls() );
 
@@ -509,7 +509,7 @@ final class RunStoreTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_options'] = array( $key => 'corrupted' );
 
-		self::assertNull( $store->refresh_heartbeat( 'corrupted' ) );
+		self::assertNull( $store->mark_executing_with_heartbeat( 'corrupted' ) );
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( array(), $this->all_option_calls() );
 		self::assertSame( 'corrupted', $this->option( $key ) );
