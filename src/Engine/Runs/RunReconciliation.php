@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
@@ -10,6 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceFenceOutco
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedriveFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
@@ -179,167 +181,183 @@ final readonly class RunReconciliation {
 					return new Success( $state->args_hash );
 				}
 
-				$latest_run_id = $this->stores
-					->latest_run_pointer( $name )
-					->get_latest_for_hash( $state->args_hash );
-				$this->terminal_transitions->supersede_run(
-					$name,
-					$run_id,
-					$latest_run_id,
-					$state,
-					$run_store,
-					$work_type,
-					$snapshot['raw']
-				);
-
-				return new Success( null );
+				return $this->supersede_transferred_run( $name, $run_id, $state, $run_store, $work_type, $snapshot['raw'] );
 			}
 
 			if ( $state->executing ) {
-				if (
-					MaintenanceFenceOutcome::Owned === $fence
-					|| MaintenanceFenceOutcome::Indeterminate === $fence
-				) {
-					return new Success( null );
-				}
-
-				$error = $this->crash_reclaim_error( $name, $run_id );
-				$this->logger->warning(
-					'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
-					array(
-						'name'   => $name,
-						'run_id' => $run_id,
-					)
-				);
-			} else {
-				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
-					return new Success( null );
-				}
-
-				if ( null === $state->pending ) {
-					$fence = $this->overlap_guard->fence_abandoned_run(
-						$name,
-						$state->args_hash,
-						$run_id,
-						$staleness
-					);
-					if (
-						MaintenanceFenceOutcome::Owned === $fence
-						|| MaintenanceFenceOutcome::Indeterminate === $fence
-					) {
-						return new Success( null );
-					}
-					if ( MaintenanceFenceOutcome::Transferred === $fence ) {
-						$latest_run_id = $this->stores
-							->latest_run_pointer( $name )
-							->get_latest_for_hash( $state->args_hash );
-						$this->terminal_transitions->supersede_run(
-							$name,
-							$run_id,
-							$latest_run_id,
-							$state,
-							$run_store,
-							$work_type,
-							$snapshot['raw']
-						);
-
-						return new Success( null );
-					}
-
-					$error = $this->crash_reclaim_error( $name, $run_id );
-					$this->logger->warning(
-						'Reclaimed stale running run that carries no pending-action descriptor.',
-						array(
-							'name'   => $name,
-							'run_id' => $run_id,
-						)
-					);
-				} else {
-					$redrive_fence = $this->overlap_guard->prepare_run_redrive_fence(
-						$name,
-						$state->args_hash,
-						$run_id,
-						$state->created_at,
-						$state->heartbeat_at,
-						$staleness
-					);
-					if (
-						RedriveFenceOutcome::Live === $redrive_fence
-						|| RedriveFenceOutcome::Indeterminate === $redrive_fence
-					) {
-						return new Success( null );
-					}
-					if ( RedriveFenceOutcome::Transferred === $redrive_fence ) {
-						$latest_run_id = $this->stores
-							->latest_run_pointer( $name )
-							->get_latest_for_hash( $state->args_hash );
-						$this->terminal_transitions->supersede_run(
-							$name,
-							$run_id,
-							$latest_run_id,
-							$state,
-							$run_store,
-							$work_type,
-							$snapshot['raw']
-						);
-
-						return new Success( null );
-					}
-
-					$scheduled = $this->redrive_pending_action( $name, $run_id, $state );
-					if ( ! $scheduled->is_failure() ) {
-						return new Success( null );
-					}
-					$this->logger->warning(
-						'Pending-action redrive was rejected by the scheduler; maintenance skipped terminal handling.',
-						array(
-							'name'         => $name,
-							'run_id'       => $run_id,
-							'error_class'  => $scheduled->error::class,
-							'error_reason' => $scheduled->error->reason->value,
-						)
-					);
-
-					return new Success( null );
-				}
-			}
-
-			$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
-			$failed_chunk = 'Batch' === $work_type && 'run' === $state->pending?->stage
-				? ( $state->queue[0] ?? null )
-				: null;
-			if ( null !== $batch ) {
-				$this->terminal_transitions->fail_batch(
+				return $this->reconcile_executing_run(
+					$name,
+					$run_id,
+					$state,
+					$run_store,
+					$snapshot['raw'],
+					$fence,
 					$batch,
-					$name,
-					$run_id,
-					$state,
-					$run_store,
-					$error,
-					'crash-reclaim',
-					ApiErrorCode::ExecutionFailed,
-					$failed_chunk,
-					$attempts,
-					$snapshot['raw']
-				);
-			} else {
-				$this->terminal_transitions->fail_run(
-					$name,
-					$run_id,
-					$state,
-					$run_store,
-					$error,
-					$attempts,
-					'crash-reclaim',
-					ApiErrorCode::ExecutionFailed,
-					null,
-					$snapshot['raw']
+					$work_type
 				);
 			}
+
+			return $this->reconcile_non_executing_run(
+				$name,
+				$run_id,
+				$state,
+				$run_store,
+				$snapshot['raw'],
+				$staleness,
+				$batch,
+				$work_type
+			);
+		}
+
+		return $this->reconcile_terminal_run(
+			$name,
+			$run_id,
+			$state,
+			$run_store,
+			$snapshot['raw'],
+			$terminal_grace
+		);
+	}
+
+	/**
+	 * Reconciles a running row whose callback owns the execution attempt.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $name         Complete owner-qualified task or batch identity.
+	 * @param   string                  $run_id       Run identifier.
+	 * @param   RunState                $state        Running state observed by maintenance.
+	 * @param   RunStore                $run_store    Name-bound run store.
+	 * @param   string                  $expected_raw Exact observed state.
+	 * @param   MaintenanceFenceOutcome $fence        Executing-run fence outcome.
+	 * @param   BatchInterface|null     $batch        Registered batch, or null when unavailable.
+	 * @param   'Task'|'Batch'          $work_type    Work contract type.
+	 *
+	 * @return  AbstractResult<null, EngineError>
+	 */
+	private function reconcile_executing_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, ?BatchInterface $batch, string $work_type ): AbstractResult {
+		if (
+			MaintenanceFenceOutcome::Owned === $fence
+			|| MaintenanceFenceOutcome::Indeterminate === $fence
+		) {
+			return new Success( null );
+		}
+
+		$error = $this->crash_reclaim_error( $name, $run_id );
+		$this->logger->warning(
+			'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
+			array(
+				'name'   => $name,
+				'run_id' => $run_id,
+			)
+		);
+
+		return $this->fail_crashed_run( $name, $run_id, $state, $run_store, $error, $batch, $work_type, $expected_raw );
+	}
+
+	/**
+	 * Reconciles a running row between deliveries or redrives its pending action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string              $name         Complete owner-qualified task or batch identity.
+	 * @param   string              $run_id       Run identifier.
+	 * @param   RunState            $state        Running state observed by maintenance.
+	 * @param   RunStore            $run_store    Name-bound run store.
+	 * @param   string              $expected_raw Exact observed state.
+	 * @param   int                 $staleness    Lock-staleness window in seconds.
+	 * @param   BatchInterface|null $batch        Registered batch, or null when unavailable.
+	 * @param   'Task'|'Batch'      $work_type    Work contract type.
+	 *
+	 * @return  AbstractResult<null, EngineError>
+	 */
+	private function reconcile_non_executing_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, ?BatchInterface $batch, string $work_type ): AbstractResult {
+		if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
+			return new Success( null );
+		}
+
+		if ( null === $state->pending ) {
+			$fence = $this->overlap_guard->fence_abandoned_run(
+				$name,
+				$state->args_hash,
+				$run_id,
+				$staleness
+			);
+			if (
+				MaintenanceFenceOutcome::Owned === $fence
+				|| MaintenanceFenceOutcome::Indeterminate === $fence
+			) {
+				return new Success( null );
+			}
+			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
+				return $this->supersede_transferred_run( $name, $run_id, $state, $run_store, $work_type, $expected_raw );
+			}
+
+			$error = $this->crash_reclaim_error( $name, $run_id );
+			$this->logger->warning(
+				'Reclaimed stale running run that carries no pending-action descriptor.',
+				array(
+					'name'   => $name,
+					'run_id' => $run_id,
+				)
+			);
+		} else {
+			$redrive_fence = $this->overlap_guard->prepare_run_redrive_fence(
+				$name,
+				$state->args_hash,
+				$run_id,
+				$state->created_at,
+				$state->heartbeat_at,
+				$staleness
+			);
+			if (
+				RedriveFenceOutcome::Live === $redrive_fence
+				|| RedriveFenceOutcome::Indeterminate === $redrive_fence
+			) {
+				return new Success( null );
+			}
+			if ( RedriveFenceOutcome::Transferred === $redrive_fence ) {
+				return $this->supersede_transferred_run( $name, $run_id, $state, $run_store, $work_type, $expected_raw );
+			}
+
+			$scheduled = $this->redrive_pending_action( $name, $run_id, $state );
+			if ( ! $scheduled->is_failure() ) {
+				return new Success( null );
+			}
+			$this->logger->warning(
+				'Pending-action redrive was rejected by the scheduler; maintenance skipped terminal handling.',
+				array(
+					'name'         => $name,
+					'run_id'       => $run_id,
+					'error_class'  => $scheduled->error::class,
+					'error_reason' => $scheduled->error->reason->value,
+				)
+			);
 
 			return new Success( null );
 		}
 
+		return $this->fail_crashed_run( $name, $run_id, $state, $run_store, $error, $batch, $work_type, $expected_raw );
+	}
+
+	/**
+	 * Replays terminal cleanup after its grace period expires.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $name           Complete owner-qualified task or batch identity.
+	 * @param   string   $run_id         Run identifier.
+	 * @param   RunState $state          Terminal state observed by maintenance.
+	 * @param   RunStore $run_store      Name-bound run store.
+	 * @param   string   $expected_raw   Exact observed state.
+	 * @param   int      $terminal_grace Grace before belt-and-braces terminal cleanup.
+	 *
+	 * @return  AbstractResult<null, EngineError>
+	 */
+	private function reconcile_terminal_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $terminal_grace ): AbstractResult {
 		$now = $this->clock->now()->getTimestamp();
 		if (
 			$state->heartbeat_at > \PHP_INT_MAX - $terminal_grace
@@ -362,7 +380,7 @@ final readonly class RunReconciliation {
 				: 'Task';
 		}
 
-		if ( $this->terminal_transitions->replay_terminal_run( $name, $run_id, $state, $snapshot['raw'], $run_store, $work_type, $resolved_batch ) ) {
+		if ( $this->terminal_transitions->replay_terminal_run( $name, $run_id, $state, $expected_raw, $run_store, $work_type, $resolved_batch ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(
@@ -372,6 +390,92 @@ final readonly class RunReconciliation {
 				)
 			);
 		}
+
+		return new Success( null );
+	}
+
+	/**
+	 * Fails a crashed running row through its work-kind terminal path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string              $name         Complete owner-qualified task or batch identity.
+	 * @param   string              $run_id       Run identifier.
+	 * @param   RunState            $state        Running state observed by maintenance.
+	 * @param   RunStore            $run_store    Name-bound run store.
+	 * @param   EngineError         $error        Crash-reclaim terminal failure detail.
+	 * @param   BatchInterface|null $batch        Registered batch, or null when unavailable.
+	 * @param   'Task'|'Batch'      $work_type    Work contract type.
+	 * @param   string              $expected_raw Exact observed state.
+	 *
+	 * @return  AbstractResult<null, EngineError>
+	 */
+	private function fail_crashed_run( string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?BatchInterface $batch, string $work_type, string $expected_raw ): AbstractResult {
+		$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
+		$failed_chunk = 'Batch' === $work_type && 'run' === $state->pending?->stage
+			? ( $state->queue[0] ?? null )
+			: null;
+		if ( null !== $batch ) {
+			$this->terminal_transitions->fail_batch(
+				$batch,
+				$name,
+				$run_id,
+				$state,
+				$run_store,
+				$error,
+				'crash-reclaim',
+				ApiErrorCode::ExecutionFailed,
+				$failed_chunk,
+				$attempts,
+				$expected_raw
+			);
+		} else {
+			$this->terminal_transitions->fail_run(
+				$name,
+				$run_id,
+				$state,
+				$run_store,
+				$error,
+				$attempts,
+				'crash-reclaim',
+				ApiErrorCode::ExecutionFailed,
+				null,
+				$expected_raw
+			);
+		}
+
+		return new Success( null );
+	}
+
+	/**
+	 * Supersedes a running row after its execution-overlap fence transfers ownership.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string         $name         Complete owner-qualified task or batch identity.
+	 * @param   string         $run_id       Run identifier.
+	 * @param   RunState       $state        Running state observed by maintenance.
+	 * @param   RunStore       $run_store    Name-bound run store.
+	 * @param   'Task'|'Batch' $work_type    Work contract type.
+	 * @param   string         $expected_raw Exact observed state.
+	 *
+	 * @return  AbstractResult<null, EngineError>
+	 */
+	private function supersede_transferred_run( string $name, string $run_id, RunState $state, RunStore $run_store, string $work_type, string $expected_raw ): AbstractResult {
+		$latest_run_id = $this->stores
+			->latest_run_pointer( $name )
+			->get_latest_for_hash( $state->args_hash );
+		$this->terminal_transitions->supersede_run(
+			$name,
+			$run_id,
+			$latest_run_id,
+			$state,
+			$run_store,
+			$work_type,
+			$expected_raw
+		);
 
 		return new Success( null );
 	}
