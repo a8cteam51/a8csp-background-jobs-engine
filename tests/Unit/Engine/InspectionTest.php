@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
@@ -518,7 +519,7 @@ final class InspectionTest extends TestCase {
 				'name'   => 'owner:foo_bar',
 				'run_id' => $foreign_id,
 			),
-			Inspection::run_identity_from_option_name( 'a8csp_bgte_run_owner:foo_bar_' . $foreign_id )
+			RunIdentity::from_option_name( 'a8csp_bgte_run_owner:foo_bar_' . $foreign_id )
 		);
 
 		$snapshot = $this->inspection->runs( 'owner:foo' );

@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
@@ -65,16 +66,6 @@ final readonly class Inspection {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Prefix for active-run option names.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	private const RUN_OPTION_PREFIX = 'a8csp_bgte_run_';
-
-	/**
 	 * Maximum authoritative live-run rows inspected for one command invocation.
 	 *
 	 * @since   1.0.0
@@ -83,16 +74,6 @@ final readonly class Inspection {
 	 * @var     int
 	 */
 	private const LIVE_RUN_LIMIT = 20;
-
-	/**
-	 * Fixed character length of the canonical timestamp-randomness run identifier.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const RUN_ID_LENGTH = 40;
 
 	// endregion
 
@@ -243,13 +224,13 @@ final readonly class Inspection {
 	public function runs( string $name ): array {
 		$observed_at = $this->clock->now()->getTimestamp();
 		$run_store   = $this->stores->run_store( $name );
-		$prefix      = self::RUN_OPTION_PREFIX . $name . '_';
+		$prefix      = RunIdentity::option_name_prefix( $name );
 		$page        = $this->option_rows->option_names_page(
 			$prefix,
-			\strlen( $prefix ) + self::RUN_ID_LENGTH,
+			\strlen( $prefix ) + RunIdentity::LENGTH,
 			self::LIVE_RUN_LIMIT,
 			static function ( string $option_name ) use ( $name ): bool {
-				$identity = self::run_identity_from_option_name( $option_name );
+				$identity = RunIdentity::from_option_name( $option_name );
 
 				return null !== $identity && $name === $identity['name'];
 			}
@@ -269,7 +250,7 @@ final readonly class Inspection {
 		$live = array();
 
 		foreach ( $page['names'] as $option_name ) {
-			$identity = self::run_identity_from_option_name( $option_name );
+			$identity = RunIdentity::from_option_name( $option_name );
 			if ( null === $identity || $name !== $identity['name'] ) {
 				continue;
 			}
@@ -401,34 +382,6 @@ final readonly class Inspection {
 		}
 
 		return 'unknown';
-	}
-
-	/**
-	 * Parses the canonical fixed-width run-ID suffix from one complete run option name.
-	 *
-	 * @internal Inspection decision seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $option_name Complete option name.
-	 *
-	 * @return  array{name: string, run_id: string}|null
-	 */
-	public static function run_identity_from_option_name( string $option_name ): ?array {
-		$matched = \preg_match(
-			'/\A' . \preg_quote( self::RUN_OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<run_id>\d{20}-\d{19})\z/D',
-			$option_name,
-			$matches
-		);
-		if ( 1 !== $matched || null === WorkIdentity::parts( $matches['name'] ) ) {
-			return null;
-		}
-
-		return array(
-			'name'   => $matches['name'],
-			'run_id' => $matches['run_id'],
-		);
 	}
 
 	/**

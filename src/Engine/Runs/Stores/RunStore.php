@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
@@ -105,7 +106,7 @@ final readonly class RunStore {
 			pending: $pending,
 		);
 
-		if ( ! \add_option( $this->option_name( $run_id ), self::to_option( $state ), '', false ) ) {
+		if ( ! \add_option( RunIdentity::option_name( $this->name, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
 		}
 
@@ -123,7 +124,7 @@ final readonly class RunStore {
 	 * @return  RunState|null
 	 */
 	public function get( string $run_id ): ?RunState {
-		$selected = $this->rows->read( $this->option_name( $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->name, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return null;
 		}
@@ -156,7 +157,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'a run-state read outcome must be handled, not dropped' )]
 	public function inspect( string $run_id ): AbstractResult {
-		$selected = $this->rows->read( $this->option_name( $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->name, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -193,7 +194,7 @@ final readonly class RunStore {
 	 */
 	public function transition( string $run_id, string $expected_raw, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->replace( $this->option_name( $run_id ), $expected_raw, $replacement_raw ) ) {
+		if ( ! $this->rows->replace( RunIdentity::option_name( $this->name, $run_id ), $expected_raw, $replacement_raw ) ) {
 			return null;
 		}
 
@@ -220,7 +221,7 @@ final readonly class RunStore {
 	public function transition_state( string $run_id, RunState $expected, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
 		if ( ! $this->rows->replace(
-			$this->option_name( $run_id ),
+			RunIdentity::option_name( $this->name, $run_id ),
 			self::serialize_state( $expected ),
 			$replacement_raw
 		) ) {
@@ -313,7 +314,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_exact( string $run_id, string $expected_raw ): bool {
-		return $this->rows->delete( $this->option_name( $run_id ), $expected_raw );
+		return $this->rows->delete( RunIdentity::option_name( $this->name, $run_id ), $expected_raw );
 	}
 
 	/**
@@ -366,8 +367,8 @@ final readonly class RunStore {
 	 * @return  bool True when the run option is confirmed absent.
 	 */
 	public function delete( string $run_id ): bool {
-		\delete_option( $this->option_name( $run_id ) );
-		$selected = $this->rows->read( $this->option_name( $run_id ) );
+		\delete_option( RunIdentity::option_name( $this->name, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->name, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return false;
 		}
@@ -378,20 +379,6 @@ final readonly class RunStore {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Returns the option name for a run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  string
-	 */
-	private function option_name( string $run_id ): string {
-		return self::OPTION_PREFIX . $this->name . '_' . $run_id;
-	}
 
 	/**
 	 * Converts typed state to its persisted option shape.

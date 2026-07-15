@@ -5,10 +5,10 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -179,7 +179,7 @@ final class WorkIdentityTest extends TestCase {
 		$clock    = new FixedClock( 0 );
 		$keys     = array(
 			'lock'           => self::private_string( new OverlapGuard( $clock, new RecordingLogger(), $rows ), 'option_name', $identity, $hash ),
-			'run'            => self::private_string( new RunStore( $identity, $clock, $rows ), 'option_name', $run_id ),
+			'run'            => RunIdentity::option_name( $identity, $run_id ),
 			'failed'         => self::private_string( new FailedRunStore( $identity, $rows ), 'option_name' ),
 			'history'        => self::private_string( new RunHistory( $identity, $rows ), 'option_name' ),
 			'latest'         => self::private_string( new LatestRunPointer( $identity, $rows ), 'option_name' ),

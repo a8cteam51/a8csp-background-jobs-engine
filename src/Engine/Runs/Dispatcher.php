@@ -49,26 +49,6 @@ final readonly class Dispatcher {
 	 */
 	private const MAX_PRIORITY = 255;
 
-	/**
-	 * Decimal width reserved for a run identifier's random suffix.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const RUN_ID_RANDOM_DIGITS = 19;
-
-	/**
-	 * Decimal width reserved for a run identifier's timestamp prefix.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const RUN_ID_TIME_DIGITS = 20;
-
 	// endregion
 
 	// region MAGIC METHODS
@@ -241,7 +221,7 @@ final readonly class Dispatcher {
 		}
 
 		$now            = $this->clock->now()->getTimestamp();
-		$run_id         = $this->run_id( $now );
+		$run_id         = RunIdentity::generate( $now, $this->randomizer );
 		$latest_pointer = $this->stores->latest_run_pointer( $batch_name );
 		$claim          = $this->overlap_guard->claim(
 			$batch_name,
@@ -707,7 +687,7 @@ final readonly class Dispatcher {
 		}
 		$scheduled_at = $now + $delay;
 
-		$run_id = $this->run_id( $now );
+		$run_id = RunIdentity::generate( $now, $this->randomizer );
 		if ( OverlapPolicy::Allow === $overlap ) {
 			// Allow gets a per-run lock identity so concurrent occurrences never contend; Held can then only mean run-id collision.
 			$args_hash = \hash( 'sha256', $args_hash . '|' . $run_id );
@@ -1020,24 +1000,6 @@ final readonly class Dispatcher {
 		}
 
 		return \hash( 'sha256', $encoded );
-	}
-
-	/**
-	 * Returns a lexically time-ordered identifier with a 63-bit random suffix.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $timestamp Run creation timestamp.
-	 *
-	 * @return  string
-	 */
-	private function run_id( int $timestamp ): string {
-		return \sprintf(
-			'%0' . self::RUN_ID_TIME_DIGITS . 'd-%0' . self::RUN_ID_RANDOM_DIGITS . 'd',
-			$timestamp,
-			$this->randomizer->int( 0, \PHP_INT_MAX )
-		);
 	}
 
 	// endregion

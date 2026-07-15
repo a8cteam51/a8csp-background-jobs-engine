@@ -89,6 +89,23 @@ final class OverlapGuardTest extends TestCase {
 		);
 	}
 
+	/** Lock option parsing retains the exact legacy prefix, identity, and lowercase hash grammar. */
+	public function test_option_name_parser_matches_the_previous_maintenance_regex(): void {
+		$hash = \str_repeat( 'a', 64 );
+
+		self::assertSame(
+			array(
+				'name'      => 'owner:under_score',
+				'args_hash' => $hash,
+			),
+			OverlapGuard::identity_from_option_name( 'a8csp_bgte_lock_owner:under_score_' . $hash )
+		);
+		self::assertNull( OverlapGuard::identity_from_option_name( 'other_lock_owner:under_score_' . $hash ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_lock_invalid-owner_' . $hash ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgte_lock_owner:sync_{$hash}\n" ) );
+	}
+
 	/** An absent lock is claimed with the exact schema and non-autoload policy. */
 	public function test_fresh_claim_inserts_the_literal_non_autoloaded_lock(): void {
 		$result = $this->guard_at( 1_700_000_100 )->claim(

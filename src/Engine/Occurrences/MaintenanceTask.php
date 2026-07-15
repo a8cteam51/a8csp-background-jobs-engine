@@ -4,9 +4,9 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\AbstractTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -31,26 +31,6 @@ final class MaintenanceTask extends AbstractTask {
 	 * @var     string
 	 */
 	public const NAME = 'maintenance';
-
-	/**
-	 * Prefix for execution-overlap lock options.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	private const LOCK_PREFIX = 'a8csp_bgte_lock_';
-
-	/**
-	 * Prefix for consolidated run options.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	private const RUN_PREFIX = 'a8csp_bgte_run_';
 
 	/**
 	 * Belt-and-braces grace before deleting a terminal run option.
@@ -118,30 +98,30 @@ final class MaintenanceTask extends AbstractTask {
 		// Run reconciliation consumes transfer evidence before orphan-lock reclamation can erase it.
 		$protected_transfers = array();
 		$deferred_lock_names = array();
-		$run_names           = $this->rows->option_names( self::RUN_PREFIX );
+		$run_names           = $this->rows->option_names( RunIdentity::option_prefix() );
 		if ( $run_names->is_failure() ) {
 			return;
 		}
 
 		foreach ( $run_names->value as $option_name ) {
-			$identity = self::run_identity( $option_name );
+			$identity = RunIdentity::from_option_name( $option_name );
 			if ( null === $identity ) {
 				continue;
 			}
 
 			try {
 				$reconciled = $this->reconciliation->reconcile_run(
-					$identity[0],
-					$identity[1],
+					$identity['name'],
+					$identity['run_id'],
 					self::TERMINAL_GRACE
 				);
 			} catch ( \Throwable $throwable ) {
-				$deferred_lock_names[ $identity[0] ] = true;
+				$deferred_lock_names[ $identity['name'] ] = true;
 				$this->logger->warning(
 					'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 					array(
-						'name'      => $identity[0],
-						'run_id'    => $identity[1],
+						'name'      => $identity['name'],
+						'run_id'    => $identity['run_id'],
 						'exception' => $throwable,
 					)
 				);
@@ -154,22 +134,23 @@ final class MaintenanceTask extends AbstractTask {
 
 			$transferred_hash = $reconciled->value;
 			if ( null !== $transferred_hash ) {
-				$protected_transfers[ $identity[0] . '|' . $transferred_hash ] = true;
+				$protected_transfers[ $identity['name'] . '|' . $transferred_hash ] = true;
 			}
 		}
 
-		$lock_names = $this->rows->option_names( self::LOCK_PREFIX );
+		$lock_names = $this->rows->option_names( OverlapGuard::OPTION_PREFIX );
 		if ( $lock_names->is_failure() ) {
 			return;
 		}
 
 		foreach ( $lock_names->value as $option_name ) {
-			$identity = self::lock_identity( $option_name );
+			$identity = OverlapGuard::identity_from_option_name( $option_name );
 			if ( null === $identity ) {
 				continue;
 			}
 
-			[ $name, $args_hash ] = $identity;
+			$name      = $identity['name'];
+			$args_hash = $identity['args_hash'];
 			if ( isset( $deferred_lock_names[ $name ] ) ) {
 				// An unclassified run can still depend on every same-name lock as authoritative fence evidence.
 				continue;
@@ -230,58 +211,6 @@ final class MaintenanceTask extends AbstractTask {
 		}
 
 		$this->occurrence_delivery->converge_pending_intents();
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Parses a lock option whose fixed hash suffix removes name-boundary ambiguity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $option_name Lock option name.
-	 *
-	 * @return  array{string, string}|null
-	 */
-	private static function lock_identity( string $option_name ): ?array {
-		$matched = \preg_match(
-			'/\Aa8csp_bgte_lock_(.+)_([a-f0-9]{64})\z/',
-			$option_name,
-			$matches
-		);
-		// A non-canonical key segment is not engine work; such rows are left for manual cleanup by design.
-		if ( 1 !== $matched || null === WorkIdentity::parts( $matches[1] ) ) {
-			return null;
-		}
-
-		return array( $matches[1], $matches[2] );
-	}
-
-	/**
-	 * Parses a run option whose fixed identifier suffix removes name-boundary ambiguity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $option_name Run option name.
-	 *
-	 * @return  array{string, string}|null
-	 */
-	private static function run_identity( string $option_name ): ?array {
-		$matched = \preg_match(
-			'/\Aa8csp_bgte_run_(.+)_([0-9]{20}-[0-9]{19})\z/',
-			$option_name,
-			$matches
-		);
-		// A non-canonical key segment is not engine work; such rows are left for manual cleanup by design.
-		if ( 1 !== $matched || null === WorkIdentity::parts( $matches[1] ) ) {
-			return null;
-		}
-
-		return array( $matches[1], $matches[2] );
 	}
 
 	// endregion

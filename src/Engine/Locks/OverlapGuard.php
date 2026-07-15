@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ClaimResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
@@ -375,6 +376,34 @@ final readonly class OverlapGuard {
 	 */
 	public function delete_persisted_lock( string $name, string $args_hash, string $expected_raw ): bool {
 		return $this->rows->delete( $this->option_name( $name, $args_hash ), $expected_raw );
+	}
+
+	/**
+	 * Parses a canonical work identity and argument hash from one overlap-lock option name.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Complete option name.
+	 *
+	 * @return  array{name: string, args_hash: string}|null
+	 */
+	public static function identity_from_option_name( string $option_name ): ?array {
+		$matched = \preg_match(
+			'/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<args_hash>[a-f0-9]{64})\z/D',
+			$option_name,
+			$matches
+		);
+		if ( 1 !== $matched || null === WorkIdentity::parts( $matches['name'] ) ) {
+			return null;
+		}
+
+		return array(
+			'name'      => $matches['name'],
+			'args_hash' => $matches['args_hash'],
+		);
 	}
 
 	/**
