@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -60,6 +61,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( WorkRegistry::class )]
 final class DispatcherBatchTest extends TestCase {
@@ -144,9 +146,10 @@ final class DispatcherBatchTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->batches->register( self::IDENTITY, $this->batch );
-		$this->dispatcher = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, );
+		$this->dispatcher = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 	}
 
 	// endregion.

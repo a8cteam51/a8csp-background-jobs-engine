@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -46,6 +47,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
 #[UsesClass( SchedulingErrorReason::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( WorkIdentity::class )]
 final class SchedulesTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -1050,8 +1052,9 @@ final class SchedulesTest extends TestCase {
 		$tasks                = new TaskRegistry( $work );
 		$batches              = new BatchRegistry( $work );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, );
+		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
+		$dispatcher           = new Dispatcher( $tasks, $batches, $backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 
 		$delivery = new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ), new CleanupIntents( $registry, new SchedulerFacade( array( $backend ) ), new OptionRows( $wpdb ), $clock, $logger ), $clock, $logger );
 

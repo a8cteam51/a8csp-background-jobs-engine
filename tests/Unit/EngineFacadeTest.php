@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -56,6 +57,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( ScheduleRegistry::class )]
@@ -127,9 +129,10 @@ final class EngineFacadeTest extends TestCase {
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
+		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 
-		$dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, );
+		$dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 		$registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$delivery   = new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ), new CleanupIntents( $registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $clock, $logger ), $clock, $logger );
 		$schedules  = new Schedules( $registry, $this->backend, $clock, $delivery );

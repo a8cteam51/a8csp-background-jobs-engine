@@ -23,6 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\Rando
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -149,7 +150,8 @@ final class Component implements ComponentContract {
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
 			$stores               = new StoreFactory( $clock, $option_rows );
 			$lock_windows         = new LockWindows( $clock );
-			$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
+			$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
+			$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 			$scheduler            = new SchedulerFacade(
 				array(
 					new ActionSchedulerBackend(),
@@ -157,9 +159,9 @@ final class Component implements ComponentContract {
 				)
 			);
 			$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-			$action_deliveries    = new ActionDeliveries( $tasks, $batches, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $failure_lifecycle );
-			$dispatcher           = new Dispatcher( $tasks, $batches, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
-			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $tasks, $batches, $scheduler );
+			$action_deliveries    = new ActionDeliveries( $tasks, $batches, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+			$dispatcher           = new Dispatcher( $tasks, $batches, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );
+			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $tasks, $batches, $scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );

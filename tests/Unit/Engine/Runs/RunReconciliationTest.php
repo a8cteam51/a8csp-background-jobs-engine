@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -54,6 +55,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( RunFailure::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( WorkRegistry::class )]
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -75,6 +77,7 @@ final class RunReconciliationTest extends TestCase {
 	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
 	private StoreFactory $stores;
+	private TerminalEffects $terminal_effects;
 	private TerminalTransitions $terminal_transitions;
 	private WpdbLockSpy $wpdb;
 
@@ -137,11 +140,12 @@ final class RunReconciliationTest extends TestCase {
 		$this->stores               = new StoreFactory( $this->clock, $option_rows );
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger );
+		$this->terminal_effects     = new TerminalEffects( $guard, $this->stores, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
 		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
-		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $failure_lifecycle );
-		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, );
-		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->tasks, $this->batches, $this->backend, );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
+		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
+		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->tasks, $this->batches, $this->backend );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
@@ -1662,7 +1666,7 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsArray( $snapshot );
 			$state = $snapshot['state'];
 			self::assertNotNull( $state );
-			self::assertTrue( $this->terminal_transitions->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch ) );
+			self::assertTrue( $this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch ) );
 
 			throw new \RuntimeException( 'Original callback worker resumed after rival cleanup.' );
 		};
@@ -1676,7 +1680,7 @@ final class RunReconciliationTest extends TestCase {
 		$caught = null;
 
 		try {
-			$this->terminal_transitions->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch );
+			$this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch );
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
@@ -1806,7 +1810,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = $snapshot['state'];
 		self::assertNotNull( $state );
 
-		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Task' ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Task' ) );
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 
 		$this->maintenance->handle( array() );

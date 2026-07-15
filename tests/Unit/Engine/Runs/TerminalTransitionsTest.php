@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
@@ -20,11 +19,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
@@ -59,6 +58,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( WorkRegistry::class )]
@@ -148,10 +148,11 @@ final class TerminalTransitionsTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects           = new TerminalEffects( $guard, $stores, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, );
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );
 	}
 
 	// endregion.
@@ -651,122 +652,6 @@ final class TerminalTransitionsTest extends TestCase {
 		);
 	}
 
-	/** Failed-run retention failure is logged without skipping terminal hooks or history. */
-	public function test_fail_run_logs_failed_run_retention_failure_and_continues(): void {
-		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
-		self::assertNotNull( $state );
-		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
-			$this->wpdb->before_next(
-				'insert',
-				static function ( WpdbLockSpy $wpdb ): void {
-					$wpdb->script_result( 'insert', false );
-				}
-			);
-		}
-		$error = new EngineError( 'Terminal failure.' );
-
-		$this->terminal_transitions->fail_run( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 1, 'execution', ApiErrorCode::ExecutionFailed );
-
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::IDENTITY,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_terminal_history( 'failed' );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Failed run "00000000001700000000-0000000000000000042" could not be retained for manual retry.',
-					'context' => array(
-						'task_name' => self::IDENTITY,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
-	}
-
-	/** Terminal-history failure leaves a marked claim for reconciliation after active lock cleanup. */
-	public function test_complete_run_logs_terminal_history_failure_and_keeps_the_claim_for_replay(): void {
-		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
-		self::assertNotNull( $state );
-		$this->wpdb->before_next( 'update', static function (): void {} );
-		$this->wpdb->before_next( 'update', static function (): void {} );
-		$this->wpdb->before_next(
-			'update',
-			function ( WpdbLockSpy $wpdb ): void {
-				$terminal = $this->option( $this->run_option_name() );
-				self::assertIsArray( $terminal );
-				self::assertSame( 'completed', $terminal['status'] ?? null );
-				self::assertSame( array( 'hooks' ), $terminal['effects'] ?? null );
-				$wpdb->script_result( 'update', false );
-			}
-		);
-
-		$this->terminal_transitions->complete_run( self::IDENTITY, self::RUN_ID, $state, $run_store );
-
-		$remaining = $run_store->get( self::RUN_ID );
-		self::assertNotNull( $remaining );
-		self::assertSame( RunStatus::Completed, $remaining->status );
-		self::assertSame( array( 'hooks' ), $remaining->effects );
-		self::assertNull( $this->lock() );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Terminal run history could not be persisted; inspection data may be incomplete.',
-					'context' => array(
-						'name'   => self::IDENTITY,
-						'run_id' => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
-	}
-
-	/** Only the exact terminal snapshot carrying every required effect marker may be deleted. */
-	public function test_finish_claimed_transition_requires_every_effect_and_the_exact_latest_raw(): void {
-		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$running   = $run_store->get( self::RUN_ID );
-		self::assertNotNull( $running );
-		$terminal  = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
-		$claim_raw = $run_store->transition_state( self::RUN_ID, $running, $terminal );
-		self::assertIsString( $claim_raw );
-
-		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store, 'Task' ) );
-		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
-		self::assertNull( $this->lock() );
-
-		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
-		self::assertNotNull( $hooks );
-		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store, 'Task' ) );
-
-		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
-		self::assertNotNull( $complete );
-		self::assertFalse( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store, 'Task' ) );
-		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
-		self::assertTrue( $this->terminal_transitions->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store, 'Task' ) );
-		self::assertNull( $run_store->get( self::RUN_ID ) );
-		self::assertSame( array(), $this->logger->records );
-	}
 
 	/**
 	 * Confirmed lock ownership keeps a valid run executable after its bounded pointer is evicted.
@@ -906,66 +791,6 @@ final class TerminalTransitionsTest extends TestCase {
 		);
 	}
 
-	/**
-	 * Durable terminal effects are derived from one outcome-by-work-kind table.
-	 *
-	 * @phpstan-param 'Task'|'Batch' $work_type
-	 * @phpstan-param list<string> $effects
-	 */
-	#[DataProvider( 'terminal_effect_rows' )]
-	public function test_expected_terminal_effects( string $status, string $work_type, array $effects ): void {
-		self::assertSame( $effects, TerminalTransitions::expected_effects( RunStatus::from( $status ), $work_type ) );
-	}
-
-	/**
-	 * Supplies every terminal outcome and work-kind combination.
-	 *
-	 * @return  array<string, array{status: string, work_type: 'Task'|'Batch', effects: list<string>}>
-	 */
-	public static function terminal_effect_rows(): array {
-		return array(
-			'failed batch'     => array(
-				'status'    => 'failed',
-				'work_type' => 'Batch',
-				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
-			),
-			'failed task'      => array(
-				'status'    => 'failed',
-				'work_type' => 'Task',
-				'effects'   => array( 'retention', 'hooks', 'history' ),
-			),
-			'completed batch'  => array(
-				'status'    => 'completed',
-				'work_type' => 'Batch',
-				'effects'   => array( 'callbacks', 'hooks', 'history' ),
-			),
-			'completed task'   => array(
-				'status'    => 'completed',
-				'work_type' => 'Task',
-				'effects'   => array( 'hooks', 'history' ),
-			),
-			'cancelled batch'  => array(
-				'status'    => 'cancelled',
-				'work_type' => 'Batch',
-				'effects'   => array( 'hooks', 'history' ),
-			),
-			'cancelled task'   => array(
-				'status'    => 'cancelled',
-				'work_type' => 'Task',
-				'effects'   => array( 'hooks', 'history' ),
-			),
-			'superseded batch' => array(
-				'status'    => 'superseded',
-				'work_type' => 'Batch',
-				'effects'   => array( 'hooks', 'history' ),
-			),
-			'superseded task'  => array(
-				'status'    => 'superseded',
-				'work_type' => 'Task',
-				'effects'   => array( 'hooks', 'history' ),
-			),
-		);
-	}
 
 	/**
 	 * Supplies every terminal state accepted by persisted run data.

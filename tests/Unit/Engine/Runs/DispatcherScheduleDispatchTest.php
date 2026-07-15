@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TaskDispatchSkipped;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -37,6 +38,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( WorkRegistry::class )]
@@ -110,9 +112,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger );
+		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 
-		$this->dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, );
+		$this->dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 	}
 
 	// endregion.

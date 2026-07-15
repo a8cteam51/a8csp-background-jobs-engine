@@ -40,27 +40,18 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OverlapGuard        $overlap_guard       Execution-overlap guard.
-	 * @param   StoreFactory        $stores              Name-bound store factory.
-	 * @param   ClockInterface      $clock               Timestamp source.
-	 * @param   LoggerInterface     $logger              Log event sink.
-	 * @param   LockWindows         $lock_windows        Filterable run-lock timing policy.
+	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
+	 * @param   StoreFactory        $stores               Name-bound store factory.
+	 * @param   ClockInterface      $clock                Timestamp source.
+	 * @param   LoggerInterface     $logger               Log event sink.
+	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   TaskRegistry        $tasks               Registered task instances.
-	 * @param   BatchRegistry       $batches             Registered batch instances.
-	 * @param   BackendInterface    $scheduler           Scheduling facade boundary.
+	 * @param   TerminalEffects     $terminal_effects     Claimed terminal-effect executor.
+	 * @param   TaskRegistry        $tasks                Registered task instances.
+	 * @param   BatchRegistry       $batches              Registered batch instances.
+	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 */
-	public function __construct(
-		private OverlapGuard $overlap_guard,
-		private StoreFactory $stores,
-		private ClockInterface $clock,
-		private LoggerInterface $logger,
-		private LockWindows $lock_windows,
-		private TerminalTransitions $terminal_transitions,
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
-		private BackendInterface $scheduler,
-	) {}
+	public function __construct( private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private TaskRegistry $tasks, private BatchRegistry $batches, private BackendInterface $scheduler ) {}
 
 	// endregion
 
@@ -338,7 +329,7 @@ final readonly class RunReconciliation {
 				: 'Task';
 		}
 
-		if ( $this->terminal_transitions->replay_terminal_run( $name, $run_id, $state, $expected_raw, $run_store, $work_type, $resolved_batch ) ) {
+		if ( $this->terminal_effects->replay_terminal_run( $name, $run_id, $state, $expected_raw, $run_store, $work_type, $resolved_batch ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(

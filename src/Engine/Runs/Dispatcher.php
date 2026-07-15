@@ -60,29 +60,19 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskRegistry        $tasks         Registered task instances.
-	 * @param   BatchRegistry       $batches       Registered batch instances.
-	 * @param   BackendInterface    $scheduler     Scheduling facade boundary.
-	 * @param   OverlapGuard        $overlap_guard Execution-overlap guard.
-	 * @param   StoreFactory        $stores        Name-bound store factory.
-	 * @param   ClockInterface      $clock         Timestamp source.
-	 * @param   RandomizerInterface $randomizer    Run identifier randomness.
-	 * @param   LoggerInterface     $logger        Log event sink.
-	 * @param   LockWindows         $lock_windows  Filterable run-lock timing policy.
+	 * @param   TaskRegistry        $tasks                Registered task instances.
+	 * @param   BatchRegistry       $batches              Registered batch instances.
+	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
+	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
+	 * @param   StoreFactory        $stores               Name-bound store factory.
+	 * @param   ClockInterface      $clock                Timestamp source.
+	 * @param   RandomizerInterface $randomizer           Run identifier randomness.
+	 * @param   LoggerInterface     $logger               Log event sink.
+	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 */
-	public function __construct(
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
-		private BackendInterface $scheduler,
-		private OverlapGuard $overlap_guard,
-		private StoreFactory $stores,
-		private ClockInterface $clock,
-		private RandomizerInterface $randomizer,
-		private LoggerInterface $logger,
-		private LockWindows $lock_windows,
-		private TerminalTransitions $terminal_transitions,
-	) {}
+	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private BackendInterface $scheduler, private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private RandomizerInterface $randomizer, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects ) {}
 
 	// endregion
 
@@ -612,7 +602,7 @@ final readonly class Dispatcher {
 			);
 		}
 		try {
-			$this->terminal_transitions->fire_started( $task_name, $run_id, $args );
+			$this->terminal_effects->fire_started( $task_name, $run_id, $args );
 		} catch ( \Throwable $throwable ) {
 			$exception_type = \get_debug_type( $throwable );
 			$error          = new EngineError(

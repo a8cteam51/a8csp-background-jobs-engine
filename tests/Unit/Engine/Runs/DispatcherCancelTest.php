@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
@@ -50,6 +51,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStore::class )]
 #[UsesClass( SchedulerFacade::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( TerminalTransitions::class )]
 #[UsesClass( WorkRegistry::class )]
 final class DispatcherCancelTest extends TestCase {
@@ -146,9 +148,10 @@ final class DispatcherCancelTest extends TestCase {
 		$option_rows                = new OptionRows( $this->wpdb );
 		$this->stores               = new StoreFactory( $this->clock, $option_rows );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects           = new TerminalEffects( $guard, $this->stores, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler                  = new SchedulerFacade( array( $this->primary_backend, $this->secondary_backend ) );
-		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $scheduler, $guard, $this->stores, $this->clock, new RecordingRandomizer( 42 ), $this->logger, $lock_windows, $this->terminal_transitions, );
+		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $scheduler, $guard, $this->stores, $this->clock, new RecordingRandomizer( 42 ), $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects, );
 	}
 
 	// endregion.

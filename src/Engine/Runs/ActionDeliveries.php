@@ -92,19 +92,10 @@ final readonly class ActionDeliveries {
 	 * @param   ClockInterface      $clock                Timestamp source.
 	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 * @param   FailureLifecycle    $failure_lifecycle    Retry adjudication coordinator.
 	 */
-	public function __construct(
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
-		private BackendInterface $scheduler,
-		private StoreFactory $stores,
-		private LoggerInterface $logger,
-		private ClockInterface $clock,
-		private LockWindows $lock_windows,
-		private TerminalTransitions $terminal_transitions,
-		private FailureLifecycle $failure_lifecycle,
-	) {}
+	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private BackendInterface $scheduler, private StoreFactory $stores, private LoggerInterface $logger, private ClockInterface $clock, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private FailureLifecycle $failure_lifecycle ) {}
 
 	// endregion
 
@@ -179,7 +170,7 @@ final readonly class ActionDeliveries {
 		}
 		$state = $replacement;
 		try {
-			$this->terminal_transitions->fire_started( $batch_name, $run_id, $state->start_args );
+			$this->terminal_effects->fire_started( $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
 			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;

@@ -22,6 +22,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -59,6 +60,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
 #[UsesClass( WorkRegistry::class )]
@@ -147,12 +149,13 @@ final class ActionDeliveriesTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores               = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
 
-		$this->lifecycle_deliveries = new ActionDeliveries( $this->registry, $batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $failure_lifecycle, );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->registry, $batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle, );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, );
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 	}
 
 	// endregion.
@@ -632,9 +635,10 @@ final class ActionDeliveriesTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
+		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
-		$lifecycle_deliveries = new ActionDeliveries( $tasks, $batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $failure_lifecycle, );
+		$lifecycle_deliveries = new ActionDeliveries( $tasks, $batches, $this->backend, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle, );
 		$lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, $action_seq );
 
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -777,7 +781,8 @@ final class ActionDeliveriesTest extends TestCase {
 		$guard                  = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores                 = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$lock_windows           = new LockWindows( $this->clock );
-		$terminal_transitions   = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects       = new TerminalEffects( $guard, $stores, $this->logger );
+		$terminal_transitions   = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->clock->timestamp = self::NOW + 90 + WorkInterface::DEFAULT_MAX_RUNTIME + 901;
 		$credit                 = $this->clock->timestamp + WorkInterface::DEFAULT_MAX_RUNTIME;
 		$replacement_state      = $terminal_transitions->active_run_state( 'Task', self::IDENTITY, self::RUN_ID, $action_seq, $stores->run_store( self::IDENTITY ), static fn (): int => $credit );

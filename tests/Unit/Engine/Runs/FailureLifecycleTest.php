@@ -23,6 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
@@ -63,6 +64,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( TerminalEffects::class )]
 #[UsesClass( TerminalTransitions::class )]
 #[UsesClass( BatchRegistry::class )]
 #[UsesClass( TaskRegistry::class )]
@@ -153,10 +155,11 @@ final class FailureLifecycleTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
+		$terminal_effects           = new TerminalEffects( $guard, $stores, $this->logger );
+		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, );
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects, );
 	}
 
 	// endregion.
