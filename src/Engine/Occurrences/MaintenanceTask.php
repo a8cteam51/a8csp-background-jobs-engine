@@ -159,33 +159,23 @@ final class MaintenanceTask extends AbstractTask {
 
 			$run_id = null;
 			try {
-				$inspected = $this->guard->inspect_persisted_lock( $name, $args_hash );
-				if ( $inspected->is_failure() ) {
+				$sweep  = $this->guard->sweep_persisted_lock( $name, $args_hash );
+				$run_id = $sweep->run_id;
+				if ( $sweep->malformed_reclaimed ) {
+					$this->logger->warning(
+						'Reclaimed schema-invalid execution-overlap lock during maintenance sweep.',
+						array(
+							'name'      => $name,
+							'args_hash' => $args_hash,
+							'run_id'    => null,
+						)
+					);
+				}
+
+				if ( null === $run_id ) {
 					continue;
 				}
 
-				$snapshot = $inspected->value;
-				if ( null === $snapshot ) {
-					continue;
-				}
-
-				$lock = $snapshot['lock'];
-				if ( null === $lock ) {
-					if ( $this->guard->delete_persisted_lock( $name, $args_hash, $snapshot['raw'] ) ) {
-						$this->logger->warning(
-							'Reclaimed schema-invalid execution-overlap lock during maintenance sweep.',
-							array(
-								'name'      => $name,
-								'args_hash' => $args_hash,
-								'run_id'    => null,
-							)
-						);
-					}
-
-					continue;
-				}
-
-				$run_id = $lock['run_id'];
 				$this->reconciliation->reconcile_orphaned_lock( $name, $args_hash, $run_id );
 			} catch ( \Throwable $throwable ) {
 				$this->logger->warning(

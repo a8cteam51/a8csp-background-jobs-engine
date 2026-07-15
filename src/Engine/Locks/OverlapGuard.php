@@ -356,9 +356,40 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Deletes one inspected lock only while its exact raw row is unchanged.
+	 * Reads one persisted lock and reclaims a malformed row only while its exact raw value matches.
 	 *
 	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name      Complete owner-qualified task or batch identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 *
+	 * @return  MaintenanceLockSweep Actionable owner or malformed-row reclaim result.
+	 */
+	#[\NoDiscard( 'a persisted-lock maintenance sweep must be handled, not dropped' )]
+	public function sweep_persisted_lock( string $name, string $args_hash ): MaintenanceLockSweep {
+		$inspected = $this->inspect_persisted_lock( $name, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return new MaintenanceLockSweep( null, false );
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			return new MaintenanceLockSweep( null, false );
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			return new MaintenanceLockSweep( null, $this->delete_persisted_lock( $name, $args_hash, $snapshot['raw'] ) );
+		}
+
+		return new MaintenanceLockSweep( $lock['run_id'], false );
+	}
+
+	/**
+	 * Deletes one inspected lock only while its exact raw row is unchanged.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -369,7 +400,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @return  bool Whether the inspected row was deleted.
 	 */
-	public function delete_persisted_lock( string $name, string $args_hash, string $expected_raw ): bool {
+	private function delete_persisted_lock( string $name, string $args_hash, string $expected_raw ): bool {
 		return $this->rows->delete_if_value_matches( $this->option_name( $name, $args_hash ), $expected_raw );
 	}
 
