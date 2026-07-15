@@ -238,6 +238,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		);
 		$filter_call              = null;
 		$generate_executing       = null;
+		$enqueue_lock             = null;
+		$enqueue_state            = null;
 		$observed_lock            = null;
 		$observed_run             = null;
 		$this->batch->on_generate = function ( array $start_args ) use ( &$generate_executing, &$observed_lock, &$observed_run ): void {
@@ -263,6 +265,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->start_batch();
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 30;
+		$this->backend->before_next(
+			'enqueue_async',
+			function ( RecordingBackend $backend ) use ( &$enqueue_lock, &$enqueue_state ): void {
+				$enqueue_lock  = $this->lock();
+				$enqueue_state = $this->run_state();
+			}
+		);
 
 		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
@@ -299,8 +308,14 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertFalse( $state['executing'] );
 		self::assertSame( self::NOW + 30, $state['heartbeat_at'] );
 		self::assertSame( 2, $state['action_seq'] );
+		self::assertIsArray( $enqueue_lock );
+		self::assertSame( self::NOW + 30, $enqueue_lock['heartbeat_at'] );
+		self::assertIsArray( $enqueue_state );
+		self::assertFalse( $enqueue_state['executing'] );
+		self::assertSame( self::NOW + 30, $enqueue_state['heartbeat_at'] );
+		self::assertSame( 2, $enqueue_state['action_seq'] );
 		self::assertSame(
-			array( true, true, false ),
+			array( true, false ),
 			\array_column( $this->recorded_run_states(), 'executing' )
 		);
 		self::assertSame( self::NOW + 30, $this->lock()['heartbeat_at'] ?? null );
@@ -332,6 +347,59 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			),
 			$this->fired_actions()
 		);
+	}
+
+	/**
+	 * A continuation delivered before enqueue confirmation advances the first chunk exactly once.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_admits_continue_before_enqueue_confirmation(): void {
+		$first              = array( 'chunk' => 'first' );
+		$second             = array( 'chunk' => 'second' );
+		$this->batch->queue = array( $first, $second );
+		$this->start_batch();
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 30;
+		$this->backend->before_next(
+			'enqueue_async',
+			function ( RecordingBackend $backend ): void {
+				$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, 2 );
+			}
+		);
+
+		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/continue',
+				'a8csp_background_tasks/run',
+			),
+			\array_column( \array_column( $this->backend->calls, 'args' ), 'hook' )
+		);
+		$state = $this->run_state();
+		self::assertFalse( $state['executing'] );
+		self::assertSame( 3, $state['action_seq'] );
+		self::assertSame( self::NOW + 30, $state['heartbeat_at'] );
+		self::assertSame( $state['heartbeat_at'], $this->lock()['heartbeat_at'] ?? null );
+
+		$calls_after_continue = $this->backend->calls;
+		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, 2 );
+		self::assertSame( $calls_after_continue, $this->backend->calls );
+
+		$this->clock->timestamp = self::NOW + 60;
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $first, 3 );
+		$calls_after_run = $this->backend->calls;
+		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $first, 3 );
+
+		self::assertSame( $calls_after_run, $this->backend->calls );
+		self::assertCount( 1, $this->batch->process_calls );
+		self::assertSame( $first, $this->batch->process_calls[0]['chunk_args'] );
+		$state = $this->run_state();
+		self::assertSame( array( $second ), $state['queue'] );
+		self::assertFalse( $state['executing'] );
+		self::assertSame( 4, $state['action_seq'] );
+		self::assertSame( array(), $this->batch->failure_calls );
 	}
 
 	/**
@@ -1611,7 +1679,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
 
-		self::assertSame( $this->batch->queue, $this->failed_run_state()['queue'] );
+		$failed_state = $this->failed_run_state();
+		self::assertSame( $this->batch->queue, $failed_state['queue'] );
+		self::assertFalse( $failed_state['executing'] );
 		$this->assert_terminal_scheduling_failure(
 			'continue',
 			array(

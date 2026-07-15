@@ -17,6 +17,13 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorR
  */
 final class RecordingBackend implements BackendInterface {
 	/**
+	 * Interleavings run after the next matching write is recorded and before its result resolves.
+	 *
+	 * @var array<string, list<callable(self): void>>
+	 */
+	private array $before_writes = array();
+
+	/**
 	 * Calls in invocation order.
 	 *
 	 * @var list<array{verb: string, args: array<string, mixed>}>
@@ -88,6 +95,7 @@ final class RecordingBackend implements BackendInterface {
 				'priority'            => $priority,
 			),
 		);
+		$this->run_before( 'schedule_recurring' );
 
 		return $this->result_for( 'schedule_recurring' );
 	}
@@ -119,6 +127,7 @@ final class RecordingBackend implements BackendInterface {
 				'priority'  => $priority,
 			),
 		);
+		$this->run_before( 'schedule_single' );
 
 		return $this->result_for( 'schedule_single' );
 	}
@@ -150,6 +159,7 @@ final class RecordingBackend implements BackendInterface {
 				'priority' => $priority,
 			),
 		);
+		$this->run_before( 'enqueue_async' );
 
 		return $this->result_for( 'enqueue_async' );
 	}
@@ -177,8 +187,21 @@ final class RecordingBackend implements BackendInterface {
 				'group' => $group,
 			),
 		);
+		$this->run_before( 'unschedule' );
 
 		return $this->result_for( 'unschedule' );
+	}
+
+	/**
+	 * Registers an interleaving before the next matching write result resolves.
+	 *
+	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb     Write verb.
+	 * @param   callable(self): void                                                $callback Interleaving callback.
+	 *
+	 * @return  void
+	 */
+	public function before_next( string $verb, callable $callback ): void {
+		$this->before_writes[ $verb ][] = $callback;
 	}
 
 	/**
@@ -293,5 +316,21 @@ final class RecordingBackend implements BackendInterface {
 		}
 
 		return $this->results[ $verb ] ?? new Success( true );
+	}
+
+	/**
+	 * Runs and consumes the next matching interleaving callback.
+	 *
+	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb Write verb.
+	 *
+	 * @return  void
+	 */
+	private function run_before( string $verb ): void {
+		$callback = isset( $this->before_writes[ $verb ] )
+			? \array_shift( $this->before_writes[ $verb ] )
+			: null;
+		if ( null !== $callback ) {
+			$callback( $this );
+		}
 	}
 }

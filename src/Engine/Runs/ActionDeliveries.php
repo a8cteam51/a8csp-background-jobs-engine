@@ -178,7 +178,8 @@ final readonly class ActionDeliveries {
 		$replacement = $state
 			->with_queue( $queue )
 			->with_heartbeat_at( $reset_at )
-			->with_action_seq( $state->action_seq + 1 );
+			->with_action_seq( $state->action_seq + 1 )
+			->with_executing( false );
 		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -221,11 +222,6 @@ final readonly class ActionDeliveries {
 				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
 			);
 
-			return;
-		}
-
-		$replacement = $state->with_executing( false );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
 	}
