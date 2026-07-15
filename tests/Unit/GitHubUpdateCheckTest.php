@@ -112,6 +112,77 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
+	 * A prerelease install follows the full release list and skips draft entries.
+	 *
+	 * @return  void
+	 */
+	public function test_prerelease_install_follows_the_release_list_channel(): void {
+		$draft          = $this->release( 'v1.0.0-beta.3' );
+		$draft['draft'] = true;
+		$beta           = $this->release( 'v1.0.0-beta.2' );
+
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $draft, $beta ) );
+
+		self::assertSame(
+			array(
+				'slug'    => 'a8csp-background-tasks-engine',
+				'version' => '1.0.0-beta.2',
+				'url'     => $beta['html_url'],
+				'package' => $beta['assets'][0]['browser_download_url'],
+			),
+			( $this->update_callback() )( false, $this->plugin_data( '1.0.0-beta.1' ), self::PLUGIN_FILE )
+		);
+		self::assertSame(
+			array( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10' ),
+			$GLOBALS['a8csp_bgte_test_remote_requests']
+		);
+		self::assertSame(
+			array(
+				array(
+					'transient'  => self::TRANSIENT_KEY,
+					'value'      => $beta,
+					'expiration' => \HOUR_IN_SECONDS,
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_set_transient_calls']
+		);
+	}
+
+	/**
+	 * A stable install keeps the stable latest-release channel.
+	 *
+	 * @return  void
+	 */
+	public function test_stable_install_keeps_the_stable_channel(): void {
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $this->release( 'v1.1.0' ) );
+
+		( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE );
+
+		self::assertSame( array( self::API_URL ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+	}
+
+	/**
+	 * A stable release outranks the running prerelease on the list channel.
+	 *
+	 * @return  void
+	 */
+	public function test_prerelease_install_is_offered_the_stable_successor(): void {
+		$stable = $this->release( 'v1.0.0' );
+
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $stable ) );
+
+		self::assertSame(
+			array(
+				'slug'    => 'a8csp-background-tasks-engine',
+				'version' => '1.0.0',
+				'url'     => $stable['html_url'],
+				'package' => $stable['assets'][0]['browser_download_url'],
+			),
+			( $this->update_callback() )( false, $this->plugin_data( '1.0.0-beta.1' ), self::PLUGIN_FILE )
+		);
+	}
+
+	/**
 	 * Equal and older releases produce no update offer.
 	 *
 	 * @param   string $installed_version Installed plugin version.
@@ -240,9 +311,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
-	 * Wraps a release as a successful WordPress HTTP response.
+	 * Wraps a release payload as a successful WordPress HTTP response.
 	 *
-	 * @param   array<string, mixed> $release Release payload.
+	 * @param   array<array-key, mixed> $release Release entry or release list.
 	 *
 	 * @return  array{response: array{code: 200}, body: string}
 	 */

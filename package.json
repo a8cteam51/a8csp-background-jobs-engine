@@ -1,6 +1,6 @@
 {
   "name": "a8csp-background-tasks-engine",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "description": "A background-work engine for WordPress sites: Tasks, Schedules, and Batches on pluggable scheduling backends.",
   "author": {
     "name": "A8C Special Projects",
