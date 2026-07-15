@@ -296,6 +296,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Background-work execution failed because RuntimeException was thrown.',
+				'stage'   => 'execution',
+				'code'    => 'execution_failed',
 			),
 			$failed_entry['error'] ?? null
 		);

@@ -212,6 +212,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 			array(
 				'class'   => NonRetryableTaskException::class,
 				'message' => $expected_message,
+				'stage'   => 'execution',
+				'code'    => 'execution_failed',
 			),
 			$failed_entry['error'] ?? null
 		);

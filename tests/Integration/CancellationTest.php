@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -110,7 +110,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertIsArray( $observed_state );
 		self::assertTrue( $observed_state['executing'] ?? false, 'The admitted delivery must persist its executing marker' );
 		self::assertInstanceOf( Failure::class, $cancel_result );
-		self::assertInstanceOf( EngineError::class, $cancel_result->error );
+		self::assertInstanceOf( ApiError::class, $cancel_result->error );
 		self::assertSame(
 			\sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ),
 			$cancel_result->error->message
