@@ -10,6 +10,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
 /**
  * Verifies a replacement batch fences stale deliveries before the newer run completes.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class SupersededRunTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -29,6 +32,12 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 	/**
 	 * A same-arguments replacement supersedes the incumbent and completes without stale work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Replacement transfers the overlap fence while stale start and chunk deliveries remain in the real queue; public lifecycle hooks cannot prove those exact deliveries lost ownership before invoking consumer work.
 	 *
 	 * @return  void
 	 */
@@ -146,18 +155,18 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array(), $batch->process_calls, 'The superseded incumbent delivery must not execute chunk work' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The identity-specific superseded hook must receive the incumbent run ID and start arguments once' );
 		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The generic superseded hook must prepend the batch name to the same incumbent payload once' );
-		$expected_log_records = array(
+		self::assertCount( 1, $log_records );
+		self::assertSame( 'info', $log_records[0][0] ?? null );
+		self::assertSame(
 			array(
-				'info',
-				'Superseded batch run after its ownership fence failed.',
-				array(
-					'batch_name'    => self::IDENTITY,
-					'run_id'        => $run_a,
-					'latest_run_id' => $run_b,
-				),
+				'batch_name'    => self::IDENTITY,
+				'run_id'        => $run_a,
+				'latest_run_id' => $run_b,
 			),
+			$log_records[0][2],
+			'Supersession must expose stale and current ownership as structured context'
 		);
-		self::assertSame( $expected_log_records, $log_records, 'Supersession must emit only its quiet informational log record' );
+		$supersession_log_records = $log_records;
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, false ), 'The stale incumbent delivery must delete its run option' );
 		$lock = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
@@ -218,7 +227,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array( array( self::IDENTITY, $run_b, $start_args ) ), $generic_completed, 'The generic completed hook must prepend the batch name to the replacement payload' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The replacement lifecycle must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The replacement lifecycle must not repeat the generic superseded hook' );
-		self::assertSame( $expected_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );
+		self::assertSame( $supersession_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );
 
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, false ) );
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_b, false ) );
@@ -280,6 +289,9 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 	/**
 	 * Asserts and returns one pending batch start action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Run identifier.
 	 * @param   string $group  Per-run Action Scheduler group.

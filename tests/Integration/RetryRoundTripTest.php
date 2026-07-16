@@ -11,6 +11,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 /**
  * Verifies retry exhaustion, retained failure state, and manual retry through the public API.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class RetryRoundTripTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -30,6 +33,15 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 
 	/**
 	 * A two-attempt failure is retained and a manual retry completes as a fresh run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The retry row, run generation, and lock heartbeat must remain correlated across a real claim and manual retry; public lifecycle results cannot expose the CAS generation ownership at the claim cutoff.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The upstream throwable text is present inside the executing fixture and must remain absent from public RunFailure payloads; a success-only public seam cannot demonstrate that negative disclosure boundary.
 	 *
 	 * @return  void
 	 */
@@ -86,13 +98,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/retrying',
-			static function (
-				string $name,
-				string $run_id,
-				array $start_args,
-				int $attempt,
-				int $delay
-			) use ( &$generic_retrying ): void {
+			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retrying ): void {
 				$generic_retrying[] = array( $name, $run_id, $start_args, $attempt, $delay );
 			},
 			10,
@@ -108,12 +114,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/failed',
-			static function (
-				string $name,
-				string $run_id,
-				array $start_args,
-				RunFailure $failure
-			) use ( &$generic_failed ): void {
+			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
 				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
 			},
 			10,
@@ -216,6 +217,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( 'execution', $failure->stage );
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
+		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );
 		self::assertSame( array( array( $failed_run_id, $args, $failure ) ), $recorded_named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and terminal error' );
 		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ), $recorded_generic_failed, 'The generic failed hook must prepend the task name to the same terminal payload' );
@@ -353,6 +355,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	/**
 	 * Asserts and returns the sole pending retry action for a task run.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $run_id Run identifier.
 	 * @param   string $group  Per-run Action Scheduler group.
 	 *
@@ -387,6 +392,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 
 	/**
 	 * Claims one action through a cutoff after its scheduled date and runs it through Action Scheduler.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $action_id Action Scheduler action identifier.
 	 *

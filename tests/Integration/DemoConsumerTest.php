@@ -12,6 +12,9 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Proves the demo consumer registers and executes through only the public engine surface.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[Group( 'degraded' )]
 final class DemoConsumerTest extends IntegrationTestCase {
@@ -35,6 +38,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	/**
 	 * Posts created for the batch proof and removed during teardown.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @var list<int>
 	 */
 	private array $post_ids = array();
@@ -45,6 +51,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 	/**
 	 * Registers the isolated post type used as the batch's by-reference lookup key.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -66,6 +75,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 	/**
 	 * Removes fixture content and the isolated post type before engine-state cleanup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -93,6 +105,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	/**
 	 * The init entry point registers, a real schedule occurrence dispatches, and every run drains.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_demo_consumer_runs_task_schedule_and_batch_end_to_end(): void {
@@ -115,14 +130,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 		\add_action(
 			'a8csp_background_tasks/started/' . self::TASK_IDENTITY,
-			static function (
-				string $run_id,
-				array $args
-			) use (
-				&$task_started_named,
-				&$scheduled_run_id,
-				$scheduled_args
-			): void {
+			static function ( string $run_id, array $args ) use ( &$task_started_named, &$scheduled_run_id, $scheduled_args ): void {
 				$task_started_named[] = array( $run_id, $args );
 				if ( $scheduled_args === $args ) {
 					$scheduled_run_id = $run_id;
@@ -298,6 +306,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	/**
 	 * Creates one published post with one approved comment for the recount queue.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $title Post title.
 	 *
 	 * @return  int
@@ -334,6 +345,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	/**
 	 * Removes posts left by an interrupted prior run of this persistent rig.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	private function sweep_fixture_posts(): void {
@@ -354,6 +368,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 	/**
 	 * Asserts one task run persisted the deterministic current-site snapshot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $transient Consumer-owned transient key.
 	 *

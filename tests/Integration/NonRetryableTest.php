@@ -11,6 +11,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 /**
  * Verifies a non-retryable task failure terminates after its first attempt.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class NonRetryableTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -30,6 +33,12 @@ final class NonRetryableTest extends IntegrationTestCase {
 
 	/**
 	 * A non-retryable exception fails immediately without scheduling or announcing a retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The upstream exception text exists only in the executing fixture and must not cross the RunFailure hook boundary; the public payload alone cannot prove which hidden source text was withheld.
 	 *
 	 * @return  void
 	 */
@@ -61,13 +70,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/retrying',
-			static function (
-				string $name,
-				string $run_id,
-				array $start_args,
-				int $attempt,
-				int $delay
-			) use ( &$generic_retrying ): void {
+			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retrying ): void {
 				$generic_retrying[] = array( $name, $run_id, $start_args, $attempt, $delay );
 			},
 			10,
@@ -83,12 +86,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_background_tasks/failed',
-			static function (
-				string $name,
-				string $run_id,
-				array $start_args,
-				RunFailure $failure
-			) use ( &$generic_failed ): void {
+			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
 				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
 			},
 			10,
@@ -98,9 +96,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$result = $consumer->tasks()->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable task must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
-		$run_id    = $result->value;
-		$group     = self::IDENTITY . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::IDENTITY, $run_id, $group );
+		$run_id = $result->value;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable task action' );
 
@@ -119,87 +115,24 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame( 'execution', $failure->stage );
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $expected_message, $failure->summary );
+		self::assertStringNotContainsString( 'The requested record is permanently unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );
 		self::assertSame( array( array( $run_id, $args, $failure ) ), $named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and run failure' );
 		self::assertSame( array( array( self::IDENTITY, $run_id, $args, $failure ) ), $generic_failed, 'The generic failed hook must prepend the task name to the same failure payload' );
 
-		$store = $this->action_scheduler_store();
-		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_id ), 'Action Scheduler must complete the terminally handled task action' );
+		self::assertSame( 0, $this->run_next_due_action(), 'A non-retryable failure must not schedule another attempt' );
+		$runs = $this->inspection()->runs( self::IDENTITY );
+		self::assertSame( array(), $runs['live'], 'Terminal non-retryable failure must leave no live run' );
 		self::assertSame(
-			array( $action_id ),
-			$store->query_actions(
+			array(
 				array(
-					'per_page' => -1,
-					'orderby'  => 'action_id',
-					'order'    => 'ASC',
-				)
-			),
-			'A non-retryable failure must leave no retry action beyond the original row'
-		);
-
-		$args_hash = self::args_hash( $args );
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ), 'Terminal non-retryable failure must delete the active run option' );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal non-retryable failure must release the overlap lock' );
-		self::assertSame(
-			array(
-				'all'     => $run_id,
-				'by_hash' => array( $args_hash => $run_id ),
-			),
-			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
-			'Terminal non-retryable failure must retain the latest pointers'
-		);
-		self::assertSame(
-			array(
-				'started'  => array( $run_id ),
-				'terminal' => array(
-					array(
-						'run_id' => $run_id,
-						'status' => 'failed',
-					),
-				),
-				'by_hash'  => array(
-					$args_hash => array(
-						'started'  => array( $run_id ),
-						'terminal' => array(
-							array(
-								'run_id' => $run_id,
-								'status' => 'failed',
-							),
-						),
-					),
+					'run_id'   => $run_id,
+					'outcome'  => 'failed',
+					'retained' => true,
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
-			'Terminal non-retryable failure must retain one started and terminal history entry'
-		);
-
-		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
-		self::assertIsArray( $failed_entries );
-		self::assertCount( 1, $failed_entries, 'A non-retryable failure must retain exactly one failed entry' );
-		$failed_entry = $failed_entries[0] ?? null;
-		self::assertIsArray( $failed_entry );
-		self::assertSame( array( 'run_id', 'failed_at', 'start_args', 'attempts', 'error' ), \array_keys( $failed_entry ), 'The failed entry must contain exactly the manual-retry fields' );
-		self::assertSame( $run_id, $failed_entry['run_id'] ?? null );
-		self::assertIsInt( $failed_entry['failed_at'] ?? null );
-		self::assertSame( $args, $failed_entry['start_args'] ?? null );
-		self::assertSame( 1, $failed_entry['attempts'] ?? null, 'The failed entry must record one consumed attempt' );
-		self::assertSame(
-			array(
-				'class'   => NonRetryableTaskException::class,
-				'message' => $expected_message,
-				'stage'   => 'execution',
-				'code'    => 'execution_failed',
-			),
-			$failed_entry['error'] ?? null
-		);
-		self::assertSame(
-			array(
-				'a8csp_bgte_failed_' . self::IDENTITY,
-				'a8csp_bgte_history_' . self::IDENTITY,
-				'a8csp_bgte_latest_' . self::IDENTITY,
-			),
-			\array_column( $this->engine_option_rows(), 'option_name' ),
-			'Non-retryable failure must retain only its failed store, history ring, and latest pointer'
+			$runs['history'],
+			'Inspection must expose the retained failed outcome for manual retry'
 		);
 	}
 

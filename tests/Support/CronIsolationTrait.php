@@ -88,6 +88,9 @@ trait CronIsolationTrait {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale WP-Cron persists a recurring successor before dispatch and removes the due row before invoking consumers; no public seam exposes that ordering window.
+	 *
 	 * @phpstan-param callable(string, array<array-key, mixed>): bool $matches
 	 *
 	 * @param   callable $matches Due-event identity predicate.

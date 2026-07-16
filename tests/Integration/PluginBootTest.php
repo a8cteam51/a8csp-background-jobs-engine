@@ -10,6 +10,8 @@ use PHPUnit\Framework\Attributes\Group;
  * Verifies the plugin boots on a supported runtime inside wp-env: the requirements gate passes,
  * the named accessor is wired, and repeated access returns the booted plugin instance.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[Group( 'degraded' )]
 final class PluginBootTest extends IntegrationTestCase {
@@ -18,6 +20,9 @@ final class PluginBootTest extends IntegrationTestCase {
 	/**
 	 * On an at-floor runtime the requirements gate passes, `plugins_loaded` is wired to the named
 	 * plugin accessor at priority zero; WordPress ignores the action callback's return value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -31,6 +36,9 @@ final class PluginBootTest extends IntegrationTestCase {
 	/**
 	 * `Plugin::boot()` is idempotent: the `plugins_loaded` boot has already run, and a second call
 	 * leaves the accessor's cached instance unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

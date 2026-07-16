@@ -97,7 +97,7 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public function run( string $run_id, RunState $state ): array {
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $run_id, $state ): array {
+			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
 				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
 				$created = $store->create( $run_id, $state->start_args, $state->args_hash, $state->queue, $state->pending );
 				if ( null === $created ) {
@@ -165,7 +165,7 @@ final readonly class StoreFixtureBuilder {
 		}
 
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $entries ): array {
+			function ( \wpdb $wpdb ) use ( $entries ): array {
 				$store = new FailedRunStore( $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
@@ -193,7 +193,7 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public function history( array $started = array(), array $terminal = array() ): array {
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $started, $terminal ): array {
+			function ( \wpdb $wpdb ) use ( $started, $terminal ): array {
 				$store = new RunHistory( $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $started as $entry ) {
 					if ( ! $store->record_started( $entry['run_id'], $entry['args_hash'] ) ) {
@@ -223,7 +223,7 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public function latest( array $entries ): array {
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $entries ): array {
+			function ( \wpdb $wpdb ) use ( $entries ): array {
 				$store = new LatestRunPointer( $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $entries as $entry ) {
 					if ( ! $store->record( $entry['run_id'], $entry['args_hash'] ) ) {
@@ -258,7 +258,7 @@ final readonly class StoreFixtureBuilder {
 		}
 
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $owners ): array {
+			function ( \wpdb $wpdb ) use ( $owners ): array {
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ) );
 				foreach ( $owners as $owner ) {
 					if ( ! $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
@@ -286,7 +286,7 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public function lock( string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at ): array {
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
+			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
 				$clock = new FixedClock( $claimed_at );
 				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ) );
 				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 ) ) {
@@ -315,13 +315,19 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(WpdbLockSpy): array{string, string} $produce
+	 * @phpstan-param \Closure(\wpdb): array{string, string} $produce
 	 *
 	 * @param   \Closure $produce Production store write.
 	 *
-	 * @return array{string, string}
+	 * @throws  \LogicException When the real WordPress database boundary is unavailable.
+	 *
+	 * @return  array{string, string}
 	 */
 	private function isolated( \Closure $produce ): array {
+		if ( \defined( 'WPINC' ) ) {
+			return $this->isolated_wordpress( $produce );
+		}
+
 		$keys      = array( 'wpdb', 'a8csp_bgte_test_options', 'a8csp_bgte_test_option_autoload', 'a8csp_bgte_test_option_calls', 'a8csp_bgte_test_before_add_option', 'a8csp_bgte_test_get_option', 'a8csp_bgte_test_update_option_results', 'a8csp_bgte_test_update_option_values', 'a8csp_bgte_test_delete_option_results', 'a8csp_bgte_test_lifecycle_events', 'a8csp_bgte_test_blog_id', 'a8csp_bgte_test_cache', 'a8csp_bgte_test_cache_calls' );
 		$preserved = array();
 		foreach ( $keys as $key ) {
@@ -361,18 +367,79 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
+	 * Executes one fixture write while preserving every real engine option row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param \Closure(\wpdb): array{string, string} $produce
+	 *
+	 * @param   \Closure $produce Production store write.
+	 *
+	 * @throws  \LogicException When the real WordPress database boundary is unavailable.
+	 *
+	 * @return  array{string, string}
+	 */
+	private function isolated_wordpress( \Closure $produce ): array {
+		$wpdb    = $this->wordpress_database();
+		$pattern = $wpdb->esc_like( 'a8csp_bgte_' ) . '%';
+		$rows    = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `option_value`, `autoload` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $pattern ), \ARRAY_A );
+		if ( ! \is_array( $rows ) ) {
+			throw new \LogicException( 'Store fixtures could not snapshot the real WordPress option rows.' );
+		}
+
+		$snapshot = array();
+		foreach ( $rows as $row ) {
+			if ( ! \is_array( $row ) || ! \is_string( $row['option_name'] ?? null ) || ! \is_string( $row['option_value'] ?? null ) || ! \is_string( $row['autoload'] ?? null ) ) {
+				throw new \LogicException( 'Store fixtures received an invalid real WordPress option row.' );
+			}
+
+			$snapshot[] = array(
+				'option_name'  => $row['option_name'],
+				'option_value' => $row['option_value'],
+				'autoload'     => $row['autoload'],
+			);
+		}
+
+		// Production stores need a clean engine-row window: a caller-persisted row under the same option name makes add_option refuse the fixture write.
+		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $pattern ) ?? throw new \LogicException( 'Store fixtures could not prepare the real WordPress option cleanup.' ) );
+		\wp_cache_flush();
+
+		try {
+			return $produce( $wpdb );
+		} finally {
+			try {
+				$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $pattern ) );
+
+				foreach ( $snapshot as $row ) {
+					$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, %s)', $wpdb->options, $row['option_name'], $row['option_value'], $row['autoload'] ) ?? throw new \LogicException( 'Store fixtures could not prepare a real WordPress option restoration.' ) );
+				}
+			} finally {
+				\wp_cache_flush();
+			}
+		}
+	}
+
+	/**
 	 * Returns one exact raw row from the isolated database.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   WpdbLockSpy $wpdb        Isolated database boundary.
-	 * @param   string      $option_name Expected option name.
+	 * @param   \wpdb  $wpdb        Isolated database boundary.
+	 * @param   string $option_name Expected option name.
 	 *
-	 * @return array{string, string}
+	 * @throws  \LogicException When the production store does not emit the expected row.
+	 *
+	 * @return  array{string, string}
 	 */
-	private function row( WpdbLockSpy $wpdb, string $option_name ): array {
-		$raw = $wpdb->rows[ $option_name ] ?? null;
+	private function row( \wpdb $wpdb, string $option_name ): array {
+		if ( \defined( 'WPINC' ) ) {
+			$raw = $this->raw_option( $option_name );
+		} else {
+			$raw = $wpdb instanceof WpdbLockSpy ? ( $wpdb->rows[ $option_name ] ?? null ) : null;
+		}
+
 		if ( ! \is_string( $raw ) ) {
 			throw new \LogicException( 'The production store did not emit the expected isolated raw row.' );
 		}
@@ -415,18 +482,45 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @param   string $option_name Expected option name.
 	 *
+	 * @throws  \LogicException When the production store does not emit the expected option.
+	 *
 	 * @return  string
 	 */
 	private function raw_option( string $option_name ): string {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
-		$raw     = \is_array( $options ) && \array_key_exists( $option_name, $options )
-			? \maybe_serialize( $options[ $option_name ] )
-			: null;
+		if ( \defined( 'WPINC' ) ) {
+			$wpdb = $this->wordpress_database();
+			$raw  = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $option_name ) );
+		} else {
+			$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+			$raw     = \is_array( $options ) && \array_key_exists( $option_name, $options )
+				? \maybe_serialize( $options[ $option_name ] )
+				: null;
+		}
+
 		if ( ! \is_string( $raw ) ) {
 			throw new \LogicException( 'The production run store did not emit the expected isolated option.' );
 		}
 
 		return $raw;
+	}
+
+	/**
+	 * Returns the real WordPress database boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When the real WordPress database boundary is unavailable.
+	 *
+	 * @return  \wpdb
+	 */
+	private function wordpress_database(): \wpdb {
+		$wpdb = $GLOBALS['wpdb'] ?? null;
+		if ( ! $wpdb instanceof \wpdb ) {
+			throw new \LogicException( 'Store fixtures require the real WordPress database boundary.' );
+		}
+
+		return $wpdb;
 	}
 
 	// endregion.

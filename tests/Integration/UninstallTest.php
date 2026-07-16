@@ -2,6 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
@@ -15,6 +18,8 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
  * test method runs `#[RunInSeparateProcess]` — the constant must not leak into the rest of
  * the suite, where its presence would be indistinguishable from an actual uninstall.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class UninstallTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -61,6 +66,9 @@ final class UninstallTest extends IntegrationTestCase {
 	 * Removes options and scheduled work regardless of how the test finished, since this suite
 	 * runs against a persistent wp-env database with no per-test transaction rollback.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	protected function tearDown(): void {
@@ -87,6 +95,9 @@ final class UninstallTest extends IntegrationTestCase {
 	 * resembles the prefix but replaces its underscores, proving the cleanup query treats those
 	 * underscores literally rather than as SQL LIKE wildcards.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	#[RunInSeparateProcess]
@@ -108,14 +119,14 @@ final class UninstallTest extends IntegrationTestCase {
 
 		update_option( self::CANARY_OPTION, 'sentinel' );
 
-		$scheduled_at = \time() + \HOUR_IN_SECONDS;
+		$scheduled_at     = \time() + \HOUR_IN_SECONDS;
+		$wp_cron          = new WPCronBackend();
+		$action_scheduler = new ActionSchedulerBackend( static fn (): bool => true );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			self::assertTrue( \wp_schedule_single_event( $scheduled_at, $hook, self::SCHEDULE_ARGS, true ), "wp-env must seed a WP-Cron event for '{$hook}'" );
-
-			$action_id = \as_schedule_single_action( $scheduled_at, $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP );
-			self::assertGreaterThan( 0, $action_id, "wp-env must seed an Action Scheduler action for '{$hook}'" );
-			self::assertSame( $scheduled_at, \wp_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
-			self::assertIsInt( \as_next_scheduled_action( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "Action Scheduler must retain the seeded '{$hook}' action before uninstall" );
+			self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS ) );
+			self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );
+			self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
+			self::assertSame( $scheduled_at, $action_scheduler->get_next_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );
 		}
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
@@ -132,8 +143,8 @@ final class UninstallTest extends IntegrationTestCase {
 			self::assertFalse( get_option( $option ), "uninstall.php must delete the dynamically named '{$option}' option" );
 		}
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			self::assertFalse( \wp_next_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
-			self::assertFalse( \as_next_scheduled_action( $hook ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
+			self::assertFalse( $wp_cron->is_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
+			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
 		}
 
 		self::assertSame( 'sentinel', get_option( self::CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
@@ -145,6 +156,9 @@ final class UninstallTest extends IntegrationTestCase {
 
 	/**
 	 * Clears scheduler state that may persist across interrupted integration runs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -161,6 +175,9 @@ final class UninstallTest extends IntegrationTestCase {
 	 * Returns an existing user's ID to seed and verify user-meta deletion against. wp-env's
 	 * fixture always provisions the default admin (ID 1); querying for one keeps the test
 	 * independent of that assumption instead of hard-coding it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  int
 	 */
@@ -192,6 +209,9 @@ final class UninstallTest extends IntegrationTestCase {
 	 * grows complex enough that this string-slicing extraction becomes fragile, use a
 	 * `token_get_all()`-based reader as the eval-free alternative instead of trying to make
 	 * the eval safer.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array{options: list<string>, user_meta: list<string>}
 	 */

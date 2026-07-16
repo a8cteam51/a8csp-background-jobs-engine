@@ -28,6 +28,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
@@ -40,9 +41,18 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 /**
  * Verifies fixed-recurrence misfire policy, hook payloads, counters, and the strict grace boundary.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class MisfirePolicyTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
+
+	/** Read-only inspection published by the deterministic graph. */
+	private ?Inspection $deterministic_inspection = null;
+
+	/** Registry seam used only to age occurrence fixtures through production CAS. */
+	private ?ScheduleRegistry $deterministic_registry = null;
 
 	/** Fixed interval shared by deterministic recurrence probes. */
 	private const INTERVAL = 300;
@@ -111,6 +121,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/**
 	 * RunOnce dispatches one late occurrence and realigns its next due instant to the recurrence.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_run_once_executes_one_late_occurrence_and_realigns_recurrence(): void {
@@ -148,6 +161,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/**
 	 * Skip drops one beyond-grace occurrence and publishes both documented hook payloads.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_skip_drops_a_late_occurrence_and_records_the_misfire(): void {
@@ -179,26 +195,25 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertSame( 1, $registration['misfires'] );
 		self::assertSame( 0, $registration['skips'], 'A dropped misfire must count as a misfire, never as an overlap skip' );
 		self::assertSame( $expected_due, $registration['next_due'] );
+		self::assertCount( 1, $logger->records );
+		self::assertSame( 'info', $logger->records[0]['level'] ?? null );
 		self::assertSame(
 			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Misfired schedule occurrence skipped and realigned to its recurrence.',
-					'context' => array(
-						'owner'    => self::SKIP_OWNER,
-						'name'     => self::SKIP_SCHEDULE,
-						'next_due' => $expected_due,
-						'fired_at' => $now,
-					),
-				),
+				'owner'    => self::SKIP_OWNER,
+				'name'     => self::SKIP_SCHEDULE,
+				'next_due' => $expected_due,
+				'fired_at' => $now,
 			),
-			$logger->records,
-			'The Skip misfire log must name the dropped occurrence and its aligned successor'
+			$logger->records[0]['context'] ?? null,
+			'The Skip misfire log must carry the dropped occurrence and aligned successor as structured context'
 		);
 	}
 
 	/**
 	 * Skip executes exactly-at-grace and drops the occurrence one second beyond grace.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -258,6 +273,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/**
 	 * Builds a live engine graph with deterministic time and observation-only logger seams.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   FixedClock      $clock  Deterministic current instant.
 	 * @param   RecordingLogger $logger Recorded engine log sink.
 	 *
@@ -296,6 +314,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$inspection           = new Inspection( $schedule_registry, $tasks, $batches, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedules, new Batches( $batches, $dispatcher ), $dispatcher, $inspection );
 
+		$this->deterministic_inspection = $inspection;
+		$this->deterministic_registry   = $schedule_registry;
+
 		\remove_all_actions( 'a8csp_background_tasks/start' );
 		\remove_all_actions( 'a8csp_background_tasks/continue' );
 		\remove_all_actions( 'a8csp_background_tasks/run' );
@@ -310,6 +331,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 	/**
 	 * Asserts an internal deterministic schedule synchronization succeeds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   Schedules       $schedules Schedule API.
 	 * @param   string          $owner     Stable owner.
@@ -335,6 +359,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/**
 	 * Replaces one persisted next-due instant for a sanctioned aging simulation.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $owner    Stable owner.
 	 * @param   string $name     Stable schedule name.
 	 * @param   int    $next_due Aged due instant.
@@ -342,46 +369,75 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function set_next_due( string $owner, string $name, int $next_due ): void {
-		$registry = \get_option( 'a8csp_bgte_schedules', null );
-		self::assertIsArray( $registry );
-		$owner_registrations = $registry[ $owner ] ?? null;
-		self::assertIsArray( $owner_registrations );
-		$identity     = $owner . ':' . $name;
-		$registration = $owner_registrations[ $identity ] ?? null;
+		$registry = $this->deterministic_registry;
+		if ( null === $registry ) {
+			throw new \LogicException( 'Build the deterministic graph before aging a schedule fixture.' );
+		}
+
+		$identity = $owner . ':' . $name;
+		$read     = $registry->registration( $identity );
+		self::assertInstanceOf( Success::class, $read );
+		$registration = $read->value;
 		self::assertIsArray( $registration );
-		$registration['next_due']         = $next_due;
-		$owner_registrations[ $identity ] = $registration;
-		$registry[ $owner ]               = $owner_registrations;
-		self::assertTrue( \update_option( 'a8csp_bgte_schedules', $registry, false ), 'The misfire simulation must persist the manipulated next-due instant' );
+		self::assertIsString( $registration['fingerprint'] ?? null );
+		$last_fired = $registration['last_fired'] ?? null;
+		self::assertTrue( null === $last_fired || \is_int( $last_fired ) );
+		self::assertIsInt( $registration['misfires'] ?? null );
+		self::assertIsInt( $registration['skips'] ?? null );
+		$updated = array(
+			'fingerprint' => $registration['fingerprint'],
+			'next_due'    => $next_due,
+			'last_fired'  => $last_fired,
+			'misfires'    => $registration['misfires'],
+			'skips'       => $registration['skips'],
+		);
+		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( $identity, $registration['fingerprint'], $updated ) );
 	}
 
 	/**
 	 * Returns one complete persisted schedule registration.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $owner Stable owner.
 	 * @param   string $name  Stable schedule name.
 	 *
-	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}
+	 * @return  array{
+	 *     owner: string,
+	 *     name: string,
+	 *     recurrence: int|null,
+	 *     next_due: int,
+	 *     last_fired: int|null,
+	 *     misfires: int,
+	 *     skips: int,
+	 *     scheduled: bool,
+	 *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}|array{state: 'held', run_id: string, stale: bool}
+	 * }
 	 */
 	private function registration( string $owner, string $name ): array {
-		$registry = \get_option( 'a8csp_bgte_schedules', null );
-		self::assertIsArray( $registry );
-		$owner_registrations = $registry[ $owner ] ?? null;
-		self::assertIsArray( $owner_registrations );
-		$registration = $owner_registrations[ $owner . ':' . $name ] ?? null;
+		$inspection = $this->deterministic_inspection;
+		if ( null === $inspection ) {
+			throw new \LogicException( 'Build the deterministic graph before inspecting a schedule.' );
+		}
+
+		$observed = $inspection->schedules( $owner );
+		self::assertIsArray( $observed );
+		$registration = \array_find( $observed['entries'], static fn ( array $entry ): bool => $owner . ':' . $name === $entry['name'] );
 		self::assertIsArray( $registration );
-		self::assertIsString( $registration['fingerprint'] ?? null );
 		self::assertIsInt( $registration['next_due'] ?? null );
 		self::assertTrue( null === ( $registration['last_fired'] ?? null ) || \is_int( $registration['last_fired'] ) );
 		self::assertIsInt( $registration['misfires'] ?? null );
 		self::assertIsInt( $registration['skips'] ?? null );
 
-		/** @var array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int} $registration */
 		return $registration;
 	}
 
 	/**
 	 * Records the dynamic and generic misfire hook payloads for one schedule.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string                                $identity Owner-qualified schedule identity.
 	 * @param   list<array{string, int, int}>         $dynamic  Dynamic-hook payloads.
@@ -412,6 +468,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 	/**
 	 * Returns the first due instant strictly after the deterministic current time.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   int $next_due Aged due instant.
 	 * @param   int $now      Deterministic current time.

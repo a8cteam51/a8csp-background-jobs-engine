@@ -5,11 +5,15 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Provides live-WordPress integration isolation and a one-action Action Scheduler runner drive.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 abstract class IntegrationTestCase extends TestCase {
 	// region TRAITS.
@@ -26,6 +30,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Captures request hooks before clearing persistent engine and scheduler state.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	protected function setUp(): void {
@@ -39,6 +46,9 @@ abstract class IntegrationTestCase extends TestCase {
 
 	/**
 	 * Detects engine leaks before restoring clean persistent and request-local state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -108,6 +118,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Runs at most one due action through Action Scheduler's initialized queue runner singleton.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  int Number of actions processed.
 	 */
 	protected function run_next_due_action(): int {
@@ -132,6 +145,9 @@ abstract class IntegrationTestCase extends TestCase {
 
 	/**
 	 * Runs at most one due Action Scheduler action accepted by a hook-and-arguments predicate.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @phpstan-param callable(string, array<array-key, mixed>): bool $matches
 	 *
@@ -180,6 +196,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Returns Action Scheduler's initialized custom-table store.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  \ActionScheduler_Store
 	 */
 	protected function action_scheduler_store(): \ActionScheduler_Store {
@@ -191,6 +210,9 @@ abstract class IntegrationTestCase extends TestCase {
 
 	/**
 	 * Asserts and returns the sole pending engine run action for a task.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $name   Stable task name.
 	 * @param   string $run_id Run identifier.
@@ -228,6 +250,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Asserts and returns one pending batch chunk action.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string                  $name           Stable batch name.
 	 * @param   string                  $run_id         Run identifier.
 	 * @param   string                  $group          Per-run Action Scheduler group.
@@ -235,12 +260,7 @@ abstract class IntegrationTestCase extends TestCase {
 	 *
 	 * @return  string
 	 */
-	protected function assert_pending_chunk_action(
-		string $name,
-		string $run_id,
-		string $group,
-		array $expected_chunk
-	): string {
+	protected function assert_pending_chunk_action( string $name, string $run_id, string $group, array $expected_chunk ): string {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
@@ -273,6 +293,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Returns the engine's insertion-ordered identity for portable arguments.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   array<array-key, mixed> $args Start arguments.
 	 *
 	 * @return  string
@@ -282,6 +305,25 @@ abstract class IntegrationTestCase extends TestCase {
 		self::assertIsString( $encoded );
 
 		return \hash( 'sha256', $encoded );
+	}
+
+	/**
+	 * Returns the read-only inspection service published by the initialized production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When the integration plugin graph is unavailable.
+	 *
+	 * @return  Inspection
+	 */
+	protected function inspection(): Inspection {
+		$inspection = Component::get_inspection();
+		if ( null === $inspection ) {
+			throw new \LogicException( 'Integration inspection is unavailable before the engine graph is initialized.' );
+		}
+
+		return $inspection;
 	}
 
 	// endregion.

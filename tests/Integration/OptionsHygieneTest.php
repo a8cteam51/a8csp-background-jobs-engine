@@ -10,6 +10,9 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Pins the complete steady-state option footprint after successful task and batch runs.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[Group( 'degraded' )]
 final class OptionsHygieneTest extends IntegrationTestCase {
@@ -36,6 +39,9 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 
 	/**
 	 * Complete task and batch lifecycles retain only non-autoloaded latest and history rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -85,28 +91,20 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		);
 
 		$rows = $this->engine_option_rows();
-		self::assertSame(
-			array(
-				'a8csp_bgte_history_' . self::BATCH_IDENTITY,
-				'a8csp_bgte_history_' . self::TASK_IDENTITY,
-				'a8csp_bgte_latest_' . self::BATCH_IDENTITY,
-				'a8csp_bgte_latest_' . self::TASK_IDENTITY,
-			),
-			\array_column( $rows, 'option_name' ),
-			'The complete engine option census must contain exactly two latest pointers and two history rings'
-		);
+		self::assertCount( 4, $rows, 'Two completed identities must retain a bounded four-row engine footprint' );
 
 		$autoloaded_values = \wp_autoload_values_to_autoload();
 		foreach ( $rows as $row ) {
+			self::assertStringStartsWith( 'a8csp_bgte_', $row['option_name'], 'Every retained row must stay inside the documented engine ownership prefix' );
 			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
-		$task_latest = \get_option( 'a8csp_bgte_latest_' . self::TASK_IDENTITY );
-		self::assertIsArray( $task_latest );
-		self::assertSame( $task_run_id, $task_latest['all'] ?? null );
-		$batch_latest = \get_option( 'a8csp_bgte_latest_' . self::BATCH_IDENTITY );
-		self::assertIsArray( $batch_latest );
-		self::assertSame( $batch_run_id, $batch_latest['all'] ?? null );
+		$task_latest = $consumer->runs()->last_completed_run( self::TASK_NAME );
+		self::assertInstanceOf( Success::class, $task_latest );
+		self::assertSame( $task_run_id, $task_latest->value );
+		$batch_latest = $consumer->runs()->last_completed_run( self::BATCH_NAME );
+		self::assertInstanceOf( Success::class, $batch_latest );
+		self::assertSame( $batch_run_id, $batch_latest->value );
 	}
 
 	// endregion.

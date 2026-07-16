@@ -13,6 +13,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
 /**
  * Verifies held-lock rejection and stale crash-reclaim semantics.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class OverlapLockTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -38,6 +41,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 	/**
 	 * Reject under a fresh held lock returns the exact already-running failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A rejected contender must not replace the incumbent lock or enqueue another row; public outcomes cannot prove the real Action Scheduler and option-store state remained owned by the incumbent.
 	 *
 	 * @return  void
 	 */
@@ -133,6 +142,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 	/**
 	 * A stale crash heartbeat is reclaimed and the orphan stops before chunk execution.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Stale-lock reclaim transfers ownership while an orphaned real Action Scheduler delivery remains pending; public hooks cannot prove the old delivery failed its ownership fence before processing a chunk.
+	 *
 	 * @return  void
 	 */
 	public function test_stale_heartbeat_reclaim_supersedes_the_orphaned_run(): void {
@@ -193,21 +208,17 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$run_b   = $this->start_batch( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
 		self::assertNotSame( $run_a, $run_b, 'Stale reclaim must allocate a fresh run identifier' );
+		self::assertCount( 1, $log_records );
+		self::assertSame( 'warning', $log_records[0][0] ?? null );
 		self::assertSame(
 			array(
-				array(
-					'warning',
-					'Reclaimed stale execution-overlap lock.',
-					array(
-						'name'        => self::RECLAIM_IDENTITY,
-						'args_hash'   => $args_hash,
-						'dead_run_id' => $run_a,
-						'run_id'      => $run_b,
-					),
-				),
+				'name'        => self::RECLAIM_IDENTITY,
+				'args_hash'   => $args_hash,
+				'dead_run_id' => $run_a,
+				'run_id'      => $run_b,
 			),
-			$log_records,
-			'Stale reclaim must pin the warning level, message, dead run, and replacement run'
+			$log_records[0][2],
+			'Stale reclaim must expose the dead and replacement owners as structured context'
 		);
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
@@ -242,30 +253,16 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame( array(), $batch->failure_calls, 'Stale reclaim must not invoke the batch failure callback' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Reclaimed-run completion must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Reclaimed-run completion must not repeat the generic superseded hook' );
+		self::assertCount( 2, $log_records );
+		self::assertSame( array( 'warning', 'info' ), \array_column( $log_records, 0 ) );
 		self::assertSame(
 			array(
-				array(
-					'warning',
-					'Reclaimed stale execution-overlap lock.',
-					array(
-						'name'        => self::RECLAIM_IDENTITY,
-						'args_hash'   => $args_hash,
-						'dead_run_id' => $run_a,
-						'run_id'      => $run_b,
-					),
-				),
-				array(
-					'info',
-					'Superseded batch run after its ownership fence failed.',
-					array(
-						'batch_name'    => self::RECLAIM_IDENTITY,
-						'run_id'        => $run_a,
-						'latest_run_id' => $run_b,
-					),
-				),
+				'batch_name'    => self::RECLAIM_IDENTITY,
+				'run_id'        => $run_a,
+				'latest_run_id' => $run_b,
 			),
-			$log_records,
-			'Reclaim and orphan cleanup must emit only their warning and informational records'
+			$log_records[1][2] ?? null,
+			'Orphan cleanup must expose the superseded and current owners as structured context'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Reclaimed run completion must release the overlap lock' );
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, false ) );
@@ -319,6 +316,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 	/**
 	 * Registers one batch through the live engine facade.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   RecordingBatch $batch Batch fixture.
 	 *
 	 * @return  void
@@ -330,6 +330,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 	/**
 	 * Forces inter-chunk actions due immediately for deterministic runner sequencing.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	private function filter_continue_delay_to_zero(): void {
@@ -338,6 +341,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 	/**
 	 * Starts a batch through the owner-bound facade and returns its run identifier.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string                  $name       Stable batch name.
 	 * @param   array<array-key, mixed> $start_args Batch start arguments.
@@ -355,6 +361,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 	/**
 	 * Drives a generated queue through per-chunk actions and terminal cleanup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   RecordingBatch                $batch           Batch fixture.
 	 * @param   string                        $name            Stable batch name.

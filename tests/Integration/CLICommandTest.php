@@ -7,20 +7,20 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Pins command registration, WP-CLI argument normalization, and output at the process boundary.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class CLICommandTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -86,6 +86,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Declares the registry row every spawned WP-CLI child recreates through its own init sync.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	protected function setUp(): void {
@@ -101,6 +104,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * A retained run is cancelled through the real command with declarative success output.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_terminalizes_a_retained_run(): void {
@@ -111,42 +117,26 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte:maintenance\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
-		$run_read = self::option_rows()->read( self::cancel_run_option_name() );
-		if ( $run_read->is_failure() ) {
-			self::fail( 'The cancelled run option could not be read.' );
-		}
-		self::assertNull( $run_read->value );
-		\wp_cache_delete( self::cancel_run_option_name(), 'options' );
-
-		$history_read = self::option_rows()->read( 'a8csp_bgte_history_' . self::CANCEL_NAME );
-		if ( $history_read->is_failure() ) {
-			self::fail( 'The cancelled run history could not be read.' );
-		}
-		$history_raw = $history_read->value;
-		self::assertIsString( $history_raw );
-		$history = \maybe_unserialize( $history_raw );
-		self::assertIsArray( $history );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'cancelled',
-				),
-			),
-			$history['terminal'] ?? null
-		);
+		$inspection = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=json' );
+		self::assertSame( 0, $inspection['exit_code'] );
+		self::assertSame( '', $inspection['stderr'] );
+		self::assertStringContainsString( '"run_id":"' . self::RUN_ID . '"', $inspection['stdout'] );
+		self::assertStringContainsString( '"outcome":"cancelled"', $inspection['stdout'] );
 	}
 
 	/**
 	 * The real command preserves the engine's executing-run refusal.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_surfaces_the_executing_refusal(): void {
-		$run_store = $this->seed_cancel_run( true );
+		$option_name = $this->seed_cancel_run( true );
 
 		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
-		self::assertTrue( $run_store->delete( self::RUN_ID ), 'The executing boundary fixture must be removable after refusal' );
+		self::assertTrue( \delete_option( $option_name ), 'The executing boundary fixture must be removable after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
@@ -156,14 +146,17 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * The real command preserves the zero-chunk batch completeness refusal.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_surfaces_the_zero_chunk_completeness_refusal(): void {
 		$this->expect_option( self::cancel_batch_run_option_name() );
-		$run_store = $this->seed_cancel_batch_pending_cleanup();
+		$option_name = $this->seed_cancel_batch_pending_cleanup();
 
 		$result = self::run_command_with_globals( 'cancel', array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ), self::CANCEL_BATCH_NAME, self::RUN_ID );
-		self::assertTrue( $run_store->delete( self::RUN_ID ), 'The completeness fixture must remain retained after refusal' );
+		self::assertTrue( \delete_option( $option_name ), 'The completeness fixture must remain retained after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
@@ -172,6 +165,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * The real command preserves the engine's unregistered-name correction.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -186,6 +182,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * The real command preserves the engine's registered-but-unretained correction.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_surfaces_the_not_retained_engine_error(): void {
@@ -198,6 +197,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Missing required identities use WP-CLI's native required-synopsis failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -212,6 +214,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * An extra identity is rejected by WP-CLI before the command seam runs.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_rejects_an_extra_positional_argument(): void {
@@ -224,6 +229,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * An undocumented flag is rejected by WP-CLI before the command seam runs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -238,6 +246,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * A negated undocumented flag still carries a key and is rejected by WP-CLI.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_rejects_a_negated_undocumented_flag(): void {
@@ -251,6 +262,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * An empty store census exits successfully with an informative line.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_failed_list_reports_an_informative_empty_result(): void {
@@ -263,6 +277,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * JSON output contains the exact public row projected from a retained failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -286,6 +303,13 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * A failed retained-run read renders as unavailable instead of an empty failed-run list.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The injected database detail must not cross the documented CLI error boundary; an unavailable public result cannot otherwise prove the confidential query text was redacted.
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @return  void
 	 */
 	public function test_failed_list_reports_an_authoritative_store_read_failure(): void {
@@ -297,10 +321,14 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( 'Error: Failed runs for "integration-cli-command:integration-cli-command-list-store" are unavailable because the authoritative ' . "database read failed; resolve the database error and try again.\n", $result['stderr'] );
+		self::assertStringNotContainsString( 'a8csp_bgte_missing_option_rows', $result['stderr'], 'CLI failure output must redact the failed database query' );
 	}
 
 	/**
 	 * Retry preserves the engine's corrective failure for an unregistered background-work identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -315,39 +343,50 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * A name-scoped purge reports the exact deleted count and removes the authoritative store row.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_failed_purge_name_round_trips_the_store(): void {
-		$rows  = self::option_rows();
-		$store = $this->seed_failed_run( self::PURGE_STORE_NAME, $rows );
+		$this->seed_failed_run( self::PURGE_STORE_NAME );
 
 		$result = self::run_failed_runs_command( 'purge', self::PURGE_STORE_NAME );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "Success: Purged 1 failed run for \"integration-cli-command:integration-cli-command-purge-store\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
-		self::assert_store_absent( self::PURGE_STORE_NAME, $store, $rows );
+		$remaining = self::run_failed_runs_command( 'list' );
+		self::assertSame( 0, $remaining['exit_code'] );
+		self::assertSame( "No failed runs are retained.\n", $remaining['stdout'] );
 	}
 
 	/**
 	 * An all-names purge discovers the failed-store prefix and removes its retained entry.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_failed_purge_all_discovers_and_removes_the_store(): void {
-		$rows  = self::option_rows();
-		$store = $this->seed_failed_run( self::ALL_STORE_NAME, $rows );
+		$this->seed_failed_run( self::ALL_STORE_NAME );
 
 		$result = self::run_failed_runs_command( 'purge', '--all' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "Success: Purged 1 failed run across all names.\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
-		self::assert_store_absent( self::ALL_STORE_NAME, $store, $rows );
+		$remaining = self::run_failed_runs_command( 'list' );
+		self::assertSame( 0, $remaining['exit_code'] );
+		self::assertSame( "No failed runs are retained.\n", $remaining['stdout'] );
 	}
 
 	/**
 	 * A negated all flag is not accepted as an all-names purge request.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -362,6 +401,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * A purge without a name or affirmative all flag names the corrective usage.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_failed_purge_without_a_scope_names_the_correct_usage(): void {
@@ -375,6 +417,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * An unsupported action exits unsuccessfully and names every accepted action.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_invalid_failed_action_names_the_supported_actions(): void {
@@ -387,6 +432,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * The real schedules command renders every public table column without a false dormant note.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -409,6 +457,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * The real schedules command exposes the exact machine-readable owner-filtered row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -439,6 +490,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * An unknown schedule owner exits successfully with the exact filtered empty state.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_schedules_list_reports_the_filtered_empty_state(): void {
@@ -451,6 +505,12 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * A failed schedule-registry read renders as unavailable instead of an empty registry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The injected database detail must not cross the documented CLI error boundary; an unavailable public result cannot otherwise prove the confidential query text was redacted.
 	 *
 	 * @return  void
 	 */
@@ -467,10 +527,14 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( "Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n", $result['stderr'] );
+		self::assertStringNotContainsString( 'a8csp_bgte_missing_option_rows', $result['stderr'], 'CLI failure output must redact the failed database query' );
 	}
 
 	/**
 	 * A missing schedule action uses WP-CLI's native required-synopsis failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -485,6 +549,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * The schedules decision seam owns unsupported format correction at the binary boundary.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_schedules_list_rejects_an_invalid_format(): void {
@@ -497,6 +564,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Negated schedule value parameters reach the command seam as false.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -517,6 +587,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * The real parser rejects an extra schedules-list positional before execution.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_schedules_list_rejects_an_extra_positional_argument(): void {
@@ -530,19 +603,38 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * The real runs command renders both live and recent-history table sections.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_runs_list_renders_live_and_recent_history_sections(): void {
-		$rows       = self::option_rows();
-		$run_store  = new RunStore( self::CANCEL_NAME, new SystemClock(), $rows );
-		$live_state = $run_store->create( self::CANONICAL_RUN_ID, array(), self::args_hash( array() ), array( array() ) );
-		self::assertNotNull( $live_state );
-		self::assertIsString( $run_store->replace_if_state_matches( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) ) );
-		$history = new RunHistory( self::CANCEL_NAME, $rows );
-		self::assertTrue( $history->record_started( self::CANONICAL_RUN_ID, self::args_hash( array() ) ) );
-		self::assertTrue( $history->record_terminal( 'integration-cli-history-failed', 'history-hash', RunStatus::Failed ) );
-		$failed_store = new FailedRunStore( self::CANCEL_NAME, $rows );
-		self::assertTrue( $failed_store->record( 'integration-cli-history-failed', self::FAILED_AT, array(), 2, new EngineError( 'CLI history failure.' ), new RunFailure( name: self::CANCEL_NAME, run_id: 'integration-cli-history-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ) ) );
+		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
+		$args_hash = $builder->args_hash( array() );
+		$now       = \time();
+		$state     = new RunState( RunStatus::Running, true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
+		$fixtures  = array(
+			$builder->run( self::CANONICAL_RUN_ID, $state ),
+			$builder->history(
+				array(
+					array(
+						'run_id'    => self::CANONICAL_RUN_ID,
+						'args_hash' => $args_hash,
+					),
+				),
+				array(
+					array(
+						'run_id'    => 'integration-cli-history-failed',
+						'args_hash' => 'history-hash',
+						'status'    => RunStatus::Failed,
+					),
+				)
+			),
+			$builder->failed( self::FAILED_AT, array(), new RunFailure( name: self::CANCEL_NAME, run_id: 'integration-cli-history-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ), new EngineError( 'CLI history failure.' ) ),
+		);
+		foreach ( $fixtures as $fixture ) {
+			self::persist_store_fixture( $fixture );
+		}
 
 		try {
 			$result = self::run_runs_command( 'list', self::CANCEL_NAME );
@@ -557,13 +649,17 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertStringContainsString( 'failed store', $result['stdout'] );
 			self::assertStringContainsString( '—', $result['stdout'] );
 		} finally {
-			$run_store->delete( self::CANONICAL_RUN_ID );
-			$failed_store->purge();
+			foreach ( $fixtures as $fixture ) {
+				\delete_option( $fixture[0] );
+			}
 		}
 	}
 
 	/**
 	 * An unknown stable run name exits successfully with the exact empty state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -577,6 +673,12 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * A failed run-history read renders as unavailable instead of an empty history.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The injected database detail must not cross the documented CLI warning boundary; an unavailable public result cannot otherwise prove the confidential query text was redacted.
 	 *
 	 * @return  void
 	 */
@@ -594,10 +696,14 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( "Warning: Recent run history is unavailable because an authoritative database read failed.\n", $result['stderr'] );
+		self::assertStringNotContainsString( 'a8csp_bgte_missing_option_rows', $result['stderr'], 'CLI warning output must redact the failed database query' );
 	}
 
 	/**
 	 * Missing run positionals use WP-CLI's native required-synopsis failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -616,6 +722,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * The real parser rejects an extra runs-list positional before execution.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_runs_list_rejects_an_extra_positional_argument(): void {
@@ -629,6 +738,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * A negated run format reaches the command seam as false.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_runs_list_rejects_a_negated_format(): void {
@@ -641,6 +753,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * The runs decision seam rejects invalid names and formats at the binary boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -660,6 +775,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Schedule and run inspection survive one retryable failure on every supported backend set.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -738,6 +856,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Runs the registered command through wp-env's actual WP-CLI executable.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string ...$arguments Arguments following the failed-runs command.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
@@ -748,6 +869,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Runs the cancel command through wp-env's actual WP-CLI executable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string ...$arguments Arguments following the cancel command.
 	 *
@@ -760,6 +884,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Runs the runs command through wp-env's actual WP-CLI executable.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string ...$arguments Arguments following the runs command.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
@@ -770,6 +897,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Runs one registered subcommand through wp-env's actual WP-CLI executable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $subcommand  Background-tasks subcommand.
 	 * @param   string ...$arguments Arguments following the subcommand.
@@ -782,6 +912,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Runs one registered subcommand with WP-CLI global arguments through the actual executable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<string> $global_arguments
 	 *
@@ -856,61 +989,48 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Persists one deterministic run under the task registered in every child process.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   bool $executing Whether the fixture carries an admitted-delivery marker.
 	 *
-	 * @return  RunStore
+	 * @return  string Active-run option name.
 	 */
-	private function seed_cancel_run( bool $executing = false ): RunStore {
-		$args      = array( 'source' => 'cli-boundary' );
-		$run_store = new RunStore( self::CANCEL_NAME, new SystemClock(), self::option_rows() );
-		$state     = $run_store->create( self::RUN_ID, $args, self::args_hash( $args ), array() );
-		self::assertNotNull( $state, 'The CLI cancel boundary requires one deterministic retained run' );
+	private function seed_cancel_run( bool $executing = false ): string {
+		$args    = array( 'source' => 'cli-boundary' );
+		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
+		$now     = \time();
+		$state   = new RunState( RunStatus::Running, $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
+		$fixture = $builder->run( self::RUN_ID, $state );
+		self::persist_store_fixture( $fixture );
 
-		if ( $executing ) {
-			self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_executing( true ) ), 'The executing-refusal fixture must persist its admitted-delivery marker' );
-		}
-
-		return $run_store;
+		return $fixture[0];
 	}
 
 	/**
 	 * Persists one materialized zero-chunk batch waiting for cleanup.
 	 *
-	 * @return  RunStore
-	 */
-	private function seed_cancel_batch_pending_cleanup(): RunStore {
-		$args      = array( 'source' => 'cli-completeness-boundary' );
-		$run_store = new RunStore( self::CANCEL_BATCH_NAME, new SystemClock(), self::option_rows() );
-		$state     = $run_store->create( self::RUN_ID, $args, self::args_hash( $args ), array() );
-		self::assertNotNull( $state, 'The CLI completeness boundary requires one retained batch run' );
-		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_seq( 2 ) ), 'The zero-chunk fixture must advance beyond its unmaterialized state' );
-
-		return $run_store;
-	}
-
-	/**
-	 * Creates the site-bound row seam used by a failed-run store.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  OptionRows
+	 * @return  string Active-run option name.
 	 */
-	private static function option_rows(): OptionRows {
-		global $wpdb;
+	private function seed_cancel_batch_pending_cleanup(): string {
+		$args    = array( 'source' => 'cli-completeness-boundary' );
+		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_BATCH_NAME );
+		$now     = \time();
+		$state   = new RunState( RunStatus::Running, false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$fixture = $builder->run( self::RUN_ID, $state );
+		self::persist_store_fixture( $fixture );
 
-		/** @var \wpdb $wpdb */
-		return new OptionRows( $wpdb );
-	}
-
-	/**
-	 * Returns the deterministic cancel fixture's active-run option name.
-	 *
-	 * @return  string
-	 */
-	private static function cancel_run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::CANCEL_NAME . '_' . self::RUN_ID;
+		return $fixture[0];
 	}
 
 	/**
 	 * Returns the deterministic cancel-completeness batch option name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
@@ -921,47 +1041,40 @@ final class CLICommandTest extends IntegrationTestCase {
 	/**
 	 * Persists one deterministic retained failure.
 	 *
-	 * @param   string          $name Complete owner-qualified background-work identity.
-	 * @param   OptionRows|null $rows Site-bound row seam, or null to construct one.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  FailedRunStore
+	 * @param   string $name Complete owner-qualified background-work identity.
+	 *
+	 * @return  string Failed-run option name.
 	 */
-	private function seed_failed_run( string $name, ?OptionRows $rows = null ): FailedRunStore {
-		$store = new FailedRunStore( $name, $rows ?? self::option_rows() );
-		self::assertTrue( $store->record( self::RUN_ID, self::FAILED_AT, array( 'account_id' => 42 ), 3, new EngineError( 'CLI boundary failure.', \RuntimeException::class ), new RunFailure( name: $name, run_id: self::RUN_ID, attempts: 3, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ) ) );
+	private function seed_failed_run( string $name ): string {
+		$builder = StoreFixtureBuilder::for_identity( $name );
+		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( name: $name, run_id: self::RUN_ID, attempts: 3, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
+		self::persist_store_fixture( $fixture );
 
-		return $store;
+		return $fixture[0];
 	}
 
 	/**
-	 * Asserts that a child-process purge removed both authoritative and public store state.
+	 * Persists exact production-serialized fixture bytes through WordPress's option API.
 	 *
-	 * @param   string         $name  Complete owner-qualified background-work identity.
-	 * @param   FailedRunStore $store Failed-run store constructed by the PHPUnit request.
-	 * @param   OptionRows     $rows  Authoritative option-row seam.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and exact raw production value.
 	 *
 	 * @return  void
 	 */
-	private static function assert_store_absent( string $name, FailedRunStore $store, OptionRows $rows ): void {
-		$option_name = self::option_name( $name );
-
-		$read = $rows->read( $option_name );
-		if ( $read->is_failure() ) {
-			self::fail( 'The failed-run option could not be read.' );
-		}
-		self::assertNull( $read->value );
-
-		// The child process cannot clear this PHPUnit request's in-memory option cache.
-		\wp_cache_delete( $option_name, 'options' );
-		$all = $store->all();
-		if ( $all->is_failure() ) {
-			self::fail( 'The failed-run store could not be read.' );
-		}
-		self::assertSame( array(), $all->value );
+	private static function persist_store_fixture( array $fixture ): void {
+		self::assertTrue( \update_option( $fixture[0], \maybe_unserialize( $fixture[1] ), false ), 'The production-generated store fixture must persist through the options API' );
 	}
 
 	/**
 	 * Returns the failed-store option name for a stable background-work identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $name Complete owner-qualified background-work identity.
 	 *
@@ -973,6 +1086,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/**
 	 * Returns WP-CLI's exact corrective purge usage error.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */

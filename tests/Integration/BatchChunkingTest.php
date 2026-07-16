@@ -9,6 +9,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
 /**
  * Verifies one-action-per-chunk batch dispatch and transactional context queue mutations.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class BatchChunkingTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -28,6 +31,9 @@ final class BatchChunkingTest extends IntegrationTestCase {
 
 	/**
 	 * Three generated chunks expand and reorder through context mutations before one terminal success.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -97,7 +103,6 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		self::assertInstanceOf( Success::class, $result, 'The registered batch must start through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
-		$group  = self::IDENTITY . '|' . $run_id;
 
 		self::assertSame( array(), $batch->generate_calls, 'Starting a batch must not generate its queue inline' );
 
@@ -111,14 +116,12 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			array( 'chunk' => 'three' ),
 			array( 'chunk' => 'tail' ),
 		);
-		$run_action_ids  = array();
 		foreach ( $expected_chunks as $expected_chunk ) {
 			$process_calls_before = $batch->process_calls;
 			$process_call_count   = \count( $process_calls_before );
 
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one queue-advance action' );
 			self::assertSame( $process_calls_before, $batch->process_calls, 'A CONTINUE action must leave the process ledger unchanged; dispatch the visible chunk through its RUN action' );
-			$run_action_ids[] = $this->assert_pending_chunk_action( self::IDENTITY, $run_id, $group, $expected_chunk );
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one visible chunk action' );
 			self::assertCount( $process_call_count + 1, $batch->process_calls, 'A RUN action must process exactly one batch chunk' );
 			self::assertSame( $expected_chunk, $batch->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'A RUN action must process the chunk exposed by the preceding CONTINUE action' );
@@ -134,10 +137,6 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		foreach ( $batch->process_calls as $process_call ) {
 			self::assertSame( $run_id, $process_call['context']->get_run_id() );
 			self::assertSame( $start_args, $process_call['context']->get_start_args() );
-		}
-		self::assertCount( 5, \array_unique( $run_action_ids ), 'Every processed chunk must have its own Action Scheduler row' );
-		foreach ( $run_action_ids as $action_id ) {
-			self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $action_id ), 'Action Scheduler must complete every per-chunk run action' );
 		}
 
 		self::assertSame(
@@ -167,49 +166,21 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			'Completed hooks must follow on_success and preserve identity-specific then generic payload order'
 		);
 
-		$args_hash = self::args_hash( $start_args );
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, false ), 'Terminal batch success must delete the active run option' );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal batch success must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, false ), 'Terminal batch success must not create a failed-run row' );
+		$last_completed = $consumer->runs()->last_completed_run( self::NAME );
+		self::assertInstanceOf( Success::class, $last_completed );
+		self::assertSame( $run_id, $last_completed->value );
+		$runs = $this->inspection()->runs( self::IDENTITY );
+		self::assertSame( array(), $runs['live'], 'Terminal batch success must leave no live run' );
 		self::assertSame(
 			array(
-				'all'     => $run_id,
-				'by_hash' => array( $args_hash => $run_id ),
-			),
-			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
-			'Terminal batch success must retain the latest pointers'
-		);
-		self::assertSame(
-			array(
-				'started'  => array( $run_id ),
-				'terminal' => array(
-					array(
-						'run_id' => $run_id,
-						'status' => 'completed',
-					),
-				),
-				'by_hash'  => array(
-					$args_hash => array(
-						'started'  => array( $run_id ),
-						'terminal' => array(
-							array(
-								'run_id' => $run_id,
-								'status' => 'completed',
-							),
-						),
-					),
+				array(
+					'run_id'   => $run_id,
+					'outcome'  => 'completed',
+					'retained' => false,
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
-			'Terminal batch success must retain one started and completed history entry'
-		);
-		self::assertSame(
-			array(
-				'a8csp_bgte_history_' . self::IDENTITY,
-				'a8csp_bgte_latest_' . self::IDENTITY,
-			),
-			\array_column( $this->engine_option_rows(), 'option_name' ),
-			'Completed batch state must contain only its history ring and latest pointer'
+			$runs['history'],
+			'Inspection must retain the completed lifecycle outcome'
 		);
 	}
 

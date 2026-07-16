@@ -13,6 +13,9 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies cancellation fences live deliveries and isolates per-run scheduler groups.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class CancellationTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -57,6 +60,12 @@ final class CancellationTest extends IntegrationTestCase {
 	/**
 	 * Cancellation refuses an admitted task while the runner completes it normally.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Cancellation is invoked from inside an admitted real Action Scheduler delivery; the public result cannot prove the executing marker and scheduler-running state overlapped at the refusal instant.
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_refuses_an_executing_task_and_the_run_completes(): void {
@@ -78,25 +87,14 @@ final class CancellationTest extends IntegrationTestCase {
 		$observed_status = null;
 		$observed_state  = null;
 		$cancel_result   = null;
-		$task->on_handle = static function ( array $received_args ) use (
-			$action_id,
-			$consumer,
-			$run_id,
-			$store,
-			&$cancel_result,
-			&$observed_state,
-			&$observed_status
-		): void {
+		$task->on_handle = static function ( array $received_args ) use ( $action_id, $consumer, $run_id, $store, &$cancel_result, &$observed_state, &$observed_status ): void {
 			$observed_status = $store->get_status( $action_id );
 			$observed_state  = \get_option( 'a8csp_bgte_run_' . self::EXECUTING_IDENTITY . '_' . $run_id, null );
 			$cancel_result   = $consumer->runs()->cancel( self::EXECUTING_NAME, $run_id );
 		};
 
 		$completed_action_ids = array();
-		$completed_hook       = static function ( int $completed_action_id ) use (
-			$action_id,
-			&$completed_action_ids
-		): void {
+		$completed_hook       = static function ( int $completed_action_id ) use ( $action_id, &$completed_action_ids ): void {
 			if ( (int) $action_id === $completed_action_id ) {
 				$completed_action_ids[] = $completed_action_id;
 			}
@@ -129,6 +127,12 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * A failed attempt can be cancelled while its retry waits in backoff.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Cancellation races a retained run against its staged retry delivery; public history cannot prove the exact retry row was pending and then cleared before execution.
 	 *
 	 * @return  void
 	 */
@@ -192,6 +196,12 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * A batch remains cancellable after one chunk and before its next queue advance.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Cancellation is staged between a processed chunk and the next real queue-advance delivery; public callbacks cannot expose the retained queue head and pending continuation at that instant.
 	 *
 	 * @return  void
 	 */
@@ -264,6 +274,12 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * Clearing one run group leaves a sibling run of the same task executable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Two sibling deliveries are pending concurrently and cancellation must clear only one real scheduler group; public terminal outcomes cannot prove the sibling row survived the group clear.
 	 *
 	 * @return  void
 	 */
@@ -343,6 +359,12 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * WP-Cron's group-clear no-op leaves one delivery that the run-admission gate drops.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale WP-Cron cannot express per-run groups, leaving a staged cancelled-run delivery for the admission fence; public cancellation results cannot prove that survivor existed before it was dropped.
 	 *
 	 * @return  void
 	 */
@@ -430,6 +452,9 @@ final class CancellationTest extends IntegrationTestCase {
 	/**
 	 * Asserts and returns the sole pending Action Scheduler row for one exact hook and group.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string                  $hook          Action hook.
 	 * @param   string                  $group         Per-run action group.
 	 * @param   array<array-key, mixed> $expected_args Expected action arguments.
@@ -466,6 +491,9 @@ final class CancellationTest extends IntegrationTestCase {
 	/**
 	 * Returns the terminal entries for one background-work history.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  array<array-key, mixed>
@@ -481,6 +509,9 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * Asserts that a terminal run leaves no active, lock, or failed-run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string                  $name     Stable task or batch name.
 	 * @param   string                  $run_id   Run identifier.
