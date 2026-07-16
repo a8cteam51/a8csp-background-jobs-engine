@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunsEngineInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\SchedulesEngineInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TasksEngineInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 
 \defined( 'ABSPATH' ) || exit;
@@ -105,7 +105,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	#[\Override]
 	public function enqueue( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->dispatcher->enqueue( $identity, $args, $delay, $dedup_key, $priority ) );
+		return ApiErrorMapper::map( $this->dispatcher->enqueue( $identity, $args, $delay, $dedup_key, $priority ) );
 	}
 
 	/**
@@ -124,7 +124,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	#[\Override]
 	public function start( string $identity, array $start_args, ExistingRunPolicy $existing, int $priority ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->dispatcher->start_batch( $identity, $start_args, $existing, $priority ) );
+		return ApiErrorMapper::map( $this->dispatcher->start_batch( $identity, $start_args, $existing, $priority ) );
 	}
 
 	/**
@@ -142,7 +142,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	#[\Override]
 	public function sync( array $declarations ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->schedules->sync( $this->owner, $declarations ) );
+		return ApiErrorMapper::map( $this->schedules->sync( $this->owner, $declarations ) );
 	}
 
 	/**
@@ -158,7 +158,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	#[\Override]
 	public function dispatch_now( string $identity ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->schedules->dispatch_now( $identity ) );
+		return ApiErrorMapper::map( $this->schedules->dispatch_now( $identity ) );
 	}
 
 	/**
@@ -174,7 +174,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	#[\Override]
 	public function last_completed_run_id( string $identity ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
+		return ApiErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
 	}
 
 	/**
@@ -191,7 +191,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	#[\Override]
 	public function retry_failed( string $identity, string $run_id ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->dispatcher->retry_failed( $identity, $run_id ) );
+		return ApiErrorMapper::map( $this->dispatcher->retry_failed( $identity, $run_id ) );
 	}
 
 	/**
@@ -208,7 +208,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	#[\Override]
 	public function cancel( string $identity, string $run_id ): AbstractResult {
-		return AdmissionErrorMapper::map( $this->dispatcher->cancel( $identity, $run_id ) );
+		return ApiErrorMapper::map( $this->dispatcher->cancel( $identity, $run_id ) );
 	}
 
 	// endregion

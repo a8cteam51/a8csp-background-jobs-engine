@@ -115,11 +115,11 @@ final class InspectionTest extends TestCase {
 					),
 					'registrations' => array(
 						'owner-a:nightly' => array(
-							'fingerprint' => $schedule->fingerprint(),
-							'next_due'    => self::NOW + 300,
-							'last_fired'  => self::NOW - 60,
-							'misfires'    => 1,
-							'skips'       => 2,
+							'fingerprint'   => $schedule->fingerprint(),
+							'next_due'      => self::NOW + 300,
+							'last_fired'    => self::NOW - 60,
+							'misfire_skips' => 1,
+							'overlap_skips' => 2,
 						),
 					),
 				)
@@ -132,11 +132,11 @@ final class InspectionTest extends TestCase {
 					'declarations'  => array(),
 					'registrations' => array(
 						'owner-b:orphaned' => array(
-							'fingerprint' => 'orphaned',
-							'next_due'    => self::NOW + 600,
-							'last_fired'  => null,
-							'misfires'    => 4,
-							'skips'       => 5,
+							'fingerprint'   => 'orphaned',
+							'next_due'      => self::NOW + 600,
+							'last_fired'    => null,
+							'misfire_skips' => 4,
+							'overlap_skips' => 5,
 						),
 					),
 				)
@@ -160,7 +160,7 @@ final class InspectionTest extends TestCase {
 			$snapshot['entries'][0]['lock']
 		);
 		self::assertSame( array( 'state' => 'not_declared' ), $snapshot['entries'][1]['lock'] );
-		self::assertTrue( $snapshot['entries'][0]['scheduled'] );
+		self::assertTrue( $snapshot['entries'][0]['occurrence_visible'] );
 		self::assertSame( array( 'owner-b' ), \array_column( $this->rig->inspection()->schedules( 'owner-b' )['entries'] ?? array(), 'owner' ) );
 	}
 
@@ -183,11 +183,11 @@ final class InspectionTest extends TestCase {
 		$declarations  = array();
 		$registrations = array(
 			'owner:orphaned' => array(
-				'fingerprint' => 'orphaned',
-				'next_due'    => self::NOW + 300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
+				'fingerprint'   => 'orphaned',
+				'next_due'      => self::NOW + 300,
+				'last_fired'    => null,
+				'misfire_skips' => 0,
+				'overlap_skips' => 0,
 			),
 		);
 		foreach ( $schedules as $name => $schedule ) {
@@ -197,11 +197,11 @@ final class InspectionTest extends TestCase {
 				'task'     => 'owner:' . $schedule->task,
 			);
 			$registrations[ 'owner:' . $name ] = array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => self::NOW + 300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
+				'fingerprint'   => $schedule->fingerprint(),
+				'next_due'      => self::NOW + 300,
+				'last_fired'    => null,
+				'misfire_skips' => 0,
+				'overlap_skips' => 0,
 			);
 		}
 		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
@@ -344,7 +344,7 @@ final class InspectionTest extends TestCase {
 		self::assertSame( 'batch', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
 		self::assertSame( array( 'run-failed', 'run-completed', $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
-		self::assertTrue( $snapshot['history'][0]['retained'] ?? false );
+		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
 	}
 
 	/**

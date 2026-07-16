@@ -104,9 +104,9 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'   => $run_id,
-					'outcome'  => 'completed',
-					'retained' => false,
+					'run_id'       => $run_id,
+					'outcome'      => 'completed',
+					'failed_store' => false,
 				),
 			),
 			$runs['history']
@@ -191,9 +191,9 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'   => $run_id,
-					'outcome'  => 'failed',
-					'retained' => true,
+					'run_id'       => $run_id,
+					'outcome'      => 'failed',
+					'failed_store' => true,
 				),
 			),
 			$runs['history'],

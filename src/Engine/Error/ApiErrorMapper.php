@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class AdmissionErrorMapper {
+final class ApiErrorMapper {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -72,7 +72,7 @@ final class AdmissionErrorMapper {
 	 *
 	 * @return  AbstractResult<TValue, ApiError>
 	 */
-	#[\NoDiscard( 'a mapped admission failure must be handled, not dropped' )]
+	#[\NoDiscard( 'a mapped API failure must be handled, not dropped' )]
 	public static function map( AbstractResult $result ): AbstractResult {
 		if ( $result->is_failure() ) {
 			return new Failure( self::error( $result->error ) );
@@ -91,9 +91,9 @@ final class AdmissionErrorMapper {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   EngineError|SchedulingError $error Internal admission failure.
+	 * @param   EngineError|SchedulingError $error Internal operation failure.
 	 *
-	 * @throws  \LogicException When an engine failure lacks an admission classification.
+	 * @throws  \LogicException When an engine failure lacks an API classification.
 	 *
 	 * @return  ApiError
 	 */
@@ -113,13 +113,13 @@ final class AdmissionErrorMapper {
 	 *
 	 * @param   EngineError $error Internal engine failure.
 	 *
-	 * @throws  \LogicException When the failure lacks an admission classification.
+	 * @throws  \LogicException When the failure lacks an API classification.
 	 *
 	 * @return  ApiErrorCode
 	 */
 	private static function engine_code( EngineError $error ): ApiErrorCode {
 		if ( null === $error->reason ) {
-			throw new \LogicException( 'An internal engine failure reached the admission boundary without a public classification.' );
+			throw new \LogicException( 'An internal engine failure reached the API boundary without a public classification.' );
 		}
 
 		return match ( $error->reason ) {

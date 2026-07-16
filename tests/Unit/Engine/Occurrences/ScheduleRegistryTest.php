@@ -182,8 +182,8 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertCount( 1, $entries );
 		self::assertSame( self::NOW + 300, $entries[0]['last_fired'] );
 		self::assertSame( self::NOW + 600, $entries[0]['next_due'] );
-		self::assertSame( 0, $entries[0]['misfires'] );
-		self::assertSame( 0, $entries[0]['skips'] );
+		self::assertSame( 0, $entries[0]['misfire_skips'] );
+		self::assertSame( 0, $entries[0]['overlap_skips'] );
 	}
 
 	/**
@@ -535,7 +535,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   int      $next_due    Next occurrence timestamp.
 	 * @param   int|null $last_fired  Last occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
 	 */
 	private static function owner_fixture( string $owner, Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		return self::owner_fixture_many( $owner, array( $schedule ), array( $next_due ), array( $last_fired ) );
@@ -556,7 +556,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   array  $next_due    Next occurrence timestamps.
 	 * @param   array  $last_fired  Last occurrence timestamps.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
 	 */
 	private static function owner_fixture_many( string $owner, array $schedules, array $next_due, array $last_fired = array() ): array {
 		$declarations  = array();
@@ -587,15 +587,15 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   int      $next_due   Next occurrence timestamp.
 	 * @param   int|null $last_fired Last occurrence timestamp.
 	 *
-	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}
+	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}
 	 */
 	private static function registration( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		return array(
-			'fingerprint' => $schedule->fingerprint(),
-			'next_due'    => $next_due,
-			'last_fired'  => $last_fired,
-			'misfires'    => 0,
-			'skips'       => 0,
+			'fingerprint'   => $schedule->fingerprint(),
+			'next_due'      => $next_due,
+			'last_fired'    => $last_fired,
+			'misfire_skips' => 0,
+			'overlap_skips' => 0,
 		);
 	}
 

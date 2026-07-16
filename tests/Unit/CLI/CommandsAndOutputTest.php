@@ -112,7 +112,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_registers_the_complete_command_surface(): void {
-		self::assertSame( array( 'cancel', 'failed-runs', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
+		self::assertSame( array( 'failed-runs', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
 	}
 
 	/**
@@ -139,7 +139,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( '', $result->stderr );
 		self::assertNotSame( '', $result->stdout );
 		if ( 'csv' === $format ) {
-			self::assertSame( 'owner,identity,recurrence,next_due,last_fired,misfires,skips,scheduled,lock', \strtok( $result->stdout, "\n" ) );
+			self::assertSame( 'owner,identity,recurrence,next_due,last_fired,misfire_skips,overlap_skips,occurrence_visible,lock', \strtok( $result->stdout, "\n" ) );
 		}
 		if ( 'count' === $format ) {
 			self::assertSame( isset( $assoc_args['owner'] ) ? '1' : '3', \trim( $result->stdout ) );
@@ -238,11 +238,11 @@ final class CommandsAndOutputTest extends TestCase {
 		$declarations  = array();
 		$registrations = array(
 			'lock-tests:orphaned' => array(
-				'fingerprint' => 'orphaned',
-				'next_due'    => self::NOW + 300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
+				'fingerprint'   => 'orphaned',
+				'next_due'      => self::NOW + 300,
+				'last_fired'    => null,
+				'misfire_skips' => 0,
+				'overlap_skips' => 0,
 			),
 		);
 		foreach ( $schedules as $name => $schedule ) {
@@ -252,11 +252,11 @@ final class CommandsAndOutputTest extends TestCase {
 				'task'     => 'lock-tests:' . $schedule->task,
 			);
 			$registrations[ 'lock-tests:' . $name ] = array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => self::NOW + 300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
+				'fingerprint'   => $schedule->fingerprint(),
+				'next_due'      => self::NOW + 300,
+				'last_fired'    => null,
+				'misfire_skips' => 0,
+				'overlap_skips' => 0,
 			);
 		}
 		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
@@ -319,7 +319,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_cancel_command_terminalizes_a_real_run(): void {
+	public function test_registered_runs_cancel_action_terminalizes_a_real_run(): void {
 		$consumer = $this->rig->consumer( 'consumer-plugin' );
 		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
 		$enqueued = $consumer->tasks()->enqueue( 'email-digest' );
@@ -328,11 +328,21 @@ final class CommandsAndOutputTest extends TestCase {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
 		}
 
-		$result = CliHarness::run( 'cancel', array( 'consumer-plugin:email-digest', $enqueued->value ) );
+		$result = CliHarness::run( 'runs', array( 'cancel', 'consumer-plugin:email-digest', $enqueued->value ) );
 
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( 'Success: Cancelled run ' . $enqueued->value . ' of "consumer-plugin:email-digest".' . "\n", $result->stdout );
 		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'consumer-plugin:email-digest' )['history'][0]['outcome'] ?? null );
+
+		$history_result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'json' ) );
+		$history_rows   = \json_decode( $history_result->stdout, true, 512, \JSON_THROW_ON_ERROR );
+		self::assertSame( 0, $history_result->exit_code );
+		self::assertSame( '', $history_result->stderr );
+		self::assertIsArray( $history_rows );
+		$history_row = $history_rows[0] ?? null;
+		self::assertIsArray( $history_row );
+		self::assertSame( array( 'run_id', 'outcome', 'failed_store' ), \array_keys( $history_row ) );
+		self::assertSame( '—', $history_row['failed_store'] );
 	}
 
 	/**
@@ -349,8 +359,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @phpstan-param list<string> $args
 	 */
 	#[DataProvider( 'invalid_cancel_requests' )]
-	public function test_registered_cancel_command_rejects_every_invalid_form( array $args, array $assoc_args ): void {
-		$result = CliHarness::run( 'cancel', $args, $assoc_args );
+	public function test_registered_runs_cancel_action_rejects_every_invalid_form( array $args, array $assoc_args ): void {
+		$result = CliHarness::run( 'runs', \array_merge( array( 'cancel' ), $args ), $assoc_args );
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertStringStartsWith( 'Error: ', $result->stderr );
@@ -499,25 +509,25 @@ final class CommandsAndOutputTest extends TestCase {
 					'declarations'  => $declarations,
 					'registrations' => array(
 						'due-tests:future'  => array(
-							'fingerprint' => $schedules['future']->fingerprint(),
-							'next_due'    => 86_460,
-							'last_fired'  => null,
-							'misfires'    => 0,
-							'skips'       => 0,
+							'fingerprint'   => $schedules['future']->fingerprint(),
+							'next_due'      => 86_460,
+							'last_fired'    => null,
+							'misfire_skips' => 0,
+							'overlap_skips' => 0,
 						),
 						'due-tests:now'     => array(
-							'fingerprint' => $schedules['now']->fingerprint(),
-							'next_due'    => 86_400,
-							'last_fired'  => null,
-							'misfires'    => 0,
-							'skips'       => 0,
+							'fingerprint'   => $schedules['now']->fingerprint(),
+							'next_due'      => 86_400,
+							'last_fired'    => null,
+							'misfire_skips' => 0,
+							'overlap_skips' => 0,
 						),
 						'due-tests:overdue' => array(
-							'fingerprint' => $schedules['overdue']->fingerprint(),
-							'next_due'    => 82_800,
-							'last_fired'  => null,
-							'misfires'    => 0,
-							'skips'       => 0,
+							'fingerprint'   => $schedules['overdue']->fingerprint(),
+							'next_due'      => 82_800,
+							'last_fired'    => null,
+							'misfire_skips' => 0,
+							'overlap_skips' => 0,
 						),
 					),
 				)
@@ -796,12 +806,12 @@ final class CommandsAndOutputTest extends TestCase {
 			'missing action' => array(
 				'args'       => array(),
 				'assoc_args' => array(),
-				'message'    => 'A run action is required; use list <identity>.',
+				'message'    => 'A run action is required; use list <identity> or cancel <identity> <run_id>.',
 			),
 			'unknown action' => array(
 				'args'       => array( 'show', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Run action "show" is invalid; use list.',
+				'message'    => 'Run action "show" is invalid; use list or cancel.',
 			),
 			'missing name'   => array(
 				'args'       => array( 'list' ),

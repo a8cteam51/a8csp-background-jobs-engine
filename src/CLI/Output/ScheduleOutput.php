@@ -21,9 +21,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
  *     recurrence: int|string,
  *     next_due: string,
  *     last_fired: string,
- *     misfires: int,
- *     skips: int,
- *     scheduled: 'yes'|'no',
+ *     misfire_skips: int,
+ *     overlap_skips: int,
+ *     occurrence_visible: 'yes'|'no',
  *     lock: string
  * }
  */
@@ -44,9 +44,9 @@ final readonly class ScheduleOutput {
 		'recurrence',
 		'next_due',
 		'last_fired',
-		'misfires',
-		'skips',
-		'scheduled',
+		'misfire_skips',
+		'overlap_skips',
+		'occurrence_visible',
 		'lock',
 	);
 
@@ -93,17 +93,17 @@ final readonly class ScheduleOutput {
 		$rows = array();
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
-				'owner'      => $entry['owner'],
-				'identity'   => $entry['name'],
-				'recurrence' => $entry['recurrence'] ?? 'unknown (not declared this request)',
-				'next_due'   => self::due_label( $entry['next_due'], $observed_at ),
-				'last_fired' => null === $entry['last_fired']
+				'owner'              => $entry['owner'],
+				'identity'           => $entry['name'],
+				'recurrence'         => $entry['recurrence'] ?? 'unknown (not declared this request)',
+				'next_due'           => self::due_label( $entry['next_due'], $observed_at ),
+				'last_fired'         => null === $entry['last_fired']
 					? 'never'
 					: \gmdate( \DATE_ATOM, $entry['last_fired'] ),
-				'misfires'   => $entry['misfires'],
-				'skips'      => $entry['skips'],
-				'scheduled'  => $entry['scheduled'] ? 'yes' : 'no',
-				'lock'       => self::lock_label( $entry['lock'] ),
+				'misfire_skips'      => $entry['misfire_skips'],
+				'overlap_skips'      => $entry['overlap_skips'],
+				'occurrence_visible' => $entry['occurrence_visible'] ? 'yes' : 'no',
+				'lock'               => self::lock_label( $entry['lock'] ),
 			);
 		}
 

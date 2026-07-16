@@ -367,7 +367,7 @@ final class SchedulesTest extends TestCase {
 	 * @param   int      $next_due  Next occurrence timestamp.
 	 * @param   int|null $last_fired Last dispatched timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
 	 */
 	private static function owner_fixture( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		$identity = 'owner-a:' . $schedule->name;
@@ -382,11 +382,11 @@ final class SchedulesTest extends TestCase {
 			),
 			'registrations' => array(
 				$identity => array(
-					'fingerprint' => $schedule->fingerprint(),
-					'next_due'    => $next_due,
-					'last_fired'  => $last_fired,
-					'misfires'    => 0,
-					'skips'       => 0,
+					'fingerprint'   => $schedule->fingerprint(),
+					'next_due'      => $next_due,
+					'last_fired'    => $last_fired,
+					'misfire_skips' => 0,
+					'overlap_skips' => 0,
 				),
 			),
 		);

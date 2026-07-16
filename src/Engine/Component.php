@@ -19,8 +19,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
@@ -170,8 +170,8 @@ final class Component implements ComponentInterface {
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
 			$stores               = new StoreFactory( $clock, $option_rows );
 			$lock_windows         = new LockWindows( $clock );
-			$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
-			$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
+			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 			$scheduler            = new SchedulerFacade(
 				array(
 					new ActionSchedulerBackend(),

@@ -247,7 +247,7 @@ final readonly class StoreFixtureBuilder {
 	 * @phpstan-param array{
 	 *     owner: string,
 	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule, task: string}>,
-	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>
 	 * } $owner
 	 *
 	 * @param   array $owner Complete owner fixture request.

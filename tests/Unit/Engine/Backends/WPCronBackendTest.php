@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( WPCronBackend::class )]
-#[UsesClass( AdmissionErrorMapper::class )]
+#[UsesClass( ApiErrorMapper::class )]
 final class WPCronBackendTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -152,7 +152,7 @@ final class WPCronBackendTest extends TestCase {
 		);
 
 		$internal = ( new WPCronBackend() )->schedule_single( self::HOOK, 1_700_000_300 );
-		$public   = AdmissionErrorMapper::map( $internal );
+		$public   = ApiErrorMapper::map( $internal );
 
 		self::assertInstanceOf( Failure::class, $internal );
 		self::assertInstanceOf( SchedulingError::class, $internal->error );

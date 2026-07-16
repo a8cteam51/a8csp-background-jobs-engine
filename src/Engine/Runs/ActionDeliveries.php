@@ -94,15 +94,15 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   WorkRegistry        $work                 Registered task and batch instances.
-	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
-	 * @param   StoreFactory        $stores               Name-bound store factory.
-	 * @param   LoggerInterface     $logger               Log event sink.
-	 * @param   ClockInterface      $clock                Timestamp source.
-	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
-	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
-	 * @param   FailureLifecycle    $failure_lifecycle    Retry adjudication coordinator.
+	 * @param   WorkRegistry     $work                 Registered task and batch instances.
+	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
+	 * @param   StoreFactory     $stores               Name-bound store factory.
+	 * @param   LoggerInterface  $logger               Log event sink.
+	 * @param   ClockInterface   $clock                Timestamp source.
+	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
+	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects $terminal_effects     Consumer lifecycle-effect executor.
+	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
 		private WorkRegistry $work,
@@ -111,8 +111,8 @@ final readonly class ActionDeliveries {
 		private LoggerInterface $logger,
 		private ClockInterface $clock,
 		private LockWindows $lock_windows,
-		private TerminalTransitions $terminal_transitions,
-		private TerminalEffects $terminal_effects,
+		private RunTransitions $terminal_transitions,
+		private LifecycleEffects $terminal_effects,
 		private FailureLifecycle $failure_lifecycle,
 	) {}
 

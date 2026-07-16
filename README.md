@@ -323,6 +323,8 @@ Schedule overlap is configured independently through `OverlapPolicy`. Catch-up d
 
 An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{identity}`. The `{identity}` suffix and `$identity` filter argument are the complete `{owner}:{name}` schedule identity. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfire-skipped hooks.
 
+Each persisted schedule-registration entry records `misfire_skips` for beyond-grace drops under the catch-up `Skip` policy and `overlap_skips` for due occurrences dropped while the target task's overlap lock is held.
+
 ## Hooks and filters
 
 For each lifecycle pair, the identity-specific hook fires first and the generic companion follows with the identity prepended. Every `{identity}` suffix and every generic `$identity` payload is the complete `{owner}:{name}` identity. The misfire-skipped hooks likewise receive the complete schedule identity; `$owner` remains a separate argument.
@@ -402,7 +404,7 @@ A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using b
 
 After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch `on_failed()` callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
 
-Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. Cancellation is refused while an admitted lifecycle action is executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
+Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks runs cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. Cancellation is refused while an admitted lifecycle action is executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
 
 Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking consumer work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_completed()` nor `on_failed()`.
 
@@ -416,7 +418,7 @@ The canonical command root is `wp background-tasks`; there is no alias.
 | Retry a failed run | `wp background-tasks failed-runs retry <identity> <run_id>` |
 | Purge failed runs for one identity | `wp background-tasks failed-runs purge <identity>` |
 | Purge every discovered failed-run store | `wp background-tasks failed-runs purge --all` |
-| Cancel a retained run | `wp background-tasks cancel <identity> <run_id>` |
+| Cancel a retained run | `wp background-tasks runs cancel <identity> <run_id>` |
 | List schedules | `wp background-tasks schedules list [--owner=<owner>] [--format=<format>]` |
 | List runs and recent history | `wp background-tasks runs list <identity> [--format=<format>]` |
 
@@ -429,13 +431,13 @@ wp background-tasks failed-runs list --owner=consumer-plugin
 wp background-tasks failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 wp background-tasks failed-runs purge consumer-plugin:email-digest
 wp background-tasks failed-runs purge --all
-wp background-tasks cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+wp background-tasks runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 wp background-tasks schedules list
 wp background-tasks schedules list --owner=consumer-plugin --format=json
 wp background-tasks runs list consumer-plugin:email-digest
 wp background-tasks runs list consumer-plugin:email-digest --format=json
 ```
 
-`schedules list` reports persisted registrations and state visible through ready backends. When registrations are listed in table format, the command adds a note if a present backend is not ready and may hold dormant occurrences.
+`schedules list` reports `owner`, `identity`, `recurrence`, `next_due`, `last_fired`, `misfire_skips`, `overlap_skips`, `occurrence_visible`, and `lock`. The `occurrence_visible` value reflects state visible through ready backends. When registrations are listed in table format, the command adds a note if a present backend is not ready and may hold dormant occurrences.
 
-`runs list` table output separates live runs from bounded recent history. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim, and `failed store` marks a failure available to `failed-runs retry`.
+`runs list` table output separates live runs from bounded recent history. History rows expose `run_id`, `outcome`, and `failed_store`; the `failed_store` cell renders as `failed store` when the failure is available to `failed-runs retry`, or `—` otherwise. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim.

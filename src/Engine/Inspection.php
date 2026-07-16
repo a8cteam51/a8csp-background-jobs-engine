@@ -38,9 +38,9 @@ use Psr\Clock\ClockInterface;
  *     recurrence: int|null,
  *     next_due: int,
  *     last_fired: int|null,
- *     misfires: int,
- *     skips: int,
- *     scheduled: bool,
+ *     misfire_skips: int,
+ *     overlap_skips: int,
+ *     occurrence_visible: bool,
  *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
  *         |array{state: 'held', run_id: string, stale: bool}
  * }
@@ -57,7 +57,7 @@ use Psr\Clock\ClockInterface;
  * @phpstan-type HistoryEntry array{
  *     run_id: string,
  *     outcome: 'completed'|'failed'|'cancelled'|'superseded'|'started',
- *     retained: bool
+ *     failed_store: bool
  * }
  */
 final readonly class Inspection {
@@ -163,15 +163,15 @@ final readonly class Inspection {
 
 			$declaration = $this->schedules->declaration( $registration_key );
 			$entries[]   = array(
-				'owner'      => $registration_owner,
-				'name'       => $registration_key,
-				'recurrence' => null === $declaration ? null : $declaration['schedule']->recurrence->interval(),
-				'next_due'   => $registration['next_due'],
-				'last_fired' => $registration['last_fired'],
-				'misfires'   => $registration['misfires'],
-				'skips'      => $registration['skips'],
-				'scheduled'  => $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ),
-				'lock'       => $this->schedule_lock( $declaration, $observed_at ),
+				'owner'              => $registration_owner,
+				'name'               => $registration_key,
+				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval(),
+				'next_due'           => $registration['next_due'],
+				'last_fired'         => $registration['last_fired'],
+				'misfire_skips'      => $registration['misfire_skips'],
+				'overlap_skips'      => $registration['overlap_skips'],
+				'occurrence_visible' => $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ),
+				'lock'               => $this->schedule_lock( $declaration, $observed_at ),
 			);
 		}
 
@@ -379,9 +379,9 @@ final readonly class Inspection {
 
 			$seen[ $entry['run_id'] ] = true;
 			$entries[]                = array(
-				'run_id'   => $entry['run_id'],
-				'outcome'  => $entry['status'],
-				'retained' => isset( $failed_ids[ $entry['run_id'] ] ),
+				'run_id'       => $entry['run_id'],
+				'outcome'      => $entry['status'],
+				'failed_store' => isset( $failed_ids[ $entry['run_id'] ] ),
 			);
 		}
 
@@ -397,9 +397,9 @@ final readonly class Inspection {
 
 			$seen[ $run_id ] = true;
 			$entries[]       = array(
-				'run_id'   => $run_id,
-				'outcome'  => 'started',
-				'retained' => isset( $failed_ids[ $run_id ] ),
+				'run_id'       => $run_id,
+				'outcome'      => 'started',
+				'failed_store' => isset( $failed_ids[ $run_id ] ),
 			);
 		}
 

@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -17,18 +17,18 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises consumer-visible admission outcomes and the context-redaction boundary.
+ * Exercises consumer-visible API outcomes and the context-redaction boundary.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversClass( AdmissionErrorMapper::class )]
+#[CoversClass( ApiErrorMapper::class )]
 #[UsesClass( ApiError::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
 #[UsesClass( Success::class )]
-final class AdmissionErrorMapperTest extends TestCase {
+final class ApiErrorMapperTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
@@ -51,10 +51,10 @@ final class AdmissionErrorMapperTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Every engine admission reason maps to its stable public classification.
+	 * Every engine failure reason maps to its stable public classification.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale The admission boundary's engine classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
+	 * @pin-rationale The API boundary's engine classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -66,7 +66,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	 */
 	#[DataProvider( 'engine_failure_codes' )]
 	public function test_engine_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = AdmissionErrorMapper::map( new Failure( new EngineError( message: 'Engine-authored corrective detail.', reason: EngineErrorReason::from( $reason ), context: array( 'run_id' => 'run-7' ), ) ) );
+		$result = ApiErrorMapper::map( new Failure( new EngineError( message: 'Engine-authored corrective detail.', reason: EngineErrorReason::from( $reason ), context: array( 'run_id' => 'run-7' ), ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -76,10 +76,10 @@ final class AdmissionErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Every scheduling admission reason maps to its stable public classification.
+	 * Every scheduling failure reason maps to its stable public classification.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale The admission boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
+	 * @pin-rationale The API boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -91,7 +91,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
+		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -101,7 +101,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Successful values cross the admission boundary without allocation or payload changes.
+	 * Successful values cross the API boundary without allocation or payload changes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -111,14 +111,14 @@ final class AdmissionErrorMapperTest extends TestCase {
 	public function test_preserves_a_success_result_instance(): void {
 		$success = new Success( 'run-7' );
 
-		self::assertSame( $success, AdmissionErrorMapper::map( $success ) );
+		self::assertSame( $success, ApiErrorMapper::map( $success ) );
 	}
 
 	/**
-	 * An unclassified internal failure fails closed at the admission boundary.
+	 * An unclassified internal failure fails closed at the API boundary.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale An unclassified internal failure must fail loudly at the admission boundary rather than silently reach a consumer; no public seam can construct the unclassified state.
+	 * @pin-rationale An unclassified internal failure must fail loudly at the API boundary rather than silently reach a consumer; no public seam can construct the unclassified state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -127,14 +127,14 @@ final class AdmissionErrorMapperTest extends TestCase {
 	 */
 	public function test_rejects_an_unclassified_engine_failure(): void {
 		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs( 'An internal engine failure reached the admission boundary without a public classification.' );
+		$this->expectExceptionMessageIs( 'An internal engine failure reached the API boundary without a public classification.' );
 
-		$result = AdmissionErrorMapper::map( new Failure( new EngineError( 'Unclassified failure.' ) ) );
+		$result = ApiErrorMapper::map( new Failure( new EngineError( 'Unclassified failure.' ) ) );
 		self::fail( 'The unclassified failure was unexpectedly mapped: ' . \get_debug_type( $result ) );
 	}
 
 	/**
-	 * Database diagnostics never cross the admission boundary into consumer error context.
+	 * Database diagnostics never cross the API boundary into consumer error context.
 	 *
 	 * @load-bearing security
 	 * @pin-rationale Database drivers expose arbitrary external text only inside the internal scheduling failure; public facades cannot inject that hostile context to prove the mapper strips it.
@@ -146,7 +146,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	 */
 	public function test_database_detail_does_not_reach_consumer_error_context(): void {
 		$secret = 'password=hunter2';
-		$result = AdmissionErrorMapper::map(
+		$result = ApiErrorMapper::map(
 			new Failure(
 				new SchedulingError(
 					SchedulingErrorReason::StorageFailure,
@@ -172,7 +172,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	// region PROVIDERS.
 
 	/**
-	 * Supplies every engine admission reason and its public classification.
+	 * Supplies every engine failure reason and its public classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -225,7 +225,7 @@ final class AdmissionErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Supplies every scheduling admission reason and its public classification.
+	 * Supplies every scheduling failure reason and its public classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -174,14 +174,14 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		$before = $this->schedule_entry( $this->schedule_entries( self::FINGERPRINT_OWNER ), self::FINGERPRINT_OWNER . ':fingerprint' );
 		self::assertIsArray( $before );
 		self::assertSame( 300, $before['recurrence'] );
-		self::assertTrue( $before['scheduled'] );
+		self::assertTrue( $before['occurrence_visible'] );
 
 		$this->assert_sync_succeeds( self::FINGERPRINT_OWNER, array( $replacement ) );
 
 		$after = $this->schedule_entry( $this->schedule_entries( self::FINGERPRINT_OWNER ), self::FINGERPRINT_OWNER . ':fingerprint' );
 		self::assertIsArray( $after );
 		self::assertSame( 900, $after['recurrence'] );
-		self::assertTrue( $after['scheduled'] );
+		self::assertTrue( $after['occurrence_visible'] );
 		self::assertNotSame( $before['next_due'], $after['next_due'], 'The changed recurrence must publish a replacement due time' );
 		self::assertSame( $after['next_due'], ( new ActionSchedulerBackend( static fn (): bool => true ) )->get_next_scheduled( self::SCHEDULE_HOOK, array( self::FINGERPRINT_OWNER . ':fingerprint' ), self::FINGERPRINT_OWNER . ':fingerprint' ), 'The earliest backend occurrence must carry the replacement due time; a surviving superseded original would surface here first' );
 	}

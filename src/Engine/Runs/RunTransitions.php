@@ -24,7 +24,7 @@ use Psr\Log\LoggerInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class TerminalTransitions {
+final readonly class RunTransitions {
 	// region MAGIC METHODS
 
 	/**
@@ -33,12 +33,12 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OverlapGuard    $overlap_guard    Execution-overlap guard.
-	 * @param   StoreFactory    $stores           Name-bound store factory.
-	 * @param   ClockInterface  $clock            Timestamp source.
-	 * @param   LockWindows     $lock_windows     Filterable run-lock timing policy.
-	 * @param   LoggerInterface $logger           Log event sink.
-	 * @param   TerminalEffects $terminal_effects Claimed terminal-effect executor.
+	 * @param   OverlapGuard     $overlap_guard    Execution-overlap guard.
+	 * @param   StoreFactory     $stores           Name-bound store factory.
+	 * @param   ClockInterface   $clock            Timestamp source.
+	 * @param   LockWindows      $lock_windows     Filterable run-lock timing policy.
+	 * @param   LoggerInterface  $logger           Log event sink.
+	 * @param   LifecycleEffects $terminal_effects Claimed terminal-effect executor.
 	 */
 	public function __construct(
 		private OverlapGuard $overlap_guard,
@@ -46,7 +46,7 @@ final readonly class TerminalTransitions {
 		private ClockInterface $clock,
 		private LockWindows $lock_windows,
 		private LoggerInterface $logger,
-		private TerminalEffects $terminal_effects,
+		private LifecycleEffects $terminal_effects,
 	) {}
 
 	// endregion

@@ -39,15 +39,15 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
-	 * @param   StoreFactory        $stores               Name-bound store factory.
-	 * @param   ClockInterface      $clock                Timestamp source.
-	 * @param   LoggerInterface     $logger               Log event sink.
-	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
-	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   TerminalEffects     $terminal_effects     Claimed terminal-effect executor.
-	 * @param   WorkRegistry        $work                 Registered task and batch instances.
-	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
+	 * @param   OverlapGuard     $overlap_guard        Execution-overlap guard.
+	 * @param   StoreFactory     $stores               Name-bound store factory.
+	 * @param   ClockInterface   $clock                Timestamp source.
+	 * @param   LoggerInterface  $logger               Log event sink.
+	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
+	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects $terminal_effects     Claimed terminal-effect executor.
+	 * @param   WorkRegistry     $work                 Registered task and batch instances.
+	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
 	 */
 	public function __construct(
 		private OverlapGuard $overlap_guard,
@@ -55,8 +55,8 @@ final readonly class RunReconciliation {
 		private ClockInterface $clock,
 		private LoggerInterface $logger,
 		private LockWindows $lock_windows,
-		private TerminalTransitions $terminal_transitions,
-		private TerminalEffects $terminal_effects,
+		private RunTransitions $terminal_transitions,
+		private LifecycleEffects $terminal_effects,
 		private WorkRegistry $work,
 		private BackendInterface $scheduler,
 	) {}

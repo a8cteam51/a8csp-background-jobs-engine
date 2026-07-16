@@ -7,8 +7,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -49,7 +49,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( StoreFactory::class )]
-#[UsesClass( TerminalEffects::class )]
+#[UsesClass( LifecycleEffects::class )]
 final class CleanupIntentsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -517,8 +517,8 @@ final class CleanupIntentsTest extends TestCase {
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
+		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$dispatcher           = new Dispatcher( $work, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );

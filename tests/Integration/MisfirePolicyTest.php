@@ -11,8 +11,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
@@ -139,21 +139,21 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
 		$this->set_next_due( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE, $aged_due );
-		$dynamic_misfires = array();
-		$generic_misfires = array();
-		$this->record_misfire_skipped_hooks( self::RUN_ONCE_SCHEDULE_IDENTITY, $dynamic_misfires, $generic_misfires );
+		$dynamic_misfire_skips = array();
+		$generic_misfire_skips = array();
+		$this->record_misfire_skipped_hooks( self::RUN_ONCE_SCHEDULE_IDENTITY, $dynamic_misfire_skips, $generic_misfire_skips );
 
 		\do_action( 'a8csp_background_tasks/schedule_due', self::RUN_ONCE_SCHEDULE_IDENTITY );
 		self::assertSame( array(), $task->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the task inline' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the single RunOnce make-up occurrence' );
 
 		self::assertSame( array( array( 'policy' => 'run-once' ) ), $task->calls, 'RunOnce must execute exactly one make-up occurrence' );
-		self::assertSame( array(), $dynamic_misfires, 'RunOnce must not publish the dynamic misfire-skipped hook' );
-		self::assertSame( array(), $generic_misfires, 'RunOnce must not publish the generic misfire-skipped hook' );
+		self::assertSame( array(), $dynamic_misfire_skips, 'RunOnce must not publish the dynamic misfire-skipped hook' );
+		self::assertSame( array(), $generic_misfire_skips, 'RunOnce must not publish the generic misfire-skipped hook' );
 		$registration = $this->registration( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE );
 		self::assertSame( $now, $registration['last_fired'] );
-		self::assertSame( 0, $registration['misfires'] );
-		self::assertSame( 0, $registration['skips'], 'A misfire outcome must not touch the disjoint overlap-skip counter' );
+		self::assertSame( 0, $registration['misfire_skips'] );
+		self::assertSame( 0, $registration['overlap_skips'], 'A misfire outcome must not touch the disjoint overlap-skip counter' );
 		self::assertSame( self::realigned_due( $aged_due, $now ), $registration['next_due'] );
 	}
 
@@ -178,21 +178,21 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
 		$this->set_next_due( self::SKIP_OWNER, self::SKIP_SCHEDULE, $aged_due );
-		$dynamic_misfires = array();
-		$generic_misfires = array();
-		$this->record_misfire_skipped_hooks( self::SKIP_SCHEDULE_IDENTITY, $dynamic_misfires, $generic_misfires );
+		$dynamic_misfire_skips = array();
+		$generic_misfire_skips = array();
+		$this->record_misfire_skipped_hooks( self::SKIP_SCHEDULE_IDENTITY, $dynamic_misfire_skips, $generic_misfire_skips );
 
 		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-task action for the dropped occurrence' );
 		self::assertSame( array(), $task->calls, 'Skip must not execute a task for the dropped occurrence' );
-		self::assertSame( array( array( self::SKIP_OWNER, $aged_due, $now ) ), $dynamic_misfires, 'The dynamic misfire-skipped hook must receive owner, due instant, and fired instant' );
-		self::assertSame( array( array( self::SKIP_SCHEDULE_IDENTITY, self::SKIP_OWNER, $aged_due, $now ) ), $generic_misfires, 'The generic misfire-skipped hook must prepend the complete schedule identity to the same payload' );
+		self::assertSame( array( array( self::SKIP_OWNER, $aged_due, $now ) ), $dynamic_misfire_skips, 'The dynamic misfire-skipped hook must receive owner, due instant, and fired instant' );
+		self::assertSame( array( array( self::SKIP_SCHEDULE_IDENTITY, self::SKIP_OWNER, $aged_due, $now ) ), $generic_misfire_skips, 'The generic misfire-skipped hook must prepend the complete schedule identity to the same payload' );
 		$expected_due = self::realigned_due( $aged_due, $now );
 		$registration = $this->registration( self::SKIP_OWNER, self::SKIP_SCHEDULE );
 		self::assertNull( $registration['last_fired'] );
-		self::assertSame( 1, $registration['misfires'] );
-		self::assertSame( 0, $registration['skips'], 'A dropped misfire must count as a misfire, never as an overlap skip' );
+		self::assertSame( 1, $registration['misfire_skips'] );
+		self::assertSame( 0, $registration['overlap_skips'], 'A dropped misfire must count as a misfire, never as an overlap skip' );
 		self::assertSame( $expected_due, $registration['next_due'] );
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'info', $logger->records[0]['level'] ?? null );
@@ -255,12 +255,12 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertSame( array( array( self::BEYOND_SCHEDULE_IDENTITY, self::BOUNDARY_OWNER, $beyond_due, $now ) ), $beyond_generic, 'One-second-beyond must fire the generic misfire-skipped hook' );
 		$exact_registration  = $this->registration( self::BOUNDARY_OWNER, self::EXACT_SCHEDULE );
 		$beyond_registration = $this->registration( self::BOUNDARY_OWNER, self::BEYOND_SCHEDULE );
-		self::assertSame( 0, $exact_registration['misfires'] );
-		self::assertSame( 0, $exact_registration['skips'] );
+		self::assertSame( 0, $exact_registration['misfire_skips'] );
+		self::assertSame( 0, $exact_registration['overlap_skips'] );
 		self::assertSame( $now, $exact_registration['last_fired'] );
 		self::assertSame( $now + self::INTERVAL, $exact_registration['next_due'] );
-		self::assertSame( 1, $beyond_registration['misfires'] );
-		self::assertSame( 0, $beyond_registration['skips'] );
+		self::assertSame( 1, $beyond_registration['misfire_skips'] );
+		self::assertSame( 0, $beyond_registration['overlap_skips'] );
 		self::assertNull( $beyond_registration['last_fired'] );
 		self::assertSame( $now + self::INTERVAL - 1, $beyond_registration['next_due'] );
 	}
@@ -306,8 +306,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
 		$stores               = new StoreFactory( $clock, $rows );
 		$lock_windows         = new LockWindows( $clock );
-		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
+		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend( static fn (): bool => true ),
@@ -395,14 +395,14 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertIsString( $registration['fingerprint'] ?? null );
 		$last_fired = $registration['last_fired'] ?? null;
 		self::assertTrue( null === $last_fired || \is_int( $last_fired ) );
-		self::assertIsInt( $registration['misfires'] ?? null );
-		self::assertIsInt( $registration['skips'] ?? null );
+		self::assertIsInt( $registration['misfire_skips'] ?? null );
+		self::assertIsInt( $registration['overlap_skips'] ?? null );
 		$updated = array(
-			'fingerprint' => $registration['fingerprint'],
-			'next_due'    => $next_due,
-			'last_fired'  => $last_fired,
-			'misfires'    => $registration['misfires'],
-			'skips'       => $registration['skips'],
+			'fingerprint'   => $registration['fingerprint'],
+			'next_due'      => $next_due,
+			'last_fired'    => $last_fired,
+			'misfire_skips' => $registration['misfire_skips'],
+			'overlap_skips' => $registration['overlap_skips'],
 		);
 		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( $identity, $registration['fingerprint'], $updated ) );
 	}
@@ -422,9 +422,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 *     recurrence: int|null,
 	 *     next_due: int,
 	 *     last_fired: int|null,
-	 *     misfires: int,
-	 *     skips: int,
-	 *     scheduled: bool,
+	 *     misfire_skips: int,
+	 *     overlap_skips: int,
+	 *     occurrence_visible: bool,
 	 *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}|array{state: 'held', run_id: string, stale: bool}
 	 * }
 	 */
@@ -440,8 +440,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertIsArray( $registration );
 		self::assertIsInt( $registration['next_due'] ?? null );
 		self::assertTrue( null === ( $registration['last_fired'] ?? null ) || \is_int( $registration['last_fired'] ) );
-		self::assertIsInt( $registration['misfires'] ?? null );
-		self::assertIsInt( $registration['skips'] ?? null );
+		self::assertIsInt( $registration['misfire_skips'] ?? null );
+		self::assertIsInt( $registration['overlap_skips'] ?? null );
 
 		return $registration;
 	}

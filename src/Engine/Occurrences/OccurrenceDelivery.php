@@ -256,9 +256,9 @@ final readonly class OccurrenceDelivery {
 		}
 
 		if ( $misfired && CatchUpPolicy::Skip === $schedule->catch_up ) {
-			$misfired_due             = $registration['next_due'];
-			$registration['next_due'] = $next_due;
-			$registration['misfires'] = self::increment_counter( $registration['misfires'] );
+			$misfired_due                  = $registration['next_due'];
+			$registration['next_due']      = $next_due;
+			$registration['misfire_skips'] = self::increment_counter( $registration['misfire_skips'] );
 			$this->persist_delivery_state( $registration_key, $owner, $registration );
 			try {
 				try {
@@ -344,8 +344,8 @@ final readonly class OccurrenceDelivery {
 
 		$registration['next_due'] = $next_due;
 		if ( $dispatched->value instanceof SkippedTaskDispatch ) {
-			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfires` counts Skip-policy drops, `skips` counts overlap skips.
-			$registration['skips'] = self::increment_counter( $registration['skips'] );
+			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfire_skips` counts Skip-policy drops, `overlap_skips` counts overlap skips.
+			$registration['overlap_skips'] = self::increment_counter( $registration['overlap_skips'] );
 			$this->persist_delivery_state( $registration_key, $owner, $registration );
 			$this->logger->info(
 				'Schedule occurrence skipped because the target task lock is held.',
@@ -458,7 +458,7 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int} $registration
+	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int} $registration
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 * @param   string $owner            Stable consumer identifier.

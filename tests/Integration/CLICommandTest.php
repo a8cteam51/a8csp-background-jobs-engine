@@ -157,7 +157,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$this->expect_option( self::cancel_batch_run_option_name() );
 		$option_name = $this->seed_cancel_batch_pending_cleanup();
 
-		$result = self::run_command_with_globals( 'cancel', array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ), self::CANCEL_BATCH_NAME, self::RUN_ID );
+		$result = self::run_command_with_globals( 'runs', array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ), 'cancel', self::CANCEL_BATCH_NAME, self::RUN_ID );
 		self::assertTrue( \delete_option( $option_name ), 'The completeness fixture must remain retained after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
@@ -209,7 +209,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command();
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-tasks cancel <identity> <run_id>\n", $result['stdout'] );
+		self::assertSame( "usage: wp background-tasks runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -446,7 +446,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stderr'] );
-		foreach ( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ) as $field ) {
+		foreach ( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfire_skips', 'overlap_skips', 'occurrence_visible', 'lock' ) as $field ) {
 			self::assertStringContainsString( $field, $result['stdout'] );
 		}
 		self::assertStringContainsString( self::INSPECTION_OWNER, $result['stdout'] );
@@ -475,7 +475,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertCount( 1, $decoded );
 		$row = $decoded[0] ?? null;
 		self::assertIsArray( $row );
-		self::assertSame( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ), \array_keys( $row ) );
+		self::assertSame( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfire_skips', 'overlap_skips', 'occurrence_visible', 'lock' ), \array_keys( $row ) );
 		self::assertSame( self::INSPECTION_OWNER, $row['owner'] ?? null );
 		self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $row['identity'] ?? null );
 		self::assertSame( 300, $row['recurrence'] ?? null );
@@ -483,9 +483,9 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertIsString( $next_due );
 		self::assertMatchesRegularExpression( '/\A\d{4}-\d{2}-\d{2}T.*\+00:00 \(in \d+[smhd]\)\z/', $next_due );
 		self::assertSame( 'never', $row['last_fired'] ?? null );
-		self::assertSame( 0, $row['misfires'] ?? null );
-		self::assertSame( 0, $row['skips'] ?? null );
-		self::assertSame( 'yes', $row['scheduled'] ?? null );
+		self::assertSame( 0, $row['misfire_skips'] ?? null );
+		self::assertSame( 0, $row['overlap_skips'] ?? null );
+		self::assertSame( 'yes', $row['occurrence_visible'] ?? null );
 		self::assertSame( 'free', $row['lock'] ?? null );
 	}
 
@@ -648,6 +648,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertStringContainsString( self::CANONICAL_RUN_ID, $result['stdout'] );
 			self::assertStringContainsString( 'executing', $result['stdout'] );
 			self::assertStringContainsString( 'integration-cli-history-failed', $result['stdout'] );
+			self::assertStringContainsString( 'failed_store', $result['stdout'] );
 			self::assertStringContainsString( 'failed store', $result['stdout'] );
 			self::assertStringContainsString( '—', $result['stdout'] );
 		} finally {
@@ -710,7 +711,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_runs_without_required_positionals_use_the_native_synopsis(): void {
-		$expected = "usage: wp background-tasks runs <action> <identity> [--format=<format>]\n";
+		$expected = "usage: wp background-tasks runs <action> <identity> [<run_id>] [--format=<format>]\n";
 
 		foreach ( array( array(), array( 'list' ) ) as $arguments ) {
 			$result = self::run_runs_command( ...$arguments );
@@ -722,7 +723,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * The real parser rejects an extra runs-list positional before execution.
+	 * The command guard rejects an extra runs-list positional before execution.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -734,7 +735,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Too many positional arguments: extra\n", $result['stderr'] );
+		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -816,7 +817,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertIsArray( $schedule_row );
 			self::assertSame( self::INSPECTION_OWNER, $schedule_row['owner'] ?? null );
 			self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $schedule_row['identity'] ?? null );
-			self::assertSame( 'yes', $schedule_row['scheduled'] ?? null );
+			self::assertSame( 'yes', $schedule_row['occurrence_visible'] ?? null );
 			self::assertSame( 'free', $schedule_row['lock'] ?? null );
 
 			self::assertSame( 0, $runs['exit_code'] );
@@ -875,12 +876,12 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string ...$arguments Arguments following the cancel command.
+	 * @param   string ...$arguments Arguments following the runs cancel action.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
 	 */
 	private static function run_cancel_command( string ...$arguments ): array {
-		return self::run_command( 'cancel', ...$arguments );
+		return self::run_command( 'runs', 'cancel', ...$arguments );
 	}
 
 	/**

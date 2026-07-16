@@ -130,7 +130,7 @@ final class RunHistoryTest extends TestCase {
 		$entry = \array_find( $history, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
 		self::assertNotNull( $entry );
 		self::assertSame( $status, $entry['outcome'] );
-		self::assertSame( 'failed' === $status, $entry['retained'] );
+		self::assertSame( 'failed' === $status, $entry['failed_store'] );
 	}
 
 	/**
@@ -444,7 +444,7 @@ final class RunHistoryTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  list<array{run_id: string, outcome: string, retained: bool}>
+	 * @return  list<array{run_id: string, outcome: string, failed_store: bool}>
 	 */
 	private function history(): array {
 		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];

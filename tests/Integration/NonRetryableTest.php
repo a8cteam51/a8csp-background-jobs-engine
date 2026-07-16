@@ -127,9 +127,9 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'   => $run_id,
-					'outcome'  => 'failed',
-					'retained' => true,
+					'run_id'       => $run_id,
+					'outcome'      => 'failed',
+					'failed_store' => true,
 				),
 			),
 			$runs['history'],

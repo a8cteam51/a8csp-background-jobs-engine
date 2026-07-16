@@ -24,79 +24,7 @@ final readonly class RunsCommand {
 	// region METHODS
 
 	/**
-	 * Cancels one retained logical engine run.
-	 *
-	 * Pending backend delivery is cleared on a best-effort basis after the engine terminalizes the
-	 * run. The arguments identify an engine background-work run, not an Action Scheduler action or
-	 * hook, and cancellation does not remove an originating recurring schedule.
-	 *
-	 * ## OPTIONS
-	 *
-	 * <identity>
-	 * : Composed `{owner}:{name}` task or batch identity.
-	 *
-	 * <run_id>
-	 * : Retained engine-run identifier.
-	 *
-	 * ## EXAMPLES
-	 *
-	 *     $ wp background-tasks cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   list<string>         $args       Positional command arguments.
-	 * @param   array<string, mixed> $assoc_args Named command arguments.
-	 *
-	 * @return  void
-	 */
-	public function cancel( array $args, array $assoc_args ): void {
-		$request = self::cancel_request_from_args( $args, $assoc_args );
-		if ( 'error' === $request['action'] ) {
-			\WP_CLI::error( $request['message'] );
-			return;
-		}
-
-		$this->cancel_run( $request['name'], $request['run_id'] );
-	}
-
-	/**
-	 * Validates cancel command arguments without requiring WordPress or WP-CLI state.
-	 *
-	 * @internal Command decision seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   list<string>         $args       Positional command arguments.
-	 * @param   array<string, mixed> $assoc_args Named command arguments.
-	 *
-	 * @return  array{action: 'error', message: string}
-	 *          |array{action: 'cancel', name: string, run_id: string}
-	 */
-	public static function cancel_request_from_args( array $args, array $assoc_args ): array {
-		if ( 2 !== \count( $args ) || array() !== $assoc_args ) {
-			return array(
-				'action'  => 'error',
-				'message' => 'Cancel requires exactly an identity and run_id; use wp background-tasks cancel <identity> <run_id>.',
-			);
-		}
-		if ( null === WorkIdentity::parts( $args[0] ) ) {
-			return array(
-				'action'  => 'error',
-				'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
-			);
-		}
-
-		return array(
-			'action' => 'cancel',
-			'name'   => $args[0],
-			'run_id' => $args[1],
-		);
-	}
-
-	/**
-	 * Lists retained run state for one background-work identity.
+	 * Lists or cancels retained run state for one background-work identity.
 	 *
 	 * An executing phase that outlives the staleness window is reclaimed by maintenance; the stale
 	 * heartbeat suffix identifies that condition.
@@ -107,18 +35,22 @@ final readonly class RunsCommand {
 	 * ## OPTIONS
 	 *
 	 * <action>
-	 * : Operation to perform: list.
+	 * : Operation to perform: list or cancel.
 	 *
 	 * <identity>
 	 * : Composed `{owner}:{name}` task or batch identity.
 	 *
+	 * [<run_id>]
+	 * : Retained engine-run identifier. Required by cancel.
+	 *
 	 * [--format=<format>]
-	 * : Render list output as table, csv, json, count, or yaml. Defaults to table.
+	 * : Render list output as table, csv, json, count, or yaml. Valid only with list and defaults to table.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     $ wp background-tasks runs list consumer-plugin:email-digest
 	 *     $ wp background-tasks runs list consumer-plugin:email-digest --format=json
+	 *     $ wp background-tasks runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *
 	 * A waiting live run has a backend delivery or retry pending. An executing run is inside its
 	 * handler, and a stale heartbeat means maintenance can reclaim the abandoned execution. The
@@ -140,11 +72,16 @@ final readonly class RunsCommand {
 			return;
 		}
 
-		$this->list_runs( $request['name'], $request['format'] );
+		if ( 'list' === $request['action'] ) {
+			$this->list_runs( $request['name'], $request['format'] );
+			return;
+		}
+
+		$this->cancel_run( $request['name'], $request['run_id'] );
 	}
 
 	/**
-	 * Validates runs-list arguments without requiring WordPress or WP-CLI state.
+	 * Validates runs-subcommand arguments without requiring WordPress or WP-CLI state.
 	 *
 	 * @internal Command decision seam.
 	 *
@@ -156,19 +93,42 @@ final readonly class RunsCommand {
 	 *
 	 * @return  array{action: 'error', message: string}
 	 *          |array{action: 'list', name: string, format: string}
+	 *          |array{action: 'cancel', name: string, run_id: string}
 	 */
 	public static function runs_request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'A run action is required; use list <identity>.',
+				'message' => 'A run action is required; use list <identity> or cancel <identity> <run_id>.',
 			);
 		}
 
-		if ( 'list' !== $args[0] ) {
+		$action = $args[0];
+		if ( 'list' !== $action && 'cancel' !== $action ) {
 			return array(
 				'action'  => 'error',
-				'message' => \sprintf( 'Run action "%s" is invalid; use list.', $args[0] ),
+				'message' => \sprintf( 'Run action "%s" is invalid; use list or cancel.', $action ),
+			);
+		}
+
+		if ( 'cancel' === $action ) {
+			if ( 3 !== \count( $args ) || array() !== $assoc_args ) {
+				return array(
+					'action'  => 'error',
+					'message' => 'Cancel requires exactly an identity and run_id; use wp background-tasks runs cancel <identity> <run_id>.',
+				);
+			}
+			if ( null === WorkIdentity::parts( $args[1] ) ) {
+				return array(
+					'action'  => 'error',
+					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
+				);
+			}
+
+			return array(
+				'action' => 'cancel',
+				'name'   => $args[1],
+				'run_id' => $args[2],
 			);
 		}
 

@@ -201,11 +201,11 @@ final readonly class Schedules {
 			$interval                   = $interval_by_identity[ $schedule_identity ];
 			$next_due                   = $next_due_by_identity[ $schedule_identity ];
 			$next[ $schedule_identity ] = array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => $next_due,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
+				'fingerprint'   => $schedule->fingerprint(),
+				'next_due'      => $next_due,
+				'last_fired'    => null,
+				'misfire_skips' => 0,
+				'overlap_skips' => 0,
 			);
 			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
 				return $this->registry_persist_failure( $owner );

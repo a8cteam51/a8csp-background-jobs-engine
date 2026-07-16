@@ -27,7 +27,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
  * @phpstan-type HistoryRow array{
  *     run_id: string,
  *     outcome: 'completed'|'failed'|'cancelled'|'superseded'|'started',
- *     retained: 'failed store'|'—'
+ *     failed_store: 'failed store'|'—'
  * }
  */
 final readonly class RunOutput {
@@ -61,7 +61,7 @@ final readonly class RunOutput {
 	private const HISTORY_FIELDS = array(
 		'run_id',
 		'outcome',
-		'retained',
+		'failed_store',
 	);
 
 	// endregion
@@ -123,9 +123,9 @@ final readonly class RunOutput {
 		$rows = array();
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
-				'run_id'   => $entry['run_id'],
-				'outcome'  => $entry['outcome'],
-				'retained' => $entry['retained'] ? 'failed store' : '—',
+				'run_id'       => $entry['run_id'],
+				'outcome'      => $entry['outcome'],
+				'failed_store' => $entry['failed_store'] ? 'failed store' : '—',
 			);
 		}
 

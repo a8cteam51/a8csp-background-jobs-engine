@@ -19,8 +19,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -44,7 +44,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  *
  */
-#[CoversClass( TerminalTransitions::class )]
+#[CoversClass( RunTransitions::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailureLifecycle::class )]
 #[UsesClass( FailedRunStore::class )]
@@ -62,9 +62,9 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
-#[UsesClass( TerminalEffects::class )]
+#[UsesClass( LifecycleEffects::class )]
 #[UsesClass( WorkRegistry::class )]
-final class TerminalTransitionsTest extends TestCase {
+final class RunTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS = array(
@@ -86,7 +86,7 @@ final class TerminalTransitionsTest extends TestCase {
 	private RecordingRandomizer $randomizer;
 	private OptionRows $rows;
 	private RecordingTask $task;
-	private TerminalTransitions $terminal_transitions;
+	private RunTransitions $terminal_transitions;
 	private WpdbLockSpy $wpdb;
 	private Dispatcher $dispatcher;
 
@@ -147,8 +147,8 @@ final class TerminalTransitionsTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
-		$terminal_effects           = new TerminalEffects( $guard, $stores, $this->logger );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
+		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
+		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
 		$this->dispatcher = new Dispatcher( $work, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );

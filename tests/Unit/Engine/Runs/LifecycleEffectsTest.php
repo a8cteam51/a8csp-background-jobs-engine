@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -35,7 +35,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  *
  */
-#[CoversClass( TerminalEffects::class )]
+#[CoversClass( LifecycleEffects::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( FailedRunStore::class )]
 #[UsesClass( LockClaimOutcome::class )]
@@ -48,7 +48,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
-final class TerminalEffectsTest extends TestCase {
+final class LifecycleEffectsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const ARGS = array(
@@ -67,7 +67,7 @@ final class TerminalEffectsTest extends TestCase {
 	private OverlapGuard $guard;
 	private RecordingLogger $logger;
 	private StoreFactory $stores;
-	private TerminalEffects $terminal_effects;
+	private LifecycleEffects $terminal_effects;
 	private WpdbLockSpy $wpdb;
 
 	// endregion.
@@ -121,7 +121,7 @@ final class TerminalEffectsTest extends TestCase {
 		$rows                   = new OptionRows( $this->wpdb );
 		$this->guard            = new OverlapGuard( $this->clock, $this->logger, $rows );
 		$this->stores           = new StoreFactory( $this->clock, $rows );
-		$this->terminal_effects = new TerminalEffects( $this->guard, $this->stores, $this->logger );
+		$this->terminal_effects = new LifecycleEffects( $this->guard, $this->stores, $this->logger );
 	}
 
 	// endregion.
@@ -272,7 +272,7 @@ final class TerminalEffectsTest extends TestCase {
 	 */
 	#[DataProvider( 'terminal_effect_rows' )]
 	public function test_expected_terminal_effects( string $status, string $work_type, array $effects ): void {
-		self::assertSame( $effects, TerminalEffects::expected_effects( RunStatus::from( $status ), $work_type ) );
+		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ), $work_type ) );
 	}
 
 	/**

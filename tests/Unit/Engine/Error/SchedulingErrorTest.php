@@ -7,21 +7,21 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises consumer-visible scheduling failures through the admission boundary.
+ * Exercises consumer-visible scheduling failures through the API boundary.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
 #[CoversClass( SchedulingError::class )]
 #[UsesClass( ApiError::class )]
-#[UsesClass( AdmissionErrorMapper::class )]
+#[UsesClass( ApiErrorMapper::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingErrorReason::class )]
 final class SchedulingErrorTest extends TestCase {
@@ -47,7 +47,7 @@ final class SchedulingErrorTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Admission exposes the public code, message, and redaction-safe structured context.
+	 * The API exposes the public code, message, and redaction-safe structured context.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -59,7 +59,7 @@ final class SchedulingErrorTest extends TestCase {
 			'hook'     => 'a8csp_background_tasks/run_task',
 			'priority' => 10,
 		);
-		$result  = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
+		$result  = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -77,7 +77,7 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_context_defaults_to_an_empty_array(): void {
-		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
+		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -95,7 +95,7 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_read_failure_surfaces_as_storage_failure(): void {
-		$result = AdmissionErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'owner-a' ) ) );
+		$result = ApiErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'owner-a' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -113,7 +113,7 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_persist_failure_surfaces_as_storage_failure(): void {
-		$result = AdmissionErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'owner-a' ) ) );
+		$result = ApiErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'owner-a' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -126,7 +126,7 @@ final class SchedulingErrorTest extends TestCase {
 	 * Each scheduling rejection scenario exposes its stable public classification.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale The admission boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
+	 * @pin-rationale The API boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -138,7 +138,7 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
+		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );

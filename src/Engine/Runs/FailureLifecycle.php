@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
 use Psr\Clock\ClockInterface;
@@ -40,14 +40,14 @@ final readonly class FailureLifecycle {
 	 * @param   ClockInterface      $clock               Timestamp source.
 	 * @param   RandomizerInterface $randomizer          Retry-delay randomness.
 	 * @param   LoggerInterface     $logger              Log event sink.
-	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
 	 */
 	public function __construct(
 		private BackendInterface $scheduler,
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
-		private TerminalTransitions $terminal_transitions,
+		private RunTransitions $terminal_transitions,
 	) {}
 
 	// endregion

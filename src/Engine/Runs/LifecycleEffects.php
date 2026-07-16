@@ -22,7 +22,7 @@ use Psr\Log\LoggerInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class TerminalEffects {
+final readonly class LifecycleEffects {
 	// region FIELDS AND CONSTANTS
 
 	/**

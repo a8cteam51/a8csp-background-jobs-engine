@@ -127,7 +127,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
 		self::assertNotNull( $history );
-		$retained = \array_column( $history, 'retained', 'run_id' );
+		$retained = \array_column( $history, 'failed_store', 'run_id' );
 		self::assertFalse( $retained[ $run_ids[0] ] );
 		self::assertTrue( $retained[ $run_ids[1] ] );
 		self::assertCount( 20, \array_filter( $retained ) );
@@ -176,7 +176,7 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertNotNull( $history );
 		$failed_entry = \array_find( $history, static fn ( array $entry ): bool => $failed === $entry['run_id'] );
 		self::assertNotNull( $failed_entry );
-		self::assertFalse( $failed_entry['retained'] );
+		self::assertFalse( $failed_entry['failed_store'] );
 		self::assertSame( 'completed', $history[0]['outcome'] ?? null );
 	}
 

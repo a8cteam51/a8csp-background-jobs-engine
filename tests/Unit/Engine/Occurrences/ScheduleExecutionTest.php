@@ -152,7 +152,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
-		self::assertSame( 0, $registration['misfires'] ?? null );
+		self::assertSame( 0, $registration['misfire_skips'] ?? null );
 	}
 
 	/**
@@ -175,7 +175,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( $fired_at, $registration['last_fired'] ?? null );
-		self::assertSame( 0, $registration['misfires'] ?? null );
+		self::assertSame( 0, $registration['misfire_skips'] ?? null );
 	}
 
 	/**
@@ -205,7 +205,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertNull( $registration['last_fired'] ?? null );
-		self::assertSame( 1, $registration['misfires'] ?? null );
+		self::assertSame( 1, $registration['misfire_skips'] ?? null );
 	}
 
 	/**
@@ -331,7 +331,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
-		self::assertSame( 1, $this->registration()['skips'] ?? null );
+		self::assertSame( 1, $this->registration()['overlap_skips'] ?? null );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 'Schedule occurrence skipped because the target task lock is held.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
@@ -407,7 +407,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @param   Schedule $schedule Schedule declaration.
 	 * @param   int      $next_due Next occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
 	 */
 	private static function owner_fixture( Schedule $schedule, int $next_due ): array {
 		return array(
@@ -420,11 +420,11 @@ final class ScheduleExecutionTest extends TestCase {
 			),
 			'registrations' => array(
 				self::REGISTRATION_KEY => array(
-					'fingerprint' => $schedule->fingerprint(),
-					'next_due'    => $next_due,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
+					'fingerprint'   => $schedule->fingerprint(),
+					'next_due'      => $next_due,
+					'last_fired'    => null,
+					'misfire_skips' => 0,
+					'overlap_skips' => 0,
 				),
 			),
 		);

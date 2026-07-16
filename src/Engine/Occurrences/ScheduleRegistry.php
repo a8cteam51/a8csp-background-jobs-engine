@@ -82,7 +82,7 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $owner Stable consumer identifier.
 	 *
-	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>, EngineError>
+	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registrations_for( string $owner ): AbstractResult {
@@ -109,7 +109,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>, EngineError>
+	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function all_registrations(): AbstractResult {
@@ -155,7 +155,7 @@ final class ScheduleRegistry {
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array<string, array{schedule: Schedule, task: string}>                                          $schedules
-	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}> $registrations
+	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}> $registrations
 	 *
 	 * @param   string $owner         Stable consumer identifier.
 	 * @param   array  $schedules     Declared schedules keyed by complete identity.
@@ -287,7 +287,7 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  AbstractResult<array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}|null, EngineError>
+	 * @return  AbstractResult<array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}|null, EngineError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registration( string $registration_key ): AbstractResult {
@@ -310,7 +310,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int} $registration
+	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int} $registration
 	 *
 	 * @param   string $registration_key     `{owner}:{name}` schedule identity.
 	 * @param   string $observed_fingerprint Definition fingerprint observed before the update.
@@ -394,7 +394,7 @@ final class ScheduleRegistry {
 	 * @param   string                  $owner Validated persisted owner key.
 	 * @param   array<array-key, mixed> $rows  Persisted rows for one owner.
 	 *
-	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>
 	 */
 	private static function registrations_from_rows( string $owner, array $rows ): array {
 		$registrations = array();
@@ -412,27 +412,27 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$misfires = $row['misfires'] ?? 0;
-			$skips    = $row['skips'] ?? 0;
+			$misfire_skips = $row['misfire_skips'] ?? 0;
+			$overlap_skips = $row['overlap_skips'] ?? 0;
 			if (
 				! \is_string( $row['fingerprint'] ?? null )
 				|| ! \is_int( $row['next_due'] ?? null )
 				|| 1 > $row['next_due']
 				|| ( null !== ( $row['last_fired'] ?? null ) && ! \is_int( $row['last_fired'] ?? null ) )
-				|| ! \is_int( $misfires )
-				|| 0 > $misfires
-				|| ! \is_int( $skips )
-				|| 0 > $skips
+				|| ! \is_int( $misfire_skips )
+				|| 0 > $misfire_skips
+				|| ! \is_int( $overlap_skips )
+				|| 0 > $overlap_skips
 			) {
 				continue;
 			}
 
 			$registrations[ $registration_key ] = array(
-				'fingerprint' => $row['fingerprint'],
-				'next_due'    => $row['next_due'],
-				'last_fired'  => $row['last_fired'] ?? null,
-				'misfires'    => $misfires,
-				'skips'       => $skips,
+				'fingerprint'   => $row['fingerprint'],
+				'next_due'      => $row['next_due'],
+				'last_fired'    => $row['last_fired'] ?? null,
+				'misfire_skips' => $misfire_skips,
+				'overlap_skips' => $overlap_skips,
 			);
 		}
 
@@ -445,12 +445,12 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}> $registrations
+	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}> $registrations
 	 *
 	 * @param   string $owner         Stable consumer or engine identifier.
 	 * @param   array  $registrations Persisted owner state keyed by complete identity.
 	 *
-	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>|null
+	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>|null
 	 */
 	private static function owner_registrations( string $owner, array $registrations ): ?array {
 		$rows = array();
