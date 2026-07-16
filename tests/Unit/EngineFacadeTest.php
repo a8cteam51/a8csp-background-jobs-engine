@@ -132,11 +132,11 @@ final class EngineFacadeTest extends TestCase {
 		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 
-		$dispatcher = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
+		$dispatcher = new Dispatcher( $tasks, $batches, $work, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 		$registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
 		$delivery   = new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ), new CleanupIntents( $registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $clock, $logger ), $clock, $logger );
 		$schedules  = new Schedules( $registry, $this->backend, $clock, $delivery );
-		$inspection = new Inspection( $registry, $tasks, $batches, new SchedulerFacade( array( $this->backend ) ), $guard, $stores, new OptionRows( $this->wpdb ), $lock_windows, $clock );
+		$inspection = new Inspection( $registry, $tasks, $batches, $work, new SchedulerFacade( array( $this->backend ) ), $guard, $stores, new OptionRows( $this->wpdb ), $lock_windows, $clock );
 
 		$this->engine = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedules, new Batches( $batches, $dispatcher ), $dispatcher, $inspection, );
 	}

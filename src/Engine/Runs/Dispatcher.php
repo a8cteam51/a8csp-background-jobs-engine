@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
@@ -62,6 +63,7 @@ final readonly class Dispatcher {
 	 *
 	 * @param   TaskRegistry        $tasks                Registered task instances.
 	 * @param   BatchRegistry       $batches              Registered batch instances.
+	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
 	 * @param   StoreFactory        $stores               Name-bound store factory.
@@ -72,7 +74,7 @@ final readonly class Dispatcher {
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 */
-	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private BackendInterface $scheduler, private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private RandomizerInterface $randomizer, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects ) {}
+	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private WorkRegistry $work, private BackendInterface $scheduler, private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private RandomizerInterface $randomizer, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects ) {}
 
 	// endregion
 
@@ -156,7 +158,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	public function start_batch( string $batch_name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
-		$batch = 'batch' === $this->tasks->kind( $batch_name )
+		$batch = 'batch' === $this->work->kind( $batch_name )
 			? $this->batches->get( $batch_name )
 			: null;
 
@@ -256,7 +258,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $identity, string $run_id ): AbstractResult {
-		$kind  = $this->tasks->kind( $identity );
+		$kind  = $this->work->kind( $identity );
 		$task  = 'task' === $kind ? $this->tasks->get( $identity ) : null;
 		$batch = 'batch' === $kind ? $this->batches->get( $identity ) : null;
 
@@ -320,7 +322,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $identity, string $run_id ): AbstractResult {
-		$kind  = $this->tasks->kind( $identity );
+		$kind  = $this->work->kind( $identity );
 		$task  = 'task' === $kind ? $this->tasks->get( $identity ) : null;
 		$batch = 'batch' === $kind ? $this->batches->get( $identity ) : null;
 
@@ -461,7 +463,7 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string|SkippedTaskDispatch, EngineError|SchedulingError>
 	 */
 	private function dispatch_task( string $task_name, array $args, int $delay, ?string $dedup_key, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
-		$task = 'task' === $this->tasks->kind( $task_name )
+		$task = 'task' === $this->work->kind( $task_name )
 			? $this->tasks->get( $task_name )
 			: null;
 
@@ -614,7 +616,7 @@ final readonly class Dispatcher {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_run( $task_name, $run_id, $state, $run_store, $error, 1, 'execution', ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_task( $task_name, $run_id, $state, $run_store, $error, 1, 'execution', ApiErrorCode::ExecutionFailed );
 
 			return new Failure( $error );
 		}

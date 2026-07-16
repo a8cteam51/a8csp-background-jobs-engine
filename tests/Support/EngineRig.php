@@ -391,16 +391,16 @@ final class EngineRig {
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade( $this->backends );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
-		$action_deliveries    = new ActionDeliveries( $tasks, $batches, $scheduler, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $tasks, $batches, $scheduler );
+		$action_deliveries    = new ActionDeliveries( $tasks, $batches, $work, $scheduler, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$dispatcher           = new Dispatcher( $tasks, $batches, $work, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $batches, $work, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 		$tasks->register( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $tasks, $batches, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$inspection           = new Inspection( $schedules, $tasks, $batches, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedule_api, new Batches( $batches, $dispatcher ), $dispatcher, $inspection );
 
 		$scheduler->register_hooks();

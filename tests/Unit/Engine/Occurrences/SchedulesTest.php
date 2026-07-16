@@ -1054,7 +1054,7 @@ final class SchedulesTest extends TestCase {
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
+		$dispatcher           = new Dispatcher( $tasks, $batches, $work, $backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 
 		$delivery = new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $wpdb ), $clock, new RecordingRandomizer( 42 ) ), new CleanupIntents( $registry, new SchedulerFacade( array( $backend ) ), new OptionRows( $wpdb ), $clock, $logger ), $clock, $logger );
 

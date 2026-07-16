@@ -188,7 +188,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		$this->terminal_transitions->fail_run( $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
+		$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
 	}
 
 	/**

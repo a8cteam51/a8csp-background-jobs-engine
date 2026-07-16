@@ -523,7 +523,7 @@ final class CleanupIntentsTest extends TestCase {
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
+		$dispatcher           = new Dispatcher( $tasks, $batches, $work, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
 
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
 		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );

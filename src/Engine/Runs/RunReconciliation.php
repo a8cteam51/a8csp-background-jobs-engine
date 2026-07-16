@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedriveFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
@@ -47,11 +47,11 @@ final readonly class RunReconciliation {
 	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   TerminalEffects     $terminal_effects     Claimed terminal-effect executor.
-	 * @param   TaskRegistry        $tasks                Registered task instances.
 	 * @param   BatchRegistry       $batches              Registered batch instances.
+	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 */
-	public function __construct( private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private TaskRegistry $tasks, private BatchRegistry $batches, private BackendInterface $scheduler ) {}
+	public function __construct( private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private BatchRegistry $batches, private WorkRegistry $work, private BackendInterface $scheduler ) {}
 
 	// endregion
 
@@ -158,7 +158,7 @@ final readonly class RunReconciliation {
 				? $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness )
 				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
-			$kind      = $this->tasks->kind( $identity );
+			$kind      = $this->work->kind( $identity );
 			$batch     = 'batch' === $kind ? $this->batches->get( $identity ) : null;
 			$work_type = 'batch' === $kind ? 'Batch' : 'Task';
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
@@ -315,7 +315,7 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		$kind           = $this->tasks->kind( $identity );
+		$kind           = $this->work->kind( $identity );
 		$resolved_batch = null;
 		if ( 'batch' === $kind ) {
 			$work_type      = 'Batch';
@@ -368,7 +368,7 @@ final readonly class RunReconciliation {
 		if ( null !== $batch ) {
 			$this->terminal_transitions->fail_batch( $batch, $identity, $run_id, $state, $run_store, $error, 'crash-reclaim', ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
-			$this->terminal_transitions->fail_run( $identity, $run_id, $state, $run_store, $error, $attempts, 'crash-reclaim', ApiErrorCode::ExecutionFailed, null, $expected_raw );
+			$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts, 'crash-reclaim', ApiErrorCode::ExecutionFailed, null, $expected_raw );
 		}
 
 		return new Success( null );
@@ -419,7 +419,7 @@ final readonly class RunReconciliation {
 		}
 
 		$args = array( $identity, $run_id );
-		if ( 'run' === $pending->stage && 'batch' === $this->tasks->kind( $identity ) ) {
+		if ( 'run' === $pending->stage && 'batch' === $this->work->kind( $identity ) ) {
 			$chunk_args = $state->queue[0] ?? null;
 			if ( ! \is_array( $chunk_args ) ) {
 				throw new \LogicException( 'Pending batch run redrive requires a retained queue head.' );

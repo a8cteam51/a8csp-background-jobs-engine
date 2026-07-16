@@ -152,9 +152,9 @@ final class RunReconciliationTest extends TestCase {
 		$this->terminal_effects     = new TerminalEffects( $guard, $this->stores, $this->logger );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
 		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
-		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
-		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
-		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->tasks, $this->batches, $this->backend );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $work, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
+		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $work, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
+		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->batches, $work, $this->backend );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}

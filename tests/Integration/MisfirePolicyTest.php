@@ -286,14 +286,14 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			)
 		);
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-		$action_deliveries    = new ActionDeliveries( $tasks, $batches, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $tasks, $batches, $scheduler );
+		$action_deliveries    = new ActionDeliveries( $tasks, $batches, $work, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$dispatcher           = new Dispatcher( $tasks, $batches, $work, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $batches, $work, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $tasks, $batches, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $tasks, $batches, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedules, new Batches( $batches, $dispatcher ), $dispatcher, $inspection );
 
 		\remove_all_actions( 'a8csp_background_tasks/start' );

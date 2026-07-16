@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use Psr\Clock\ClockInterface;
@@ -86,6 +87,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @param   TaskRegistry        $tasks                Registered task instances.
 	 * @param   BatchRegistry       $batches              Registered batch instances.
+	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   StoreFactory        $stores               Name-bound store factory.
 	 * @param   LoggerInterface     $logger               Log event sink.
@@ -95,7 +97,7 @@ final readonly class ActionDeliveries {
 	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 * @param   FailureLifecycle    $failure_lifecycle    Retry adjudication coordinator.
 	 */
-	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private BackendInterface $scheduler, private StoreFactory $stores, private LoggerInterface $logger, private ClockInterface $clock, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private FailureLifecycle $failure_lifecycle ) {}
+	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private WorkRegistry $work, private BackendInterface $scheduler, private StoreFactory $stores, private LoggerInterface $logger, private ClockInterface $clock, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private FailureLifecycle $failure_lifecycle ) {}
 
 	// endregion
 
@@ -114,7 +116,7 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$registered_batch = 'batch' === $this->tasks->kind( $batch_name )
+		$registered_batch = 'batch' === $this->work->kind( $batch_name )
 			? $this->batches->get( $batch_name )
 			: null;
 		$liveness_at      = null !== $registered_batch
@@ -262,7 +264,7 @@ final readonly class ActionDeliveries {
 		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
 		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
 		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
-		$kind         = $this->tasks->kind( $identity );
+		$kind         = $this->work->kind( $identity );
 		$task         = 'task' === $kind ? $this->tasks->get( $identity ) : null;
 		$batch        = 'batch' === $kind ? $this->batches->get( $identity ) : null;
 		$liveness_at  = null;
@@ -442,7 +444,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$this->terminal_transitions->complete_run( $task_name, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_task( $task_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -578,7 +580,7 @@ final readonly class ActionDeliveries {
 	 * @return  BatchInterface|null
 	 */
 	private function batch_for_action( string $batch_name, string $run_id, string $stage ): ?BatchInterface {
-		$batch = 'batch' === $this->tasks->kind( $batch_name )
+		$batch = 'batch' === $this->work->kind( $batch_name )
 			? $this->batches->get( $batch_name )
 			: null;
 

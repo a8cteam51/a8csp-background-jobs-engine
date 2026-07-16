@@ -154,6 +154,8 @@ final readonly class TerminalTransitions {
 	/**
 	 * Marks a successful task before completing its durable terminal effects.
 	 *
+	 * @internal Engine product service.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -164,7 +166,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	public function complete_run( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
+	public function complete_task( string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 
 		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task' );
@@ -289,6 +291,8 @@ final readonly class TerminalTransitions {
 	/**
 	 * Persists failure detail before firing hooks and releasing active state.
 	 *
+	 * @internal Engine product service.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -307,7 +311,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	public function fail_run( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
+	public function fail_task( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts_used )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
 		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task', null, $expected_raw );

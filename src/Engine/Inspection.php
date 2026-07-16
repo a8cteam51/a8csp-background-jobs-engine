@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
@@ -88,6 +89,7 @@ final readonly class Inspection {
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
 	 * @param   TaskRegistry     $tasks        Request-local task registrations.
 	 * @param   BatchRegistry    $batches      Request-local batch registrations.
+	 * @param   WorkRegistry     $work         Shared task-and-batch identity registry.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
 	 * @param   StoreFactory     $stores       Name-bound run stores.
@@ -99,6 +101,7 @@ final readonly class Inspection {
 		private ScheduleRegistry $schedules,
 		private TaskRegistry $tasks,
 		private BatchRegistry $batches,
+		private WorkRegistry $work,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
 		private StoreFactory $stores,
@@ -356,7 +359,7 @@ final readonly class Inspection {
 	 * @return  'batch'|'task'|'unknown'
 	 */
 	private function work_kind( string $identity ): string {
-		$kind = $this->tasks->kind( $identity );
+		$kind = $this->work->kind( $identity );
 		if ( 'task' === $kind ) {
 			return null === $this->tasks->get( $identity ) ? 'unknown' : 'task';
 		}

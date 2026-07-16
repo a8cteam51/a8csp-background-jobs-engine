@@ -158,7 +158,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );
+		$this->dispatcher = new Dispatcher( $this->registry, $batches, $work, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );
 	}
 
 	// endregion.
@@ -932,7 +932,7 @@ final class TerminalTransitionsTest extends TestCase {
 			return;
 		}
 
-		$this->terminal_transitions->complete_run( self::IDENTITY, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_task( self::IDENTITY, $run_id, $state, $run_store );
 	}
 
 	/**

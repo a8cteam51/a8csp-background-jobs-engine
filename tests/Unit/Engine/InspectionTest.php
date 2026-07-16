@@ -98,7 +98,7 @@ final class InspectionTest extends TestCase {
 		$scheduler        = new SchedulerFacade( array( $this->backend ) );
 		$guard            = new OverlapGuard( $this->clock, new RecordingLogger(), new OptionRows( $this->wpdb ) );
 		$lock_windows     = new LockWindows( $this->clock );
-		$this->inspection = new Inspection( $this->schedules, $this->tasks, $this->batches, $scheduler, $guard, $this->stores, $rows, $lock_windows, $this->clock );
+		$this->inspection = new Inspection( $this->schedules, $this->tasks, $this->batches, $work, $scheduler, $guard, $this->stores, $rows, $lock_windows, $this->clock );
 	}
 
 	/**
