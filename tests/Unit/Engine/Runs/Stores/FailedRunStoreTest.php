@@ -369,6 +369,29 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Purge stops without a comparison-loss retry when the database delete fails.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A failed exact DELETE must not enter the generation-reread loop used only for competing writers; the public store result cannot otherwise distinguish those storage outcomes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_purge_stops_after_a_database_delete_failure(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'delete', false );
+
+		self::assertNull( $this->store()->purge() );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'DELETE ' ) );
+	}
+
+	/**
 	 * Serialized objects contain no retryable entries and cannot run wakeup code.
 	 *
 	 * @load-bearing security

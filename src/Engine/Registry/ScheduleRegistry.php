@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 
@@ -194,7 +195,7 @@ final class ScheduleRegistry {
 			}
 
 			if ( array() === $next ) {
-				if ( $this->rows->delete_if_value_matches( self::OPTION_NAME, $expected_raw ) ) {
+				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( self::OPTION_NAME, $expected_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return true;

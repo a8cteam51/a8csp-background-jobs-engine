@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -157,10 +158,13 @@ final readonly class ResetCommand {
 
 		$deleted = 0;
 		foreach ( $persisted_rows as $option_name => $raw ) {
-			if ( ! $option_rows->delete_if_value_matches( $option_name, $raw ) ) {
-				$message = $option_rows->last_delete_failed()
-					? \sprintf( 'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.', $deleted )
-					: \sprintf( 'Engine option row "%1$s" changed during reset after %2$d deletions; stop background writes and retry.', $option_name, $deleted );
+			$outcome = $option_rows->delete_if_value_matches( $option_name, $raw );
+			$message = match ( $outcome ) {
+				RowDeleteOutcome::Deleted       => null,
+				RowDeleteOutcome::ValueMismatch => \sprintf( 'Engine option row "%1$s" changed during reset after %2$d deletions; stop background writes and retry.', $option_name, $deleted ),
+				RowDeleteOutcome::DeleteFailed  => \sprintf( 'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.', $deleted ),
+			};
+			if ( null !== $message ) {
 				$output->error( $message );
 				return;
 			}

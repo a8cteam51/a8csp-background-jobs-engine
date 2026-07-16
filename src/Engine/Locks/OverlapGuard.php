@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -401,7 +402,7 @@ final readonly class OverlapGuard {
 	 * @return  bool Whether the inspected row was deleted.
 	 */
 	private function delete_persisted_lock( string $identity, string $args_hash, string $expected_raw ): bool {
-		return $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
 	}
 
 	/**
@@ -670,7 +671,7 @@ final readonly class OverlapGuard {
 	 * @return  LockClaimOutcome
 	 */
 	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $identity, string $args_hash, string $run_id ): LockClaimOutcome {
-		if ( ! $this->rows->delete_if_value_matches( $key, $raw ) || ! $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
+		if ( RowDeleteOutcome::Deleted !== $this->rows->delete_if_value_matches( $key, $raw ) || ! $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
 			return LockClaimOutcome::Held;
 		}
 

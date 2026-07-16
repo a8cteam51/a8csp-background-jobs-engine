@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
@@ -276,12 +277,13 @@ final readonly class FailedRunStore {
 		}
 
 		for ( $attempt = 0; $attempt < self::PURGE_ATTEMPTS; ++$attempt ) {
-			$count = \count( self::entries_from_option( RawOptionDecoder::decode( $raw ) ) );
-			if ( $this->rows->delete_if_value_matches( $key, $raw ) ) {
+			$count   = \count( self::entries_from_option( RawOptionDecoder::decode( $raw ) ) );
+			$outcome = $this->rows->delete_if_value_matches( $key, $raw );
+			if ( RowDeleteOutcome::Deleted === $outcome ) {
 				return $count;
 			}
 
-			if ( $this->rows->last_delete_failed() ) {
+			if ( RowDeleteOutcome::DeleteFailed === $outcome ) {
 				return null;
 			}
 

@@ -4,10 +4,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Storage;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -15,6 +17,7 @@ use PHPUnit\Framework\TestCase;
  * invalidation, and site binding.
  */
 #[CoversClass( OptionRows::class )]
+#[UsesClass( RowDeleteOutcome::class )]
 final class OptionRowsTest extends TestCase {
 	private const KEY = 'a8csp_bgte_run_email-digest_run-123';
 
@@ -36,6 +39,12 @@ final class OptionRowsTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_blog_id']     = 1;
 		$GLOBALS['a8csp_bgte_test_cache']       = array();
 		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
+	}
+
+	/** Row-delete outcomes expose only the three lowercase-backed storage states. */
+	public function test_row_delete_outcome_pins_cases_and_backing_values(): void {
+		self::assertSame( array( RowDeleteOutcome::Deleted, RowDeleteOutcome::ValueMismatch, RowDeleteOutcome::DeleteFailed ), RowDeleteOutcome::cases() );
+		self::assertSame( array( 'deleted', 'value_mismatch', 'delete_failed' ), \array_column( RowDeleteOutcome::cases(), 'value' ) );
 	}
 
 	/** An UPDATE-only replacement cannot recreate a row deleted before the CAS. */
@@ -60,8 +69,8 @@ final class OptionRowsTest extends TestCase {
 		self::assertFalse( $found->is_failure() );
 		self::assertSame( 'Run-State', $found->value );
 		self::assertTrue( $rows->compare_and_swap( self::KEY, 'Run-State', 'replacement-raw' ) );
-		self::assertFalse( $rows->delete_if_value_matches( self::KEY, 'Run-State' ) );
-		self::assertTrue( $rows->delete_if_value_matches( self::KEY, 'replacement-raw' ) );
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $rows->delete_if_value_matches( self::KEY, 'Run-State' ) );
+		self::assertSame( RowDeleteOutcome::Deleted, $rows->delete_if_value_matches( self::KEY, 'replacement-raw' ) );
 		$missing = $rows->read( self::KEY );
 		self::assertFalse( $missing->is_failure() );
 		self::assertNull( $missing->value );
@@ -69,11 +78,22 @@ final class OptionRowsTest extends TestCase {
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[2] );
 	}
 
-	/** Already-absent exact deletion is a loss rather than idempotent success. */
-	public function test_delete_if_value_matches_reports_loss_when_the_row_is_already_absent(): void {
+	/** Already-absent exact deletion is a value mismatch rather than idempotent success. */
+	public function test_delete_if_value_matches_reports_value_mismatch_when_the_row_is_already_absent(): void {
 		$rows = new OptionRows( new WpdbLockSpy() );
 
-		self::assertFalse( $rows->delete_if_value_matches( self::KEY, 'expected-raw' ) );
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $rows->delete_if_value_matches( self::KEY, 'expected-raw' ) );
+	}
+
+	/** A database delete error is distinct from a zero-row value mismatch. */
+	public function test_delete_if_value_matches_reports_database_failure(): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->put( self::KEY, 'expected-raw' );
+		$wpdb->script_result( 'delete', false );
+		$rows = new OptionRows( $wpdb );
+
+		self::assertSame( RowDeleteOutcome::DeleteFailed, $rows->delete_if_value_matches( self::KEY, 'expected-raw' ) );
+		self::assertSame( 'expected-raw', $wpdb->rows[ self::KEY ] );
 	}
 
 	/** Literal wildcard characters are escaped and imprecise database matches are filtered. */
@@ -288,7 +308,7 @@ final class OptionRowsTest extends TestCase {
 		$rows = new OptionRows( $wpdb );
 
 		self::assertFalse( $rows->compare_and_swap( self::KEY, $expected_raw, self::raw( self::row( 'run-owner', 100, 200 ) ) ) );
-		self::assertFalse( $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 		self::assertSame( $winner_raw, $wpdb->rows[ self::KEY ] );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[1] );
@@ -321,9 +341,9 @@ final class OptionRowsTest extends TestCase {
 		$wpdb->put( self::KEY, $raw );
 		$rows = new OptionRows( $wpdb );
 
-		self::assertFalse( $rows->delete_if_value_matches( self::KEY, self::raw( self::row( 'run-loser', 50, 50 ) ) ) );
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $rows->delete_if_value_matches( self::KEY, self::raw( self::row( 'run-loser', 50, 50 ) ) ) );
 		self::assertSame( $raw, $wpdb->rows[ self::KEY ] );
-		self::assertTrue( $rows->delete_if_value_matches( self::KEY, $raw ) );
+		self::assertSame( RowDeleteOutcome::Deleted, $rows->delete_if_value_matches( self::KEY, $raw ) );
 		self::assertArrayNotHasKey( self::KEY, $wpdb->rows );
 		self::assertStringContainsString( 'WHERE `option_name` = ', $wpdb->recorded_queries[0] );
 		self::assertStringContainsString( 'AND BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
@@ -349,7 +369,7 @@ final class OptionRowsTest extends TestCase {
 		self::assert_cache_purge();
 
 		self::prime_stale_caches();
-		$rows->delete_if_value_matches( self::KEY, $wpdb->rows[ self::KEY ] );
+		self::assertSame( RowDeleteOutcome::Deleted, $rows->delete_if_value_matches( self::KEY, $wpdb->rows[ self::KEY ] ) );
 		self::assert_cache_purge();
 	}
 
@@ -370,7 +390,7 @@ final class OptionRowsTest extends TestCase {
 		self::assert_cache_purge();
 
 		self::prime_stale_caches();
-		self::assertFalse( $rows->delete_if_value_matches( self::KEY, 'stale-raw' ) );
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $rows->delete_if_value_matches( self::KEY, 'stale-raw' ) );
 		self::assert_cache_purge();
 	}
 
@@ -412,7 +432,7 @@ final class OptionRowsTest extends TestCase {
 		yield 'insert_if_absent' => array( static fn ( OptionRows $rows ): bool => $rows->insert_if_absent( self::KEY, $row_raw ) );
 		yield 'read' => array( static fn ( OptionRows $rows ): AbstractResult => $rows->read( self::KEY ) );
 		yield 'compare_and_swap' => array( static fn ( OptionRows $rows ): bool => $rows->compare_and_swap( self::KEY, $expected_raw, $row_raw ) );
-		yield 'delete_if_value_matches' => array( static fn ( OptionRows $rows ): bool => $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
+		yield 'delete_if_value_matches' => array( static fn ( OptionRows $rows ): RowDeleteOutcome => $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 	}
 
 	/**

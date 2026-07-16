@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -205,7 +206,7 @@ final readonly class CleanupIntents {
 	 * @return  bool
 	 */
 	private function clear_intent( string $registration_key, string $expected_raw ): bool {
-		if ( $this->option_rows->delete_if_value_matches( self::intent_option_name( $registration_key ), $expected_raw ) ) {
+		if ( RowDeleteOutcome::Deleted === $this->option_rows->delete_if_value_matches( self::intent_option_name( $registration_key ), $expected_raw ) ) {
 			return true;
 		}
 

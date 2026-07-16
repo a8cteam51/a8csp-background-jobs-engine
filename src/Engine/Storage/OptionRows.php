@@ -273,28 +273,20 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  bool
+	 * @return  RowDeleteOutcome Exact delete classification.
 	 */
-	public function delete_if_value_matches( string $key, string $expected_raw ): bool {
+	public function delete_if_value_matches( string $key, string $expected_raw ): RowDeleteOutcome {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
 		$result = $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s', $wpdb->options, $key, $expected_raw ) ?? '' );
 		$this->purge_cache( $key );
 
-		return 1 === $result;
-	}
-
-	/**
-	 * Returns whether the immediately preceding authoritative delete failed at the database boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function last_delete_failed(): bool {
-		return '' !== $this->wpdb->last_error;
+		return match ( $result ) {
+			1       => RowDeleteOutcome::Deleted,
+			0       => RowDeleteOutcome::ValueMismatch,
+			default => RowDeleteOutcome::DeleteFailed,
+		};
 	}
 
 	// endregion

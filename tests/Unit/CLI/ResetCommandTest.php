@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
@@ -155,6 +156,59 @@ final class ResetCommandTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertStringContainsString( 'backend', \strtolower( $result->stderr ) );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * A row changed after discovery aborts the reset with the concurrency-specific correction.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A public rival schedule sync replaces the selected registry generation at the exact delete boundary; the registered command is the only public seam exposing the reset correction.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_reset_reports_a_row_changed_during_reset(): void {
+		$this->seed_engine_state();
+		$before = $this->rig->wpdb()->rows;
+		$this->rig->wpdb()->before_next(
+			'delete',
+			function (): void {
+				$consumer = $this->rig->consumer( 'reset-rival' );
+				$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
+				self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'hourly', Recurrence::every( 3_600 ), 'refresh' ) ) ) );
+			}
+		);
+
+		$result = CliHarness::run( 'reset', array(), array( 'yes' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( 'Error: Engine option row "' . ScheduleRegistry::OPTION_NAME . '" changed during reset after 0 deletions; stop background writes and retry.' . "\n", $result->stderr );
+		self::assertNotSame( $before[ ScheduleRegistry::OPTION_NAME ] ?? null, $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+	}
+
+	/**
+	 * A database delete failure aborts the reset with the storage-specific correction.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A scripted authoritative delete failure proves the destructive command stops at the database boundary; no public operation can force wpdb to reject one exact DELETE.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_reset_reports_a_database_delete_failure(): void {
+		$this->seed_engine_state();
+		$before = $this->rig->wpdb()->rows;
+		$this->rig->wpdb()->script_result( 'delete', false );
+
+		$result = CliHarness::run( 'reset', array(), array( 'yes' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( "Error: The database delete for engine option rows failed after 0 deletions; repair the database error and retry the reset.\n", $result->stderr );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 
