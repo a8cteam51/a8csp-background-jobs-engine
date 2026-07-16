@@ -33,7 +33,7 @@ final readonly class CleanupIntents {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_cleanup_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_cleanup_intent_';
 
 	// endregion
 

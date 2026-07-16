@@ -216,7 +216,7 @@ final class InspectionTest extends TestCase {
 			)
 		);
 		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
-		$this->rig->wpdb()->put( 'a8csp_bgte_lock_owner:invalid-task_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
+		$this->rig->wpdb()->put( 'a8csp_bgte_overlap_lock_owner:invalid-task_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
 			'select',

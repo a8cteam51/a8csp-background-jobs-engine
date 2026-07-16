@@ -163,7 +163,7 @@ final class EngineRigTest extends TestCase {
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
 
 		[ $failed_name, $failed_raw ] = $fixtures->failed( self::NOW, self::ARGS, $failure, new EngineError( $failure->summary ) );
-		self::assertSame( 'a8csp_bgte_failed_' . self::IDENTITY, $failed_name );
+		self::assertSame( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $failed_name );
 		$failed_entry = self::decoded( $failed_raw )[0] ?? null;
 		self::assertIsArray( $failed_entry );
 		self::assertSame( self::RUN_ID, $failed_entry['run_id'] ?? null );
@@ -183,7 +183,7 @@ final class EngineRigTest extends TestCase {
 				),
 			)
 		);
-		self::assertSame( 'a8csp_bgte_history_' . self::IDENTITY, $history_name );
+		self::assertSame( 'a8csp_bgte_run_history_' . self::IDENTITY, $history_name );
 		$terminal = self::decoded( $history_raw )['terminal'] ?? null;
 		self::assertIsArray( $terminal );
 		$terminal_entry = $terminal[0] ?? null;
@@ -198,7 +198,7 @@ final class EngineRigTest extends TestCase {
 				),
 			)
 		);
-		self::assertSame( 'a8csp_bgte_latest_' . self::IDENTITY, $latest_name );
+		self::assertSame( 'a8csp_bgte_latest_run_' . self::IDENTITY, $latest_name );
 		self::assertSame( self::RUN_ID, self::decoded( $latest_raw )['all'] ?? null );
 	}
 

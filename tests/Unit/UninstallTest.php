@@ -167,12 +167,12 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_schedule_registrations_consumer-plugin',
 		'a8csp_bgte_schedule_registrations_a8csp-bgte',
 		'a8csp_bgte_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
-		'a8csp_bgte_latest_consumer-plugin:email-digest',
-		'a8csp_bgte_history_consumer-plugin:email-digest',
-		'a8csp_bgte_lock_consumer-plugin:email-digest_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_cleanup_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_failed_consumer-plugin:email-digest',
+		'a8csp_bgte_latest_run_consumer-plugin:email-digest',
+		'a8csp_bgte_run_history_consumer-plugin:email-digest',
+		'a8csp_bgte_overlap_lock_consumer-plugin:email-digest_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgte_occurrence_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgte_cleanup_intent_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgte_failed_runs_consumer-plugin:email-digest',
 	);
 	private const LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start_batch',

@@ -162,7 +162,7 @@ final class TerminalEffectsTest extends TestCase {
 		self::assertSame( RunStatus::Failed, $remaining->status );
 		self::assertSame( array( 'hooks', 'history' ), $remaining->effects );
 		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . self::IDENTITY,
@@ -407,7 +407,7 @@ final class TerminalEffectsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgte_run_history_' . self::IDENTITY )
 		);
 	}
 
@@ -477,7 +477,7 @@ final class TerminalEffectsTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
+		return 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**

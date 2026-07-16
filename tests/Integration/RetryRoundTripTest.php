@@ -57,8 +57,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
-		$this->expect_option( 'a8csp_bgte_failed_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY );
 
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 1, multiplier: 1, max_delay: 1 );
 		/** @var list<array{arity: int, policy: RetryPolicy}> $retry_policy_calls */
@@ -178,7 +178,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( 1, $run_state['failed_attempts'] ?? null );
 		self::assertSame( 2, $run_state['action_seq'] ?? null );
 		self::assertSame( $scheduled_at, $run_state['heartbeat_at'] ?? null );
-		$lock = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );
+		$lock = \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $failed_run_id, $lock['run_id'] ?? null );
 		self::assertSame( $scheduled_at, $lock['heartbeat_at'] ?? null );
@@ -236,9 +236,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, false ), 'Terminal retry exhaustion must delete the active run option' );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal retry exhaustion must release the overlap lock' );
+		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal retry exhaustion must release the overlap lock' );
 
-		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
+		$failed_entries = \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, null );
 		self::assertIsArray( $failed_entries );
 		self::assertCount( 1, $failed_entries, 'Retry exhaustion must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;
@@ -264,7 +264,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$successful_run_id = $manual_result->value;
 		self::assertNotSame( $failed_run_id, $successful_run_id, 'Manual retry must allocate a fresh run identifier' );
 		self::assertSame( array( $args, $args ), $task->calls, 'Manual retry must not invoke the task inline' );
-		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
+		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, null );
 		self::assertIsArray( $remaining_failed_entries );
 		self::assertSame( array(), $remaining_failed_entries, 'Manual retry must remove the consumed failed entry after fresh enqueue succeeds' );
 
@@ -294,8 +294,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			'The complete retry round-trip must leave exactly its three Action Scheduler rows'
 		);
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $successful_run_id, false ), 'The successful manual retry must delete its active run option' );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'The successful manual retry must release its overlap lock' );
-		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, null );
+		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'The successful manual retry must release its overlap lock' );
+		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, null );
 		self::assertIsArray( $remaining_failed_entries );
 		self::assertSame( array(), $remaining_failed_entries );
 		self::assertSame(
@@ -303,7 +303,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 				'all'     => $successful_run_id,
 				'by_hash' => array( $args_hash => $successful_run_id ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_latest_run_' . self::IDENTITY, null ),
 			'Manual retry success must retain the fresh run as the latest pointer'
 		);
 		self::assertSame(
@@ -335,14 +335,14 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_run_history_' . self::IDENTITY, null ),
 			'History must retain the exhausted run and successful manual retry in lifecycle order'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_failed_' . self::IDENTITY,
-				'a8csp_bgte_history_' . self::IDENTITY,
-				'a8csp_bgte_latest_' . self::IDENTITY,
+				'a8csp_bgte_failed_runs_' . self::IDENTITY,
+				'a8csp_bgte_latest_run_' . self::IDENTITY,
+				'a8csp_bgte_run_history_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Retry round-trip state must retain only the empty failed store, history ring, and latest pointer'

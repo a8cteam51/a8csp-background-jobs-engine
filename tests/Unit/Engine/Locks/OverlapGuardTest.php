@@ -44,7 +44,7 @@ final class LockRowWakeupProbe {
 #[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
 	private const ARGS_HASH = 'args-123';
-	private const KEY       = 'a8csp_bgte_lock_email-digest_args-123';
+	private const KEY       = 'a8csp_bgte_overlap_lock_email-digest_args-123';
 	private const NAME      = 'email-digest';
 
 	private WpdbLockSpy $wpdb;
@@ -85,21 +85,22 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'owned', 'lost', 'generation_mismatch', 'indeterminate' ), \array_column( HeartbeatOutcome::cases(), 'value' ) );
 	}
 
-	/** Lock option parsing retains the exact legacy prefix, identity, and lowercase hash grammar. */
-	public function test_option_name_parser_matches_the_previous_maintenance_regex(): void {
+	/** Lock option parsing derives the exact prefix and accepts the canonical identity and lowercase hash grammar. */
+	public function test_option_name_parser_uses_the_canonical_lock_key_grammar(): void {
 		$hash = \str_repeat( 'a', 64 );
 
+		self::assertSame( 'a8csp_bgte_overlap_lock_', OverlapGuard::OPTION_PREFIX );
 		self::assertSame(
 			array(
 				'name'      => 'owner:under_score',
 				'args_hash' => $hash,
 			),
-			OverlapGuard::identity_from_option_name( 'a8csp_bgte_lock_owner:under_score_' . $hash )
+			OverlapGuard::identity_from_option_name( 'a8csp_bgte_overlap_lock_owner:under_score_' . $hash )
 		);
 		self::assertNull( OverlapGuard::identity_from_option_name( 'other_lock_owner:under_score_' . $hash ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_lock_invalid-owner_' . $hash ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgte_lock_owner:sync_{$hash}\n" ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_overlap_lock_invalid-owner_' . $hash ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_overlap_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgte_overlap_lock_owner:sync_{$hash}\n" ) );
 	}
 
 	/** An absent lock is claimed with the exact schema and non-autoload policy. */

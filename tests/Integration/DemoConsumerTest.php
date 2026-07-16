@@ -116,8 +116,8 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		$scheduled_args   = array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT );
 		$scheduled_run_id = null;
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::TASK_IDENTITY );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::TASK_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BATCH_IDENTITY );
 
 		$task_started_named     = array();
 		$task_started_generic   = array();

@@ -257,7 +257,7 @@ final class ApiTest extends TestCase {
 			throw new \LogicException( 'The storage failure did not retain its public API error.' );
 		}
 		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $result->error->message );
-		self::assertSame( array( 'option_name' => 'a8csp_bgte_failed_consumer-plugin:sync' ), $result->error->context );
+		self::assertSame( array( 'option_name' => 'a8csp_bgte_failed_runs_consumer-plugin:sync' ), $result->error->context );
 		self::assertStringNotContainsString( 'consumer-controlled', $result->error->message );
 	}
 

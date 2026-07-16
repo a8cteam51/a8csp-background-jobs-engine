@@ -60,7 +60,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->batches()->register( $batch );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
 		$continue_delay_calls = array();
 		\add_filter(
 			'a8csp_background_tasks/continue_delay',

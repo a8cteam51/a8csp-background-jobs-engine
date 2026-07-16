@@ -54,8 +54,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
-		$this->expect_option( 'a8csp_bgte_failed_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY );
 
 		$named_retry_scheduled   = array();
 		$generic_retry_scheduled = array();

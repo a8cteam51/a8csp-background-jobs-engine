@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -101,9 +102,12 @@ final class WorkIdentityTest extends TestCase {
 		self::assertSame( 97, \strlen( $owner . ':' . $task_name ) );
 		self::assertSame( 97, \strlen( $owner . ':' . $schedule_name ) );
 		self::assertNotEmpty( $this->rig->wpdb()->rows );
+		$longest = '';
 		foreach ( \array_keys( $this->rig->wpdb()->rows ) as $option_name ) {
 			self::assertLessThanOrEqual( 191, \strlen( $option_name ), $option_name . ' exceeds option_name' );
+			$longest = \strlen( $option_name ) > \strlen( $longest ) ? $option_name : $longest;
 		}
+		self::assertStringStartsWith( OverlapGuard::OPTION_PREFIX, $longest );
 	}
 
 	// endregion.

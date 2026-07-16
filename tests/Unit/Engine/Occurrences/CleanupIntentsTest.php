@@ -437,7 +437,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the valid intent pending.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
-		$poisoned_name = 'a8csp_bgte_cleanup_' . \str_repeat( '0', 64 );
+		$poisoned_name = 'a8csp_bgte_cleanup_intent_' . \str_repeat( '0', 64 );
 		$this->wpdb->put( $poisoned_name, 'O:8:"stdClass":0:{}' );
 
 		$this->cleanup_intents->converge_pending_intents();

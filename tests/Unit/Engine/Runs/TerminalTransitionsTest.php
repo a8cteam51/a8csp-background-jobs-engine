@@ -174,7 +174,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->logger->records );
 		self::assertSame(
 			array(
@@ -342,7 +342,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$state            = $before_snapshot['state'];
 		$expected_run_raw = $before_snapshot['raw'];
 		$expected_lock    = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		$expected_history = $this->option( 'a8csp_bgte_history_' . self::IDENTITY );
+		$expected_history = $this->option( 'a8csp_bgte_run_history_' . self::IDENTITY );
 		self::assertIsString( $expected_lock );
 
 		$this->logger->records                       = array();
@@ -371,7 +371,7 @@ final class TerminalTransitionsTest extends TestCase {
 		self::assertSame( RunStatus::Running, $after_state->status );
 		self::assertSame( self::NOW, $after_state->heartbeat_at );
 		self::assertSame( $expected_lock, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
-		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_history_' . self::IDENTITY ) );
+		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_run_history_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		foreach ( $this->wpdb->recorded_queries as $query ) {
@@ -476,7 +476,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( 0, $this->recorded_run_state( 'completed' )['failed_attempts'] );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
 	}
 
 	/**
@@ -502,7 +502,7 @@ final class TerminalTransitionsTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
@@ -543,7 +543,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->task->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
+		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
@@ -612,7 +612,7 @@ final class TerminalTransitionsTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_' . self::IDENTITY )
+			$this->option( 'a8csp_bgte_latest_run_' . self::IDENTITY )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
@@ -961,7 +961,7 @@ final class TerminalTransitionsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgte_run_history_' . self::IDENTITY )
 		);
 	}
 
@@ -1073,11 +1073,11 @@ final class TerminalTransitionsTest extends TestCase {
 
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_failed_runs_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'failed-store';
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_run_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'history';
 					continue;
 				}
@@ -1119,9 +1119,9 @@ final class TerminalTransitionsTest extends TestCase {
 				$value = $args[1] ?? null;
 				self::assertIsArray( $value );
 				$labels[] = self::run_state_label( $value );
-			} elseif ( 'a8csp_bgte_failed_' . self::IDENTITY === $option_name ) {
+			} elseif ( 'a8csp_bgte_failed_runs_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::IDENTITY === $option_name ) {
+			} elseif ( 'a8csp_bgte_run_history_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'history';
 			}
 		}
@@ -1156,7 +1156,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
+		return 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**

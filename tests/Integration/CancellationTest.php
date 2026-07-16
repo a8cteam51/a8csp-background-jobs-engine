@@ -74,7 +74,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::EXECUTING_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::EXECUTING_IDENTITY );
 
 		$enqueued = $consumer->tasks()->enqueue( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
@@ -144,7 +144,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BACKOFF_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BACKOFF_IDENTITY );
 
 		$enqueued = $consumer->tasks()->enqueue( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
@@ -214,7 +214,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->batches()->register( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BATCH_IDENTITY );
 
 		$started = $consumer->batches()->start( self::BATCH_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
@@ -290,7 +290,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SIBLING_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SIBLING_IDENTITY );
 
 		$enqueued_a = $consumer->tasks()->enqueue( self::SIBLING_NAME, $args_a );
 		$enqueued_b = $consumer->tasks()->enqueue( self::SIBLING_NAME, $args_b );
@@ -327,7 +327,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		self::assertSame( array( $args_b ), $task->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
-		$history = \get_option( 'a8csp_bgte_history_' . self::SIBLING_IDENTITY, null );
+		$history = \get_option( 'a8csp_bgte_run_history_' . self::SIBLING_IDENTITY, null );
 		self::assertIsArray( $history );
 		self::assertSame( array( $run_a, $run_b ), $history['started'] ?? null );
 		self::assertSame(
@@ -351,7 +351,7 @@ final class CancellationTest extends IntegrationTestCase {
 					self::args_hash( $args_b ) => $run_b,
 				),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::SIBLING_IDENTITY, null )
+			\get_option( 'a8csp_bgte_latest_run_' . self::SIBLING_IDENTITY, null )
 		);
 		self::assert_run_storage_cleared( self::SIBLING_IDENTITY, $run_a, $args_a );
 		self::assert_run_storage_cleared( self::SIBLING_IDENTITY, $run_b, $args_b );
@@ -380,7 +380,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::DEGRADED_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::DEGRADED_IDENTITY );
 
 		$raw_deliveries = array();
 		\add_action(
@@ -437,8 +437,8 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assert_run_storage_cleared( self::DEGRADED_IDENTITY, $run_id, $args );
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::DEGRADED_IDENTITY,
-				'a8csp_bgte_latest_' . self::DEGRADED_IDENTITY,
+				'a8csp_bgte_latest_run_' . self::DEGRADED_IDENTITY,
+				'a8csp_bgte_run_history_' . self::DEGRADED_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Cancelled degraded state must retain only history and the latest pointer'
@@ -499,7 +499,7 @@ final class CancellationTest extends IntegrationTestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private static function terminal_entries( string $name ): array {
-		$history = \get_option( 'a8csp_bgte_history_' . $name, null );
+		$history = \get_option( 'a8csp_bgte_run_history_' . $name, null );
 		self::assertIsArray( $history );
 		$entries = $history['terminal'] ?? null;
 		self::assertIsArray( $entries );
@@ -521,8 +521,8 @@ final class CancellationTest extends IntegrationTestCase {
 	 */
 	private static function assert_run_storage_cleared( string $name, string $run_id, array $args ): void {
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . $name . '_' . $run_id, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . $name . '_' . self::args_hash( $args ), false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . $name, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . $name . '_' . self::args_hash( $args ), false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_failed_runs_' . $name, false ) );
 	}
 
 	// endregion.

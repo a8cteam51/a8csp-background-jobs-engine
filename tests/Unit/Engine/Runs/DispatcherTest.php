@@ -569,7 +569,7 @@ final class DispatcherTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( 'a8csp_bgte_failed_' . self::IDENTITY, $raw );
+		$this->rig->wpdb()->put( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $raw );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
 		$result = $this->consumer->runs()->retry_failed( self::NAME, 'failed-run' );

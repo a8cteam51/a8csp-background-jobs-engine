@@ -15,8 +15,8 @@
 		}
 
 		$failed_option_names = array(
-			'a8csp_bgte_failed_integration-cli-command:integration-cli-command-list-store',
-			'a8csp_bgte_failed_integration-cli-inspection-owner:integration-cli-inspection-task',
+			'a8csp_bgte_failed_runs_integration-cli-command:integration-cli-command-list-store',
+			'a8csp_bgte_failed_runs_integration-cli-inspection-owner:integration-cli-inspection-task',
 			'a8csp_bgte_schedule_registrations_integration-cli-inspection-owner',
 		);
 		$wpdb->suppress_errors();

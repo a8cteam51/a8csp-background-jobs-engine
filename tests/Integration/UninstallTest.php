@@ -38,10 +38,10 @@ final class UninstallTest extends IntegrationTestCase {
 	 */
 	private const DYNAMIC_OPTIONS = array(
 		'a8csp_bgte_run_uninstall-test_run-1',
-		'a8csp_bgte_latest_uninstall-test',
-		'a8csp_bgte_history_uninstall-test',
-		'a8csp_bgte_lock_uninstall-test_args-hash',
-		'a8csp_bgte_failed_uninstall-test',
+		'a8csp_bgte_latest_run_uninstall-test',
+		'a8csp_bgte_run_history_uninstall-test',
+		'a8csp_bgte_overlap_lock_uninstall-test_args-hash',
+		'a8csp_bgte_failed_runs_uninstall-test',
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */

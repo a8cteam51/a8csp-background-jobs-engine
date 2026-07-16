@@ -125,7 +125,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
-				self::assertArrayNotHasKey( 'a8csp_bgte_history_' . self::IDENTITY, $wpdb->rows );
+				self::assertArrayNotHasKey( 'a8csp_bgte_run_history_' . self::IDENTITY, $wpdb->rows );
 				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started' ) );
 			}
 		);
@@ -199,7 +199,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_skip_dispatch_returns_a_typed_held_outcome(): void {
 		$this->sync_schedule( OverlapPolicy::Skip );
 		$this->seed_held_lock();
-		$latest_pointer = 'a8csp_bgte_latest_' . self::IDENTITY;
+		$latest_pointer = 'a8csp_bgte_latest_run_' . self::IDENTITY;
 		unset( $this->rig->wpdb()->rows[ $latest_pointer ], $this->rig->wpdb()->autoload[ $latest_pointer ] );
 
 		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
@@ -337,7 +337,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, $raw );
+		$this->rig->wpdb()->put( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, $raw );
 	}
 
 	/** Returns the production argument identity for the pilot arguments. */
@@ -351,7 +351,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @param   string $args_hash Argument identity.
 	 */
 	private function lock_owner( string $args_hash ): ?string {
-		$raw  = $this->rig->wpdb()->rows[ 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash ] ?? null;
+		$raw  = $this->rig->wpdb()->rows[ 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash ] ?? null;
 		$lock = \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 
 		return \is_array( $lock ) && \is_string( $lock['run_id'] ?? null ) ? $lock['run_id'] : null;

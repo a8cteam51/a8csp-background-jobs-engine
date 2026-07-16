@@ -59,13 +59,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		$this->register_batch( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SKIP_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SKIP_IDENTITY );
 		$this->filter_continue_delay_to_zero();
 
 		$run_a     = $this->start_batch( self::SKIP_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_a   = self::SKIP_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
-		$lock_name = 'a8csp_bgte_lock_' . self::SKIP_IDENTITY . '_' . $args_hash;
+		$lock_name = 'a8csp_bgte_overlap_lock_' . self::SKIP_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the rejecting incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the rejecting incumbent first chunk' );
@@ -89,7 +89,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 				'all'     => $run_a,
 				'by_hash' => array( $args_hash => $run_a ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::SKIP_IDENTITY, null ),
+			\get_option( 'a8csp_bgte_latest_run_' . self::SKIP_IDENTITY, null ),
 			'A rejected start must preserve the incumbent latest pointers'
 		);
 		self::assertSame(
@@ -103,7 +103,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::SKIP_IDENTITY, null ),
+			\get_option( 'a8csp_bgte_run_history_' . self::SKIP_IDENTITY, null ),
 			'A rejected start must not create a second history entry'
 		);
 
@@ -131,8 +131,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::SKIP_IDENTITY . '_' . $run_a, false ) );
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::SKIP_IDENTITY,
-				'a8csp_bgte_latest_' . self::SKIP_IDENTITY,
+				'a8csp_bgte_latest_run_' . self::SKIP_IDENTITY,
+				'a8csp_bgte_run_history_' . self::SKIP_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reject-policy completion must retain only history and latest pointer state'
@@ -159,7 +159,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		$this->register_batch( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::RECLAIM_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::RECLAIM_IDENTITY );
 		$this->filter_continue_delay_to_zero();
 
 		$named_superseded   = array();
@@ -194,7 +194,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$run_a     = $this->start_batch( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
 		$group_a   = self::RECLAIM_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
-		$lock_name = 'a8csp_bgte_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
+		$lock_name = 'a8csp_bgte_overlap_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the crash-simulated incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the crash-simulated incumbent chunk' );
@@ -266,7 +266,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Reclaimed run completion must release the overlap lock' );
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::RECLAIM_IDENTITY, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_failed_runs_' . self::RECLAIM_IDENTITY, false ) );
 		self::assertSame(
 			array(
 				'started'  => array( $run_a, $run_b ),
@@ -296,13 +296,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::RECLAIM_IDENTITY, null ),
+			\get_option( 'a8csp_bgte_run_history_' . self::RECLAIM_IDENTITY, null ),
 			'Reclaim history must retain the superseded orphan and completed replacement'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::RECLAIM_IDENTITY,
-				'a8csp_bgte_latest_' . self::RECLAIM_IDENTITY,
+				'a8csp_bgte_latest_run_' . self::RECLAIM_IDENTITY,
+				'a8csp_bgte_run_history_' . self::RECLAIM_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reclaim completion must retain only history and latest pointer state'

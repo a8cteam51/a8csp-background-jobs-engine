@@ -861,7 +861,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private function lock(): ?array {
-		$value = $this->decoded_row( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $this->args_hash() );
+		$value = $this->decoded_row( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() );
 
 		return \is_array( $value ) ? $value : null;
 	}

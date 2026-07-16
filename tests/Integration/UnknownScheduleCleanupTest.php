@@ -71,7 +71,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 */
 	public function test_live_maintenance_sweep_converges_the_unknown_recurring_chain(): void {
 		$this->expect_option( ScheduleRegistry::option_name( 'a8csp-bgte' ) );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::MAINTENANCE_KEY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::MAINTENANCE_KEY );
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
@@ -135,9 +135,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_sweep_convergence_preserves_a_redeclared_action_scheduler_chain(): void {
-		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
+		$intent_option = 'a8csp_bgte_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( ScheduleRegistry::option_name( self::OWNER ) );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::REDECLARED_IDENTITY );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$unknown_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
@@ -250,7 +250,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_complete_before_repeat_race_re_records_the_intent_on_the_successor_delivery(): void {
-		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
+		$intent_option = 'a8csp_bgte_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( $intent_option );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 

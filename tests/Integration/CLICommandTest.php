@@ -78,7 +78,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const FAILED_AT = 1_700_000_001;
 
 	/** Prefix shared by dynamically named failed-run options. */
-	private const FAILED_OPTION_PREFIX = 'a8csp_bgte_failed_';
+	private const FAILED_OPTION_PREFIX = 'a8csp_bgte_failed_runs_';
 
 	// endregion.
 
@@ -799,7 +799,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id = $enqueued->value;
-		$this->expect_option( 'a8csp_bgte_latest_' . self::INSPECTION_TASK_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::INSPECTION_TASK_IDENTITY );
 
 		try {
 			self::assertSame( 1, $this->run_next_engine_action() );

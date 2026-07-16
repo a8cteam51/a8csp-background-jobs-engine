@@ -55,7 +55,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->batches()->register( $batch );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
 		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
 		/** @var list<array{string, array<array-key, mixed>}> $named_superseded */
@@ -135,7 +135,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertNotSame( $run_a, $run_b, 'Replacement must allocate a fresh run identifier' );
 
 		$args_hash = self::args_hash( $start_args );
-		$lock      = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );
+		$lock      = \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'The replacement batch must take ownership of the overlap lock' );
 		self::assertSame(
@@ -143,7 +143,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 				'all'     => $run_b,
 				'by_hash' => array( $args_hash => $run_b ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_latest_run_' . self::IDENTITY, null ),
 			'The replacement batch must become latest for the shared argument identity'
 		);
 		self::assertIsArray( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, null ) );
@@ -168,7 +168,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		);
 		$supersession_log_records = $log_records;
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, false ), 'The stale incumbent delivery must delete its run option' );
-		$lock = \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, null );
+		$lock = \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Incumbent cleanup must preserve the replacement lock owner' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $run_a_action_id ), 'Action Scheduler must complete the quietly superseded incumbent delivery' );
@@ -231,14 +231,14 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_a, false ) );
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_b, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal replacement success must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . self::IDENTITY, false ), 'Supersession and replacement success must not retain failed-run state' );
+		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal replacement success must release the overlap lock' );
+		self::assertFalse( \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, false ), 'Supersession and replacement success must not retain failed-run state' );
 		self::assertSame(
 			array(
 				'all'     => $run_b,
 				'by_hash' => array( $args_hash => $run_b ),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_latest_run_' . self::IDENTITY, null ),
 			'Terminal replacement success must retain the replacement pointers'
 		);
 		self::assertSame(
@@ -270,13 +270,13 @@ final class SupersededRunTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_run_history_' . self::IDENTITY, null ),
 			'History must retain the superseded incumbent and completed replacement in lifecycle order'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::IDENTITY,
-				'a8csp_bgte_latest_' . self::IDENTITY,
+				'a8csp_bgte_latest_run_' . self::IDENTITY,
+				'a8csp_bgte_run_history_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Replacement completion must retain only history and latest pointer state'

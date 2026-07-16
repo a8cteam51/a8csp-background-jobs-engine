@@ -205,6 +205,6 @@ final class OccurrenceLeaseTest extends TestCase {
 
 	/** Returns the bounded hashed lease option name. */
 	private static function option_name(): string {
-		return 'a8csp_bgte_lease_' . \hash( 'sha256', self::KEY );
+		return 'a8csp_bgte_occurrence_lease_' . \hash( 'sha256', self::KEY );
 	}
 }

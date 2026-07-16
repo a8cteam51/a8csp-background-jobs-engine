@@ -23,7 +23,7 @@ final class RigContractTest extends IntegrationTestCase {
 	private const NEW_HOOK = 'a8csp_bgte/rig_contract/new';
 
 	/** Engine option used to exercise the leftover declaration contract. */
-	private const FAILED_PROBE_OPTION = 'a8csp_bgte_failed_probe';
+	private const FAILED_PROBE_OPTION = 'a8csp_bgte_failed_runs_probe';
 
 	/** Action Scheduler hook used to exercise custom-table cleanup. */
 	private const ACTION_SCHEDULER_HOOK = 'a8csp_bgte/rig_contract/action_scheduler';

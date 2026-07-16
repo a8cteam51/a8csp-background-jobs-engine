@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
+
 /**
  * Sweeps engine options and rejects undeclared steady-state rows before cleanup.
  *
@@ -77,7 +79,7 @@ trait OptionIsolationTrait {
 	 * @return  void
 	 */
 	protected function assert_engine_option_hygiene(): void {
-		$history_prefix = self::ENGINE_OPTION_PREFIX . 'history_';
+		$history_prefix = RunHistory::OPTION_PREFIX;
 		$unexpected     = array();
 
 		foreach ( $this->engine_option_rows() as $row ) {

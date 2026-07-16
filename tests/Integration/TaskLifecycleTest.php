@@ -58,7 +58,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SUCCESS_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SUCCESS_IDENTITY );
 
 		$named_completed   = array();
 		$generic_completed = array();
@@ -135,8 +135,8 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::FAILURE_IDENTITY );
-		$this->expect_option( 'a8csp_bgte_failed_' . self::FAILURE_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::FAILURE_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::FAILURE_IDENTITY );
 
 		$named_failed   = array();
 		$generic_failed = array();

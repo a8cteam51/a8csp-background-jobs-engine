@@ -527,7 +527,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private function lock(): ?array {
-		$raw   = $this->rig->wpdb()->rows[ 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		$raw   = $this->rig->wpdb()->rows[ 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		$value = \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 
 		return \is_array( $value ) ? $value : null;

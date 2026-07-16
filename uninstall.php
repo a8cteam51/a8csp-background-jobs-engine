@@ -32,9 +32,9 @@ $a8csp_bgte_lifecycle_hooks = array(
 );
 
 /*
- * Schedule-registration, run, latest-pointer, history, execution-lock, occurrence-lease, and
- * failed-run option names end in owner, task, batch, run, registration-hash, or argument-hash
- * identifiers that do not exist until runtime, so no static list can name every row. The shared
+ * Schedule-registration, active-run, failed-run, latest-run, run-history, overlap-lock,
+ * occurrence-lease, and cleanup-intent option names end in owner, task, batch, run,
+ * registration-hash, or argument-hash identifiers that do not exist until runtime. The shared
  * prefix is the complete ownership boundary for standalone engine options. Escaping it before
  * appending the wildcard keeps each underscore literal instead of letting SQL LIKE broaden the
  * sweep to similarly spelled foreign options.
