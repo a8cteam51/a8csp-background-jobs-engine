@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
  * @phpstan-import-type ScheduleEntry from Inspection
  * @phpstan-type ScheduleRow array{
  *     owner: string,
- *     name: string,
+ *     identity: string,
  *     recurrence: int|string,
  *     next_due: string,
  *     last_fired: string,
@@ -40,7 +40,7 @@ final readonly class ScheduleOutput {
 	 */
 	private const FIELDS = array(
 		'owner',
-		'name',
+		'identity',
 		'recurrence',
 		'next_due',
 		'last_fired',
@@ -94,7 +94,7 @@ final readonly class ScheduleOutput {
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
 				'owner'      => $entry['owner'],
-				'name'       => $entry['name'],
+				'identity'   => $entry['name'],
 				'recurrence' => $entry['recurrence'] ?? 'unknown (not declared this request)',
 				'next_due'   => self::due_label( $entry['next_due'], $observed_at ),
 				'last_fired' => null === $entry['last_fired']

@@ -292,7 +292,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
-			'[{"owner":"integration-cli-command","name":"integration-cli-command:integration-cli-command-list-store",' .
+			'[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store",' .
 			'"run_id":"integration-cli-command-run-1",' .
 			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"error_class":"RuntimeException",' .
 			'"error_message":"CLI boundary failure."}]',
@@ -445,7 +445,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stderr'] );
-		foreach ( array( 'owner', 'name', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ) as $field ) {
+		foreach ( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ) as $field ) {
 			self::assertStringContainsString( $field, $result['stdout'] );
 		}
 		self::assertStringContainsString( self::INSPECTION_OWNER, $result['stdout'] );
@@ -474,9 +474,9 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertCount( 1, $decoded );
 		$row = $decoded[0] ?? null;
 		self::assertIsArray( $row );
-		self::assertSame( array( 'owner', 'name', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ), \array_keys( $row ) );
+		self::assertSame( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfires', 'skips', 'scheduled', 'lock' ), \array_keys( $row ) );
 		self::assertSame( self::INSPECTION_OWNER, $row['owner'] ?? null );
-		self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $row['name'] ?? null );
+		self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $row['identity'] ?? null );
 		self::assertSame( 300, $row['recurrence'] ?? null );
 		$next_due = $row['next_due'] ?? null;
 		self::assertIsString( $next_due );
@@ -814,7 +814,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			$schedule_row = $schedule_rows[0] ?? null;
 			self::assertIsArray( $schedule_row );
 			self::assertSame( self::INSPECTION_OWNER, $schedule_row['owner'] ?? null );
-			self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $schedule_row['name'] ?? null );
+			self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $schedule_row['identity'] ?? null );
 			self::assertSame( 'yes', $schedule_row['scheduled'] ?? null );
 			self::assertSame( 'free', $schedule_row['lock'] ?? null );
 

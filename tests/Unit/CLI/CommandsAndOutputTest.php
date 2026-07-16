@@ -138,7 +138,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( '', $result->stderr );
 		self::assertNotSame( '', $result->stdout );
 		if ( 'csv' === $format ) {
-			self::assertSame( 'owner,name,recurrence,next_due,last_fired,misfires,skips,scheduled,lock', \strtok( $result->stdout, "\n" ) );
+			self::assertSame( 'owner,identity,recurrence,next_due,last_fired,misfires,skips,scheduled,lock', \strtok( $result->stdout, "\n" ) );
 		}
 		if ( 'count' === $format ) {
 			self::assertSame( isset( $assoc_args['owner'] ) ? '1' : '3', \trim( $result->stdout ) );
@@ -383,7 +383,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( '', $result->stderr );
 		self::assertNotSame( '', $result->stdout );
 		if ( 'csv' === ( $assoc_args['format'] ?? null ) ) {
-			self::assertSame( 'owner,name,run_id,failed_at,attempts,error_class,error_message', \strtok( $result->stdout, "\n" ) );
+			self::assertSame( 'owner,identity,run_id,failed_at,attempts,error_class,error_message', \strtok( $result->stdout, "\n" ) );
 		}
 		if ( 'retry' === $action ) {
 			self::assertStringContainsString( 'Retried failed run "run-1"', $result->stdout );

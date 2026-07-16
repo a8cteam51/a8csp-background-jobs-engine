@@ -23,7 +23,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
  * }
  * @phpstan-type FailedRunRow array{
  *     owner: string,
- *     name: string,
+ *     identity: string,
  *     run_id: string,
  *     failed_at: string,
  *     attempts: int,
@@ -44,7 +44,7 @@ final readonly class FailedRunOutput {
 	 */
 	private const FIELDS = array(
 		'owner',
-		'name',
+		'identity',
 		'run_id',
 		'failed_at',
 		'attempts',
@@ -94,7 +94,7 @@ final readonly class FailedRunOutput {
 			foreach ( $entries as $entry ) {
 				$rows[] = array(
 					'owner'         => $parts[0],
-					'name'          => $name,
+					'identity'      => $name,
 					'run_id'        => $entry['run_id'],
 					'failed_at'     => \gmdate( \DATE_ATOM, $entry['failed_at'] ),
 					'attempts'      => $entry['attempts'],
