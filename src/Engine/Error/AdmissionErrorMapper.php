@@ -148,9 +148,8 @@ final class AdmissionErrorMapper {
 	 */
 	private static function scheduling_code( SchedulingErrorReason $reason ): ApiErrorCode {
 		return match ( $reason ) {
-			SchedulingErrorReason::BackendNotReady       => ApiErrorCode::BackendUnavailable,
-			SchedulingErrorReason::UnsupportedGroup,
-			SchedulingErrorReason::UnsupportedRecurrence => ApiErrorCode::UnsupportedOperation,
+			SchedulingErrorReason::BackendNotReady => ApiErrorCode::BackendUnavailable,
+			SchedulingErrorReason::UnsupportedGroup => ApiErrorCode::UnsupportedOperation,
 			SchedulingErrorReason::InvalidTimeInput,
 			SchedulingErrorReason::InvalidPayload        => ApiErrorCode::PayloadRejected,
 			SchedulingErrorReason::ScheduleFailed        => ApiErrorCode::BackendRejected,

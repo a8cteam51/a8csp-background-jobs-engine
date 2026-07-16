@@ -219,17 +219,6 @@ final readonly class OccurrenceDelivery {
 		}
 
 		$interval = $schedule->recurrence->interval();
-		if ( null === $interval ) {
-			$this->logger->error(
-				'Schedule occurrence cannot resolve a fixed interval; synchronize the schedule with Recurrence::every().',
-				array(
-					'owner' => $owner,
-					'name'  => $name,
-				)
-			);
-
-			return;
-		}
 
 		/**
 		 * Filters the grace window for one schedule occurrence.

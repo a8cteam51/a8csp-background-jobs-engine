@@ -8,8 +8,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -173,7 +171,6 @@ final class ApiTest extends TestCase {
 
 		self::assert_api_failure( $consumer->tasks()->enqueue( 'missing-task' ), ApiErrorCode::UnknownWork, array( 'name' ) );
 		self::assert_api_failure( $consumer->batches()->start( 'missing-batch' ), ApiErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $consumer->schedules()->sync( array( new Schedule( 'calendar', Recurrence::cron( '0 0 * * *' ), 'task' ) ) ), ApiErrorCode::UnsupportedOperation, array( 'schedule' ) );
 		self::assert_api_failure( $consumer->schedules()->dispatch_now( 'missing-schedule' ), ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 

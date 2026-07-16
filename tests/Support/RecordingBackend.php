@@ -66,9 +66,6 @@ final class RecordingBackend implements BackendInterface {
 	/** Whether the backend candidate has no runtime implementation. */
 	public bool $absent = false;
 
-	/** Whether the backend adapter exposes calendar cron expressions. */
-	public bool $cron_supported = false;
-
 	/**
 	 * Pending action counts keyed by hook.
 	 *
@@ -345,17 +342,6 @@ final class RecordingBackend implements BackendInterface {
 		);
 
 		return $this->absent;
-	}
-
-	/** {@inheritDoc} */
-	#[\Override]
-	public function supports_cron_expressions(): bool {
-		$this->calls[] = array(
-			'verb' => 'supports_cron_expressions',
-			'args' => array(),
-		);
-
-		return $this->cron_supported;
 	}
 
 	/** {@inheritDoc} */

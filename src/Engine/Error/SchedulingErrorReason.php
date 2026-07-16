@@ -16,9 +16,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error;
  * @version 1.0.0
  */
 enum SchedulingErrorReason: string {
-	case BackendNotReady       = 'backend_not_ready';
-	case UnsupportedGroup      = 'unsupported_group';
-	case UnsupportedRecurrence = 'unsupported_recurrence';
+	case BackendNotReady  = 'backend_not_ready';
+	case UnsupportedGroup = 'unsupported_group';
 
 	/**
 	 * A scheduling interval or timestamp is outside the supported positive range.

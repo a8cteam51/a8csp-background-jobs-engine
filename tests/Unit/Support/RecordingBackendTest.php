@@ -179,12 +179,10 @@ final class RecordingBackendTest extends TestCase {
 		$backend->scheduled      = true;
 		$backend->next_scheduled = 1_700_000_000;
 		$backend->ready          = false;
-		$backend->cron_supported = true;
 
 		self::assertTrue( $backend->is_scheduled( 'query', array( 'a' ), 'reports' ) );
 		self::assertSame( 1_700_000_000, $backend->get_next_scheduled( 'next', array( 'b' ), 'imports' ) );
 		self::assertFalse( $backend->is_ready() );
-		self::assertTrue( $backend->supports_cron_expressions() );
 		$backend->register_hooks();
 
 		self::assertSame(
@@ -207,10 +205,6 @@ final class RecordingBackendTest extends TestCase {
 				),
 				array(
 					'verb' => 'is_ready',
-					'args' => array(),
-				),
-				array(
-					'verb' => 'supports_cron_expressions',
 					'args' => array(),
 				),
 				array(

@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Fixed-interval or calendar-expression recurrence for one schedule.
+ * Fixed-interval recurrence for one schedule.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -19,12 +19,10 @@ final readonly class Recurrence {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'every'|'cron' $type  Recurrence representation.
-	 * @param   int|string     $value Positive seconds or cron expression.
+	 * @param   int $interval Positive seconds.
 	 */
 	private function __construct(
-		private string $type,
-		private int|string $value,
+		private int $interval,
 	) {}
 
 	// endregion
@@ -48,29 +46,7 @@ final readonly class Recurrence {
 			throw new \InvalidArgumentException( 'Recurrence interval must be positive; pass a value of at least one second.' );
 		}
 
-		return new self( 'every', $seconds );
-	}
-
-	/**
-	 * Creates a calendar cron-expression recurrence.
-	 *
-	 * Backend capability is evaluated when the schedule is synchronized.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $expression Cron expression.
-	 *
-	 * @throws  \InvalidArgumentException When the expression is empty or whitespace-only.
-	 *
-	 * @return  self
-	 */
-	public static function cron( string $expression ): self {
-		if ( '' === \trim( $expression ) ) {
-			throw new \InvalidArgumentException( 'Recurrence cron expression must not be empty; pass a non-empty calendar expression.' );
-		}
-
-		return new self( 'cron', $expression );
+		return new self( $seconds );
 	}
 
 	// endregion
@@ -78,27 +54,15 @@ final readonly class Recurrence {
 	// region GETTERS
 
 	/**
-	 * Returns the fixed interval, or null for a cron expression.
+	 * Returns the fixed interval.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  int|null
+	 * @return  int
 	 */
-	public function interval(): ?int {
-		return \is_int( $this->value ) ? $this->value : null;
-	}
-
-	/**
-	 * Returns the cron expression, or null for a fixed interval.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string|null
-	 */
-	public function expression(): ?string {
-		return \is_string( $this->value ) ? $this->value : null;
+	public function interval(): int {
+		return $this->interval;
 	}
 
 	/**
@@ -109,12 +73,12 @@ final readonly class Recurrence {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{type: 'every'|'cron', value: int|string}
+	 * @return  array{type: 'every', value: int}
 	 */
 	public function fingerprint_value(): array {
 		return array(
-			'type'  => $this->type,
-			'value' => $this->value,
+			'type'  => 'every',
+			'value' => $this->interval,
 		);
 	}
 

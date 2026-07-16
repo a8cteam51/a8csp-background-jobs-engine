@@ -148,7 +148,6 @@ Register a Task for each former action hook, then resolve the owner-bound consum
 | `as_enqueue_async_action( $hook, $args, $group )` | `\a8csp_bgte( 'my-plugin' )->tasks()->enqueue( 'name', $args )` |
 | `as_schedule_single_action( $timestamp, $hook, $args, $group )` | `$consumer->tasks()->enqueue( 'name', $args, delay: \max( 0, $timestamp - \time() ) )`; `enqueue()` accepts a non-negative delay in seconds, not an absolute timestamp. |
 | `as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args, $group )` | Include `new Schedule( name: 'hourly-refresh', recurrence: Recurrence::every( $interval_in_seconds ), task: 'refresh', args: $args )` in the owner's complete array passed to `$consumer->schedules()->sync( ... )`. `Schedule` has no first-run timestamp field. |
-| `as_schedule_cron_action( $timestamp, $schedule, $hook, $args, $group )` | Use `Recurrence::cron( $schedule )` in the corresponding `Schedule` declaration and synchronize the complete set. The current backends reject cron-expression synchronization, so migrate these calls to a fixed interval or provide a capable backend before relying on them. |
 | `as_unschedule_action( $hook, $args, $group )` | Omit the named `Schedule` from the next complete `sync()` declaration. To stop an already admitted run, retain its run ID and call `$consumer->runs()->cancel( 'name', $run_id )`. |
 | `as_unschedule_all_actions( $hook, $args, $group )` | Use the same declarative removal for recurring work; `$consumer->schedules()->sync( array() )` removes every Schedule owned by this consumer. Directly enqueued runs require individual `cancel()` calls with known run IDs. |
 | `as_next_scheduled_action( $hook, $args, $group )` | There is no public next-due inspection method. `$consumer->runs()->last_completed_run_id( 'name' )` reports only the latest retained completed run and is not a next-scheduled replacement. |
@@ -302,7 +301,7 @@ public function __construct(
 )
 ```
 
-Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization. `Recurrence::cron( $expression )` represents a calendar expression, but synchronization returns a failure because the recurring backend port supports fixed intervals only.
+Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization.
 
 ## Idempotency invariant
 

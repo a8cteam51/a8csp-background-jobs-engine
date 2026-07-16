@@ -148,9 +148,6 @@ final readonly class Schedules {
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$interval = $schedule->recurrence->interval();
-			if ( null === $interval ) {
-				return $this->cron_failure( $schedule );
-			}
 
 			$interval_by_identity[ $schedule_identity ] = $interval;
 			$current                                    = $existing[ $schedule_identity ] ?? null;
@@ -269,34 +266,6 @@ final readonly class Schedules {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Returns the unsupported-recurrence failure for a cron declaration.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Schedule $schedule Cron schedule.
-	 *
-	 * @return  Failure<SchedulingError>
-	 */
-	private function cron_failure( Schedule $schedule ): Failure {
-		$supported = $this->scheduler->supports_cron_expressions();
-		$message   = $supported
-			? \sprintf( 'Schedule "%s" uses a cron expression unavailable through the v1 recurring-interval port; use Recurrence::every().', $schedule->name )
-			: \sprintf( 'Schedule "%s" uses a cron expression unsupported by every ready backend; use Recurrence::every() or configure a backend that supports cron expressions.', $schedule->name );
-
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::UnsupportedRecurrence,
-				$message,
-				array(
-					'schedule'   => $schedule->name,
-					'expression' => $schedule->recurrence->expression(),
-				),
-			)
-		);
-	}
 
 	/**
 	 * Returns the failed verified-clear result for a schedule replacement.

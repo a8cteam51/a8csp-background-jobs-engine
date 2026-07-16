@@ -184,31 +184,27 @@ final class EngineErrorTest extends TestCase {
 	 */
 	public static function scheduling_code_mappings(): array {
 		return array(
-			'backend not ready'      => array(
+			'backend not ready'  => array(
 				'reason'        => 'backend_not_ready',
 				'expected_code' => 'backend_unavailable',
 			),
-			'unsupported group'      => array(
+			'unsupported group'  => array(
 				'reason'        => 'unsupported_group',
 				'expected_code' => 'backend_rejected',
 			),
-			'unsupported recurrence' => array(
-				'reason'        => 'unsupported_recurrence',
-				'expected_code' => 'backend_rejected',
-			),
-			'invalid time input'     => array(
+			'invalid time input' => array(
 				'reason'        => 'invalid_time_input',
 				'expected_code' => 'backend_rejected',
 			),
-			'invalid payload'        => array(
+			'invalid payload'    => array(
 				'reason'        => 'invalid_payload',
 				'expected_code' => 'backend_rejected',
 			),
-			'schedule failed'        => array(
+			'schedule failed'    => array(
 				'reason'        => 'schedule_failed',
 				'expected_code' => 'backend_rejected',
 			),
-			'storage failure'        => array(
+			'storage failure'    => array(
 				'reason'        => 'storage_failure',
 				'expected_code' => 'storage_failure',
 			),

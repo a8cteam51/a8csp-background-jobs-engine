@@ -281,32 +281,6 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
-	 * Unsupported cron recurrence data fails without changing its existing backend or registry state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_cron_recurrence_requires_a_capable_backend_without_mutation(): void {
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
-		$before = $this->raw_registry();
-		$this->reset_backend_observations();
-		$cron = new Schedule( 'nightly', Recurrence::cron( '0 3 * * *' ), 'refresh-index', array( 'schedule' => 'nightly' ) );
-
-		$result = $this->consumer_a->schedules()->sync( array( $cron ) );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::UnsupportedOperation, $result->error->code );
-		self::assertSame( 'nightly', $result->error->context['schedule'] ?? null );
-		self::assertSame( array( 'is_ready', 'supports_cron_expressions' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
-		self::assertSame( array(), $this->write_calls() );
-		self::assertSame( $before, $this->raw_registry() );
-		self::assertSame( 300, $this->owner_entries( 'owner-a' )[0]['recurrence'] ?? null );
-	}
-
-	/**
 	 * A cleared occurrence with a failed final registry delete converges on the next sync.
 	 *
 	 * @since   1.0.0

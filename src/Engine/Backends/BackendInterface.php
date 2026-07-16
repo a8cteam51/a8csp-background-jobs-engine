@@ -157,18 +157,6 @@ interface BackendInterface {
 	public function is_absent(): bool;
 
 	/**
-	 * Returns whether the backend adapter exposes calendar cron expressions.
-	 *
-	 * Readiness remains a separate runtime fact.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function supports_cron_expressions(): bool;
-
-	/**
 	 * Registers per-request backend hooks.
 	 *
 	 * The facade calls this method on every configured backend each request before, and regardless

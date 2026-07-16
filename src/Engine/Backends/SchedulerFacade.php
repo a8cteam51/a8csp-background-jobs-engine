@@ -317,19 +317,6 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function supports_cron_expressions(): bool {
-		return \array_any( $this->backends, static fn ( BackendInterface $backend ): bool => $backend->is_ready() && $backend->supports_cron_expressions() );
-	}
-
-	/**
-	 * {@inheritDoc}
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 */
 	#[\Override]
 	public function register_hooks(): void {

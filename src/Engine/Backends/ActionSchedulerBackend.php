@@ -370,19 +370,6 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function supports_cron_expressions(): bool {
-		return false;
-	}
-
-	/**
-	 * {@inheritDoc}
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 */
 	#[\Override]
 	public function register_hooks(): void {
