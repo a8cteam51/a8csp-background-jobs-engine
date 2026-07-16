@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
@@ -530,7 +530,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_for_a_non_retryable_exception(): void {
-		$this->assert_terminal_task_failure( new NonRetryableTaskException( 'The request is permanently invalid.' ) );
+		$this->assert_terminal_task_failure( new NonRetryableException( 'The request is permanently invalid.' ) );
 	}
 
 	/**

@@ -2,8 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-
 \defined( 'ABSPATH' ) || exit;
 
 /**

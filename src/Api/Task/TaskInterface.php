@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 

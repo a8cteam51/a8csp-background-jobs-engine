@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -193,7 +193,7 @@ final class ApiTest extends TestCase {
 		$last  = $this->enqueue_and_run( $consumer, array( 'sequence' => 2 ) );
 		self::assertNotSame( $first, $last );
 
-		$task->throwable = new NonRetryableTaskException( 'Terminal failure.' );
+		$task->throwable = new NonRetryableException( 'Terminal failure.' );
 		$this->enqueue_and_run( $consumer, array( 'sequence' => 3 ) );
 		$result = $consumer->runs()->last_completed_run_id( 'sync' );
 

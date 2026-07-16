@@ -27,11 +27,12 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ErrorInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailure',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailureStage',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\NonRetryableException',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\NonRetryableExceptionInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\AbstractResult',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Failure',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Success',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\RetryPolicy',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Run\\RunStatus',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Run\\Runs',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\CatchUpPolicy',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\OverlapPolicy',
@@ -39,8 +40,6 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\Schedule',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\Schedules',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\AbstractTask',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\NonRetryableExceptionInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\NonRetryableTaskException',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\TaskInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\Tasks',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\WorkInterface',
@@ -74,7 +73,7 @@ final class ApiBoundaryTest extends TestCase {
 	public function test_api_declarations_do_not_reference_internal_namespaces(): void {
 		$types = self::declared_api_types();
 		self::assertNotEmpty( $types );
-		self::assertCount( 27, $types );
+		self::assertCount( 26, $types );
 		self::assertSame( self::EXPECTED_API_TYPES, $types );
 
 		foreach ( $types as $type ) {

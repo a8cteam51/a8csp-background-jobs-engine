@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api\Task;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -11,8 +11,8 @@ use PHPUnit\Framework\TestCase;
  * Pins the consumer-ready non-retryable exception hierarchy.
  *
  */
-#[CoversClass( NonRetryableTaskException::class )]
-final class NonRetryableTaskExceptionTest extends TestCase {
+#[CoversClass( NonRetryableException::class )]
+final class NonRetryableExceptionTest extends TestCase {
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
@@ -32,7 +32,7 @@ final class NonRetryableTaskExceptionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_is_a_runtime_exception_with_the_non_retryable_marker(): void {
-		$exception = new NonRetryableTaskException( 'Retrying cannot succeed.' );
+		$exception = new NonRetryableException( 'Retrying cannot succeed.' );
 
 		self::assertInstanceOf( \RuntimeException::class, $exception );
 		self::assertInstanceOf( NonRetryableExceptionInterface::class, $exception );

@@ -10,8 +10,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
@@ -958,7 +958,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	public function test_handle_run_action_terminalizes_a_non_retryable_chunk_without_rescheduling(): void {
 		$current                        = array( 'chunk' => 'current' );
-		$this->batch->process_throwable = new NonRetryableTaskException( 'Chunk input is permanently invalid.' );
+		$this->batch->process_throwable = new NonRetryableException( 'Chunk input is permanently invalid.' );
 		$this->prepare_scheduled_chunk( array( $current ) );
 
 		$this->rig->run_due();

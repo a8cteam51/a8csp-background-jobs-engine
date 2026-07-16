@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
@@ -98,7 +98,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 *
-	 * @throws  NonRetryableTaskException When `post_type` is absent or not a registered post type.
+	 * @throws  NonRetryableException When `post_type` is absent or not a registered post type.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
@@ -108,7 +108,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 		// A typo'd post type would drain an empty queue and report success; failing loudly on an
 		// unregistered key is a permanent input defect, so it escapes the retry ladder.
 		if ( ! \is_string( $post_type ) || ! \post_type_exists( $post_type ) ) {
-			throw new NonRetryableTaskException( 'Comment-count recount arguments require a registered post_type; pass the post type key when starting the batch.' );
+			throw new NonRetryableException( 'Comment-count recount arguments require a registered post_type; pass the post type key when starting the batch.' );
 		}
 
 		$post_ids = \get_posts(
@@ -139,7 +139,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
 	 * @param   BatchContextInterface   $context    Controlled access to this chunk's run.
 	 *
-	 * @throws  NonRetryableTaskException When the queued post identifier is invalid or its post is gone.
+	 * @throws  NonRetryableException When the queued post identifier is invalid or its post is gone.
 	 * @throws  \RuntimeException         When the refreshed comment count is not persisted.
 	 *
 	 * @return  void
@@ -148,13 +148,13 @@ final class CommentCountRecountBatch implements BatchInterface {
 	public function process_chunk( array $chunk_args, BatchContextInterface $context ): void {
 		$post_id = $chunk_args['post_id'] ?? null;
 		if ( ! \is_int( $post_id ) || 1 > $post_id ) {
-			throw new NonRetryableTaskException( 'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.' );
+			throw new NonRetryableException( 'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.' );
 		}
 
 		// WordPress returns false only when the post no longer exists — a permanent missing
 		// reference, not a transient failure, so it escapes the retry ladder.
 		if ( ! \wp_update_comment_count_now( $post_id ) ) {
-			throw new NonRetryableTaskException( \sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id ) );
+			throw new NonRetryableException( \sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id ) );
 		}
 
 		// The core helper reports success without checking its database update, so comparing the

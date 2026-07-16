@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
@@ -76,7 +76,7 @@ final class SiteHealthPingTask implements TaskInterface {
 	 *
 	 * @param   array<array-key, mixed> $args Invocation arguments containing `transient`.
 	 *
-	 * @throws  NonRetryableTaskException When `transient` is absent, invalid, or over WordPress's length limit.
+	 * @throws  NonRetryableException When `transient` is absent, invalid, or over WordPress's length limit.
 	 * @throws  \RuntimeException         When WordPress cannot persist the snapshot; retryable.
 	 *
 	 * @return  void
@@ -87,7 +87,7 @@ final class SiteHealthPingTask implements TaskInterface {
 		// WordPress caps transient names at 172 characters; a longer name is a permanent input
 		// defect, so it escapes the retry ladder instead of burning attempts.
 		if ( ! \is_string( $transient ) || 1 !== \preg_match( '/\A[a-z0-9_]{1,172}\z/', $transient ) ) {
-			throw new NonRetryableTaskException( 'Site-health ping arguments require a lowercase transient key of at most 172 characters; pass the consumer storage key when dispatching the task.' );
+			throw new NonRetryableException( 'Site-health ping arguments require a lowercase transient key of at most 172 characters; pass the consumer storage key when dispatching the task.' );
 		}
 
 		$snapshot = array(

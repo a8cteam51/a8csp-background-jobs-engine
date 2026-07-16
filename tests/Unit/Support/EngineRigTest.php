@@ -6,9 +6,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
@@ -77,7 +77,7 @@ final class EngineRigTest extends TestCase {
 			$consumer = $rig->consumer( 'rig-tests' );
 			$task     = new RecordingTask( 'task' );
 
-			$task->throwable = new NonRetryableTaskException( 'Permanent failure.' );
+			$task->throwable = new NonRetryableException( 'Permanent failure.' );
 			$consumer->tasks()->register( $task );
 			$result = $consumer->tasks()->enqueue( 'task', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );

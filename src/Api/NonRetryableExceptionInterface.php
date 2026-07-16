@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
 
 \defined( 'ABSPATH' ) || exit;
 

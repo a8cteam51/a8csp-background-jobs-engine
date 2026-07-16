@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
@@ -49,7 +49,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			'operation' => 'delete',
 		);
 		$task            = new RecordingTask( self::NAME );
-		$task->throwable = new NonRetryableTaskException( 'The requested record is permanently unavailable.' );
+		$task->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
@@ -109,7 +109,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 
 		$failure = $named_failed[0][2] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
-		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableTaskException::class );
+		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );

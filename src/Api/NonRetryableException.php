@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -10,4 +10,4 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
  * @since   1.0.0
  * @version 1.0.0
  */
-class NonRetryableTaskException extends \RuntimeException implements NonRetryableExceptionInterface {}
+class NonRetryableException extends \RuntimeException implements NonRetryableExceptionInterface {}

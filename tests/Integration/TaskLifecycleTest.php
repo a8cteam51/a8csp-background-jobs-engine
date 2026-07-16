@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
@@ -130,7 +130,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			'mode'       => 'delete',
 		);
 		$task            = new RecordingTask( self::FAILURE_NAME );
-		$task->throwable = new NonRetryableTaskException( 'The remote record no longer exists.' );
+		$task->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
 		$consumer = \a8csp_bgte( self::OWNER );
 		$consumer->tasks()->register( $task );
@@ -174,7 +174,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertCount( 1, $generic_failed, 'The generic failed hook must fire exactly once' );
 		$failure = $named_failed[0][2] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
-		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableTaskException::class );
+		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
 		self::assertSame( self::FAILURE_IDENTITY, $failure->identity );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
