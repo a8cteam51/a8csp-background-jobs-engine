@@ -30,10 +30,10 @@ final class RecordingTask implements TaskInterface {
 	public RetryPolicy $retry_policy;
 
 	/** Declared ceiling for one handler invocation. */
-	public int $max_runtime = self::DEFAULT_MAX_RUNTIME;
+	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
 
-	/** Throwable raised by max_runtime(), or null to return the configured ceiling. */
-	public ?\Throwable $max_runtime_throwable = null;
+	/** Throwable raised by max_callback_runtime(), or null to return the configured ceiling. */
+	public ?\Throwable $max_callback_runtime_throwable = null;
 
 	/**
 	 * Constructor.
@@ -52,12 +52,12 @@ final class RecordingTask implements TaskInterface {
 
 	/** {@inheritDoc} */
 	#[\Override]
-	public function max_runtime(): int {
-		if ( null !== $this->max_runtime_throwable ) {
-			throw $this->max_runtime_throwable;
+	public function max_callback_runtime(): int {
+		if ( null !== $this->max_callback_runtime_throwable ) {
+			throw $this->max_callback_runtime_throwable;
 		}
 
-		return $this->max_runtime;
+		return $this->max_callback_runtime;
 	}
 
 	/**

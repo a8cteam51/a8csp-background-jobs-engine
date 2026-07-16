@@ -139,8 +139,8 @@ final class ApiTest extends TestCase {
 
 		self::assertSame( array( array( 'owner' => 'left' ) ), $left_task->calls );
 		self::assertSame( array( array( 'owner' => 'right' ) ), $right_task->calls );
-		self::assertInstanceOf( Success::class, $left->runs()->last_completed_run( 'sync' ) );
-		self::assertInstanceOf( Success::class, $right->runs()->last_completed_run( 'sync' ) );
+		self::assertInstanceOf( Success::class, $left->runs()->last_completed_run_id( 'sync' ) );
+		self::assertInstanceOf( Success::class, $right->runs()->last_completed_run_id( 'sync' ) );
 	}
 
 	/**
@@ -174,7 +174,7 @@ final class ApiTest extends TestCase {
 		self::assert_api_failure( $consumer->tasks()->enqueue( 'missing-task' ), ApiErrorCode::UnknownWork, array( 'name' ) );
 		self::assert_api_failure( $consumer->batches()->start( 'missing-batch' ), ApiErrorCode::UnknownWork, array( 'name' ) );
 		self::assert_api_failure( $consumer->schedules()->sync( array( new Schedule( 'calendar', Recurrence::cron( '0 0 * * *' ), 'task' ) ) ), ApiErrorCode::UnsupportedOperation, array( 'schedule' ) );
-		self::assert_api_failure( $consumer->schedules()->run_now( 'missing-schedule' ), ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
+		self::assert_api_failure( $consumer->schedules()->dispatch_now( 'missing-schedule' ), ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 
 	/**
@@ -185,7 +185,7 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_retains_the_latest_successful_terminal(): void {
+	public function test_last_completed_run_id_retains_the_latest_successful_terminal(): void {
 		$consumer = $this->rig->consumer( 'consumer-plugin' );
 		$task     = new RecordingTask( 'sync' );
 		$consumer->tasks()->register( $task );
@@ -195,7 +195,7 @@ final class ApiTest extends TestCase {
 
 		$task->throwable = new NonRetryableTaskException( 'Terminal failure.' );
 		$this->enqueue_and_run( $consumer, array( 'sequence' => 3 ) );
-		$result = $consumer->runs()->last_completed_run( 'sync' );
+		$result = $consumer->runs()->last_completed_run_id( 'sync' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $last, $result->value );
@@ -209,14 +209,14 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_inside_a_completed_hook_returns_the_previous_completion(): void {
+	public function test_last_completed_run_id_inside_a_completed_hook_returns_the_previous_completion(): void {
 		$consumer = $this->rig->consumer( 'consumer-plugin' );
 		$consumer->tasks()->register( new RecordingTask( 'sync' ) );
 		$observed  = array();
 		$callbacks = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
 		$callbacks['a8csp_background_tasks/completed/consumer-plugin:sync'] = static function () use ( $consumer, &$observed ): void {
-			$result = $consumer->runs()->last_completed_run( 'sync' );
+			$result = $consumer->runs()->last_completed_run_id( 'sync' );
 			self::assertInstanceOf( Success::class, $result );
 			$observed[] = $result->value;
 		};
@@ -227,7 +227,7 @@ final class ApiTest extends TestCase {
 		$second = $this->enqueue_and_run( $consumer, array( 'sequence' => 2 ) );
 
 		self::assertSame( array( null, $first ), $observed );
-		$result = $consumer->runs()->last_completed_run( 'sync' );
+		$result = $consumer->runs()->last_completed_run_id( 'sync' );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $second, $result->value );
 	}

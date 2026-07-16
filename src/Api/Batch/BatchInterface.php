@@ -51,7 +51,7 @@ interface BatchInterface extends WorkInterface {
 	 *
 	 * @return  int
 	 */
-	public function max_runtime(): int;
+	public function max_callback_runtime(): int;
 
 	/**
 	 * Generates one argument array for each initial chunk.

@@ -95,7 +95,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame( array( $args ), $task->calls, 'The task must receive its original argument array exactly once' );
 		self::assertSame( array( array( $run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive run ID and start arguments' );
 		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the task name to the same payload' );
-		$last_completed = $consumer->runs()->last_completed_run( self::SUCCESS_NAME );
+		$last_completed = $consumer->runs()->last_completed_run_id( self::SUCCESS_NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::SUCCESS_IDENTITY );

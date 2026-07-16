@@ -257,13 +257,13 @@ final readonly class Schedules {
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
-	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
-	public function run_now( string $registration_key ): AbstractResult {
+	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
+	public function dispatch_now( string $registration_key ): AbstractResult {
 		if ( null === WorkIdentity::parts( $registration_key ) ) {
 			throw new \InvalidArgumentException( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.' );
 		}
 
-		return $this->occurrence_delivery->run_now_under_lease( $registration_key );
+		return $this->occurrence_delivery->dispatch_now_under_lease( $registration_key );
 	}
 
 	// endregion

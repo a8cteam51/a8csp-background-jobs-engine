@@ -330,11 +330,11 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_callback_credit_before_retry_policy_resolution(): void {
-		$lock                     = null;
-		$run                      = null;
-		$this->task->max_runtime  = 1_200;
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$lock                             = null;
+		$run                              = null;
+		$this->task->max_callback_runtime = 1_200;
+		$this->task->retry_policy         = new RetryPolicy( max_attempts: 1 );
+		$this->task->throwable            = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
 			function ( RetryPolicy $policy ) use ( &$lock, &$run ): RetryPolicy {

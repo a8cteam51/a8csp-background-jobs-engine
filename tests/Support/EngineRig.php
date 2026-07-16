@@ -294,7 +294,7 @@ final class EngineRig {
 		Assert::assertNotNull( $parts );
 		$consumer = $this->consumers[ $parts[0] ] ?? null;
 		Assert::assertInstanceOf( Consumer::class, $consumer );
-		$result = $consumer->runs()->last_completed_run( $parts[1] );
+		$result = $consumer->runs()->last_completed_run_id( $parts[1] );
 		Assert::assertInstanceOf( Success::class, $result );
 		Assert::assertSame( $run_id, $result->value );
 	}

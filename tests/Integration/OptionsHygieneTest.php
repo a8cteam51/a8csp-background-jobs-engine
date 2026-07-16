@@ -99,10 +99,10 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
-		$task_latest = $consumer->runs()->last_completed_run( self::TASK_NAME );
+		$task_latest = $consumer->runs()->last_completed_run_id( self::TASK_NAME );
 		self::assertInstanceOf( Success::class, $task_latest );
 		self::assertSame( $task_run_id, $task_latest->value );
-		$batch_latest = $consumer->runs()->last_completed_run( self::BATCH_NAME );
+		$batch_latest = $consumer->runs()->last_completed_run_id( self::BATCH_NAME );
 		self::assertInstanceOf( Success::class, $batch_latest );
 		self::assertSame( $batch_run_id, $batch_latest->value );
 	}

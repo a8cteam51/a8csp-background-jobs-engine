@@ -21,7 +21,7 @@ interface WorkInterface {
 	 *
 	 * @var     int
 	 */
-	public const int DEFAULT_MAX_RUNTIME = 300;
+	public const int DEFAULT_MAX_CALLBACK_RUNTIME = 300;
 
 	// endregion
 
@@ -35,7 +35,7 @@ interface WorkInterface {
 	 *
 	 * @return  int
 	 */
-	public function max_runtime(): int;
+	public function max_callback_runtime(): int;
 
 	// endregion
 }

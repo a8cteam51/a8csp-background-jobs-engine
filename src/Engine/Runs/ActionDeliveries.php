@@ -552,7 +552,7 @@ final readonly class ActionDeliveries {
 	 */
 	private function execution_lease_at( TaskInterface|BatchInterface $contract ): int {
 		try {
-			$declared = $contract->max_runtime();
+			$declared = $contract->max_callback_runtime();
 		} catch ( \Throwable ) {
 			// An unusable declaration falls back to the default lease instead of escaping the delivery unfenced.
 			$declared = null;

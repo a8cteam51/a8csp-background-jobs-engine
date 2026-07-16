@@ -202,7 +202,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_delivery_credits_the_default_runtime_before_task_execution(): void {
-		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_RUNTIME );
+		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
 	}
 
 	/**
@@ -221,7 +221,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	#[DataProvider( 'bounded_runtime_values' )]
 	public function test_run_delivery_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
-		$this->task->max_runtime = $declared;
+		$this->task->max_callback_runtime = $declared;
 		$this->assert_callback_lease( $expected_lease );
 	}
 
@@ -237,8 +237,8 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_delivery_defaults_the_lease_when_the_runtime_declaration_throws(): void {
-		$this->task->max_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
-		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_RUNTIME );
+		$this->task->max_callback_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
+		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
 	}
 
 	/**
@@ -443,7 +443,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		$last_completed = $this->consumer->runs()->last_completed_run( self::NAME );
+		$last_completed = $this->consumer->runs()->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertNull( $last_completed->value );
 	}
@@ -549,7 +549,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function install_replacement_generation(): void {
-		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_RUNTIME;
+		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
 		$state  = new RunState( status: RunStatus::Running, executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: $credit );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
@@ -564,7 +564,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_replacement_generation_is_retained(): void {
-		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_RUNTIME;
+		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
 		$lock   = $this->lock();
 		self::assertIsArray( $lock );
 		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );

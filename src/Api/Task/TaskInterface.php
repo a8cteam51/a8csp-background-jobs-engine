@@ -41,7 +41,7 @@ interface TaskInterface extends WorkInterface {
 	 *
 	 * @return  int
 	 */
-	public function max_runtime(): int;
+	public function max_callback_runtime(): int;
 
 	/**
 	 * Handles one invocation of the task.

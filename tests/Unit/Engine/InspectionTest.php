@@ -381,7 +381,7 @@ final class InspectionTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_follows_terminal_recording_order(): void {
+	public function test_last_completed_run_id_follows_terminal_recording_order(): void {
 		$identity = 'owner:recording-order';
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$this->put(
@@ -406,7 +406,7 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$result = $this->rig->inspection()->last_completed_run( $identity );
+		$result = $this->rig->inspection()->last_completed_run_id( $identity );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::run_id( 1 ), $result->value );

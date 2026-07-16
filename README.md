@@ -136,8 +136,8 @@ The supported facade methods are:
 | `Consumer` | `tasks()`, `batches()`, `schedules()`, `runs()` |
 | `Api\Task\Tasks` | `register(TaskInterface)`, `enqueue(string $name, array $args = [], int $delay = 0, ?string $dedup_key = null, int $priority = 10)` |
 | `Api\Batch\Batches` | `register(BatchInterface)`, `start(string $name, array $start_args = [], ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10)` |
-| `Api\Schedule\Schedules` | `sync(array $schedules)`, `run_now(string $name)` |
-| `Api\Run\Runs` | `last_completed_run(string $name)`, `retry_failed(string $name, string $run_id)`, `cancel(string $name, string $run_id)` |
+| `Api\Schedule\Schedules` | `sync(array $schedules)`, `dispatch_now(string $name)` |
+| `Api\Run\Runs` | `last_completed_run_id(string $name)`, `retry_failed(string $name, string $run_id)`, `cancel(string $name, string $run_id)` |
 
 ## Migrating from Action Scheduler
 
@@ -151,7 +151,7 @@ Register a Task for each former action hook, then resolve the owner-bound consum
 | `as_schedule_cron_action( $timestamp, $schedule, $hook, $args, $group )` | Use `Recurrence::cron( $schedule )` in the corresponding `Schedule` declaration and synchronize the complete set. The current backends reject cron-expression synchronization, so migrate these calls to a fixed interval or provide a capable backend before relying on them. |
 | `as_unschedule_action( $hook, $args, $group )` | Omit the named `Schedule` from the next complete `sync()` declaration. To stop an already admitted run, retain its run ID and call `$consumer->runs()->cancel( 'name', $run_id )`. |
 | `as_unschedule_all_actions( $hook, $args, $group )` | Use the same declarative removal for recurring work; `$consumer->schedules()->sync( array() )` removes every Schedule owned by this consumer. Directly enqueued runs require individual `cancel()` calls with known run IDs. |
-| `as_next_scheduled_action( $hook, $args, $group )` | There is no public next-due inspection method. `$consumer->runs()->last_completed_run( 'name' )` reports only the latest retained completed run and is not a next-scheduled replacement. |
+| `as_next_scheduled_action( $hook, $args, $group )` | There is no public next-due inspection method. `$consumer->runs()->last_completed_run_id( 'name' )` reports only the latest retained completed run and is not a next-scheduled replacement. |
 | `as_has_scheduled_action( $hook, $args, $group )` | There is no public pending-or-running boolean query. Treat the complete declaration supplied to a successful `sync()` as the source of truth for recurring schedules. |
 
 Action Scheduler's optional `$group` defaults to `''`, leaving ownership implicit. The engine requires the consumer owner at the front door and composes it into every identity; it refuses the ownerless ambiguity that makes cross-plugin actions easy to query or cancel accidentally.
@@ -229,7 +229,7 @@ Alternatively, an isolated test can stub the global `a8csp_bgte()` function befo
 interface TaskInterface extends WorkInterface {
 	public function get_name(): string;
 
-	public function max_runtime(): int;
+	public function max_callback_runtime(): int;
 
 	public function handle( array $args ): void;
 
@@ -247,7 +247,7 @@ interface TaskInterface extends WorkInterface {
 interface BatchInterface extends WorkInterface {
 	public function get_name(): string;
 
-	public function max_runtime(): int;
+	public function max_callback_runtime(): int;
 
 	public function generate_queue( array $start_args ): iterable;
 
@@ -395,7 +395,7 @@ Bulk data belongs in storage that the Task or Batch reads by key. Pass identifyi
 
 ## Run inspection, failure, retry, and cancellation
 
-`$consumer->runs()->last_completed_run( $name )` returns the most recently recorded `Completed` run ID for the owner-local Task or Batch name. A successful lookup carries the run ID or `null` when no completed run remains in the retained history window; a failed, cancelled, or superseded run recorded later does not displace a retained completion. The lookup follows terminal recording order and does not re-sort the timestamp-prefixed run IDs.
+`$consumer->runs()->last_completed_run_id( $name )` returns the most recently recorded `Completed` run ID for the owner-local Task or Batch name. A successful lookup carries the run ID or `null` when no completed run remains in the retained history window; a failed, cancelled, or superseded run recorded later does not displace a retained completion. The lookup follows terminal recording order and does not re-sort the timestamp-prefixed run IDs.
 
 Each history buffer retains at most the positive `a8csp_background_tasks/history_size` filter value, 30 by default. Once later terminal outcomes evict a completion, the lookup returns `Success(null)` as if that completion were absent. Consumers needing an indefinite checkpoint persist their own pointer from a Batch's `on_success()` callback or the completed lifecycle hook. Terminal history is recorded after those notifications, so a lookup from either intentionally returns the previous retained completion.
 

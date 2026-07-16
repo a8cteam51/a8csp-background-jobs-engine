@@ -93,7 +93,7 @@ final class RecordingBatch implements BatchInterface {
 	public RetryPolicy $retry_policy;
 
 	/** Declared ceiling for one queue-generation or chunk invocation. */
-	public int $max_runtime = self::DEFAULT_MAX_RUNTIME;
+	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
 
 	/**
 	 * Constructor.
@@ -112,8 +112,8 @@ final class RecordingBatch implements BatchInterface {
 
 	/** {@inheritDoc} */
 	#[\Override]
-	public function max_runtime(): int {
-		return $this->max_runtime;
+	public function max_callback_runtime(): int {
+		return $this->max_callback_runtime;
 	}
 
 	/**

@@ -121,7 +121,7 @@ final readonly class LockWindows {
 	 */
 	public function execution_lease( ?int $declared ): int {
 		if ( null === $declared || 1 > $declared ) {
-			return WorkInterface::DEFAULT_MAX_RUNTIME;
+			return WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
 		}
 
 		return \min( $declared, self::MAX_EXECUTION_LEASE );

@@ -22,14 +22,14 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                         $identity Owner-qualified identity composer.
-	 * @param   \Closure(array<string, array{schedule: Schedule, task: string}>): AbstractResult<true, ApiError> $sync     Schedule synchronization delegate.
-	 * @param   \Closure(string): AbstractResult<string, ApiError>                                               $run_now  Immediate schedule delegate.
+	 * @param   \Closure(string): string                                                                         $identity     Owner-qualified identity composer.
+	 * @param   \Closure(array<string, array{schedule: Schedule, task: string}>): AbstractResult<true, ApiError> $sync         Schedule synchronization delegate.
+	 * @param   \Closure(string): AbstractResult<string, ApiError>                                               $dispatch_now Immediate schedule delegate.
 	 */
 	public function __construct(
 		private \Closure $identity,
 		private \Closure $sync,
-		private \Closure $run_now,
+		private \Closure $dispatch_now,
 	) {}
 
 	// endregion
@@ -82,9 +82,9 @@ final readonly class Schedules {
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
-	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
-	public function run_now( string $name ): AbstractResult {
-		return ( $this->run_now )( $this->identity( $name ) );
+	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
+	public function dispatch_now( string $name ): AbstractResult {
+		return ( $this->dispatch_now )( $this->identity( $name ) );
 	}
 
 	// endregion

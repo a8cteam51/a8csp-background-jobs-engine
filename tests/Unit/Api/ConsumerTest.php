@@ -140,7 +140,7 @@ final class ConsumerTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_schedules_sync_and_run_now_with_the_bound_owner_only(): void {
+	public function test_schedules_sync_and_dispatch_now_with_the_bound_owner_only(): void {
 		$calls     = array();
 		$schedule  = new Schedule( 'nightly', Recurrence::every( 300 ), 'sync' );
 		$schedules = new Schedules(
@@ -150,13 +150,13 @@ final class ConsumerTest extends TestCase {
 				return new Success( true );
 			},
 			static function ( string $identity ) use ( &$calls ): Success {
-				$calls[] = array( 'run_now', $identity );
+				$calls[] = array( 'dispatch_now', $identity );
 				return new Success( 'schedule-run' );
 			}
 		);
 
 		$sync_result = $schedules->sync( array( $schedule ) );
-		$run_result  = $schedules->run_now( 'nightly' );
+		$run_result  = $schedules->dispatch_now( 'nightly' );
 
 		self::assertInstanceOf( Success::class, $sync_result );
 		self::assertInstanceOf( Success::class, $run_result );
@@ -171,7 +171,7 @@ final class ConsumerTest extends TestCase {
 						),
 					),
 				),
-				array( 'run_now', 'consumer-plugin:nightly' ),
+				array( 'dispatch_now', 'consumer-plugin:nightly' ),
 			),
 			$calls
 		);
@@ -180,7 +180,7 @@ final class ConsumerTest extends TestCase {
 			self::assertNotContains( 'owner', \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $method->getParameters() ) );
 		}
 		self::assertSame( array( 'schedules' ), self::parameter_names( Schedules::class, 'sync' ) );
-		self::assertSame( array( 'name' ), self::parameter_names( Schedules::class, 'run_now' ) );
+		self::assertSame( array( 'name' ), self::parameter_names( Schedules::class, 'dispatch_now' ) );
 	}
 
 	/**
@@ -201,12 +201,12 @@ final class ConsumerTest extends TestCase {
 				return new Success( $run_id );
 			},
 			static function ( string $identity ) use ( &$calls ): Success {
-				$calls[] = array( 'last_completed_run', $identity );
+				$calls[] = array( 'last_completed_run_id', $identity );
 				return new Success( 'completed-run' );
 			}
 		);
 
-		$completed = $runs->last_completed_run( 'sync' );
+		$completed = $runs->last_completed_run_id( 'sync' );
 		$retry     = $runs->retry_failed( 'sync', 'failed-run' );
 		$cancel    = $runs->cancel( 'sync', 'live-run' );
 		if ( $completed->is_failure() ) {
@@ -224,7 +224,7 @@ final class ConsumerTest extends TestCase {
 		self::assertSame( 'live-run', $cancel->value );
 		self::assertSame(
 			array(
-				array( 'last_completed_run', 'consumer-plugin:sync' ),
+				array( 'last_completed_run_id', 'consumer-plugin:sync' ),
 				array( 'retry_failed', 'consumer-plugin:sync', 'failed-run' ),
 				array( 'cancel', 'consumer-plugin:sync', 'live-run' ),
 			),
@@ -234,7 +234,7 @@ final class ConsumerTest extends TestCase {
 		foreach ( ( new \ReflectionClass( Runs::class ) )->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
 			self::assertNotContains( 'owner', \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $method->getParameters() ) );
 		}
-		self::assertSame( array( 'name' ), self::parameter_names( Runs::class, 'last_completed_run' ) );
+		self::assertSame( array( 'name' ), self::parameter_names( Runs::class, 'last_completed_run_id' ) );
 	}
 
 	/**
@@ -253,8 +253,8 @@ final class ConsumerTest extends TestCase {
 		self::assertSame( $failure, $tasks->enqueue( 'sync' ) );
 		self::assertSame( $failure, $batches->start( 'sync' ) );
 		self::assertSame( $failure, $schedules->sync( array() ) );
-		self::assertSame( $failure, $schedules->run_now( 'nightly' ) );
-		self::assertSame( $failure, $runs->last_completed_run( 'sync' ) );
+		self::assertSame( $failure, $schedules->dispatch_now( 'nightly' ) );
+		self::assertSame( $failure, $runs->last_completed_run_id( 'sync' ) );
 		self::assertSame( $failure, $runs->retry_failed( 'sync', 'failed-run' ) );
 		self::assertSame( $failure, $runs->cancel( 'sync', 'live-run' ) );
 	}
@@ -493,8 +493,8 @@ final class ConsumerTest extends TestCase {
 			array( Tasks::class, 'enqueue' ),
 			array( Batches::class, 'start' ),
 			array( Schedules::class, 'sync' ),
-			array( Schedules::class, 'run_now' ),
-			array( Runs::class, 'last_completed_run' ),
+			array( Schedules::class, 'dispatch_now' ),
+			array( Runs::class, 'last_completed_run_id' ),
 			array( Runs::class, 'retry_failed' ),
 			array( Runs::class, 'cancel' ),
 		);

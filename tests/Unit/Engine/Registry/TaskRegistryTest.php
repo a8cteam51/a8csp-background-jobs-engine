@@ -132,8 +132,8 @@ final class TaskRegistryTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function max_runtime(): int {
-				return self::DEFAULT_MAX_RUNTIME;
+			public function max_callback_runtime(): int {
+				return self::DEFAULT_MAX_CALLBACK_RUNTIME;
 			}
 
 			/**

@@ -45,7 +45,7 @@ final readonly class EngineFacade {
 	// region METHODS
 
 	/**
-	 * Returns the last completed run retained for one background-work identity.
+	 * Returns the last completed run ID retained for one background-work identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -55,8 +55,8 @@ final readonly class EngineFacade {
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-	public function last_completed_run( string $identity ): AbstractResult {
-		return $this->inspection->last_completed_run( $identity );
+	public function last_completed_run_id( string $identity ): AbstractResult {
+		return $this->inspection->last_completed_run_id( $identity );
 	}
 
 	/**

@@ -115,7 +115,7 @@ final readonly class Inspection {
 	// region METHODS
 
 	/**
-	 * Returns the last completed run in the retained terminal recording order.
+	 * Returns the last completed run ID in the retained terminal recording order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -125,7 +125,7 @@ final readonly class Inspection {
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
-	public function last_completed_run( string $identity ): AbstractResult {
+	public function last_completed_run_id( string $identity ): AbstractResult {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
 			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );

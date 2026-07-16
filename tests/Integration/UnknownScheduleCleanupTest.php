@@ -116,7 +116,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertInstanceOf( Success::class, $synced, 'The reserved maintenance schedule must re-synchronize' );
 		self::assertTrue( $synced->value );
 
-		$maintenance = $engine->schedules->run_now( self::MAINTENANCE_KEY );
+		$maintenance = $engine->schedules->dispatch_now( self::MAINTENANCE_KEY );
 		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance task must be dispatchable through the schedule facade' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance task' );
 

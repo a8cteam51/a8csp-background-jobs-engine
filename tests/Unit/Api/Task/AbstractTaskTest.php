@@ -20,7 +20,7 @@ final class AbstractTaskTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_default_max_runtime_is_five_minutes(): void {
+	public function test_default_max_callback_runtime_is_five_minutes(): void {
 		$task = new class() extends AbstractTask {
 
 			/** {@inheritDoc} */
@@ -38,7 +38,7 @@ final class AbstractTaskTest extends TestCase {
 			public function handle( array $args ): void {}
 		};
 
-		self::assertSame( 300, $task->max_runtime() );
+		self::assertSame( 300, $task->max_callback_runtime() );
 	}
 
 	/**

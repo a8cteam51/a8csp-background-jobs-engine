@@ -122,8 +122,8 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
-	#[\NoDiscard( 'a schedule run-now failure must be handled, not dropped' )]
-	public function run_now_under_lease( string $registration_key ): AbstractResult {
+	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
+	public function dispatch_now_under_lease( string $registration_key ): AbstractResult {
 		$parts = WorkIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return new Failure( new EngineError( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.', reason: EngineErrorReason::PayloadRejected, ) );
@@ -145,7 +145,7 @@ final readonly class OccurrenceDelivery {
 		}
 
 		try {
-			return $this->dispatch_run_now( $registration_key, $owner, $name, $lease_handle );
+			return $this->dispatch_now( $registration_key, $owner, $name, $lease_handle );
 		} finally {
 			$lease_handle->release();
 		}
@@ -384,7 +384,7 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
-	private function dispatch_run_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
+	private function dispatch_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			return new Failure( $registration_read->error );

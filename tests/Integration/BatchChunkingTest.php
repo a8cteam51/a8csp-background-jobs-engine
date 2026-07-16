@@ -166,7 +166,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			'Completed hooks must follow on_success and preserve identity-specific then generic payload order'
 		);
 
-		$last_completed = $consumer->runs()->last_completed_run( self::NAME );
+		$last_completed = $consumer->runs()->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::IDENTITY );

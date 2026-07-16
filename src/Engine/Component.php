@@ -228,8 +228,8 @@ final class Component implements ComponentContract {
 				},
 				static fn ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map( $engine->batches->start( $identity, $args, $existing, $priority ) )
 			),
-			new ApiSchedules( $identity, static fn ( array $declarations ) => AdmissionErrorMapper::map( $engine->schedules->sync( $owner, $declarations ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->schedules->run_now( $identity ) ) ),
-			new ApiRuns( $identity, static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->retry_failed( $identity, $run_id ) ), static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->cancel( $identity, $run_id ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->last_completed_run( $identity ) ) )
+			new ApiSchedules( $identity, static fn ( array $declarations ) => AdmissionErrorMapper::map( $engine->schedules->sync( $owner, $declarations ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->schedules->dispatch_now( $identity ) ) ),
+			new ApiRuns( $identity, static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->retry_failed( $identity, $run_id ) ), static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->cancel( $identity, $run_id ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->last_completed_run_id( $identity ) ) )
 		);
 	}
 
