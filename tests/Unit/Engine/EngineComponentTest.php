@@ -264,7 +264,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertNotContains( 'wp_loaded', $hook_names );
 		$registry = $this->schedule_registry();
 		self::assertIsArray( $registry );
-		self::assertArrayHasKey( 'a8csp-bgte', $registry );
+		self::assertArrayHasKey( 'a8csp-bgte:maintenance', $registry );
 	}
 
 	/**
@@ -365,7 +365,8 @@ final class EngineComponentTest extends TestCase {
 	private function schedule_registry(): ?array {
 		$wpdb = $GLOBALS['wpdb'] ?? null;
 		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
-		$raw = $wpdb->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
+		$option_name = ScheduleRegistry::option_name( 'a8csp-bgte' );
+		$raw         = $wpdb->rows[ $option_name ] ?? null;
 		if ( \is_string( $raw ) ) {
 			$registry = \maybe_unserialize( $raw );
 			self::assertIsArray( $registry );
@@ -373,7 +374,7 @@ final class EngineComponentTest extends TestCase {
 			return $registry;
 		}
 
-		$registry = \get_option( ScheduleRegistry::OPTION_NAME, null );
+		$registry = \get_option( $option_name, null );
 		self::assertTrue( null === $registry || \is_array( $registry ) );
 
 		return $registry;

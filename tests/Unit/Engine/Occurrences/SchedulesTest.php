@@ -143,7 +143,7 @@ final class SchedulesTest extends TestCase {
 	 */
 	public function test_sync_recreates_a_missing_chain_from_persisted_timing(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		$fixture  = $this->fixtures->schedule_registry( array( self::owner_fixture( $schedule, self::NOW - 60, self::NOW - 360 ) ) );
+		$fixture  = $this->fixtures->schedule_registration( self::owner_fixture( $schedule, self::NOW - 60, self::NOW - 360 ) );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 
 		$result = $this->consumer_a->schedules()->sync( array( $schedule ) );
@@ -153,7 +153,7 @@ final class SchedulesTest extends TestCase {
 		self::assertCount( 1, $calls );
 		self::assertSame( self::NOW - 60, $calls[0]['args']['first_run_timestamp'] ?? null );
 		self::assertSame( 'owner-a:nightly', $calls[0]['args']['group'] ?? null );
-		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'owner-a' ) ] ?? null );
 	}
 
 	/**
@@ -168,6 +168,8 @@ final class SchedulesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_write_failure_stops_before_recurring_delivery(): void {
+		$hourly = self::schedule( 'hourly', 3_600 );
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $hourly ) ) );
 		$before  = $this->raw_registry();
 		$backend = $this->rig->backend();
 		$this->rig->wpdb()->before_next(
@@ -178,7 +180,7 @@ final class SchedulesTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
+		$result = $this->consumer_a->schedules()->sync( array( $hourly, self::schedule( 'nightly', 300 ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -291,7 +293,7 @@ final class SchedulesTest extends TestCase {
 	public function test_removal_storage_crash_window_converges_on_retry(): void {
 		$schedule = self::schedule( 'nightly', 300 );
 		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $schedule ) ) );
-		$fixture = $this->fixtures->schedule_registry( array( self::owner_fixture( $schedule, self::NOW + 300 ) ) );
+		$fixture = $this->fixtures->schedule_registration( self::owner_fixture( $schedule, self::NOW + 300 ) );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 		$this->rig->wpdb()->script_result( 'delete', false );
 		$this->reset_backend_observations();
@@ -310,7 +312,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $retried );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
-		self::assertArrayNotHasKey( ScheduleRegistry::OPTION_NAME, $this->rig->wpdb()->rows );
+		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'owner-a' ), $this->rig->wpdb()->rows );
 	}
 
 	/**
@@ -325,10 +327,11 @@ final class SchedulesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sync_updates_the_registry_with_a_binary_option_value_cas(): void {
-		self::assertInstanceOf( Success::class, $this->consumer_b->schedules()->sync( array( self::schedule( 'hourly', 3_600 ) ) ) );
+		$hourly = self::schedule( 'hourly', 3_600 );
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $hourly ) ) );
 		$this->rig->wpdb()->recorded_queries = array();
 
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $hourly, self::schedule( 'nightly', 300 ) ) ) );
 
 		$updates = \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
 		self::assertNotEmpty( $updates );
@@ -415,7 +418,7 @@ final class SchedulesTest extends TestCase {
 	 * @return  string
 	 */
 	private function raw_registry(): string {
-		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
+		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'owner-a' ) ] ?? null;
 		self::assertIsString( $raw );
 
 		return $raw;

@@ -70,7 +70,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_live_maintenance_sweep_converges_the_unknown_recurring_chain(): void {
-		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( ScheduleRegistry::option_name( 'a8csp-bgte' ) );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::MAINTENANCE_KEY );
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
@@ -136,7 +136,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 */
 	public function test_sweep_convergence_preserves_a_redeclared_action_scheduler_chain(): void {
 		$intent_option = 'a8csp_bgte_cleanup_' . \hash( 'sha256', self::KEY );
-		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( ScheduleRegistry::option_name( self::OWNER ) );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::REDECLARED_IDENTITY );
 		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
 
@@ -418,9 +418,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  int
 	 */
 	private function registration_next_due( string $owner, string $name ): int {
-		$registry = \get_option( 'a8csp_bgte_schedules', null );
-		self::assertIsArray( $registry );
-		$owner_rows = $registry[ $owner ] ?? null;
+		$owner_rows = \get_option( ScheduleRegistry::option_name( $owner ), null );
 		self::assertIsArray( $owner_rows );
 		$registration = $owner_rows[ WorkIdentity::compose( $owner, $name, true ) ] ?? null;
 		self::assertIsArray( $registration );
@@ -443,17 +441,15 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function set_registration_next_due( string $owner, string $name, int $next_due ): void {
-		$registry = \get_option( 'a8csp_bgte_schedules', null );
-		self::assertIsArray( $registry );
-		$owner_rows = $registry[ $owner ] ?? null;
+		$option_name = ScheduleRegistry::option_name( $owner );
+		$owner_rows  = \get_option( $option_name, null );
 		self::assertIsArray( $owner_rows );
 		$identity     = WorkIdentity::compose( $owner, $name, true );
 		$registration = $owner_rows[ $identity ] ?? null;
 		self::assertIsArray( $registration );
 		$registration['next_due'] = $next_due;
 		$owner_rows[ $identity ]  = $registration;
-		$registry[ $owner ]       = $owner_rows;
-		self::assertTrue( \update_option( 'a8csp_bgte_schedules', $registry, false ), 'The live redeclaration must be due before its retained occurrence fires' );
+		self::assertTrue( \update_option( $option_name, $owner_rows, false ), 'The live redeclaration must be due before its retained occurrence fires' );
 	}
 
 	// endregion.

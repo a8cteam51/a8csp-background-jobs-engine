@@ -172,21 +172,22 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_reports_a_row_changed_during_reset(): void {
 		$this->seed_engine_state();
-		$before = $this->rig->wpdb()->rows;
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
+		$option_name = ScheduleRegistry::option_name( 'reset-tests' );
+		$before      = $this->rig->wpdb()->rows;
 		$this->rig->wpdb()->before_next(
 			'delete',
 			function (): void {
-				$consumer = $this->rig->consumer( 'reset-rival' );
-				$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
-				self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'hourly', Recurrence::every( 3_600 ), 'refresh' ) ) ) );
+				$consumer = $this->rig->consumer( 'reset-tests' );
+				self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
 			}
 		);
 
 		$result = CliHarness::run( 'reset', array(), array( 'yes' => true ) );
 
 		self::assertSame( 1, $result->exit_code );
-		self::assertSame( 'Error: Engine option row "' . ScheduleRegistry::OPTION_NAME . '" changed during reset after 0 deletions; stop background writes and retry.' . "\n", $result->stderr );
-		self::assertNotSame( $before[ ScheduleRegistry::OPTION_NAME ] ?? null, $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( 'Error: Engine option row "' . $option_name . '" changed during reset after 0 deletions; stop background writes and retry.' . "\n", $result->stderr );
+		self::assertNotSame( $before[ $option_name ] ?? null, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 	}
 
 	/**

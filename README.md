@@ -21,7 +21,7 @@ A Batch is named work split into independently processed chunks. A consumer regi
 
 Consumers use the same API with either scheduling backend. An occurrence on a temporarily unavailable backend is dormant, not lost; writes can use another ready backend, and the dormant occurrence becomes visible when its backend recovers.
 
-The engine's own state persists in `wp_options` rows under the reserved `a8csp_bgte_` prefix, and no engine row is ever autoloaded, so engine storage adds no weight to ordinary page loads.
+The engine's own state persists in `wp_options` rows under the reserved `a8csp_bgte_` prefix, and no engine row is ever autoloaded, so engine storage adds no weight to ordinary page loads. Schedule registrations use one `a8csp_bgte_schedule_registrations_{owner}` row per owner.
 
 ## Installation
 

@@ -239,36 +239,30 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns one schedule-registry option containing each requested owner slice.
+	 * Returns one owner's schedule-registration option name and exact raw value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param list<array{
+	 * @phpstan-param array{
 	 *     owner: string,
 	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule, task: string}>,
 	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
-	 * }> $owners
+	 * } $owner
 	 *
-	 * @param   array $owners Owner writes in record order.
+	 * @param   array $owner Complete owner fixture request.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function schedule_registry( array $owners ): array {
-		if ( array() === $owners ) {
-			throw new \InvalidArgumentException( 'Schedule-registry fixtures require at least one owner slice.' );
-		}
-
+	public function schedule_registration( array $owner ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $owners ): array {
+			function ( \wpdb $wpdb ) use ( $owner ): array {
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ) );
-				foreach ( $owners as $owner ) {
-					if ( ! $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
-						throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registry fixture.' );
-					}
+				if ( ! $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
+					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
-				return $this->row( $wpdb, ScheduleRegistry::OPTION_NAME );
+				return $this->row( $wpdb, ScheduleRegistry::option_name( $owner['owner'] ) );
 			}
 		);
 	}

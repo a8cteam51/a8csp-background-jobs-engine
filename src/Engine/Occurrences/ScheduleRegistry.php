@@ -25,14 +25,14 @@ final class ScheduleRegistry {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Fixed option containing every owner's registration state.
+	 * Prefix for per-owner schedule-registration rows.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_NAME = 'a8csp_bgte_schedules';
+	public const string OPTION_PREFIX = 'a8csp_bgte_schedule_registrations_';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended write fails safely.
@@ -86,17 +86,19 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registrations_for( string $owner ): AbstractResult {
-		$registry = $this->stored_registry();
-		if ( $registry->is_failure() ) {
-			return $registry;
+		$selected = $this->rows->read( self::option_name( $owner ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
 		}
 
-		$rows = $registry->value[ $owner ] ?? null;
-		if ( ! \is_array( $rows ) ) {
+		$raw = $selected->value;
+		if ( null === $raw ) {
 			return new Success( array() );
 		}
 
-		return new Success( self::registrations_from_rows( $owner, $rows ) );
+		$stored = RawOptionDecoder::decode( $raw );
+
+		return new Success( \is_array( $stored ) ? self::registrations_from_rows( $owner, $stored ) : array() );
 	}
 
 	/**
@@ -111,18 +113,34 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function all_registrations(): AbstractResult {
-		$registry = $this->stored_registry();
-		if ( $registry->is_failure() ) {
-			return $registry;
+		$names = $this->rows->option_names( self::OPTION_PREFIX );
+		if ( $names->is_failure() ) {
+			return $names;
 		}
 
 		$registrations = array();
-		foreach ( $registry->value as $owner => $rows ) {
-			if ( ! \is_array( $rows ) ) {
+		foreach ( $names->value as $option_name ) {
+			$owner = self::owner_from_option_name( $option_name );
+			if ( null === $owner ) {
 				continue;
 			}
 
-			foreach ( self::registrations_from_rows( (string) $owner, $rows ) as $identity => $registration ) {
+			$selected = $this->rows->read( $option_name );
+			if ( $selected->is_failure() ) {
+				return $selected;
+			}
+
+			$raw = $selected->value;
+			if ( null === $raw ) {
+				continue;
+			}
+
+			$stored = RawOptionDecoder::decode( $raw );
+			if ( ! \is_array( $stored ) ) {
+				continue;
+			}
+
+			foreach ( self::registrations_from_rows( $owner, $stored ) as $identity => $registration ) {
 				$registrations[ $identity ] = $registration;
 			}
 		}
@@ -151,9 +169,10 @@ final class ScheduleRegistry {
 		if ( null === $owner_registrations ) {
 			return false;
 		}
+		$option_name = self::option_name( $owner );
 
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
-			$read = $this->rows->read( self::OPTION_NAME );
+			$read = $this->rows->read( $option_name );
 			if ( $read->is_failure() ) {
 				return false;
 			}
@@ -166,8 +185,8 @@ final class ScheduleRegistry {
 					return true;
 				}
 
-				$replacement_raw = self::serialize_registry( array( $owner => $owner_registrations ) );
-				if ( $this->rows->insert_if_absent( self::OPTION_NAME, $replacement_raw ) ) {
+				$replacement_raw = self::serialize_registrations( $owner_registrations );
+				if ( $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return true;
@@ -181,27 +200,20 @@ final class ScheduleRegistry {
 				return false;
 			}
 
-			$next = $stored;
-			if ( array() === $owner_registrations ) {
-				unset( $next[ $owner ] );
-			} else {
-				$next[ $owner ] = $owner_registrations;
-			}
-
-			if ( $next === $stored ) {
+			if ( $owner_registrations === $stored ) {
 				$this->retain_owner( $owner, $schedules );
 
 				return true;
 			}
 
-			if ( array() === $next ) {
-				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( self::OPTION_NAME, $expected_raw ) ) {
+			if ( array() === $owner_registrations ) {
+				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $option_name, $expected_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return true;
 				}
 
-				$current = $this->rows->read( self::OPTION_NAME );
+				$current = $this->rows->read( $option_name );
 				if ( $current->is_failure() ) {
 					return false;
 				}
@@ -220,14 +232,14 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$replacement_raw = self::serialize_registry( $next );
-			if ( $this->rows->compare_and_swap( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
+			$replacement_raw = self::serialize_registrations( $owner_registrations );
+			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
 				$this->retain_owner( $owner, $schedules );
 
 				return true;
 			}
 
-			$current = $this->rows->read( self::OPTION_NAME );
+			$current = $this->rows->read( $option_name );
 			if ( $current->is_failure() ) {
 				return false;
 			}
@@ -313,9 +325,10 @@ final class ScheduleRegistry {
 			return RegistrationUpdateOutcome::Failed;
 		}
 
-		$owner = $parts[0];
+		$owner       = $parts[0];
+		$option_name = self::option_name( $owner );
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
-			$expected = $this->rows->read( self::OPTION_NAME );
+			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
 				return RegistrationUpdateOutcome::Failed;
 			}
@@ -330,15 +343,14 @@ final class ScheduleRegistry {
 				return RegistrationUpdateOutcome::Failed;
 			}
 
-			$owner_rows = $stored[ $owner ] ?? null;
 			// The fresh existence check prevents a concurrently pruned row from being resurrected.
-			if ( ! \is_array( $owner_rows ) || ! \array_key_exists( $registration_key, $owner_rows ) ) {
+			if ( ! \array_key_exists( $registration_key, $stored ) ) {
 				return RegistrationUpdateOutcome::Pruned;
 			}
 
 			// A row update persists only for the definition generation the caller validated;
 			// a changed fingerprint marks an in-flight occurrence as superseded by synchronization.
-			$current_registration = $owner_rows[ $registration_key ];
+			$current_registration = $stored[ $registration_key ];
 			if (
 				! \is_array( $current_registration )
 				|| ( $current_registration['fingerprint'] ?? null ) !== $observed_fingerprint
@@ -346,14 +358,13 @@ final class ScheduleRegistry {
 				return RegistrationUpdateOutcome::Superseded;
 			}
 
-			$owner_rows[ $registration_key ] = $registration;
-			$stored[ $owner ]                = $owner_rows;
-			$replacement_raw                 = self::serialize_registry( $stored );
-			if ( $this->rows->compare_and_swap( self::OPTION_NAME, $expected_raw, $replacement_raw ) ) {
+			$stored[ $registration_key ] = $registration;
+			$replacement_raw             = self::serialize_registrations( $stored );
+			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
 				return RegistrationUpdateOutcome::Updated;
 			}
 
-			$current = $this->rows->read( self::OPTION_NAME );
+			$current = $this->rows->read( $option_name );
 			if ( $current->is_failure() ) {
 				return RegistrationUpdateOutcome::Failed;
 			}
@@ -460,48 +471,63 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Returns the persisted top-level registry or an empty replacement for malformed data.
+	 * Returns the option name for one owner's registration row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  AbstractResult<array<array-key, mixed>, EngineError>
-	 */
-	private function stored_registry(): AbstractResult {
-		$selected = $this->rows->read( self::OPTION_NAME );
-		if ( $selected->is_failure() ) {
-			return $selected;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return new Success( array() );
-		}
-
-		$stored = RawOptionDecoder::decode( $raw );
-
-		return new Success( \is_array( $stored ) ? $stored : array() );
-	}
-
-	/**
-	 * Returns a registry's exact WordPress option representation.
+	 * @param   string $owner Stable consumer or engine identifier.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $registry Complete registry state.
-	 *
-	 * @throws  \LogicException When WordPress does not serialize the registry to a string.
+	 * @throws  \InvalidArgumentException When the owner fails identity validation.
 	 *
 	 * @return  string
 	 */
-	private static function serialize_registry( array $registry ): string {
-		$raw = \maybe_serialize( $registry );
+	public static function option_name( string $owner ): string {
+		WorkIdentity::validate_owner( $owner, true );
+
+		return self::OPTION_PREFIX . $owner;
+	}
+
+	/**
+	 * Returns one owner row's exact WordPress option representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $registrations Complete owner registration state.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the registrations to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize_registrations( array $registrations ): string {
+		$raw = \maybe_serialize( $registrations );
 		if ( ! \is_string( $raw ) ) {
-			throw new \LogicException( 'WordPress must serialize the schedule registry to a string.' );
+			throw new \LogicException( 'WordPress must serialize schedule registrations to a string.' );
 		}
 
 		return $raw;
+	}
+
+	/**
+	 * Returns the canonical owner encoded by one registration option name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Persisted option name.
+	 *
+	 * @return  string|null
+	 */
+	private static function owner_from_option_name( string $option_name ): ?string {
+		$owner = \substr( $option_name, \strlen( self::OPTION_PREFIX ) );
+		try {
+			WorkIdentity::validate_owner( $owner, true );
+		} catch ( \InvalidArgumentException ) {
+			return null;
+		}
+
+		return self::OPTION_PREFIX . $owner === $option_name ? $owner : null;
 	}
 
 	/**

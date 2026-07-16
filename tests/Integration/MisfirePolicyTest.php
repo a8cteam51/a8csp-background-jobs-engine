@@ -129,7 +129,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$now    = \time();
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
-		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( ScheduleRegistry::option_name( self::RUN_ONCE_OWNER ) );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::RUN_ONCE_TASK_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::RUN_ONCE_TASK );
@@ -169,7 +169,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$now    = \time();
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
-		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( ScheduleRegistry::option_name( self::SKIP_OWNER ) );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::SKIP_TASK );
 		$this->register_deterministic_task( self::SKIP_TASK_IDENTITY, $task );
@@ -220,7 +220,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$now    = \time();
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
-		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( ScheduleRegistry::option_name( self::BOUNDARY_OWNER ) );
 		$this->expect_option( 'a8csp_bgte_latest_' . self::EXACT_TASK_IDENTITY );
 		$engine      = $this->build_engine( $clock, $logger );
 		$exact_task  = new RecordingTask( self::EXACT_TASK );

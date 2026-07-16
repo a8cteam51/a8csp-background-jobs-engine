@@ -260,7 +260,7 @@ final class ScheduleExecutionTest extends TestCase {
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
 				self::assertInstanceOf( Success::class, $this->consumer->schedules()->sync( array( $replacement ) ) );
-				$replacement_raw = $wpdb->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
+				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null;
 				self::assertIsString( $replacement_raw );
 			}
 		);
@@ -269,7 +269,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertIsString( $replacement_raw );
-		self::assertSame( $replacement_raw, $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( $replacement_raw, $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
 		self::assertSame( 600, $this->registration()['recurrence'] ?? null );
 		self::assertContains( 'enqueue_async', \array_column( $this->rig->backend()->calls, 'verb' ) );
 		self::assertSame( 'Schedule registration superseded concurrently; delivery state discarded.', $this->rig->logger()->records[0]['message'] ?? null );
@@ -290,18 +290,14 @@ final class ScheduleExecutionTest extends TestCase {
 		$original    = self::schedule();
 		$replacement = self::schedule( interval: 600 );
 		$this->sync_schedule( $original );
-		$fixture = $this->fixtures->schedule_registry(
-			array(
-				self::owner_fixture( $replacement, self::NOW + 600 ),
-			)
-		);
+		$fixture = $this->fixtures->schedule_registration( self::owner_fixture( $replacement, self::NOW + 600 ) );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 		$this->rig->clock()->timestamp = self::NOW + 600;
 
 		$this->rig->run_due();
 
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
-		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
 		self::assertSame( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 

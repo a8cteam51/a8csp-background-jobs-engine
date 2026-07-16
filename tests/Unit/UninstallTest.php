@@ -164,6 +164,8 @@ final class UninstallTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const DYNAMIC_OPTIONS = array(
+		'a8csp_bgte_schedule_registrations_consumer-plugin',
+		'a8csp_bgte_schedule_registrations_a8csp-bgte',
 		'a8csp_bgte_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
 		'a8csp_bgte_latest_consumer-plugin:email-digest',
 		'a8csp_bgte_history_consumer-plugin:email-digest',
@@ -171,9 +173,6 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgte_cleanup_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgte_failed_consumer-plugin:email-digest',
-	);
-	private const FIXED_OPTIONS   = array(
-		'a8csp_bgte_schedules',
 	);
 	private const LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start',
@@ -204,7 +203,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 
-		$options = array_fill_keys( array_merge( self::DYNAMIC_OPTIONS, self::FIXED_OPTIONS ), 'sentinel' );
+		$options = array_fill_keys( self::DYNAMIC_OPTIONS, 'sentinel' );
 
 		$options[ self::NEAR_MISS ] = 'sentinel';
 
@@ -228,13 +227,10 @@ final class UninstallTest extends TestCase {
 		foreach ( self::DYNAMIC_OPTIONS as $option ) {
 			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgte_test_options'] );
 		}
-		foreach ( self::FIXED_OPTIONS as $option ) {
-			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgte_test_options'] );
-		}
 		$option_calls      = $this->option_calls();
 		$first_option_call = $option_calls[0] ?? null;
 		self::assertIsArray( $first_option_call );
-		self::assertSame( array( 'a8csp_bgte_schedules' ), $first_option_call['args'] ?? null );
+		self::assertSame( array( 'a8csp_bgte_schedule_registrations_consumer-plugin' ), $first_option_call['args'] ?? null );
 		self::assertArrayHasKey( self::NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
 		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::NEAR_MISS ] );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {

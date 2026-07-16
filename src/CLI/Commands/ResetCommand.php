@@ -40,6 +40,7 @@ final readonly class ResetCommand {
 	 * @var     list<string>
 	 */
 	private const OPTION_PREFIXES = array(
+		ScheduleRegistry::OPTION_PREFIX,
 		RunStore::OPTION_PREFIX,
 		FailedRunStore::OPTION_PREFIX,
 		RunHistory::OPTION_PREFIX,
@@ -47,18 +48,6 @@ final readonly class ResetCommand {
 		OverlapGuard::OPTION_PREFIX,
 		OccurrenceLease::OPTION_PREFIX,
 		CleanupIntents::OPTION_PREFIX,
-	);
-
-	/**
-	 * Canonical persisted-state option names owned by their storage implementations.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     list<string>
-	 */
-	private const EXACT_OPTION_NAMES = array(
-		ScheduleRegistry::OPTION_NAME,
 	);
 
 	/**
@@ -217,20 +206,6 @@ final readonly class ResetCommand {
 		return self::OPTION_PREFIXES;
 	}
 
-	/**
-	 * Returns the canonical exact persisted-state names in deletion order.
-	 *
-	 * @internal Command coverage seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<string>
-	 */
-	public static function exact_option_names(): array {
-		return self::EXACT_OPTION_NAMES;
-	}
-
 	// endregion
 
 	// region HELPERS
@@ -247,16 +222,6 @@ final readonly class ResetCommand {
 	 */
 	private static function persisted_rows( OptionRows $option_rows ): array|string {
 		$rows = array();
-		foreach ( self::EXACT_OPTION_NAMES as $option_name ) {
-			$selected = $option_rows->read( $option_name );
-			if ( $selected->is_failure() ) {
-				return \sprintf( 'Engine option row "%s" could not be read; resolve the database error and retry the reset.', $option_name );
-			}
-			if ( null !== $selected->value ) {
-				$rows[ $option_name ] = $selected->value;
-			}
-		}
-
 		foreach ( self::OPTION_PREFIXES as $prefix ) {
 			$names = $option_rows->option_names( $prefix );
 			if ( $names->is_failure() ) {
@@ -264,10 +229,6 @@ final readonly class ResetCommand {
 			}
 
 			foreach ( $names->value as $option_name ) {
-				if ( \array_key_exists( $option_name, $rows ) ) {
-					continue;
-				}
-
 				$selected = $option_rows->read( $option_name );
 				if ( $selected->is_failure() ) {
 					return \sprintf( 'Engine option row "%s" could not be read; resolve the database error and retry the reset.', $option_name );

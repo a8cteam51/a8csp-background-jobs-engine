@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
@@ -261,16 +262,15 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'lock-tests:invalid-task' );
 		$this->put(
-			$fixture->schedule_registry(
+			$fixture->schedule_registration(
 				array(
-					array(
-						'owner'         => 'lock-tests',
-						'declarations'  => $declarations,
-						'registrations' => $registrations,
-					),
+					'owner'         => 'lock-tests',
+					'declarations'  => $declarations,
+					'registrations' => $registrations,
 				)
 			)
 		);
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
 		$this->rig->wpdb()->put( 'a8csp_bgte_lock_lock-tests:invalid-task_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
@@ -493,33 +493,31 @@ final class CommandsAndOutputTest extends TestCase {
 			);
 		}
 		$this->put(
-			StoreFixtureBuilder::for_identity( 'due-tests:refresh' )->schedule_registry(
+			StoreFixtureBuilder::for_identity( 'due-tests:refresh' )->schedule_registration(
 				array(
-					array(
-						'owner'         => 'due-tests',
-						'declarations'  => $declarations,
-						'registrations' => array(
-							'due-tests:future'  => array(
-								'fingerprint' => $schedules['future']->fingerprint(),
-								'next_due'    => 86_460,
-								'last_fired'  => null,
-								'misfires'    => 0,
-								'skips'       => 0,
-							),
-							'due-tests:now'     => array(
-								'fingerprint' => $schedules['now']->fingerprint(),
-								'next_due'    => 86_400,
-								'last_fired'  => null,
-								'misfires'    => 0,
-								'skips'       => 0,
-							),
-							'due-tests:overdue' => array(
-								'fingerprint' => $schedules['overdue']->fingerprint(),
-								'next_due'    => 82_800,
-								'last_fired'  => null,
-								'misfires'    => 0,
-								'skips'       => 0,
-							),
+					'owner'         => 'due-tests',
+					'declarations'  => $declarations,
+					'registrations' => array(
+						'due-tests:future'  => array(
+							'fingerprint' => $schedules['future']->fingerprint(),
+							'next_due'    => 86_460,
+							'last_fired'  => null,
+							'misfires'    => 0,
+							'skips'       => 0,
+						),
+						'due-tests:now'     => array(
+							'fingerprint' => $schedules['now']->fingerprint(),
+							'next_due'    => 86_400,
+							'last_fired'  => null,
+							'misfires'    => 0,
+							'skips'       => 0,
+						),
+						'due-tests:overdue' => array(
+							'fingerprint' => $schedules['overdue']->fingerprint(),
+							'next_due'    => 82_800,
+							'last_fired'  => null,
+							'misfires'    => 0,
+							'skips'       => 0,
 						),
 					),
 				)

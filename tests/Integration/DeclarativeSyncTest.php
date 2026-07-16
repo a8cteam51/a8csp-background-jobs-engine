@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 
 /**
@@ -19,9 +20,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
  */
 final class DeclarativeSyncTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
-
-	/** Persisted schedule registry option. */
-	private const REGISTRY_OPTION = 'a8csp_bgte_schedules';
 
 	/** Internal occurrence hook owned by the engine. */
 	private const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
@@ -143,7 +141,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_owner_sync_prunes_an_orphan_registration_and_occurrence(): void {
-		$this->expect_option( self::REGISTRY_OPTION );
+		$this->expect_option( ScheduleRegistry::option_name( self::ORPHAN_OWNER ) );
 		$schedule_a = new Schedule( 'orphan-a', Recurrence::every( 300 ), 'integration-declarative-orphan-task-a' );
 		$schedule_b = new Schedule( 'orphan-b', Recurrence::every( 600 ), 'integration-declarative-orphan-task-b' );
 		$this->assert_sync_succeeds( self::ORPHAN_OWNER, array( $schedule_a, $schedule_b ) );
@@ -169,7 +167,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_fingerprint_change_reschedules_the_occurrence(): void {
-		$this->expect_option( self::REGISTRY_OPTION );
+		$this->expect_option( ScheduleRegistry::option_name( self::FINGERPRINT_OWNER ) );
 		$original    = new Schedule( 'fingerprint', Recurrence::every( 300 ), 'integration-declarative-fingerprint-task', array( 'mode' => 'original' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 21 );
 		$replacement = new Schedule( 'fingerprint', Recurrence::every( 900 ), 'integration-declarative-fingerprint-task', array( 'mode' => 'replacement' ), OverlapPolicy::Replace, CatchUpPolicy::Skip, 22 );
 		$this->assert_sync_succeeds( self::FINGERPRINT_OWNER, array( $original ) );
@@ -200,13 +198,14 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_identical_redeclaration_is_an_exact_noop(): void {
-		$this->expect_option( self::REGISTRY_OPTION );
+		$registry_option = ScheduleRegistry::option_name( self::NOOP_OWNER );
+		$this->expect_option( $registry_option );
 		$declaration = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-task', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $declaration ) );
 		$registration_key  = self::NOOP_OWNER . ':noop';
 		$action_id         = $this->sole_pending_schedule_action_id( $registration_key );
 		$action_snapshot   = $this->action_snapshot( $action_id );
-		$registry_snapshot = \get_option( self::REGISTRY_OPTION, array() );
+		$registry_snapshot = \get_option( $registry_option, array() );
 		self::assertIsArray( $registry_snapshot );
 		$inspection_snapshot = $this->schedule_entries( self::NOOP_OWNER );
 
@@ -216,7 +215,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertSame( $inspection_snapshot, $this->schedule_entries( self::NOOP_OWNER ) );
 		self::assertSame( array( $action_id ), $this->pending_schedule_action_ids( $registration_key ) );
 		self::assertSame( $action_snapshot, $this->action_snapshot( $action_id ) );
-		self::assertSame( $registry_snapshot, \get_option( self::REGISTRY_OPTION, array() ) );
+		self::assertSame( $registry_snapshot, \get_option( $registry_option, array() ) );
 	}
 
 	/**
@@ -228,7 +227,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_orphan_detection_is_scoped_to_the_synced_owner(): void {
-		$this->expect_option( self::REGISTRY_OPTION );
+		$this->expect_option( ScheduleRegistry::option_name( self::SCOPED_OWNER_B ) );
 		$schedule_a = new Schedule( 'scoped-a', Recurrence::every( 360 ), 'integration-declarative-scoped-task-a' );
 		$schedule_b = new Schedule( 'scoped-b', Recurrence::every( 720 ), 'integration-declarative-scoped-task-b', array( 'owner' => 'b' ), OverlapPolicy::Skip, CatchUpPolicy::Skip, 64 );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_A, array( $schedule_a ) );

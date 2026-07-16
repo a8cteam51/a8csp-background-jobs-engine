@@ -14,13 +14,11 @@
 
 /*
  * The plugin's persisted footprint. Every fixed option and user-meta key any component writes
- * is listed here, in the same change that introduces the write — grouped by owning component
- * so ownership stays reviewable. Runtime-suffixed option families use the prefix sweep below.
+ * is listed here, in the same change that introduces the write. Runtime-suffixed option families
+ * use the prefix sweep below.
  */
 $a8csp_bgte_footprint = array(
-	'options'   => array(
-		'a8csp_bgte_schedules',
-	),
+	'options'   => array(),
 	'user_meta' => array(),
 );
 
@@ -34,23 +32,19 @@ $a8csp_bgte_lifecycle_hooks = array(
 );
 
 /*
- * Run, latest-pointer, history, execution-lock, occurrence-lease, and failed-run option names
- * end in task, batch, run, registration-hash, or argument-hash identifiers that do not exist
- * until runtime, so no static list can name every row. The shared prefix is the complete ownership
- * boundary for standalone engine options. Escaping it before appending the wildcard keeps each
- * underscore literal instead of letting SQL LIKE broaden the sweep to similarly spelled foreign
- * options.
+ * Schedule-registration, run, latest-pointer, history, execution-lock, occurrence-lease, and
+ * failed-run option names end in owner, task, batch, run, registration-hash, or argument-hash
+ * identifiers that do not exist until runtime, so no static list can name every row. The shared
+ * prefix is the complete ownership boundary for standalone engine options. Escaping it before
+ * appending the wildcard keeps each underscore literal instead of letting SQL LIKE broaden the
+ * sweep to similarly spelled foreign options.
  *
  * Selecting the names directly is intentional in this cold bootstrap: delete_option() still
  * performs each deletion so WordPress preserves its normal cache invalidation and hooks. The
  * complete per-site cleanup stays in one closure so the single-site and network paths cannot
  * drift apart.
  */
-$a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8csp_bgte_lifecycle_hooks ): void {
-	foreach ( $a8csp_bgte_footprint['options'] as $a8csp_bgte_uninstall_option ) {
-		delete_option( $a8csp_bgte_uninstall_option );
-	}
-
+$a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hooks ): void {
 	global $wpdb;
 
 	/**

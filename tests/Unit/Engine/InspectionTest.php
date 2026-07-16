@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
@@ -103,42 +104,45 @@ final class InspectionTest extends TestCase {
 		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( $schedule ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->put(
-			$fixture->schedule_registry(
+			$fixture->schedule_registration(
 				array(
-					array(
-						'owner'         => 'owner-a',
-						'declarations'  => array(
-							'owner-a:nightly' => array(
-								'schedule' => $schedule,
-								'task'     => 'owner-a:refresh-index',
-							),
-						),
-						'registrations' => array(
-							'owner-a:nightly' => array(
-								'fingerprint' => $schedule->fingerprint(),
-								'next_due'    => self::NOW + 300,
-								'last_fired'  => self::NOW - 60,
-								'misfires'    => 1,
-								'skips'       => 2,
-							),
+					'owner'         => 'owner-a',
+					'declarations'  => array(
+						'owner-a:nightly' => array(
+							'schedule' => $schedule,
+							'task'     => 'owner-a:refresh-index',
 						),
 					),
-					array(
-						'owner'         => 'owner-b',
-						'declarations'  => array(),
-						'registrations' => array(
-							'owner-b:orphaned' => array(
-								'fingerprint' => 'orphaned',
-								'next_due'    => self::NOW + 600,
-								'last_fired'  => null,
-								'misfires'    => 4,
-								'skips'       => 5,
-							),
+					'registrations' => array(
+						'owner-a:nightly' => array(
+							'fingerprint' => $schedule->fingerprint(),
+							'next_due'    => self::NOW + 300,
+							'last_fired'  => self::NOW - 60,
+							'misfires'    => 1,
+							'skips'       => 2,
 						),
 					),
 				)
 			)
 		);
+		$this->put(
+			$fixture->schedule_registration(
+				array(
+					'owner'         => 'owner-b',
+					'declarations'  => array(),
+					'registrations' => array(
+						'owner-b:orphaned' => array(
+							'fingerprint' => 'orphaned',
+							'next_due'    => self::NOW + 600,
+							'last_fired'  => null,
+							'misfires'    => 4,
+							'skips'       => 5,
+						),
+					),
+				)
+			)
+		);
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
 		$this->put( $fixture->lock( $fixture->args_hash( $schedule->args ), 'run-lock', self::NOW, self::NOW ) );
 		$this->rig->backend()->scheduled = true;
 
@@ -203,16 +207,15 @@ final class InspectionTest extends TestCase {
 		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-task' );
 		$this->put(
-			$fixture->schedule_registry(
+			$fixture->schedule_registration(
 				array(
-					array(
-						'owner'         => 'owner',
-						'declarations'  => $declarations,
-						'registrations' => $registrations,
-					),
+					'owner'         => 'owner',
+					'declarations'  => $declarations,
+					'registrations' => $registrations,
 				)
 			)
 		);
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
 		$this->rig->wpdb()->put( 'a8csp_bgte_lock_owner:invalid-task_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(

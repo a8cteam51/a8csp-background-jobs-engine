@@ -85,7 +85,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Declares the registry row every spawned WP-CLI child recreates through its own init sync.
+	 * Declares the registry rows every spawned WP-CLI child recreates through its own init sync.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -95,7 +95,8 @@ final class CLICommandTest extends IntegrationTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->expect_option( 'a8csp_bgte_schedules' );
+		$this->expect_option( 'a8csp_bgte_schedule_registrations_a8csp-bgte' );
+		$this->expect_option( 'a8csp_bgte_schedule_registrations_' . self::INSPECTION_OWNER );
 	}
 
 	// endregion.
