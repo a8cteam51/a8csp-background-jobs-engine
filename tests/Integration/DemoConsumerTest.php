@@ -229,7 +229,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 		$schedule_due_before_manual = \did_action( 'a8csp_background_tasks/schedule_due' );
 		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
-			'a8csp_background_tasks/run' === $hook
+			'a8csp_background_tasks/run_task' === $hook
 			&& ( $args[1] ?? null ) === $manual_run_id;
 		$manual_actions_processed   = \class_exists( \ActionScheduler::class )
 			? $this->run_matching_due_action( $matches_manual_run )

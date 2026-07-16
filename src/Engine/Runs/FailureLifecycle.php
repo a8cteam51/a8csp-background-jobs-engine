@@ -70,7 +70,7 @@ final readonly class FailureLifecycle {
 	 * @return  void
 	 */
 	public function handle_task_failure( TaskInterface $task, string $task_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
-		$this->handle_failure( $task, $task_name, $run_id, $state, $run_store, $throwable );
+		$this->handle_failure( 'Task', $task, $task_name, $run_id, $state, $run_store, $throwable );
 	}
 
 	/**
@@ -90,7 +90,7 @@ final readonly class FailureLifecycle {
 	 * @return  void
 	 */
 	public function handle_batch_failure( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, array $chunk_args ): void {
-		$this->handle_failure( $batch, $batch_name, $run_id, $state, $run_store, $throwable, $chunk_args );
+		$this->handle_failure( 'Batch', $batch, $batch_name, $run_id, $state, $run_store, $throwable, $chunk_args );
 	}
 
 	/**
@@ -99,6 +99,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   'Task'|'Batch'               $work_type Work contract type selected by the typed delivery path.
 	 * @param   TaskInterface|BatchInterface $contract   Failed work contract.
 	 * @param   string                       $identity   Complete owner-qualified work identity.
 	 * @param   string                       $run_id     Run identifier.
@@ -109,9 +110,8 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function handle_failure( TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
-		$work_type = $contract instanceof BatchInterface ? 'Batch' : 'Task';
-		$reset_at  = $this->clock->now()->getTimestamp();
+	private function handle_failure( string $work_type, TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
+		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
@@ -125,7 +125,7 @@ final readonly class FailureLifecycle {
 			? new EngineError( InvalidBatchChunkException::MESSAGE, \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
-			$this->fail_terminally( $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -137,7 +137,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -147,7 +147,7 @@ final readonly class FailureLifecycle {
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$this->fail_terminally( $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -159,7 +159,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $contract, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $chunk_args );
 		}
 	}
 
@@ -169,6 +169,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   'Task'|'Batch'               $work_type    Work contract type selected by the typed delivery path.
 	 * @param   TaskInterface|BatchInterface $contract      Failed work contract.
 	 * @param   string                       $identity      Complete owner-qualified work identity.
 	 * @param   string                       $run_id        Run identifier.
@@ -182,8 +183,8 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
-		if ( $contract instanceof BatchInterface ) {
+	private function fail_terminally( string $work_type, TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
+		if ( 'Batch' === $work_type && $contract instanceof BatchInterface ) {
 			$this->terminal_transitions->fail_batch( $contract, $identity, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
 
 			return;
@@ -317,7 +318,7 @@ final readonly class FailureLifecycle {
 			}
 			$action_args[] = $state->action_seq;
 
-			$scheduled = $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $fire_at, $action_args, $identity . '|' . $run_id, 10 );
+			$scheduled = $this->scheduler->schedule_single( 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task', $fire_at, $action_args, $identity . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,

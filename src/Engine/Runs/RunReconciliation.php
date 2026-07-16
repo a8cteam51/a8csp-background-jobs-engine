@@ -282,7 +282,7 @@ final readonly class RunReconciliation {
 				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $work_type, $expected_raw );
 			}
 
-			$scheduled = $this->redrive_pending_action( $identity, $run_id, $state );
+			$scheduled = $this->redrive_pending_action( $identity, $run_id, $state, $work_type );
 			if ( ! $scheduled->is_failure() ) {
 				return new Success( null );
 			}
@@ -415,22 +415,23 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified task or batch identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Stale non-executing running state.
+	 * @param   string         $identity  Complete owner-qualified task or batch identity.
+	 * @param   string         $run_id    Run identifier.
+	 * @param   RunState       $state     Stale non-executing running state.
+	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 *
 	 * @throws  \LogicException When a schema-valid descriptor conflicts with its run state.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function redrive_pending_action( string $identity, string $run_id, RunState $state ): AbstractResult {
+	private function redrive_pending_action( string $identity, string $run_id, RunState $state, string $work_type ): AbstractResult {
 		$pending = $state->pending;
 		if ( null === $pending ) {
 			throw new \LogicException( 'Pending-action redrive requires a durable descriptor.' );
 		}
 
 		$args = array( $identity, $run_id );
-		if ( 'run' === $pending->stage && 'batch' === $this->work->kind( $identity ) ) {
+		if ( 'run' === $pending->stage && 'Batch' === $work_type ) {
 			$chunk_args = $state->queue[0] ?? null;
 			if ( ! \is_array( $chunk_args ) ) {
 				throw new \LogicException( 'Pending batch run redrive requires a retained queue head.' );
@@ -439,7 +440,9 @@ final readonly class RunReconciliation {
 			$args[] = $chunk_args;
 		}
 		$args[] = $state->action_seq;
-		$hook   = 'a8csp_background_tasks/' . $pending->stage;
+		$hook   = 'run' === $pending->stage
+			? ( 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task' )
+			: 'a8csp_background_tasks/' . $pending->stage;
 		$group  = $identity . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {
 			return $this->scheduler->enqueue_async( $hook, $args, $group, $pending->priority );

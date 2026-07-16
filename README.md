@@ -341,7 +341,7 @@ For each lifecycle pair, the identity-specific hook fires first and the generic 
 
 Run IDs, identities, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfire-skipped hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
-Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start`, `a8csp_background_tasks/continue`, `a8csp_background_tasks/run`, `a8csp_background_tasks/cleanup`, or `a8csp_background_tasks/schedule_due`.
+Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start`, `a8csp_background_tasks/continue`, `a8csp_background_tasks/run_task`, `a8csp_background_tasks/run_chunk`, `a8csp_background_tasks/cleanup`, or `a8csp_background_tasks/schedule_due`.
 
 | Filter | Input and required return |
 | --- | --- |

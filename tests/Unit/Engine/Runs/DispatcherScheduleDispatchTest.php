@@ -375,7 +375,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @return list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

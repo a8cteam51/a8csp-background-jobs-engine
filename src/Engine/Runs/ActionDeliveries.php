@@ -57,14 +57,24 @@ final readonly class ActionDeliveries {
 	public const string CLEANUP_HOOK = 'a8csp_background_tasks/cleanup';
 
 	/**
-	 * Internal hook that executes task work or one batch chunk.
+	 * Internal hook that executes task work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string RUN_HOOK = 'a8csp_background_tasks/run';
+	public const string RUN_TASK_HOOK = 'a8csp_background_tasks/run_task';
+
+	/**
+	 * Internal hook that executes one batch chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	public const string RUN_CHUNK_HOOK = 'a8csp_background_tasks/run_chunk';
 
 	/**
 	 * Internal hook that generates and starts a batch queue.
@@ -254,92 +264,43 @@ final readonly class ActionDeliveries {
 			return;
 		}
 		$state     = $replacement;
-		$scheduled = $this->scheduler->enqueue_async( self::RUN_HOOK, array( $batch_name, $run_id, $chunk_args, $state->action_seq ), $batch_name . '|' . $run_id );
+		$scheduled = $this->scheduler->enqueue_async( self::RUN_CHUNK_HOOK, array( $batch_name, $run_id, $chunk_args, $state->action_seq ), $batch_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
 			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
 		}
 	}
 
 	/**
-	 * Dispatches one scheduled run action to its registered task or batch.
+	 * Handles one scheduled task run action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                      $identity                 Complete owner-qualified task or batch identity.
-	 * @param   string                      $run_id                   Run identifier.
-	 * @param   array<array-key, mixed>|int $chunk_args_or_action_seq Batch chunk arguments or a task action sequence.
-	 * @param   int|null                    $action_seq               Batch action sequence, or null for a task action.
+	 * @param   string $task_name  Complete owner-qualified task identity.
+	 * @param   string $run_id     Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_run_action( string $identity, string $run_id, array|int $chunk_args_or_action_seq, ?int $action_seq = null ): void {
-		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
-		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
-		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
-		$kind         = $this->work->kind( $identity );
-		$task         = 'task' === $kind ? $this->tasks->get( $identity ) : null;
-		$batch        = 'batch' === $kind ? $this->batches->get( $identity ) : null;
-		$liveness_at  = null;
-		if ( null === $chunk_args && null !== $task ) {
-			$liveness_at = fn (): int => $this->execution_lease_at( $task );
-		} elseif ( null !== $chunk_args && null !== $batch ) {
-			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
-		}
-		$run_store = $this->stores->run_store( $identity );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( $work_type, $identity, $run_id, $received_seq, $run_store, $liveness_at );
-		if ( null === $state ) {
-			return;
-		}
+	public function handle_run_task_action( string $task_name, string $run_id, int $action_seq ): void {
+		$this->handle_run_action( $task_name, $run_id, null, $action_seq );
+	}
 
-		if ( null !== $task ) {
-			if ( null !== $chunk_args ) {
-				$this->logger->warning(
-					'Task run action carries batch chunk arguments; schedule task runs with only the task name and run identifier.',
-					array(
-						'task_name' => $identity,
-						'run_id'    => $run_id,
-					)
-				);
-				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
-
-				return;
-			}
-
-			$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
-
-			return;
-		}
-
-		if ( null !== $batch ) {
-			if ( null === $chunk_args ) {
-				$this->logger->warning(
-					'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
-					array(
-						'batch_name' => $identity,
-						'run_id'     => $run_id,
-					)
-				);
-				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
-
-				return;
-			}
-
-			$this->handle_batch_run_action( $batch, $identity, $run_id, $chunk_args, $state, $run_store );
-
-			return;
-		}
-
-		$this->logger->warning(
-			null === $chunk_args
-				? 'Task run action references an unregistered task; register the task before dispatching its run action.'
-				: 'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
-			array(
-				( null === $chunk_args ? 'task_name' : 'batch_name' ) => $identity,
-				'run_id' => $run_id,
-			)
-		);
-		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
+	/**
+	 * Handles one scheduled batch-chunk run action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $batch_name Complete owner-qualified batch identity.
+	 * @param   string                  $run_id    Run identifier.
+	 * @param   array<array-key, mixed> $chunk_args Batch chunk arguments.
+	 * @param   int                     $action_seq Expected lifecycle action sequence.
+	 *
+	 * @return  void
+	 */
+	public function handle_run_chunk_action( string $batch_name, string $run_id, array $chunk_args, int $action_seq ): void {
+		$this->handle_run_action( $batch_name, $run_id, $chunk_args, $action_seq );
 	}
 
 	/**
@@ -393,13 +354,94 @@ final readonly class ActionDeliveries {
 	public function register_hooks(): void {
 		\add_action( self::START_HOOK, array( $this, 'handle_start_action' ), 10, 3 );
 		\add_action( self::CONTINUE_HOOK, array( $this, 'handle_continue_action' ), 10, 3 );
-		\add_action( self::RUN_HOOK, array( $this, 'handle_run_action' ), 10, 4 );
+		\add_action( self::RUN_TASK_HOOK, array( $this, 'handle_run_task_action' ), 10, 3 );
+		\add_action( self::RUN_CHUNK_HOOK, array( $this, 'handle_run_chunk_action' ), 10, 4 );
 		\add_action( self::CLEANUP_HOOK, array( $this, 'handle_cleanup_action' ), 10, 3 );
 	}
 
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Dispatches one typed run delivery to its registered task or batch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                       $identity   Complete owner-qualified task or batch identity.
+	 * @param   string                       $run_id     Run identifier.
+	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task action.
+	 * @param   int                          $action_seq Expected lifecycle action sequence.
+	 *
+	 * @return  void
+	 */
+	private function handle_run_action( string $identity, string $run_id, ?array $chunk_args, int $action_seq ): void {
+		$work_type   = null === $chunk_args ? 'Task' : 'Batch';
+		$kind        = $this->work->kind( $identity );
+		$task        = 'task' === $kind ? $this->tasks->get( $identity ) : null;
+		$batch       = 'batch' === $kind ? $this->batches->get( $identity ) : null;
+		$liveness_at = null;
+		if ( null === $chunk_args && null !== $task ) {
+			$liveness_at = fn (): int => $this->execution_lease_at( $task );
+		} elseif ( null !== $chunk_args && null !== $batch ) {
+			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
+		}
+		$run_store = $this->stores->run_store( $identity );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( $work_type, $identity, $run_id, $action_seq, $run_store, $liveness_at );
+		if ( null === $state ) {
+			return;
+		}
+
+		if ( null !== $task ) {
+			if ( null !== $chunk_args ) {
+				$this->logger->warning(
+					'Task run action carries batch chunk arguments; schedule task runs with the task name, run identifier, and action sequence.',
+					array(
+						'task_name' => $identity,
+						'run_id'    => $run_id,
+					)
+				);
+				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
+
+				return;
+			}
+
+			$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
+
+			return;
+		}
+
+		if ( null !== $batch ) {
+			if ( null === $chunk_args ) {
+				$this->logger->warning(
+					'Batch run action is missing chunk arguments; schedule it with the batch name, run identifier, current queue head, and action sequence.',
+					array(
+						'batch_name' => $identity,
+						'run_id'     => $run_id,
+					)
+				);
+				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
+
+				return;
+			}
+
+			$this->handle_batch_run_action( $batch, $identity, $run_id, $chunk_args, $state, $run_store );
+
+			return;
+		}
+
+		$this->logger->warning(
+			null === $chunk_args
+				? 'Task run action references an unregistered task; register the task before dispatching its run action.'
+				: 'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
+			array(
+				( null === $chunk_args ? 'task_name' : 'batch_name' ) => $identity,
+				'run_id' => $run_id,
+			)
+		);
+		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
+	}
 
 	/**
 	 * Fails batch startup after preserving its post-callback liveness fence.
@@ -431,7 +473,7 @@ final readonly class ActionDeliveries {
 	}
 
 	/**
-	 * Executes one task run after shared-hook dispatch.
+	 * Executes one task run after shared delivery admission.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

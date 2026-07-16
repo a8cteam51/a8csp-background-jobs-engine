@@ -305,7 +305,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array(), $batch->failed_calls );
 
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
-		$this->lifecycle_deliveries->handle_run_action( $name, self::RUN_ID, $chunk, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, $chunk, 3 );
 
 		self::assertCount( 1, $batch->process_calls );
 		self::assertSame( $chunk, $batch->process_calls[0]['chunk_args'] ?? null );
@@ -393,7 +393,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_background_tasks/run',
+						'hook'     => 'a8csp_background_tasks/run_task',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'priority' => 23,
@@ -432,7 +432,7 @@ final class RunReconciliationTest extends TestCase {
 			\maybe_unserialize( $lock_raw )
 		);
 
-		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::IDENTITY, $this->options() );
@@ -450,7 +450,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->before_next(
 			'enqueue_async',
 			function (): void {
-				$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, 1 );
+				$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 			}
 		);
 
@@ -499,7 +499,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run',
+						'hook'      => 'a8csp_background_tasks/run_task',
 						'timestamp' => self::NOW + 2_101,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'     => self::IDENTITY . '|' . self::RUN_ID,
@@ -515,7 +515,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $restored_lock );
 		self::assertSame( self::NOW, $restored_lock['heartbeat_at'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::IDENTITY, $this->options() );
@@ -555,7 +555,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run',
+						'hook'      => 'a8csp_background_tasks/run_task',
 						'timestamp' => $expected_fire_at,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'     => self::IDENTITY . '|' . self::RUN_ID,
@@ -817,10 +817,11 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
 		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
-		self::assertSame( 'a8csp_background_tasks/run', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, $chunk, 3 ), $this->backend->calls[0]['args']['args'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_action( $name, self::RUN_ID, $chunk, 3 );
-		$this->lifecycle_deliveries->handle_run_action( $name, self::RUN_ID, $chunk, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, $chunk, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, $chunk, 3 );
 
 		self::assertCount( 1, $batch->process_calls );
 		self::assertSame( array(), $batch->failed_calls );
@@ -1463,7 +1464,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_run_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertSame(
 			array(

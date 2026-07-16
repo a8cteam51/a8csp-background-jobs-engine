@@ -299,7 +299,7 @@ final class ActionDeliveriesTest extends TestCase {
 			}
 
 			$reentered = true;
-			\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, 1 );
+			\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
 		};
 
 		$this->rig->run_due();
@@ -307,6 +307,33 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertTrue( $reentered );
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		$this->rig->assert_completed();
+	}
+
+	/**
+	 * A task-hook payload with a non-integer sequence is rejected before admission.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Direct registered-hook delivery proves the typed task boundary rejects a chunk-shaped payload without mutating authoritative run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_task_handler_rejects_a_non_integer_sequence_before_admission(): void {
+		$this->enqueue_task();
+		$before = $this->relevant_rows();
+		$thrown = null;
+
+		try {
+			\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ) );
+		} catch ( \TypeError $error ) {
+			$thrown = $error;
+		}
+
+		self::assertInstanceOf( \TypeError::class, $thrown );
+		self::assertSame( $before, $this->relevant_rows() );
+		self::assertSame( array(), $this->task->calls );
 	}
 
 	/**
@@ -381,7 +408,7 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_batch_argument_misdelivery_does_not_strand_the_task(): void {
 		$this->enqueue_task();
 
-		\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ), 1 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ), 1 );
 		self::assertSame( array(), $this->task->calls );
 		$this->rig->run_due();
 
@@ -404,7 +431,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
-		\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, 1 );
+		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
 
 		$this->rig->assert_failed( ApiErrorCode::UnknownWork );
 		$retry = $this->consumer->runs()->retry_failed( self::NAME, self::RUN_ID );
@@ -686,7 +713,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

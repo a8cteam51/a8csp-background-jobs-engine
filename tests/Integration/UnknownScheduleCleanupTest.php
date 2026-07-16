@@ -192,7 +192,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertGreaterThanOrEqual( $registry_next_due, $advanced_due, 'The retained occurrence must advance to the original live window or a later recurrence' );
 		self::assertSame( 0, ( $advanced_due - $forced_due ) % 300, 'The advanced due time must remain aligned to the persisted recurrence' );
 		self::assertCount( 1, $this->pending_schedule_action_ids( self::KEY ), 'The retained recurring action must create its live successor after delivery' );
-		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared task' );
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run_task' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared task' );
 		self::assertSame( array( array( 'generation' => 'redeclared' ) ), $task->calls );
 	}
 

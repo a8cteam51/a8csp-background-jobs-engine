@@ -48,7 +48,8 @@ final class UninstallTest extends IntegrationTestCase {
 	private const LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start',
 		'a8csp_background_tasks/continue',
-		'a8csp_background_tasks/run',
+		'a8csp_background_tasks/run_task',
+		'a8csp_background_tasks/run_chunk',
 		'a8csp_background_tasks/cleanup',
 	);
 

@@ -319,7 +319,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		\remove_all_actions( 'a8csp_background_tasks/start' );
 		\remove_all_actions( 'a8csp_background_tasks/continue' );
-		\remove_all_actions( 'a8csp_background_tasks/run' );
+		\remove_all_actions( 'a8csp_background_tasks/run_task' );
+		\remove_all_actions( 'a8csp_background_tasks/run_chunk' );
 		\remove_all_actions( 'a8csp_background_tasks/cleanup' );
 		\remove_all_actions( 'a8csp_background_tasks/schedule_due' );
 		$scheduler->register_hooks();

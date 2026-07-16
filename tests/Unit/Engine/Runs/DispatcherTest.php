@@ -290,7 +290,7 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->backend_calls( 'schedule_single' );
 		self::assertCount( 1, $calls );
-		self::assertSame( 'a8csp_background_tasks/run', $calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_background_tasks/run_task', $calls[0]['args']['hook'] ?? null );
 		self::assertSame( self::NOW + 120, $calls[0]['args']['timestamp'] ?? null );
 		self::assertSame( 31, $calls[0]['args']['priority'] ?? null );
 		$this->rig->run_due();
@@ -877,7 +877,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true ) && 'a8csp_background_tasks/run' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true ) && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

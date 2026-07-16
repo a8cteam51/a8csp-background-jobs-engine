@@ -71,7 +71,8 @@ final readonly class ResetCommand {
 	private const ACTION_HOOKS = array(
 		ActionDeliveries::START_HOOK,
 		ActionDeliveries::CONTINUE_HOOK,
-		ActionDeliveries::RUN_HOOK,
+		ActionDeliveries::RUN_TASK_HOOK,
+		ActionDeliveries::RUN_CHUNK_HOOK,
 		ActionDeliveries::CLEANUP_HOOK,
 		OccurrenceDelivery::SCHEDULE_HOOK,
 	);

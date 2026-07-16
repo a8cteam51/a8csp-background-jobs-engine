@@ -185,8 +185,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 		\do_action( 'a8csp_background_tasks/continue', self::IDENTITY, self::RUN_ID, 2 );
-		\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, $first, 3 );
-		\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, $first, 3 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $first, 3 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $first, 3 );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $first, $this->batch->process_calls[0]['chunk_args'] );
@@ -494,7 +494,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertSame( $queue, $this->run_state()['queue'] ?? null );
 		self::assertSame( array(), $this->batch->process_calls );
-		self::assertCount( 1, $this->calls_for_hook( 'a8csp_background_tasks/run' ) );
+		self::assertCount( 1, $this->calls_for_hook( 'a8csp_background_tasks/run_chunk' ) );
 	}
 
 	/**
@@ -598,7 +598,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * A malformed batch delivery clears its marker for a correctly shaped redelivery.
+	 * A task-hook delivery for a batch clears its marker for the correctly routed redelivery.
 	 *
 	 * @load-bearing security
 	 * @pin-rationale Direct registered-hook delivery injects the malformed scheduler payload that the public facade cannot express and proves it cannot strand execution.
@@ -608,18 +608,47 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_clears_the_batch_marker_after_missing_argument_misdelivery(): void {
+	public function test_run_task_hook_misdelivery_clears_the_batch_marker(): void {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current ) );
 		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
 
-		\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, 3 );
+		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 3 );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 		self::assertSame( array(), $this->batch->process_calls );
-		\do_action( 'a8csp_background_tasks/run', self::IDENTITY, self::RUN_ID, $current, 3 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $current, 3 );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $current, $this->batch->process_calls[0]['chunk_args'] );
+	}
+
+	/**
+	 * A chunk-hook payload without its sequence is rejected before admission.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Direct registered-hook delivery proves the typed chunk boundary rejects an incomplete payload without mutating authoritative run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_chunk_handler_rejects_a_missing_sequence_before_admission(): void {
+		$current = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $current ) );
+		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
+		$before = $this->run_state();
+		$thrown = null;
+
+		try {
+			\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $current );
+		} catch ( \ArgumentCountError $error ) {
+			$thrown = $error;
+		}
+
+		self::assertInstanceOf( \ArgumentCountError::class, $thrown );
+		self::assertSame( $before, $this->run_state() );
+		self::assertSame( array(), $this->batch->process_calls );
 	}
 
 	/**
@@ -857,6 +886,9 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$this->rig->randomizer()->calls
 		);
 		$this->rig->assert_retry_scheduled();
+		$retry_call = $this->single_call_for_hook( 'a8csp_background_tasks/run_chunk' );
+		self::assertSame( 'schedule_single', $retry_call['verb'] );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, $current, 4 ), $retry_call['args']['args'] ?? null );
 		self::assertSame( array(), $this->batch->failed_calls );
 	}
 

@@ -34,7 +34,8 @@ final class HookNameLiteralsTest extends TestCase {
 		'misfire_grace'    => 'a8csp_background_tasks/misfire_grace/',
 		'start'            => 'a8csp_background_tasks/start',
 		'continue'         => 'a8csp_background_tasks/continue',
-		'run'              => 'a8csp_background_tasks/run',
+		'run_task'         => 'a8csp_background_tasks/run_task',
+		'run_chunk'        => 'a8csp_background_tasks/run_chunk',
 		'cleanup'          => 'a8csp_background_tasks/cleanup',
 		'schedule_due'     => 'a8csp_background_tasks/schedule_due',
 	);

@@ -137,7 +137,7 @@ final class EngineComponentTest extends TestCase {
 		$actions = $this->action_registrations();
 		self::assertSame( 'a8csp_background_tasks/log', $actions[0]['hook_name'] ?? null );
 		self::assertSame(
-			array( 'a8csp_background_tasks/log', 'a8csp_background_tasks/start', 'a8csp_background_tasks/continue', 'a8csp_background_tasks/run', 'a8csp_background_tasks/cleanup', 'a8csp_background_tasks/schedule_due', 'init' ),
+			array( 'a8csp_background_tasks/log', 'a8csp_background_tasks/start', 'a8csp_background_tasks/continue', 'a8csp_background_tasks/run_task', 'a8csp_background_tasks/run_chunk', 'a8csp_background_tasks/cleanup', 'a8csp_background_tasks/schedule_due', 'init' ),
 			\array_column( $actions, 'hook_name' )
 		);
 	}
@@ -195,7 +195,7 @@ final class EngineComponentTest extends TestCase {
 
 		self::assertTrue( $reentered );
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
-		self::assertCount( 7, $this->action_registrations() );
+		self::assertCount( 8, $this->action_registrations() );
 		self::assertCount( 1, $this->filter_registrations() );
 	}
 

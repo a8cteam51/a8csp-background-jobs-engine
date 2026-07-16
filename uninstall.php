@@ -27,7 +27,8 @@ $a8csp_bgte_footprint = array(
 $a8csp_bgte_lifecycle_hooks = array(
 	'a8csp_background_tasks/start',
 	'a8csp_background_tasks/continue',
-	'a8csp_background_tasks/run',
+	'a8csp_background_tasks/run_task',
+	'a8csp_background_tasks/run_chunk',
 	'a8csp_background_tasks/cleanup',
 	'a8csp_background_tasks/schedule_due',
 );

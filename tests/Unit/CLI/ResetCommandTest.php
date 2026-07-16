@@ -95,7 +95,8 @@ final class ResetCommandTest extends TestCase {
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
-		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_HOOK ] = 2;
+		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_TASK_HOOK ]  = 2;
+		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_CHUNK_HOOK ] = 3;
 		$owned_before = $this->engine_option_names();
 		self::assertNotEmpty( $owned_before );
 
@@ -104,9 +105,10 @@ final class ResetCommandTest extends TestCase {
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( '', $result->stderr );
 		self::assertStringContainsString( 'Option rows deleted: ' . \count( $owned_before ), $result->stdout );
-		self::assertStringContainsString( 'Pending backend actions unscheduled: ', $result->stdout );
+		self::assertStringContainsString( 'Pending backend actions unscheduled: 5', $result->stdout );
 		self::assertStringContainsString( 'Success: Background tasks development state reset.', $result->stdout );
 		self::assertSame( array(), $this->engine_option_names() );
+		self::assertSame( array(), $this->rig->backend()->pending_actions );
 		self::assertSame( 'keep', $this->rig->wpdb()->rows[ self::UNRELATED_OPTION ] ?? null );
 	}
 

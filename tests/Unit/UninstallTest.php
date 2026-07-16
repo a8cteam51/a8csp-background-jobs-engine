@@ -178,7 +178,8 @@ final class UninstallTest extends TestCase {
 	private const LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start',
 		'a8csp_background_tasks/continue',
-		'a8csp_background_tasks/run',
+		'a8csp_background_tasks/run_task',
+		'a8csp_background_tasks/run_chunk',
 		'a8csp_background_tasks/cleanup',
 		'a8csp_background_tasks/schedule_due',
 	);
@@ -259,12 +260,12 @@ final class UninstallTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s)',
+					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s, %s)',
 					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
 				),
 			),
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
-			'The action delete must be scoped to exactly the five engine hooks'
+			'The action delete must be scoped to exactly the six engine hooks'
 		);
 		self::assertStringContainsString( 'NOT IN (SELECT `group_id` FROM %i)', $wpdb->write_queries[2], 'Group deletion must keep any group still referenced by surviving actions' );
 	}
@@ -391,11 +392,11 @@ final class UninstallTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s)',
+					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s, %s)',
 					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
 				),
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s)',
+					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s, %s)',
 					'args'  => array( \array_merge( array( 'wp_2_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
 				),
 			),

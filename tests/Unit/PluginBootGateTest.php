@@ -81,7 +81,8 @@ final class PluginBootGateTest extends TestCase {
 				'cron_schedules',
 				'a8csp_background_tasks/start',
 				'a8csp_background_tasks/continue',
-				'a8csp_background_tasks/run',
+				'a8csp_background_tasks/run_task',
+				'a8csp_background_tasks/run_chunk',
 				'a8csp_background_tasks/cleanup',
 				'a8csp_background_tasks/schedule_due',
 				'init',
@@ -90,12 +91,18 @@ final class PluginBootGateTest extends TestCase {
 		);
 		$action_registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
 		self::assertIsArray( $action_registrations );
-		self::assertCount( 7, $action_registrations );
+		self::assertCount( 8, $action_registrations );
 		$log_registration = $action_registrations[0] ?? null;
 		self::assertIsArray( $log_registration );
 		self::assertSame( 'a8csp_background_tasks/log', $log_registration['hook_name'] ?? null );
 		self::assertSame( 10, $log_registration['priority'] ?? null );
 		self::assertSame( 3, $log_registration['accepted_args'] ?? null );
+		$run_task_registration = $action_registrations[3] ?? null;
+		self::assertIsArray( $run_task_registration );
+		self::assertSame( 3, $run_task_registration['accepted_args'] ?? null );
+		$run_chunk_registration = $action_registrations[4] ?? null;
+		self::assertIsArray( $run_chunk_registration );
+		self::assertSame( 4, $run_chunk_registration['accepted_args'] ?? null );
 		$filter_registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? null;
 		self::assertIsArray( $filter_registrations );
 		self::assertSame( array( 'cron_schedules' ), \array_column( $filter_registrations, 'hook_name' ) );
@@ -140,7 +147,7 @@ final class PluginBootGateTest extends TestCase {
 		self::assertIsArray( $filters );
 		$plugin->boot();
 
-		self::assertCount( 7, $actions );
+		self::assertCount( 8, $actions );
 		self::assertSame( $actions, $GLOBALS['a8csp_bgte_test_action_registrations'] );
 		self::assertSame( $filters, $GLOBALS['a8csp_bgte_test_filter_registrations'] );
 	}

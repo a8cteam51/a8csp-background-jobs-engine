@@ -56,7 +56,7 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	public function test_carries_code_message_and_context_unchanged(): void {
 		$context = array(
-			'hook'     => 'a8csp_background_tasks/run',
+			'hook'     => 'a8csp_background_tasks/run_task',
 			'priority' => 10,
 		);
 		$result  = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
@@ -138,13 +138,13 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_background_tasks/run' ) ) ) );
+		$result = AdmissionErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Correct the scheduling request and retry.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run' ), $result->error->context );
+		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run_task' ), $result->error->context );
 	}
 
 	// endregion.

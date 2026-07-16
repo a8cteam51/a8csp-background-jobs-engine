@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
@@ -10,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
@@ -216,6 +219,44 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, 1, 17 ), $this->latest_retry() );
 		$this->rig->assert_retry_scheduled();
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+	}
+
+	/**
+	 * A dual-interface contract registered as a task retains task retry routing.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The work registry records task while the object satisfies both interfaces; the exact retry hook and payload prove scheduling follows the registered kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_uses_the_registered_task_kind_for_a_dual_interface_contract(): void {
+		$name             = 'dual-kind-task';
+		$identity         = self::OWNER . ':' . $name;
+		$batch_failures   = 0;
+		$on_batch_failure = static function () use ( &$batch_failures ): void {
+			++$batch_failures;
+		};
+		$this->consumer->tasks()->register( $this->dual_kind_task( $name, $on_batch_failure ) );
+		$this->rig->randomizer()->value = 42;
+		$result                         = $this->consumer->tasks()->enqueue( $name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		$this->rig->randomizer()->value = 7;
+		$this->rig->backend()->calls    = array();
+
+		$this->rig->run_due();
+
+		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] ) );
+		self::assertCount( 1, $calls );
+		self::assertSame( 'a8csp_background_tasks/run_task', $calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( $identity, $result->value, 2 ), $calls[0]['args']['args'] ?? null );
+
+		$this->rig->run_due();
+
+		self::assertSame( 0, $batch_failures );
+		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
 	}
 
 	/**
@@ -593,6 +634,110 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * Creates one throwing contract that satisfies both work-kind interfaces.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $name             Task name.
+	 * @param   \Closure $on_batch_failure Records an invalid batch terminal callback.
+	 *
+	 * @return  TaskInterface
+	 */
+	private function dual_kind_task( string $name, \Closure $on_batch_failure ): TaskInterface {
+		return new class( $name, $on_batch_failure ) implements TaskInterface, BatchInterface {
+			/**
+			 * Constructor.
+			 *
+			 * @param   string   $name             Task name.
+			 * @param   \Closure $on_batch_failure Records an invalid batch terminal callback.
+			 */
+			public function __construct(
+				private readonly string $name,
+				private readonly \Closure $on_batch_failure,
+			) {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return $this->name;
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function max_callback_runtime(): int {
+				return self::DEFAULT_MAX_CALLBACK_RUNTIME;
+			}
+
+			/**
+			 * Fails every attempt with a retryable throwable.
+			 *
+			 * @param   array<array-key, mixed> $args Task arguments.
+			 *
+			 * @return  void
+			 */
+			#[\Override]
+			public function handle( array $args ): void {
+				throw new \RuntimeException( 'Database unavailable.' );
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_retry_policy(): RetryPolicy {
+				return new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+			}
+
+			/**
+			 * Returns an empty queue.
+			 *
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+			 *
+			 * @return  iterable<array<array-key, mixed>>
+			 */
+			#[\Override]
+			public function generate_queue( array $start_args ): iterable {
+				return array();
+			}
+
+			/**
+			 * Processes nothing.
+			 *
+			 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
+			 * @param   BatchContextInterface   $context    Controlled access to this chunk's run.
+			 *
+			 * @return  void
+			 */
+			#[\Override]
+			public function process_chunk( array $chunk_args, BatchContextInterface $context ): void {}
+
+			/**
+			 * Observes nothing.
+			 *
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 *
+			 * @return  void
+			 */
+			#[\Override]
+			public function on_completed( string $run_id, array $start_args ): void {}
+
+			/**
+			 * Records the invalid batch terminal callback.
+			 *
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   RunFailure              $failure    Persisted terminal-failure value.
+			 *
+			 * @return  void
+			 */
+			#[\Override]
+			public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+				( $this->on_batch_failure )();
+			}
+		};
+	}
+
+	/**
 	 * Installs one production-built foreign lock and latest-pointer generation.
 	 *
 	 * @since   1.0.0
@@ -674,8 +819,9 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  array{verb: string, args: array<string, mixed>}
 	 */
 	private function single_retry_call(): array {
-		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] && 'a8csp_background_tasks/run' === ( $call['args']['hook'] ?? null ) ) );
+		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
 		self::assertCount( 1, $calls );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 2 ), $calls[0]['args']['args'] ?? null );
 
 		return $calls[0];
 	}

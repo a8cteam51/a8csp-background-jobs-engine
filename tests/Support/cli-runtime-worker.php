@@ -70,7 +70,8 @@ try {
 			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}
-			$rig->backend()->pending_actions[ ActionDeliveries::RUN_HOOK ] = 2;
+			$rig->backend()->pending_actions[ ActionDeliveries::RUN_TASK_HOOK ]  = 2;
+			$rig->backend()->pending_actions[ ActionDeliveries::RUN_CHUNK_HOOK ] = 3;
 			$before = array(
 				'wpdb'    => $rig->wpdb()->rows,
 				'options' => $GLOBALS['a8csp_bgte_test_options'],
