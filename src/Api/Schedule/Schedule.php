@@ -58,7 +58,11 @@ final readonly class Schedule {
 		WorkIdentity::validate_name( $this->name );
 		WorkIdentity::validate_name( $this->task );
 		AdmissionValidator::assert_priority( $this->priority, \sprintf( 'Schedule "%s"', $this->name ) );
-		AdmissionValidator::assert_portable_args( $this->args, \sprintf( 'Schedule "%s"', $this->name ) );
+		$payload_error = AdmissionValidator::assert_portable_args( $this->args, \sprintf( 'Schedule "%s"', $this->name ) );
+		if ( null !== $payload_error ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( $payload_error->message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
 
 		try {
 			$encoded = \wp_json_encode(

@@ -34,9 +34,11 @@ final class InvalidBatchChunkException extends \InvalidArgumentException {
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $message Stable engine-authored validation detail.
 	 */
-	public function __construct() {
-		parent::__construct( self::MESSAGE );
+	public function __construct( string $message = self::MESSAGE ) {
+		parent::__construct( '' === $message ? self::MESSAGE : $message );
 	}
 
 	// endregion

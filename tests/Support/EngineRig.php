@@ -379,7 +379,7 @@ final class EngineRig {
 		$work                 = new WorkRegistry();
 		$schedules            = new ScheduleRegistry( $rows );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
-		$stores               = new StoreFactory( $this->clock, $rows );
+		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );

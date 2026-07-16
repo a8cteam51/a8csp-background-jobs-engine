@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use Psr\Log\NullLogger;
 
 /**
  * Produces exact raw store fixtures by executing production encoders.
@@ -168,7 +169,7 @@ final readonly class StoreFixtureBuilder {
 
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $entries ): array {
-				$store = new FailedRunStore( $this->identity, new OptionRows( $wpdb ) );
+				$store = new FailedRunStore( $this->identity, new OptionRows( $wpdb ), new NullLogger() );
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
 					$error   = $entry['error'] ?? null;

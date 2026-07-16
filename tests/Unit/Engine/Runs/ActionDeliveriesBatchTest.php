@@ -20,6 +20,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -319,6 +321,101 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
+	 * Generated chunks accept the byte ceiling and reject its adjacent overflow through failure hooks.
+	 *
+	 * @param   int  $json_bytes Exact encoded chunk size.
+	 * @param   bool $accepted   Whether queue generation succeeds.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_chunk_bytes' )]
+	public function test_generated_chunks_observe_the_json_byte_ceiling( int $json_bytes, bool $accepted ): void {
+		$chunk              = self::chunk_with_json_bytes( $json_bytes );
+		$this->batch->queue = array( $chunk );
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		if ( $accepted ) {
+			self::assertSame( array( $chunk ), $this->run_state()['queue'] ?? null );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		self::assertSame( 'Batch queue chunk at index 0 contains 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
+	}
+
+	/**
+	 * Supplies both sides of the persisted chunk byte boundary.
+	 *
+	 * @return  array<string, array{json_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_chunk_bytes(): array {
+		return array(
+			'at limit'   => array(
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'over limit' => array(
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+		);
+	}
+
+	/**
+	 * Materialized queues accept the byte ceiling and reject its adjacent overflow through failure hooks.
+	 *
+	 * @param   int  $persisted_bytes Exact persisted queue size.
+	 * @param   bool $accepted        Whether queue generation succeeds.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_queue_bytes' )]
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_materialized_queues_observe_the_persisted_byte_ceiling( int $persisted_bytes, bool $accepted ): void {
+		$this->batch->queue = self::queue_with_persisted_bytes( $persisted_bytes );
+		$this->start_batch();
+
+		$this->rig->run_due();
+		$this->batch->queue                  = array();
+		$this->rig->wpdb()->recorded_queries = array();
+
+		if ( $accepted ) {
+			$serialized_queue = \maybe_serialize( $this->run_state()['queue'] ?? null );
+			self::assertIsString( $serialized_queue );
+			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		self::assertSame( 'Batch queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', $failure->summary );
+	}
+
+	/**
+	 * Supplies both sides of the persisted aggregate-queue byte boundary.
+	 *
+	 * @return  array<string, array{persisted_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_queue_bytes(): array {
+		return array(
+			'at limit'   => array(
+				'persisted_bytes' => 1_048_576,
+				'accepted'        => true,
+			),
+			'over limit' => array(
+				'persisted_bytes' => 1_048_577,
+				'accepted'        => false,
+			),
+		);
+	}
+
+	/**
 	 * A non-array queue-filter result fails before scheduling continue.
 	 *
 	 * @since   1.0.0
@@ -574,6 +671,149 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 		self::assertStringNotContainsString( 'callback-private-payload', $failure->summary );
 		self::assertCount( 1, $this->batch->failed_calls );
+	}
+
+	/**
+	 * Context mutations accept bounded chunks and reject adjacent overflow through failure hooks.
+	 *
+	 * @param   string $mutation  Context mutation method.
+	 * @param   int    $json_bytes Exact encoded chunk size.
+	 * @param   bool   $accepted  Whether the mutation persists.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_context_chunks' )]
+	public function test_context_mutation_chunks_observe_the_json_byte_ceiling( string $mutation, int $json_bytes, bool $accepted ): void {
+		$current                   = array( 'chunk' => 'current' );
+		$chunk                     = self::chunk_with_json_bytes( $json_bytes );
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->prepare_scheduled_chunk( array( $current ) );
+		$this->batch->on_process = static function ( array $chunk_args, BatchContextInterface $context ) use ( $chunk, $mutation ): void {
+			if ( 'enqueue' === $mutation ) {
+				$context->enqueue( $chunk );
+
+				return;
+			}
+
+			$context->prepend( $chunk );
+		};
+
+		$this->rig->run_due();
+
+		if ( $accepted ) {
+			self::assertSame( array( $chunk ), $this->run_state()['queue'] ?? null );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+	}
+
+	/**
+	 * Supplies both context directions on both sides of the chunk byte boundary.
+	 *
+	 * @return  array<string, array{mutation: 'enqueue'|'prepend', json_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_context_chunks(): array {
+		return array(
+			'enqueue at limit'   => array(
+				'mutation'   => 'enqueue',
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'enqueue over limit' => array(
+				'mutation'   => 'enqueue',
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+			'prepend at limit'   => array(
+				'mutation'   => 'prepend',
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'prepend over limit' => array(
+				'mutation'   => 'prepend',
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+		);
+	}
+
+	/**
+	 * Context mutations accept the persisted queue ceiling and reject its adjacent overflow.
+	 *
+	 * @param   string $mutation        Context mutation method.
+	 * @param   int    $persisted_bytes Exact persisted candidate-queue size.
+	 * @param   bool   $accepted        Whether the mutation persists.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_context_queue_bytes' )]
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_context_mutations_observe_the_persisted_queue_byte_ceiling( string $mutation, int $persisted_bytes, bool $accepted ): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( $persisted_bytes );
+		$mutation_chunk = 'prepend' === $mutation ? \array_shift( $candidate ) : \array_pop( $candidate );
+		self::assertIsArray( $mutation_chunk );
+
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->prepare_scheduled_chunk( array( $current, ...$candidate ) );
+		$this->batch->queue                  = array();
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->batch->on_process             = static function ( array $chunk_args, BatchContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
+			if ( 'enqueue' === $mutation ) {
+				$context->enqueue( $mutation_chunk );
+
+				return;
+			}
+
+			$context->prepend( $mutation_chunk );
+		};
+
+		$this->rig->run_due();
+
+		if ( $accepted ) {
+			$serialized_queue = \maybe_serialize( $this->run_state()['queue'] ?? null );
+			self::assertIsString( $serialized_queue );
+			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+	}
+
+	/**
+	 * Supplies both context directions on both sides of the persisted queue byte boundary.
+	 *
+	 * @return  array<string, array{mutation: 'enqueue'|'prepend', persisted_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_context_queue_bytes(): array {
+		return array(
+			'enqueue at limit'   => array(
+				'mutation'        => 'enqueue',
+				'persisted_bytes' => 1_048_576,
+				'accepted'        => true,
+			),
+			'enqueue over limit' => array(
+				'mutation'        => 'enqueue',
+				'persisted_bytes' => 1_048_577,
+				'accepted'        => false,
+			),
+			'prepend at limit'   => array(
+				'mutation'        => 'prepend',
+				'persisted_bytes' => 1_048_576,
+				'accepted'        => true,
+			),
+			'prepend over limit' => array(
+				'mutation'        => 'prepend',
+				'persisted_bytes' => 1_048_577,
+				'accepted'        => false,
+			),
+		);
 	}
 
 	/**
@@ -1247,6 +1487,64 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 
 		return $result->value;
+	}
+
+	/**
+	 * Returns one portable chunk with the requested encoded JSON byte length.
+	 *
+	 * @param   int $json_bytes Exact encoded byte length, including object syntax.
+	 *
+	 * @return  array{payload: string}
+	 */
+	private static function chunk_with_json_bytes( int $json_bytes ): array {
+		return array( 'payload' => \str_repeat( 'a', $json_bytes - 14 ) );
+	}
+
+	/**
+	 * Returns a portable 128-chunk queue with the requested PHP serialization length.
+	 *
+	 * Each full chunk has an 8,178-byte payload and therefore an 8,192-byte JSON representation.
+	 * The PHP array grammar contributes the queue header/trailer, integer keys, and each chunk's
+	 * `a:1:{s:7:"payload";s:N:"...";}` framing. Subtracting that arithmetic overhead from the
+	 * requested total derives the final payload length without probing serialized candidates.
+	 *
+	 * @param   int $persisted_bytes Exact persisted byte length.
+	 *
+	 * @return  list<array{payload: string}>
+	 */
+	private static function queue_with_persisted_bytes( int $persisted_bytes ): array {
+		$payload_lengths = \array_fill( 0, 128, 8_178 );
+		$overflow        = self::serialized_queue_bytes_for_payload_lengths( $payload_lengths ) - $persisted_bytes;
+		$tail_index      = \array_key_last( $payload_lengths );
+		$tail_bytes      = $payload_lengths[ $tail_index ] - $overflow;
+		if ( 1_000 > $tail_bytes || 9_999 < $tail_bytes ) {
+			throw new \LogicException( 'The boundary fixture requires a four-digit final payload length.' );
+		}
+		$payload_lengths[ $tail_index ] = $tail_bytes;
+
+		return \array_map(
+			static fn ( int $payload_bytes ): array => array( 'payload' => \str_repeat( 'a', $payload_bytes ) ),
+			$payload_lengths
+		);
+	}
+
+	/**
+	 * Calculates PHP's serialized byte length for the fixture queue grammar.
+	 *
+	 * @phpstan-param list<int> $payload_lengths
+	 *
+	 * @param   array $payload_lengths Payload byte lengths in queue order.
+	 *
+	 * @return  int
+	 */
+	private static function serialized_queue_bytes_for_payload_lengths( array $payload_lengths ): int {
+		$bytes = \strlen( 'a:' . \count( $payload_lengths ) . ':{' ) + 1;
+		foreach ( $payload_lengths as $index => $payload_bytes ) {
+			$bytes += \strlen( 'i:' . $index . ';' );
+			$bytes += \strlen( 'a:1:{s:7:"payload";s:' . $payload_bytes . ':"";}' ) + $payload_bytes;
+		}
+
+		return $bytes;
 	}
 
 	/**

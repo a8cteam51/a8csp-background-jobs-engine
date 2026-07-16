@@ -183,7 +183,7 @@ final class EngineFacadeTest extends TestCase {
 		$result = $consumer->runs()->retry_failed( 'email-digest', 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
-		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ) )->all();
+		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
 		self::assertInstanceOf( Success::class, $remaining );
 		self::assertSame( array(), $remaining->value );
 		$this->assert_option_functions_did_not_write( $option_name );

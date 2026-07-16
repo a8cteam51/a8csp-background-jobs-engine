@@ -514,7 +514,7 @@ final class CleanupIntentsTest extends TestCase {
 		$work = new WorkRegistry();
 		$work->register_task( self::TASK_IDENTITY, new RecordingTask( self::TASK ) );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );

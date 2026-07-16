@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
@@ -86,7 +87,7 @@ final readonly class Tasks {
 	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the local name, delay, deduplication key, priority, or arguments violate the command contract.
+	 * @throws  \InvalidArgumentException When the local name, delay, deduplication key, or priority is invalid, or arguments are not portable.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
@@ -105,7 +106,10 @@ final readonly class Tasks {
 			throw new \InvalidArgumentException( \sprintf( 'Task "%1$s" deduplication key must contain 1 to %2$d bytes when provided.', $name, self::MAX_DEDUP_KEY_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
-		AdmissionValidator::assert_portable_args( $args, \sprintf( 'Task "%s"', $name ) );
+		$payload_error = AdmissionValidator::assert_portable_args( $args, \sprintf( 'Task "%s"', $name ) );
+		if ( null !== $payload_error ) {
+			return new Failure( $payload_error );
+		}
 
 		return $this->engine->enqueue( $identity, $args, $delay, $dedup_key, $priority );
 	}

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
@@ -69,7 +70,7 @@ final readonly class Batches {
 	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the local name, priority, or arguments violate the command contract.
+	 * @throws  \InvalidArgumentException When the local name or priority is invalid, or arguments are not portable.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
@@ -77,7 +78,10 @@ final readonly class Batches {
 	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
 		$identity = WorkIdentity::compose( $this->owner, $name );
 		AdmissionValidator::assert_priority( $priority, \sprintf( 'Batch "%s"', $name ) );
-		AdmissionValidator::assert_portable_args( $start_args, \sprintf( 'Batch "%s"', $name ) );
+		$payload_error = AdmissionValidator::assert_portable_args( $start_args, \sprintf( 'Batch "%s"', $name ) );
+		if ( null !== $payload_error ) {
+			return new Failure( $payload_error );
+		}
 
 		return $this->engine->start( $identity, $start_args, $existing, $priority );
 	}

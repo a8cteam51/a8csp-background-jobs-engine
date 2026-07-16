@@ -35,6 +35,29 @@ final readonly class ActionDeliveries {
 	// region FIELDS AND CONSTANTS
 
 	/**
+	 * Maximum encoded JSON bytes accepted for one generated or filtered batch chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_CHUNK_BYTES = 8_192;
+
+	/**
+	 * Maximum persisted serialization bytes accepted for one materialized batch queue.
+	 *
+	 * This bounds the queue stored in the wp_options run-state row; the JSON chunk cap separately
+	 * bounds the portable payload contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const MAX_QUEUE_BYTES = 1_048_576;
+
+	/**
 	 * Internal hook that resumes a batch after its inter-chunk delay.
 	 *
 	 * @since   1.0.0
@@ -702,8 +725,29 @@ final readonly class ActionDeliveries {
 			if ( ! PortableArguments::is_valid( $chunk_args ) ) {
 				return new EngineError( \sprintf( 'Batch queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
 			}
+			try {
+				$encoded_chunk = \wp_json_encode( $chunk_args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+			} catch ( \JsonException ) {
+				$encoded_chunk = false;
+			}
+			if ( ! \is_string( $encoded_chunk ) ) {
+				return new EngineError( \sprintf( 'Batch queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
+			}
 
-			$queue[] = $chunk_args;
+			$chunk_bytes = \strlen( $encoded_chunk );
+			if ( self::MAX_CHUNK_BYTES < $chunk_bytes ) {
+				return new EngineError( \sprintf( 'Batch queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, self::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
+			}
+
+			$queue[]          = $chunk_args;
+			$serialized_queue = \maybe_serialize( $queue );
+			if ( ! \is_string( $serialized_queue ) ) {
+				return new EngineError( 'Batch queue could not be serialized for persistence.', \UnexpectedValueException::class );
+			}
+			$queue_bytes = \strlen( $serialized_queue );
+			if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
+				return new EngineError( \sprintf( 'Batch queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
+			}
 		}
 
 		return $queue;

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
@@ -482,9 +483,10 @@ final readonly class RunsCommand {
 		 * @var \wpdb $wpdb
 		 */
 		$option_rows     = new OptionRows( $wpdb );
+		$logger          = new HookLogger();
 		$entries_by_name = array();
 		foreach ( $names as $name ) {
-			$entries = new FailedRunStore( $name, $option_rows )->all();
+			$entries = new FailedRunStore( $name, $option_rows, $logger )->all();
 			if ( $entries->is_failure() ) {
 				\WP_CLI::error( \sprintf( 'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.', $name ) );
 				return;
@@ -549,10 +551,11 @@ final readonly class RunsCommand {
 		 *
 		 * @var \wpdb $wpdb
 		 */
-		$rows  = new OptionRows( $wpdb );
-		$count = 0;
+		$rows   = new OptionRows( $wpdb );
+		$logger = new HookLogger();
+		$count  = 0;
 		foreach ( $names as $store_name ) {
-			$purged = new FailedRunStore( $store_name, $rows )->purge();
+			$purged = new FailedRunStore( $store_name, $rows, $logger )->purge();
 			if ( null === $purged ) {
 				\WP_CLI::error( \sprintf( 'Failed-run store "%s" could not be purged; resolve its database error or concurrent writes and try again.', $store_name ) );
 				return;

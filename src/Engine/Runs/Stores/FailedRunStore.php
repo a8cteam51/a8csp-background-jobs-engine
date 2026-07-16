@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -80,12 +81,14 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $identity Complete owner-qualified task or batch identity.
-	 * @param   OptionRows $rows     Authoritative raw option-row I/O.
+	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
+	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
 		private string $identity,
 		private OptionRows $rows,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -143,10 +146,14 @@ final readonly class FailedRunStore {
 				'attempts'   => $attempts,
 				'error'      => $error_detail,
 			);
-			$replacement_raw = self::serialize_entries( \array_slice( $entries, -self::ENTRY_LIMIT ) );
+			$trimmed         = \array_slice( $entries, -self::ENTRY_LIMIT );
+			$evicted         = \array_slice( $entries, 0, \count( $entries ) - \count( $trimmed ) );
+			$replacement_raw = self::serialize_entries( $trimmed );
 
 			if ( null === $expected_raw ) {
 				if ( $this->rows->insert_if_absent( $key, $replacement_raw ) ) {
+					$this->log_eviction( $evicted );
+
 					return true;
 				}
 
@@ -154,6 +161,8 @@ final readonly class FailedRunStore {
 			}
 
 			if ( $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
+				$this->log_eviction( $evicted );
+
 				return true;
 			}
 
@@ -232,8 +241,12 @@ final readonly class FailedRunStore {
 				return true;
 			}
 
-			$replacement_raw = self::serialize_entries( \array_slice( $remaining, -self::ENTRY_LIMIT ) );
+			$trimmed         = \array_slice( $remaining, -self::ENTRY_LIMIT );
+			$evicted         = \array_slice( $remaining, 0, \count( $remaining ) - \count( $trimmed ) );
+			$replacement_raw = self::serialize_entries( $trimmed );
 			if ( $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
+				$this->log_eviction( $evicted );
+
 				return true;
 			}
 
@@ -311,6 +324,30 @@ final readonly class FailedRunStore {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Logs failed-run identifiers evicted by one confirmed trimmed persistence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array{run_id: string}> $entries Evicted failed-run entries, oldest first.
+	 *
+	 * @return  void
+	 */
+	private function log_eviction( array $entries ): void {
+		if ( array() === $entries ) {
+			return;
+		}
+
+		$this->logger->warning(
+			\sprintf( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the %d-entry limit: {evicted_run_ids}.', self::ENTRY_LIMIT ),
+			array(
+				'identity'        => $this->identity,
+				'evicted_run_ids' => \implode( ', ', \array_column( $entries, 'run_id' ) ),
+			)
+		);
+	}
 
 	/**
 	 * Returns failed-run entries in their exact WordPress option representation.

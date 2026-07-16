@@ -112,6 +112,46 @@ final class FailedRunStoreTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
+	 * The twenty-first retained failure logs the confirmed oldest-run eviction.
+	 *
+	 * @return  void
+	 */
+	public function test_retention_eviction_logs_the_evicted_run_and_identity_after_persistence(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_ids[] = $this->fail_task( array( 'index' => $index ), $index + 1 );
+		}
+		$this->rig->logger()->records = array();
+
+		$this->fail_task( array( 'index' => 20 ), 21 );
+
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.',
+					'context' => array(
+						'identity'        => self::IDENTITY,
+						'evicted_run_ids' => $run_ids[0],
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * A failed-run persist below the retention limit emits no eviction warning.
+	 *
+	 * @return  void
+	 */
+	public function test_non_evicting_failed_run_persist_logs_nothing(): void {
+		$this->fail_task( array( 'index' => 0 ), 1 );
+
+		self::assertSame( array(), $this->rig->logger()->records );
+	}
+
+	/**
 	 * Failed-run retention keeps the newest twenty and retry consumes exactly one retained failure.
 	 *
 	 * @since   1.0.0
@@ -489,7 +529,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  FailedRunStore
 	 */
 	private function store(): FailedRunStore {
-		return new FailedRunStore( self::IDENTITY, $this->rows );
+		return new FailedRunStore( self::IDENTITY, $this->rows, $this->rig->logger() );
 	}
 
 	/**

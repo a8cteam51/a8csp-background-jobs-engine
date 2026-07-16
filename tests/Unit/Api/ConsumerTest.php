@@ -121,6 +121,61 @@ final class ConsumerTest extends TestCase {
 	}
 
 	/**
+	 * Task and Batch start arguments accept the byte ceiling and reject its adjacent overflow.
+	 *
+	 * @param   int  $json_bytes Exact encoded argument size.
+	 * @param   bool $accepted   Whether the arguments reach the engine delegate.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_start_arguments' )]
+	public function test_task_and_batch_start_arguments_observe_the_json_byte_ceiling( int $json_bytes, bool $accepted ): void {
+		$args         = array( 'payload' => \str_repeat( 'a', $json_bytes - 14 ) );
+		$task_engine  = new FakeTasksEngine( new Success( 'task-run' ) );
+		$batch_engine = new FakeBatchesEngine( new Success( 'batch-run' ) );
+		$task_result  = ( new Tasks( 'consumer-plugin', $task_engine ) )->enqueue( 'sync', $args );
+		$batch_result = ( new Batches( 'consumer-plugin', $batch_engine ) )->start( 'sync', $args );
+
+		if ( $accepted ) {
+			self::assertInstanceOf( Success::class, $task_result );
+			self::assertInstanceOf( Success::class, $batch_result );
+			self::assertCount( 1, $task_engine->calls );
+			self::assertCount( 1, $batch_engine->calls );
+
+			return;
+		}
+
+		self::assertInstanceOf( Failure::class, $task_result );
+		self::assertInstanceOf( ApiError::class, $task_result->error );
+		self::assertSame( ApiErrorCode::PayloadRejected, $task_result->error->code );
+		self::assertSame( 'Task "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $task_result->error->message );
+		self::assertInstanceOf( Failure::class, $batch_result );
+		self::assertInstanceOf( ApiError::class, $batch_result->error );
+		self::assertSame( ApiErrorCode::PayloadRejected, $batch_result->error->code );
+		self::assertSame( 'Batch "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $batch_result->error->message );
+		self::assertSame( array(), $task_engine->calls );
+		self::assertSame( array(), $batch_engine->calls );
+	}
+
+	/**
+	 * Supplies both sides of the persisted start-argument byte boundary.
+	 *
+	 * @return  array<string, array{json_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_start_arguments(): array {
+		return array(
+			'at limit'   => array(
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'over limit' => array(
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+		);
+	}
+
+	/**
 	 * Schedule operations qualify both schedule and target identities without accepting an owner.
 	 *
 	 * @return  void

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -27,12 +28,14 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ClockInterface $clock Run timestamp source.
-	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
+	 * @param   ClockInterface  $clock  Run timestamp source.
+	 * @param   OptionRows      $rows   Authoritative raw option-row I/O.
+	 * @param   LoggerInterface $logger Engine diagnostic sink.
 	 */
 	public function __construct(
 		private ClockInterface $clock,
 		private OptionRows $rows,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -92,7 +95,7 @@ final readonly class StoreFactory {
 	 * @return  FailedRunStore
 	 */
 	public function failed_run_store( string $identity ): FailedRunStore {
-		return new FailedRunStore( $identity, $this->rows );
+		return new FailedRunStore( $identity, $this->rows, $this->logger );
 	}
 
 	// endregion

@@ -125,6 +125,8 @@ A Task deduplication key is an optional opaque byte string scoped to that Task. 
 
 `ExistingRunPolicy::Replace` is the default Batch policy: a start with matching arguments takes over a fresh incumbent's overlap lock, and the incumbent stops at its next fence. `ExistingRunPolicy::Reject` instead returns `OverlapHeld` and leaves the incumbent in place.
 
+Task enqueue arguments, Batch start arguments, and Schedule arguments are each capped at 8,192 bytes in their encoded JSON representation; oversized Task and Batch commands return `PayloadRejected`, while an oversized Schedule definition throws `InvalidArgumentException`.
+
 Scheduling, run-inspection, retry, and cancellation methods return `Success` or `Failure<ApiError>`. A successful scheduling result means the work was accepted, not that its handler completed. Branch with `is_success()` or `is_failure()`, then read the narrowed result's `value` or `error` property. Failed results expose a stable `ApiErrorCode` through `$result->error->code`; `context` contains redaction-safe structured details such as the incumbent `run_id` for `OverlapHeld`.
 
 Deterministic contract violations detected before engine side effects throw `InvalidArgumentException`: invalid or reserved identities, priorities outside 0–255, negative task delays, empty or over-64-byte Task deduplication keys, non-portable Task or Batch arguments, and cross-kind registration. Valid commands rejected by registration or runtime state—including unknown work, held locks, backend refusal, and storage failure—return `Failure<ApiError>`.
@@ -272,6 +274,10 @@ The batch ceiling applies independently to one `generate_queue()` or `process_ch
 `RunFailure::$identity` is the complete `{owner}:{name}` work identity. The value also carries the run ID, consumed attempt count, typed `RunFailureStage`, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
+
+Each generated, filtered, enqueued, or prepended chunk is capped at 8,192 bytes in its encoded JSON representation before queue persistence; the 8,000-byte scheduler action envelope can impose a smaller effective limit after its delivery metadata is included.
+
+The complete queue is capped at 1,048,576 bytes in its persisted serialization both when generation materializes it and whenever `BatchContextInterface::enqueue()` or `prepend()` grows it during processing.
 
 ```php
 interface BatchContextInterface {

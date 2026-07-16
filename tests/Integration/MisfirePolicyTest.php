@@ -304,7 +304,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
-		$stores               = new StoreFactory( $clock, $rows );
+		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );

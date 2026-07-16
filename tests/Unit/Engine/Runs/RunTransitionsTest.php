@@ -145,7 +145,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
-		$stores                     = new StoreFactory( $this->clock, $this->rows );
+		$stores                     = new StoreFactory( $this->clock, $this->rows, $this->logger );
 		$lock_windows               = new LockWindows( $this->clock );
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );

@@ -142,7 +142,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$this->stores               = new StoreFactory( $this->clock, $option_rows );
+		$this->stores               = new StoreFactory( $this->clock, $option_rows, $this->logger );
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock );
 		$this->terminal_effects     = new LifecycleEffects( $guard, $this->stores, $this->logger );

@@ -120,7 +120,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$this->wpdb             = new WpdbLockSpy();
 		$rows                   = new OptionRows( $this->wpdb );
 		$this->guard            = new OverlapGuard( $this->clock, $this->logger, $rows );
-		$this->stores           = new StoreFactory( $this->clock, $rows );
+		$this->stores           = new StoreFactory( $this->clock, $rows, $this->logger );
 		$this->terminal_effects = new LifecycleEffects( $this->guard, $this->stores, $this->logger );
 	}
 

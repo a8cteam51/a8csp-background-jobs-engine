@@ -148,6 +148,23 @@ final class ScheduleTest extends TestCase {
 	}
 
 	/**
+	 * Schedule arguments accept the byte ceiling and reject its adjacent overflow.
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_observes_the_argument_json_byte_ceiling(): void {
+		$args     = array( 'payload' => \str_repeat( 'a', 8_192 - 14 ) );
+		$schedule = new Schedule( 'accepted', Recurrence::every( 300 ), 'refresh-index', $args );
+
+		self::assertSame( $args, $schedule->args );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Schedule "rejected" arguments contain 8193 JSON bytes; the limit is 8192 bytes.' );
+
+		new Schedule( 'rejected', Recurrence::every( 300 ), 'refresh-index', array( 'payload' => \str_repeat( 'a', 8_193 - 14 ) ) );
+	}
+
+	/**
 	 * Non-scalar argument leaves identify the portable representation the caller must use.
 	 *
 	 * @return  void
