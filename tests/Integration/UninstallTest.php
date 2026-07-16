@@ -46,11 +46,11 @@ final class UninstallTest extends IntegrationTestCase {
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const LIFECYCLE_HOOKS = array(
-		'a8csp_background_tasks/start',
-		'a8csp_background_tasks/continue',
+		'a8csp_background_tasks/start_batch',
+		'a8csp_background_tasks/continue_batch',
 		'a8csp_background_tasks/run_task',
 		'a8csp_background_tasks/run_chunk',
-		'a8csp_background_tasks/cleanup',
+		'a8csp_background_tasks/cleanup_batch',
 	);
 
 	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */

@@ -32,11 +32,11 @@ final class HookNameLiteralsTest extends TestCase {
 		'history_size'     => 'a8csp_background_tasks/history_size',
 		'retry_policy'     => 'a8csp_background_tasks/retry_policy/',
 		'misfire_grace'    => 'a8csp_background_tasks/misfire_grace/',
-		'start'            => 'a8csp_background_tasks/start',
-		'continue'         => 'a8csp_background_tasks/continue',
+		'start_batch'      => 'a8csp_background_tasks/start_batch',
+		'continue_batch'   => 'a8csp_background_tasks/continue_batch',
 		'run_task'         => 'a8csp_background_tasks/run_task',
 		'run_chunk'        => 'a8csp_background_tasks/run_chunk',
-		'cleanup'          => 'a8csp_background_tasks/cleanup',
+		'cleanup_batch'    => 'a8csp_background_tasks/cleanup_batch',
 		'schedule_due'     => 'a8csp_background_tasks/schedule_due',
 	);
 

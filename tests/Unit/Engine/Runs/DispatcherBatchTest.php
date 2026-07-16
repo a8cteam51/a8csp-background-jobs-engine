@@ -554,7 +554,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function start_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/start' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/start_batch' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

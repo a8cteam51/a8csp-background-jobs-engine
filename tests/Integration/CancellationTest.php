@@ -239,7 +239,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
 		self::assertSame( 4, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
-		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/continue', $group, array( self::BATCH_IDENTITY, $run_id, 4 ) );
+		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/continue_batch', $group, array( self::BATCH_IDENTITY, $run_id, 4 ) );
 
 		$cancelled = $consumer->runs()->cancel( self::BATCH_NAME, $run_id );
 

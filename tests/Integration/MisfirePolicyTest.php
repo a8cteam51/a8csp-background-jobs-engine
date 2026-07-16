@@ -329,11 +329,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->deterministic_registry   = $schedule_registry;
 		$this->deterministic_work       = $work;
 
-		\remove_all_actions( 'a8csp_background_tasks/start' );
-		\remove_all_actions( 'a8csp_background_tasks/continue' );
+		\remove_all_actions( 'a8csp_background_tasks/start_batch' );
+		\remove_all_actions( 'a8csp_background_tasks/continue_batch' );
 		\remove_all_actions( 'a8csp_background_tasks/run_task' );
 		\remove_all_actions( 'a8csp_background_tasks/run_chunk' );
-		\remove_all_actions( 'a8csp_background_tasks/cleanup' );
+		\remove_all_actions( 'a8csp_background_tasks/cleanup_batch' );
 		\remove_all_actions( 'a8csp_background_tasks/schedule_due' );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();

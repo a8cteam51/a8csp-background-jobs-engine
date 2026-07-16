@@ -283,7 +283,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_background_tasks/continue',
+						'hook'     => 'a8csp_background_tasks/continue_batch',
 						'args'     => array( $name, self::RUN_ID, 2 ),
 						'group'    => $name . '|' . self::RUN_ID,
 						'priority' => 10,
@@ -341,7 +341,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_background_tasks/start',
+						'hook'     => 'a8csp_background_tasks/start_batch',
 						'args'     => array( $name, self::RUN_ID, 1 ),
 						'group'    => $name . '|' . self::RUN_ID,
 						'priority' => 23,

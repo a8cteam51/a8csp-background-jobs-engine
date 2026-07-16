@@ -436,10 +436,13 @@ final readonly class RunReconciliation {
 			$args[] = $chunk_args;
 		}
 		$args[] = $state->action_seq;
-		$hook   = 'run' === $pending->stage
-			? ( 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task' )
-			: 'a8csp_background_tasks/' . $pending->stage;
-		$group  = $identity . '|' . $run_id;
+		$hook   = match ( $pending->stage ) {
+			'start'    => 'a8csp_background_tasks/start_batch',
+			'continue' => 'a8csp_background_tasks/continue_batch',
+			'cleanup'  => 'a8csp_background_tasks/cleanup_batch',
+			'run'      => 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task',
+		};
+		$group = $identity . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {
 			return $this->scheduler->enqueue_async( $hook, $args, $group, $pending->priority );
 		}

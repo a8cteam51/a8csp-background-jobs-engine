@@ -175,11 +175,11 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_failed_consumer-plugin:email-digest',
 	);
 	private const LIFECYCLE_HOOKS = array(
-		'a8csp_background_tasks/start',
-		'a8csp_background_tasks/continue',
+		'a8csp_background_tasks/start_batch',
+		'a8csp_background_tasks/continue_batch',
 		'a8csp_background_tasks/run_task',
 		'a8csp_background_tasks/run_chunk',
-		'a8csp_background_tasks/cleanup',
+		'a8csp_background_tasks/cleanup_batch',
 		'a8csp_background_tasks/schedule_due',
 	);
 	private const NEAR_MISS       = 'a8cspXbgteYforeign';

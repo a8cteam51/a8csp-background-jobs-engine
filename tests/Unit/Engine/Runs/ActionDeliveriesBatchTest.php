@@ -179,12 +179,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->backend()->before_next(
 			'enqueue_async',
 			static function (): void {
-				\do_action( 'a8csp_background_tasks/continue', self::IDENTITY, self::RUN_ID, 2 );
+				\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
 			}
 		);
 
 		$this->rig->run_due();
-		\do_action( 'a8csp_background_tasks/continue', self::IDENTITY, self::RUN_ID, 2 );
+		\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
 		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $first, 3 );
 		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $first, 3 );
 
@@ -511,7 +511,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array(), $this->batch->process_calls );
-		self::assertCount( 1, $this->calls_for_hook( 'a8csp_background_tasks/cleanup' ) );
+		self::assertCount( 1, $this->calls_for_hook( 'a8csp_background_tasks/cleanup_batch' ) );
 	}
 
 	/**
@@ -540,7 +540,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertInstanceOf( BatchContextInterface::class, $this->batch->process_calls[0]['context'] ?? null );
 		self::assertSame( array( array( 'chunk' => 'prepended-2' ), array( 'chunk' => 'prepended-1' ), array( 'chunk' => 'remaining' ), array( 'chunk' => 'appended' ) ), $this->run_state()['queue'] ?? null );
-		self::assertSame( self::NOW + 195, $this->single_call_for_hook( 'a8csp_background_tasks/continue' )['args']['timestamp'] ?? null );
+		self::assertSame( self::NOW + 195, $this->single_call_for_hook( 'a8csp_background_tasks/continue_batch' )['args']['timestamp'] ?? null );
 	}
 
 	/**
@@ -670,7 +670,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( self::NOW + 120 + $expected_delay, $this->single_call_for_hook( 'a8csp_background_tasks/continue' )['args']['timestamp'] ?? null );
+		self::assertSame( self::NOW + 120 + $expected_delay, $this->single_call_for_hook( 'a8csp_background_tasks/continue_batch' )['args']['timestamp'] ?? null );
 	}
 
 	/**
@@ -823,7 +823,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		$this->assert_foreign_superseded();
-		self::assertSame( array(), $this->calls_for_hook( 'a8csp_background_tasks/continue' ) );
+		self::assertSame( array(), $this->calls_for_hook( 'a8csp_background_tasks/continue_batch' ) );
 	}
 
 	/**
@@ -914,7 +914,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->backend()->calls         = array();
 		$this->rig->wpdb()->recorded_queries = array();
 
-		\do_action( 'a8csp_background_tasks/continue', self::IDENTITY, self::RUN_ID, 2 );
+		\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
 
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->rig->backend()->calls );
@@ -1115,7 +1115,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertIsInt( $sequence );
 
 		$this->rig->run_due();
-		\do_action( 'a8csp_background_tasks/cleanup', self::IDENTITY, self::RUN_ID, $sequence );
+		\do_action( 'a8csp_background_tasks/cleanup_batch', self::IDENTITY, self::RUN_ID, $sequence );
 
 		self::assertCount( 1, $this->batch->completed_calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/completed' ) );

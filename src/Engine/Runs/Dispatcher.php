@@ -224,7 +224,7 @@ final readonly class Dispatcher {
 				)
 			);
 		}
-		$scheduled = $this->scheduler->enqueue_async( 'a8csp_background_tasks/start', array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, $priority );
+		$scheduled = $this->scheduler->enqueue_async( 'a8csp_background_tasks/start_batch', array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, $priority );
 		if ( $scheduled->is_failure() ) {
 			$this->overlap_guard->release( $batch_name, $args_hash, $run_id );
 			$run_store->delete( $run_id );
