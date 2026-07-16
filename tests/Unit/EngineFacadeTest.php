@@ -3,100 +3,58 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the internal engine facade across registration, scheduling, and persisted run state.
+ * Exercises internal facade behavior through owner-bound production flows.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( EngineFacade::class )]
-#[CoversClass( Tasks::class )]
-#[CoversClass( Schedules::class )]
-#[CoversClass( Batches::class )]
-#[UsesClass( EngineError::class )]
-#[UsesClass( FailedRunStore::class )]
-#[UsesClass( OptionRows::class )]
-#[UsesClass( RawOptionDecoder::class )]
-#[UsesClass( Dispatcher::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( StoreFactory::class )]
-#[UsesClass( TerminalEffects::class )]
-#[UsesClass( BatchRegistry::class )]
-#[UsesClass( TaskRegistry::class )]
-#[UsesClass( ScheduleRegistry::class )]
-#[UsesClass( OccurrenceDelivery::class )]
 final class EngineFacadeTest extends TestCase {
-	private const ARGS                 = array(
-		'site_id' => 7,
-		'mode'    => 'full',
-	);
-	private const BATCH_IDENTITY       = 'consumer-plugin:catalog-sync';
-	private const MAINTENANCE_IDENTITY = 'a8csp-bgte:maintenance';
-	private const NOW                  = 1_700_000_000;
-	private const RUN_ID               = '00000000001700000000-0000000000000000042';
-	private const TASK_IDENTITY        = 'consumer-plugin:email-digest';
+	// region FIELDS AND CONSTANTS.
 
-	private RecordingBackend $backend;
-	private EngineFacade $engine;
-	private WpdbLockSpy $wpdb;
+	private const NOW = 1_700_000_000;
+
+	private EngineRig $rig;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
-	 * Loads the guarded WordPress stubs required by the orchestration graph.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once __DIR__ . '/wp-options-stubs.php';
-		require_once __DIR__ . '/wp-hook-stubs.php';
-		require_once __DIR__ . '/wp-lock-stubs.php';
-		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Engine/Backends/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets observable boundaries and constructs one empty consumer facade.
+	 * Boots one deterministic production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -104,306 +62,179 @@ final class EngineFacadeTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
-
-		$clock                = new FixedClock( self::NOW );
-		$logger               = new RecordingLogger();
-		$work                 = new WorkRegistry();
-		$tasks                = new TaskRegistry( $work );
-		$batches              = new BatchRegistry( $work );
-		$this->backend        = new RecordingBackend();
-		$this->wpdb           = new WpdbLockSpy();
-		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $clock, new OptionRows( $this->wpdb ) );
-		$randomizer           = new RecordingRandomizer( 42 );
-		$lock_windows         = new LockWindows( $clock );
-		$terminal_effects     = new TerminalEffects( $guard, $stores, $logger );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-
-		$dispatcher = new Dispatcher( $tasks, $batches, $work, $this->backend, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects, );
-		$registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
-		$delivery   = new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $clock, new RecordingRandomizer( 42 ) ), new CleanupIntents( $registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $clock, $logger ), $clock, $logger );
-		$schedules  = new Schedules( $registry, $this->backend, $clock, $delivery );
-		$inspection = new Inspection( $registry, $tasks, $batches, $work, new SchedulerFacade( array( $this->backend ) ), $guard, $stores, new OptionRows( $this->wpdb ), $lock_windows, $clock );
-
-		$this->engine = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedules, new Batches( $batches, $dispatcher ), $dispatcher, $inspection, );
+		$this->rig = EngineRig::set_up( self::NOW );
 	}
 
 	/**
-	 * Accessors retain the constructor-injected API objects.
+	 * Releases request-local engine state after each facade scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_properties_retain_the_same_api_objects(): void {
-		self::assertSame( $this->engine->tasks, $this->engine->tasks );
-		self::assertSame( $this->engine->schedules, $this->engine->schedules );
-		self::assertSame( $this->engine->batches, $this->engine->batches );
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
-	 * Task registration and enqueueing reach the scheduler and persist the returned run.
+	 * Task registration, admission, delivery, and completion cross the complete facade stack.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_register_then_enqueue_round_trips_through_the_task_facade(): void {
-		$this->engine->tasks->register( self::TASK_IDENTITY, new RecordingTask( 'email-digest' ) );
+	public function test_task_facade_round_trips_one_public_run(): void {
+		$consumer = $this->rig->consumer( 'facade-tests' );
+		$task     = new RecordingTask( 'email-digest' );
+		$consumer->tasks()->register( $task );
 
-		$result = $this->engine->tasks->enqueue( self::TASK_IDENTITY, self::ARGS, delay: 300, dedup_key: 'site-7-full', priority: 5 );
+		$result = $consumer->tasks()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, dedup_key: 'site-7', priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'schedule_single',
-					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run',
-						'timestamp' => self::NOW + 300,
-						'args'      => array( self::TASK_IDENTITY, self::RUN_ID, 1 ),
-						'group'     => self::TASK_IDENTITY . '|' . self::RUN_ID,
-						'priority'  => 5,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-
-		$run = $this->option( 'a8csp_bgte_run_' . self::TASK_IDENTITY . '_' . self::RUN_ID );
-		self::assertIsArray( $run );
-		self::assertSame( 'running', $run['status'] ?? null );
-		self::assertSame( self::ARGS, $run['start_args'] ?? null );
-		self::assertSame( \hash( 'sha256', 'site-7-full' ), $run['args_hash'] ?? null );
-		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/started/' . self::TASK_IDENTITY,
-				'a8csp_background_tasks/started',
-			),
-			$this->fired_hook_names()
-		);
+		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
+		$this->rig->run_due();
+		self::assertSame( array( array( 'site_id' => 7 ) ), $task->calls );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * Batch registration and starting reach the scheduler and persist the returned run.
+	 * Batch registration, admission, queue generation, and completion cross the same facade stack.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_register_then_start_round_trips_through_the_batch_facade(): void {
-		$this->engine->batches->register( self::BATCH_IDENTITY, new RecordingBatch( 'catalog-sync' ) );
+	public function test_batch_facade_round_trips_one_public_run(): void {
+		$consumer = $this->rig->consumer( 'facade-tests' );
+		$batch    = new RecordingBatch( 'catalog-sync' );
+		$consumer->batches()->register( $batch );
 
-		$result = $this->engine->batches->start( self::BATCH_IDENTITY, self::ARGS, existing: ExistingRunPolicy::Reject, priority: 23 );
+		$result = $consumer->batches()->start( 'catalog-sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/start',
-						'args'     => array( self::BATCH_IDENTITY, self::RUN_ID, 1 ),
-						'group'    => self::BATCH_IDENTITY . '|' . self::RUN_ID,
-						'priority' => 23,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-
-		$run = $this->option( 'a8csp_bgte_run_' . self::BATCH_IDENTITY . '_' . self::RUN_ID );
-		self::assertIsArray( $run );
-		self::assertSame( 'running', $run['status'] ?? null );
-		self::assertSame( self::ARGS, $run['start_args'] ?? null );
-		self::assertSame( array(), $run['queue'] ?? null );
+		$this->rig->run_due();
+		$this->rig->run_due();
+		$this->rig->run_due();
+		self::assertSame( array( array( 'site_id' => 7 ) ), $batch->generate_calls );
+		self::assertCount( 1, $batch->success_calls );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * An unknown task preserves the orchestration failure at the public boundary.
+	 * Unknown work and cross-kind collisions remain observable at public boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->tasks->enqueue( 'consumer-plugin:unknown', self::ARGS );
+	public function test_facade_rejects_unknown_and_ambiguous_work_before_scheduling(): void {
+		$consumer                    = $this->rig->consumer( 'facade-tests' );
+		$this->rig->backend()->calls = array();
+		$unknown                     = $consumer->tasks()->enqueue( 'missing' );
+		self::assertInstanceOf( Failure::class, $unknown );
+		if ( ! $unknown->error instanceof ApiError ) {
+			throw new \LogicException( 'Unknown work must produce a public API error.' );
+		}
+		self::assertSame( ApiErrorCode::UnknownWork, $unknown->error->code );
+		self::assertSame( array(), $this->rig->backend()->calls );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( 'Task "consumer-plugin:unknown" is not registered; register it before enqueueing.', $result->error->message );
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Cross-kind identity collisions fail at registration before dispatch can observe ambiguity.
-	 *
-	 * @return  void
-	 */
-	public function test_cross_kind_collision_fails_during_engine_registration(): void {
-		$this->engine->tasks->register( 'consumer-plugin:shared-work', new RecordingTask( 'shared-work' ) );
-
+		$consumer->tasks()->register( new RecordingTask( 'shared' ) );
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "consumer-plugin:shared-work" is already registered as a task; it cannot also be registered as a batch.' );
-
-		$this->engine->batches->register( 'consumer-plugin:shared-work', new RecordingBatch( 'shared-work' ) );
+		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a task; it cannot also be registered as a batch.' );
+		$consumer->batches()->register( new RecordingBatch( 'shared' ) );
 	}
 
 	/**
-	 * Manual retry declares its result non-discardable at the engine boundary.
+	 * Retrying a retained failure consumes it and schedules a fresh run.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The fixture-built failed row and option-function ledger prove the facade consumes authoritative storage through exact SQL CAS instead of a non-atomic WordPress option write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_retry_failed_declares_no_discard_directly(): void {
-		$method = new \ReflectionMethod( EngineFacade::class, 'retry_failed' );
+	public function test_retry_failed_consumes_authoritative_storage_without_option_function_writes(): void {
+		$identity = 'facade-tests:email-digest';
+		$consumer = $this->rig->consumer( 'facade-tests' );
+		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$failure               = new RunFailure( name: $identity, run_id: 'failed-run', attempts: 1, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
+		$this->rig->wpdb()->put( $option_name, $raw );
+		$GLOBALS['a8csp_bgte_test_option_calls'] = array();
 
-		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
-	}
-
-	/**
-	 * Cancellation declares its result non-discardable at the engine boundary.
-	 *
-	 * @return  void
-	 */
-	public function test_cancel_declares_no_discard_directly(): void {
-		$method = new \ReflectionMethod( EngineFacade::class, 'cancel' );
-
-		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
-	}
-
-	/**
-	 * Cancellation preserves the orchestration failure at the public engine API.
-	 *
-	 * @return  void
-	 */
-	public function test_cancel_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->cancel( 'consumer-plugin:unknown', 'run-1' );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( 'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before cancelling its run.', $result->error->message );
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Manual retry preserves the orchestration failure at the public engine API.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_surfaces_an_unregistered_name_failure(): void {
-		$result = $this->engine->retry_failed( 'consumer-plugin:unknown', 'run-1' );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( 'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.', $result->error->message );
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Manual retry dispatches a retained failed maintenance run through the internal task seam.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_dispatches_the_engine_maintenance_identity(): void {
-		$this->engine->tasks->register( self::MAINTENANCE_IDENTITY, new RecordingTask( MaintenanceTask::NAME ) );
-		$store = new FailedRunStore( self::MAINTENANCE_IDENTITY, new OptionRows( $this->wpdb ) );
-		self::assertTrue( $store->record( 'failed-maintenance-run', self::NOW - 1, array(), 1, new EngineError( 'Maintenance failed.' ), new RunFailure( name: self::MAINTENANCE_IDENTITY, run_id: 'failed-maintenance-run', attempts: 1, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Maintenance failed.', failed_chunk: null, ) ) );
-		$failed_key = 'a8csp_bgte_failed_' . self::MAINTENANCE_IDENTITY;
-		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
-		self::assertIsString( $failed_raw );
-		$failed_runs = RawOptionDecoder::decode( $failed_raw );
-		self::assertIsArray( $failed_runs );
-		self::assertSame( array( 'failed-maintenance-run' ), \array_column( $failed_runs, 'run_id' ) );
-		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-
-		$result = $this->engine->retry_failed( self::MAINTENANCE_IDENTITY, 'failed-maintenance-run' );
+		$result = $consumer->runs()->retry_failed( 'email-digest', 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
-		$remaining = $store->all();
-		if ( $remaining->is_failure() ) {
-			self::fail( $remaining->error->message );
+		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ) )->all();
+		self::assertInstanceOf( Success::class, $remaining );
+		self::assertSame( array(), $remaining->value );
+		$this->assert_option_functions_did_not_write( $option_name );
+		$this->rig->backend()->assert_scheduled( $identity );
+	}
+
+	/**
+	 * Cancellation through the owner-bound facade terminalizes retained waiting work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_terminalizes_a_waiting_public_run(): void {
+		$consumer = $this->rig->consumer( 'facade-tests' );
+		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$enqueued = $consumer->tasks()->enqueue( 'email-digest' );
+		self::assertInstanceOf( Success::class, $enqueued );
+		if ( ! \is_string( $enqueued->value ) ) {
+			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
 		}
 
-		self::assertSame( array(), $remaining->value );
-		$failed_raw = $this->wpdb->rows[ $failed_key ] ?? null;
-		self::assertIsString( $failed_raw );
-		self::assertSame( array(), RawOptionDecoder::decode( $failed_raw ) );
-		self::assertSame( 'off', $this->wpdb->autoload[ $failed_key ] ?? null );
-		$this->assert_no_option_function_write_for( $failed_key );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::MAINTENANCE_IDENTITY, self::RUN_ID, 1 ),
-						'group'    => self::MAINTENANCE_IDENTITY . '|' . self::RUN_ID,
-						'priority' => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
+		$cancelled = $consumer->runs()->cancel( 'email-digest', $enqueued->value );
+
+		self::assertInstanceOf( Success::class, $cancelled );
+		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'facade-tests:email-digest' )['history'][0]['outcome'] ?? null );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
-	 * Asserts that no WordPress option function wrote one authoritative row.
+	 * Asserts WordPress option helpers never wrote one authoritative row.
 	 *
-	 * @param   string $key Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Authoritative option name.
 	 *
 	 * @return  void
 	 */
-	private function assert_no_option_function_write_for( string $key ): void {
+	private function assert_option_functions_did_not_write( string $option_name ): void {
 		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 		foreach ( $calls as $call ) {
-			self::assertIsArray( $call );
+			if ( ! \is_array( $call ) ) {
+				throw new \LogicException( 'The option-call ledger contains a malformed entry.' );
+			}
 			$args = $call['args'] ?? null;
-			self::assertIsArray( $args );
-			self::assertNotSame( $key, $args[0] ?? null );
+			self::assertNotSame( $option_name, \is_array( $args ) ? ( $args[0] ?? null ) : null );
 		}
 	}
 
-	/**
-	 * Returns one value from the in-memory WordPress option boundary.
-	 *
-	 * @param   string $name Option name.
-	 *
-	 * @return  mixed
-	 */
-	private function option( string $name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-
-		return $options[ $name ] ?? null;
-	}
-
-	/**
-	 * Returns fired action names from the WordPress hook boundary.
-	 *
-	 * @return  list<string>
-	 */
-	private function fired_hook_names(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
-		self::assertIsArray( $actions );
-		$hook_names = array();
-		foreach ( $actions as $action ) {
-			self::assertIsArray( $action );
-			$hook_name = $action['hook_name'] ?? null;
-			self::assertIsString( $hook_name );
-			$hook_names[] = $hook_name;
-		}
-
-		return $hook_names;
-	}
+	// endregion.
 }

@@ -8,7 +8,10 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins GitHub release lookup, comparison, and cache behavior.
+ * Exercises the WordPress update filter over a deterministic HTTP boundary.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
@@ -19,6 +22,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 	/**
 	 * Loads the plugin entry file with guarded WordPress API stubs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -42,6 +48,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 	/**
 	 * Resets HTTP scripts, request records, and the transient store.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -56,6 +65,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 	/**
 	 * A newer release returns the matching asset and populates the positive cache.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_newer_release_is_offered_and_cached(): void {
@@ -69,7 +81,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 				'url'     => $release['html_url'],
 				'package' => $release['assets'][0]['browser_download_url'],
 			),
-			( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE )
+			$this->apply_update_filter( '1.0.0' )
 		);
 		self::assertSame( array( self::API_URL ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
 		self::assertSame(
@@ -86,6 +98,12 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 	/**
 	 * A foreign asset before the plugin ZIP does not affect the update package.
+	 *
+	 * @load-bearing operator-contract
+	 * @pin-rationale Release automation and installed-site updates agree on the exact a8csp-background-tasks-engine.zip asset name; selecting any other release asset would install the wrong artifact.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -108,12 +126,15 @@ final class GitHubUpdateCheckTest extends TestCase {
 				'url'     => $release['html_url'],
 				'package' => $plugin_asset['browser_download_url'],
 			),
-			( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE )
+			$this->apply_update_filter( '1.0.0' )
 		);
 	}
 
 	/**
 	 * A prerelease install follows the full release list and skips draft entries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -131,7 +152,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 				'url'     => $beta['html_url'],
 				'package' => $beta['assets'][0]['browser_download_url'],
 			),
-			( $this->update_callback() )( false, $this->plugin_data( '1.0.0-beta.1' ), self::PLUGIN_FILE )
+			$this->apply_update_filter( '1.0.0-beta.1' )
 		);
 		self::assertSame( array( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10' ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
 		self::assertSame(
@@ -149,18 +170,24 @@ final class GitHubUpdateCheckTest extends TestCase {
 	/**
 	 * A stable install keeps the stable latest-release channel.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_stable_install_keeps_the_stable_channel(): void {
 		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $this->release( 'v1.1.0' ) );
 
-		( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE );
+		$this->apply_update_filter( '1.0.0' );
 
 		self::assertSame( array( self::API_URL ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
 	}
 
 	/**
 	 * A stable release outranks the running prerelease on the list channel.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -176,12 +203,15 @@ final class GitHubUpdateCheckTest extends TestCase {
 				'url'     => $stable['html_url'],
 				'package' => $stable['assets'][0]['browser_download_url'],
 			),
-			( $this->update_callback() )( false, $this->plugin_data( '1.0.0-beta.1' ), self::PLUGIN_FILE )
+			$this->apply_update_filter( '1.0.0-beta.1' )
 		);
 	}
 
 	/**
 	 * Equal and older releases produce no update offer.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $installed_version Installed plugin version.
 	 *
@@ -192,23 +222,29 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$release                                    = $this->release( 'v1.1.0' );
 		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
 
-		self::assertFalse( ( $this->update_callback() )( false, $this->plugin_data( $installed_version ), self::PLUGIN_FILE ) );
+		self::assertFalse( $this->apply_update_filter( $installed_version ) );
 	}
 
 	/**
 	 * A failed API request creates the short negative cache.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_api_failure_is_negatively_cached(): void {
 		$GLOBALS['a8csp_bgte_test_remote_response'] = new \WP_Error( 'http_error' );
 
-		self::assertFalse( ( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE ) );
+		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
 	}
 
 	/**
 	 * A release without assets is guarded and negatively cached.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -217,12 +253,15 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$release['assets']                          = array();
 		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
 
-		self::assertFalse( ( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE ) );
+		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
 	}
 
 	/**
 	 * A release without the plugin ZIP is guarded and negatively cached.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -236,36 +275,45 @@ final class GitHubUpdateCheckTest extends TestCase {
 		);
 		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
 
-		self::assertFalse( ( $this->update_callback() )( false, $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE ) );
+		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
 	}
 
 	/**
-	 * Returns the update callback recorded while loading the plugin entry file.
+	 * Applies the production callback through WordPress's registered filter path.
 	 *
-	 * @return  \Closure(false|array<string, mixed>, array{Version: string, TextDomain: string}, string): (false|array<string, mixed>)
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $installed_version Installed plugin version.
+	 *
+	 * @return  false|array<string, mixed>
 	 */
-	private function update_callback(): \Closure {
-		$registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? null;
-		self::assertIsArray( $registrations );
-
-		foreach ( $registrations as $registration ) {
-			self::assertIsArray( $registration );
-			if ( 'update_plugins_github.com' !== ( $registration['hook_name'] ?? null ) ) {
-				continue;
-			}
-
-			$callback = $registration['callback'] ?? null;
-			self::assertInstanceOf( \Closure::class, $callback );
-
-			return $callback;
+	private function apply_update_filter( string $installed_version ): false|array {
+		$result = \apply_filters( 'update_plugins_github.com', false, $this->plugin_data( $installed_version ), self::PLUGIN_FILE );
+		if ( false === $result ) {
+			return false;
+		}
+		if ( ! \is_array( $result ) ) {
+			throw new \LogicException( 'The update filter returned an invalid value.' );
 		}
 
-		self::fail( 'The plugin did not register its GitHub update callback.' );
+		$update = array();
+		foreach ( $result as $key => $value ) {
+			if ( ! \is_string( $key ) ) {
+				throw new \LogicException( 'The update filter returned a non-string field name.' );
+			}
+			$update[ $key ] = $value;
+		}
+
+		return $update;
 	}
 
 	/**
 	 * Supplies installed versions for equal and older release comparisons.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  iterable<string, array{string}>
 	 */
@@ -276,6 +324,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 	/**
 	 * Returns the plugin data consumed by the update hook.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $version Installed version.
 	 *
@@ -290,6 +341,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 	/**
 	 * Returns a complete GitHub release payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $tag Release tag.
 	 *
@@ -311,6 +365,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 	/**
 	 * Wraps a release payload as a successful WordPress HTTP response.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   array<array-key, mixed> $release Release entry or release list.
 	 *
 	 * @return  array{response: array{code: 200}, body: string}
@@ -325,6 +382,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 	/**
 	 * Asserts the five-minute empty-array cache entry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */

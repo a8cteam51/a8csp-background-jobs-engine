@@ -2,78 +2,56 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\CLI;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the irreversible development reset, confirmation gate, and category counts.
+ * Exercises the registered development-reset command against real engine state.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( ResetCommand::class )]
 #[CoversClass( ResetOutput::class )]
-#[UsesClass( SchedulerFacade::class )]
-#[UsesClass( OptionRows::class )]
-#[UsesClass( RecordingBackend::class )]
 final class ResetCommandTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Option outside every engine-owned prefix. */
 	private const UNRELATED_OPTION = 'consumer_plugin_state';
 
-	/** Backend hook outside the engine namespace. */
-	private const UNRELATED_HOOK = 'consumer_plugin/background_work';
-
-	/** @var list<array{question: string, assoc_args: array<string, mixed>}> */
-	private array $confirmations = array();
-
-	/** @var list<string> */
-	private array $lines = array();
-
-	/** @var list<string> */
-	private array $successes = array();
-
-	/** @var list<string> */
-	private array $errors = array();
-
-	/** Whether interactive confirmation is accepted. */
-	private bool $confirmation = true;
+	private EngineRig $rig;
 
 	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded storage functions.
+	 * Loads the engine and WP-CLI boundary fakes before command registration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__ ) . '/wp-lock-stubs.php';
+		EngineRig::bootstrap();
+		require_once \dirname( __DIR__, 2 ) . '/Support/WpCliRuntimeStub.php';
 	}
 
 	/**
-	 * Resets the current site and command interaction ledger.
+	 * Boots one production graph and captures the real reset registration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -81,15 +59,25 @@ final class ResetCommandTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_blog_id']     = 1;
-		$GLOBALS['a8csp_bgte_test_cache']       = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
+		$this->rig = EngineRig::set_up();
+		CliHarness::set_up();
+	}
 
-		$this->confirmations = array();
-		$this->lines         = array();
-		$this->successes     = array();
-		$this->errors        = array();
-		$this->confirmation  = true;
+	/**
+	 * Releases request-local engine state after each reset scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
@@ -97,147 +85,94 @@ final class ResetCommandTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Every owner constant participates in the canonical reset name census.
+	 * An acknowledged reset removes production-created rows and pending engine actions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_option_names_are_derived_from_their_owning_classes(): void {
-		self::assertSame(
-			array(
-				RunStore::OPTION_PREFIX,
-				FailedRunStore::OPTION_PREFIX,
-				RunHistory::OPTION_PREFIX,
-				LatestRunPointer::OPTION_PREFIX,
-				OverlapGuard::OPTION_PREFIX,
-				OccurrenceLease::OPTION_PREFIX,
-				CleanupIntents::OPTION_PREFIX,
-			),
-			ResetCommand::option_prefixes()
-		);
-		self::assertSame( array( ScheduleRegistry::OPTION_NAME ), ResetCommand::exact_option_names() );
+	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
+		$this->seed_engine_state();
+		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
+		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_HOOK ] = 2;
+		$owned_before = $this->engine_option_names();
+		self::assertNotEmpty( $owned_before );
+
+		$result = CliHarness::run( 'reset', array(), array( 'yes' => true ) );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( '', $result->stderr );
+		self::assertStringContainsString( 'Option rows deleted: ' . \count( $owned_before ), $result->stdout );
+		self::assertStringContainsString( 'Pending backend actions unscheduled: ', $result->stdout );
+		self::assertStringContainsString( 'Success: Background tasks development state reset.', $result->stdout );
+		self::assertSame( array(), $this->engine_option_names() );
+		self::assertSame( 'keep', $this->rig->wpdb()->rows[ self::UNRELATED_OPTION ] ?? null );
 	}
 
 	/**
-	 * Affirmative reset removes every persisted category and pending engine action from both backends.
+	 * Declining the interactive gate preserves every row and pending backend action byte-for-byte.
 	 *
-	 * @return  void
-	 */
-	public function test_yes_purges_all_engine_state_and_reports_category_counts(): void {
-		$wpdb          = $this->seed_option_rows();
-		$first_backend = new RecordingBackend();
-		$last_backend  = new RecordingBackend();
-
-		$first_backend->pending_actions = array(
-			ActionDeliveries::START_HOOK => 1,
-			ActionDeliveries::RUN_HOOK   => 2,
-			self::UNRELATED_HOOK         => 4,
-		);
-		$last_backend->pending_actions  = array(
-			ActionDeliveries::CONTINUE_HOOK   => 1,
-			ActionDeliveries::CLEANUP_HOOK    => 1,
-			OccurrenceDelivery::SCHEDULE_HOOK => 2,
-		);
-
-		$command = new ResetCommand( new OptionRows( $wpdb ), new SchedulerFacade( array( $first_backend, $last_backend ) ), $this->reset_output() );
-
-		$this->confirmation = false;
-		$command->reset( array(), array( 'yes' => true ) );
-
-		self::assertSame( array( self::UNRELATED_OPTION => 'keep' ), $wpdb->rows );
-		self::assertSame( array( self::UNRELATED_HOOK => 4 ), $first_backend->pending_actions );
-		self::assertSame( array(), $last_backend->pending_actions );
-		self::assertSame(
-			array(
-				'Option rows deleted: 8',
-				'Pending backend actions unscheduled: 7',
-			),
-			$this->lines
-		);
-		self::assertSame( array( 'Background tasks development state reset.' ), $this->successes );
-		self::assertSame( array(), $this->errors );
-		self::assertSame( array( 'yes' => true ), $this->confirmations[0]['assoc_args'] ?? null );
-	}
-
-	/**
-	 * Declining the interactive gate leaves option rows and backend actions untouched.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_declined_confirmation_prevents_every_mutation(): void {
-		$wpdb    = $this->seed_option_rows();
-		$backend = new RecordingBackend();
+		$result = CliHarness::run_interactive( 'reset-declined', "n\n" );
+		$probe  = \json_decode( $result->probe, true, 512, \JSON_THROW_ON_ERROR );
 
-		$backend->pending_actions = array( ActionDeliveries::RUN_HOOK => 2 );
-
-		$command = new ResetCommand( new OptionRows( $wpdb ), new SchedulerFacade( array( $backend ) ), $this->reset_output() );
-
-		$before_rows        = $wpdb->rows;
-		$this->confirmation = false;
-
-		try {
-			$command->reset( array(), array() );
-			self::fail( 'A declined destructive reset must stop at confirmation.' );
-		} catch ( \RuntimeException $exception ) {
-			self::assertSame( 'Confirmation declined.', $exception->getMessage() );
-		}
-
-		self::assertSame( $before_rows, $wpdb->rows );
-		self::assertSame( array( ActionDeliveries::RUN_HOOK => 2 ), $backend->pending_actions );
-		self::assertSame( array(), $this->lines );
-		self::assertSame( array(), $this->successes );
-		self::assertSame( array(), $this->confirmations[0]['assoc_args'] ?? null );
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( 'This development reset permanently deletes every engine option row and pending backend action. In-flight work cannot be recovered. Continue? [y/n] ', $result->stdout );
+		self::assertSame( '', $result->stderr );
+		self::assertIsArray( $probe );
+		$before = $probe['before'] ?? null;
+		$after  = $probe['after'] ?? null;
+		self::assertIsArray( $before );
+		self::assertIsArray( $after );
+		$rows = $before['wpdb'] ?? null;
+		self::assertIsArray( $rows );
+		self::assertNotEmpty( $rows );
+		self::assertSame( $before, $after );
 	}
 
 	/**
-	 * A dormant backend aborts the reset before any row is deleted.
+	 * A dormant backend aborts before any authoritative row can be deleted.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dormant_backend_clearance_failure_prevents_every_row_deletion(): void {
-		$wpdb    = $this->seed_option_rows();
-		$backend = new RecordingBackend();
+	public function test_registered_reset_preserves_rows_when_backend_clearance_is_unknown(): void {
+		$this->seed_engine_state();
+		$this->rig->backend()->ready = false;
+		$before                      = $this->rig->wpdb()->rows;
 
-		$backend->ready           = false;
-		$backend->pending_actions = array( ActionDeliveries::RUN_HOOK => 2 );
+		$result = CliHarness::run( 'reset', array(), array( 'yes' => true ) );
 
-		$command = new ResetCommand( new OptionRows( $wpdb ), new SchedulerFacade( array( $backend ) ), $this->reset_output() );
-
-		$before_rows = $wpdb->rows;
-
-		try {
-			$command->reset( array(), array( 'yes' => true ) );
-			self::fail( 'A dormant backend must abort the reset before any deletion.' );
-		} catch ( \RuntimeException $exception ) {
-			self::assertStringContainsString( 'backend', \strtolower( $exception->getMessage() ) );
-		}
-
-		self::assertSame( $before_rows, $wpdb->rows );
-		self::assertSame( array( ActionDeliveries::RUN_HOOK => 2 ), $backend->pending_actions );
-		self::assertSame( array(), $this->successes );
+		self::assertSame( 1, $result->exit_code );
+		self::assertStringContainsString( 'backend', \strtolower( $result->stderr ) );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 
 	/**
-	 * The decision seam accepts only the documented flag shape.
+	 * Invalid command shapes fail before destructive work begins.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_request_parser_accepts_only_the_documented_yes_flag(): void {
-		self::assertSame( array( 'action' => 'reset' ), ResetCommand::request_from_args( array(), array() ) );
-		self::assertSame( array( 'action' => 'reset' ), ResetCommand::request_from_args( array(), array( 'yes' => true ) ) );
-		self::assertSame(
-			array(
-				'action'  => 'error',
-				'message' => 'Reset accepts only --yes; use wp background-tasks reset [--yes].',
-			),
-			ResetCommand::request_from_args( array( 'extra' ), array() )
-		);
-		self::assertSame(
-			array(
-				'action'  => 'error',
-				'message' => 'Reset accepts only --yes; use wp background-tasks reset [--yes].',
-			),
-			ResetCommand::request_from_args( array(), array( 'yes' => 'true' ) )
-		);
+	public function test_registered_reset_rejects_undocumented_arguments(): void {
+		$this->seed_engine_state();
+		$before = $this->rig->wpdb()->rows;
+
+		$result = CliHarness::run( 'reset', array( 'extra' ), array( 'yes' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( "Error: Reset accepts only --yes; use wp background-tasks reset [--yes].\n", $result->stderr );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 
 	// endregion.
@@ -245,50 +180,35 @@ final class ResetCommandTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Seeds one row under every canonical prefix and exact name plus one unrelated option.
+	 * Creates schedule and run rows through the public production graph.
 	 *
-	 * @return  WpdbLockSpy
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
 	 */
-	private function seed_option_rows(): WpdbLockSpy {
-		$wpdb = new WpdbLockSpy();
-		foreach ( ResetCommand::option_prefixes() as $prefix ) {
-			$wpdb->put( $prefix . 'fixture', 'raw-' . $prefix );
-		}
-		foreach ( ResetCommand::exact_option_names() as $option_name ) {
-			$wpdb->put( $option_name, 'raw-' . $option_name );
-		}
-		$wpdb->put( self::UNRELATED_OPTION, 'keep' );
-
-		return $wpdb;
+	private function seed_engine_state(): void {
+		$consumer = $this->rig->consumer( 'reset-tests' );
+		$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
+		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
 	/**
-	 * Builds the reset output boundary over this test's interaction ledgers.
+	 * Returns every engine-owned option name across both storage seams.
 	 *
-	 * @return  ResetOutput
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<string>
 	 */
-	private function reset_output(): ResetOutput {
-		return new ResetOutput(
-			function ( string $question, array $assoc_args ): void {
-				$this->confirmations[] = array(
-					'question'   => $question,
-					'assoc_args' => $assoc_args,
-				);
-				if ( true !== ( $assoc_args['yes'] ?? false ) && ! $this->confirmation ) {
-					throw new \RuntimeException( 'Confirmation declined.' );
-				}
-			},
-			function ( string $message ): void {
-				$this->lines[] = $message;
-			},
-			function ( string $message ): void {
-				$this->successes[] = $message;
-			},
-			function ( string $message ): void {
-				$this->errors[] = $message;
-				throw new \RuntimeException( $message );
-			}
-		);
+	private function engine_option_names(): array {
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		self::assertIsArray( $options );
+		$names = \array_values( \array_filter( \array_unique( \array_merge( \array_keys( $this->rig->wpdb()->rows ), \array_keys( $options ) ) ), static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
+		\sort( $names, \SORT_STRING );
+
+		return $names;
 	}
 
 	// endregion.

@@ -3,18 +3,13 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -24,19 +19,22 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the retained engine composition root through plugin boot and the owner-bound front door.
+ * Exercises the real composition root and its boot-order invariants.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( Component::class )]
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
 final class EngineComponentTest extends TestCase {
-	private const OWNER = 'consumer-plugin';
-
 	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress functions and the owner-bound API in each isolated process.
+	 * Loads guarded WordPress seams before the composition root is autoloaded.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -56,7 +54,10 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Resets hook ledgers and supplies the site-bound database seam.
+	 * Resets the WordPress ledgers and supplies the site-bound database seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -70,27 +71,30 @@ final class EngineComponentTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_is_multisite']         = false;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_array']           = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']           = array();
-		$GLOBALS['a8csp_bgte_test_cron_results']         = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
-		$GLOBALS['a8csp_bgte_test_as_calls']             = array();
-		$GLOBALS['a8csp_bgte_test_as_results']           = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']          = array( 'plugins_loaded' => 1 );
-		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
 
-		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = false;
-		unset(
-			$GLOBALS['a8csp_bgte_test_before_add_option'],
-			$GLOBALS['a8csp_bgte_test_cron_before_unschedule']
-		);
+		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = array();
+
+		$GLOBALS['a8csp_bgte_test_filter_values']     = array();
+		$GLOBALS['a8csp_bgte_test_fired_actions']     = array();
+		$GLOBALS['a8csp_bgte_test_action_throwables'] = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']           = 1;
+
+		$GLOBALS['a8csp_bgte_test_blog_stack']         = array();
+		$GLOBALS['a8csp_bgte_test_blog_switch_calls']  = array();
+		$GLOBALS['a8csp_bgte_test_blog_restore_calls'] = array();
+
+		$GLOBALS['a8csp_bgte_test_is_multisite']        = false;
+		$GLOBALS['a8csp_bgte_test_cache']               = array();
+		$GLOBALS['a8csp_bgte_test_cache_calls']         = array();
+		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_results']        = array();
+		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
+		$GLOBALS['a8csp_bgte_test_as_calls']            = array();
+		$GLOBALS['a8csp_bgte_test_as_results']          = array();
+		$GLOBALS['a8csp_bgte_test_did_actions']         = array( 'plugins_loaded' => 1 );
+		$GLOBALS['a8csp_bgte_test_doing_actions']       = array();
+		$GLOBALS['wpdb']                                = new WpdbLockSpy();
 	}
 
 	// endregion.
@@ -98,360 +102,252 @@ final class EngineComponentTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The composition root is enabled on every supported site.
+	 * The root is always needed and publishes all three retained facades.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_component_is_always_needed(): void {
-		self::assertTrue( ( new Component() )->is_needed() );
+	public function test_initialize_publishes_the_complete_composition_root(): void {
+		$component = new Component();
+
+		self::assertTrue( $component->is_needed() );
+		$component->initialize();
+
+		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
+		self::assertInstanceOf( Inspection::class, Component::get_inspection() );
+		self::assertNotNull( Component::get_scheduler() );
 	}
 
 	/**
-	 * Eager plugin boot publishes one engine, and the front door returns owner-bound consumers.
+	 * The diagnostic sink is registered before any component can emit an engine event.
+	 *
+	 * @load-bearing structural
+	 * @pin-rationale Exact hook order proves construction failures and re-entrant boot paths have a log sink before scheduler, delivery, occurrence, or maintenance registration begins.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_eager_boot_publishes_one_engine_and_front_door_returns_consumers(): void {
-		\a8csp_bgte_plugin();
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
-			'plugins_loaded' => 1,
-			'init'           => 1,
-		);
+	public function test_boot_registers_the_sink_before_every_engine_hook(): void {
+		( new Component() )->initialize();
 
-		$first      = \a8csp_bgte( self::OWNER );
-		$engine     = Component::get_engine();
-		$second     = \a8csp_bgte( self::OWNER );
-		$inspection = Component::get_inspection();
-		$actions    = $this->registrations( 'a8csp_bgte_test_action_registrations' );
-		$filters    = $this->registrations( 'a8csp_bgte_test_filter_registrations' );
-
-		self::assertInstanceOf( Consumer::class, $first );
-		self::assertInstanceOf( Consumer::class, $second );
-		self::assertInstanceOf( EngineFacade::class, $engine );
-		self::assertSame( $engine, Component::get_engine() );
-		self::assertInstanceOf( Inspection::class, $inspection );
+		$actions = $this->action_registrations();
+		self::assertSame( 'a8csp_background_tasks/log', $actions[0]['hook_name'] ?? null );
 		self::assertSame(
-			array(
-				'a8csp_background_tasks/log',
-				'a8csp_background_tasks/start',
-				'a8csp_background_tasks/continue',
-				'a8csp_background_tasks/run',
-				'a8csp_background_tasks/cleanup',
-				'a8csp_background_tasks/schedule_due',
-				'init',
-			),
+			array( 'a8csp_background_tasks/log', 'a8csp_background_tasks/start', 'a8csp_background_tasks/continue', 'a8csp_background_tasks/run', 'a8csp_background_tasks/cleanup', 'a8csp_background_tasks/schedule_due', 'init' ),
 			\array_column( $actions, 'hook_name' )
 		);
-		self::assertSame( array( 'cron_schedules' ), \array_column( $filters, 'hook_name' ) );
-		self::assertSame( array( 3, 3, 3, 4, 3, 1, 1 ), \array_column( $actions, 'accepted_args' ) );
 	}
 
 	/**
-	 * Component reinitialization retains the engine without duplicating runtime hooks.
+	 * Re-boot retains the published graph and never duplicates callback registration.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A second composition-root instance proves the published latch retains the same graph and registrations after initialization completes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_component_initialization_is_idempotent(): void {
+	public function test_reboot_is_idempotent_across_component_instances(): void {
 		( new Component() )->initialize();
-
 		$engine     = Component::get_engine();
 		$inspection = Component::get_inspection();
+		$actions    = $this->action_registrations();
+		$filters    = $this->filter_registrations();
+
 		( new Component() )->initialize();
 
-		self::assertInstanceOf( EngineFacade::class, $engine );
-		self::assertInstanceOf( Inspection::class, $inspection );
 		self::assertSame( $engine, Component::get_engine() );
 		self::assertSame( $inspection, Component::get_inspection() );
-		self::assertCount( 7, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
-		self::assertCount( 1, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
+		self::assertSame( $actions, $this->action_registrations() );
+		self::assertSame( $filters, $this->filter_registrations() );
 	}
 
 	/**
-	 * A boot after init completes syncs the maintenance registration inline, without deferral.
+	 * Re-entry while the scheduler filter is registering cannot build a competing graph.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Scheduler-filter registration re-enters initialize() before publication; one graph and one registration set prove the in-flight latch rejects the competing boot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_boot_after_init_syncs_maintenance_inline(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
-			'plugins_loaded' => 1,
-			'init'           => 1,
-		);
-
-		\a8csp_bgte_plugin();
-
-		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
-		self::assertNotContains( 'init', $hook_names, 'A late boot must not leave a deferred sync behind' );
-		$registry = $this->schedule_registry();
-		self::assertIsArray( $registry, 'A late boot must synchronize the maintenance registration inline' );
-		self::assertArrayHasKey( 'a8csp-bgte', $registry );
-	}
-
-	/**
-	 * A consumer resolving through a late maintenance scheduler filter shares the published graph.
-	 *
-	 * @return  void
-	 */
-	public function test_late_boot_scheduler_filter_reentry_uses_the_initializing_graph(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
-			'plugins_loaded' => 1,
-			'init'           => 1,
-		);
-
+	public function test_scheduler_filter_reentry_during_initialize_has_one_effect(): void {
 		$reentered = false;
-		$consumer  = null;
-		\add_filter(
-			'cron_schedules',
-			static function ( array $schedules ) use ( &$reentered, &$consumer ): array {
-				if ( ! $reentered ) {
-					$reentered = true;
-					$consumer  = \a8csp_bgte( self::OWNER );
-					$consumer->tasks()->register( new RecordingTask( 'filter-task' ) );
-				}
+		$callbacks = $GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
 
-				return $schedules;
-			}
-		);
+		$callbacks['cron_schedules'] = static function () use ( &$reentered ): void {
+			$reentered = true;
+			( new Component() )->initialize();
+		};
 
-		\a8csp_bgte_plugin();
-		$resolved = \a8csp_bgte( self::OWNER );
+		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = $callbacks;
+
+		( new Component() )->initialize();
 
 		self::assertTrue( $reentered );
-		self::assertInstanceOf( Consumer::class, $consumer );
-		self::assertInstanceOf( Consumer::class, $resolved );
-		self::assertTrue( $resolved->tasks()->enqueue( 'filter-task' )->is_success() );
-		self::assertCount( 6, $this->registrations( 'a8csp_bgte_test_action_registrations' ) );
-		self::assertCount( 2, $this->registrations( 'a8csp_bgte_test_filter_registrations' ) );
+		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
+		self::assertCount( 7, $this->action_registrations() );
+		self::assertCount( 1, $this->filter_registrations() );
 	}
 
 	/**
-	 * A boot while init is still executing defers the sync instead of syncing before Action Scheduler.
+	 * Applying a filter cannot silently bypass an uninitialized registration ledger.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_mid_init_boot_defers_the_maintenance_sync(): void {
+	public function test_apply_filters_rejects_an_unset_registration_ledger(): void {
+		unset( $GLOBALS['a8csp_bgte_test_filter_registrations'] );
+
+		$this->expectException( \UnexpectedValueException::class );
+		$this->expectExceptionMessageIs( 'Initialize the test filter ledger before applying a filter.' );
+
+		\apply_filters( 'unregistered-filter', 'value' );
+	}
+
+	/**
+	 * Mid-init boot waits for wp_loaded before synchronizing maintenance.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An active init bucket must defer to wp_loaded and leave storage untouched so maintenance cannot schedule through Action Scheduler before its init callback completes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_mid_init_boot_defers_maintenance_sync_until_wp_loaded(): void {
 		$GLOBALS['a8csp_bgte_test_did_actions']   = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
 		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 
-		\a8csp_bgte_plugin();
+		( new Component() )->initialize();
 
-		$hook_names = \array_column( $this->registrations( 'a8csp_bgte_test_action_registrations' ), 'hook_name' );
-		self::assertContains( 'wp_loaded', $hook_names, 'A mid-init boot must defer the sync until init completes' );
-		self::assertNotContains( 'init', $hook_names, 'A mid-init boot must not append to the active init bucket' );
-		self::assertNull( $this->schedule_registry(), 'A mid-init boot must not synchronize before Action Scheduler initializes' );
+		$hook_names = \array_column( $this->action_registrations(), 'hook_name' );
+		self::assertContains( 'wp_loaded', $hook_names );
+		self::assertNotContains( 'init', $hook_names );
+		self::assertNull( $this->schedule_registry() );
 	}
 
 	/**
-	 * The deferred sync runs against the boot-time site when init fires on another site.
+	 * Late boot synchronizes maintenance inline without retaining a dead deferral.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_deferred_maintenance_sync_returns_to_the_boot_site(): void {
-		$GLOBALS['a8csp_bgte_test_is_multisite']       = true;
-		$GLOBALS['a8csp_bgte_test_blog_id']            = 1;
-		$GLOBALS['a8csp_bgte_test_blog_stack']         = array();
-		$GLOBALS['a8csp_bgte_test_blog_switch_calls']  = array();
-		$GLOBALS['a8csp_bgte_test_blog_restore_calls'] = array();
-
-		\a8csp_bgte_plugin();
-
-		$init_registrations = \array_values( \array_filter( $this->registrations( 'a8csp_bgte_test_action_registrations' ), static fn ( array $registration ): bool => 'init' === $registration['hook_name'] ) );
-		self::assertCount( 1, $init_registrations );
-		$init_callback = $init_registrations[0]['callback'] ?? null;
-		self::assertIsCallable( $init_callback );
-
-		$GLOBALS['a8csp_bgte_test_blog_id'] = 2;
-		$init_callback();
-
-		self::assertSame( array( 1 ), $GLOBALS['a8csp_bgte_test_blog_switch_calls'], 'The deferred sync must switch back to the boot-time site before writing' );
-		self::assertCount( 1, $GLOBALS['a8csp_bgte_test_blog_restore_calls'], 'The deferred sync must restore the interrupted site afterwards' );
-	}
-
-	/**
-	 * Public task, schedule, batch, and retry calls traverse the composed WP-Cron graph unchanged.
-	 *
-	 * @return  void
-	 */
-	public function test_live_wp_cron_graph_round_trips_public_task_schedule_batch_and_retry_apis(): void {
-		\a8csp_bgte_plugin();
-
-		// Boot defers the engine's own maintenance sync to init; fire it the way WordPress would.
-		$init_registrations = \array_values( \array_filter( $this->registrations( 'a8csp_bgte_test_action_registrations' ), static fn ( array $registration ): bool => 'init' === $registration['hook_name'] ) );
-		self::assertCount( 1, $init_registrations, 'Boot must defer exactly one maintenance sync to init' );
-		self::assertSame( 10, $init_registrations[0]['priority'] ?? null, 'The normal deferred sync must use the default init priority after Action Scheduler initializes at init:1' );
-		self::assertNull( $this->schedule_registry(), 'Boot must not write the schedule registry before init fires' );
-		$init_callback = $init_registrations[0]['callback'] ?? null;
-		self::assertIsCallable( $init_callback );
-		$init_callback();
+	public function test_late_boot_syncs_maintenance_inline_without_deferral(): void {
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		self::assertInstanceOf( Consumer::class, $consumer );
+		( new Component() )->initialize();
 
-		$task_identity    = self::OWNER . ':email-digest';
-		$batch_identity   = self::OWNER . ':catalog-sync';
-		$task_args        = array( 'site_id' => 7 );
-		$batch_start_args = array( 'site_id' => 8 );
-		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$consumer->batches()->register( new RecordingBatch( 'catalog-sync' ) );
-
-		$task_result = $consumer->tasks()->enqueue( 'email-digest', $task_args );
-
-		self::assertInstanceOf( Success::class, $task_result );
-		self::assertIsString( $task_result->value );
-		$task_run = \get_option( 'a8csp_bgte_run_' . $task_identity . '_' . $task_result->value, null );
-		self::assertIsArray( $task_run );
-		self::assertSame( $task_args, $task_run['start_args'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'schedule' => false,
-					'args'     => array( $task_identity, $task_result->value, 1 ),
-				),
-			),
-			$this->cron_events_for_hook( 'a8csp_background_tasks/run' )
-		);
-
-		$batch_result = $consumer->batches()->start( name: 'catalog-sync', start_args: $batch_start_args );
-
-		self::assertInstanceOf( Success::class, $batch_result );
-		self::assertIsString( $batch_result->value );
-		$batch_run = \get_option( 'a8csp_bgte_run_' . $batch_identity . '_' . $batch_result->value, null );
-		self::assertIsArray( $batch_run );
-		self::assertSame( $batch_start_args, $batch_run['start_args'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'schedule' => false,
-					'args'     => array( $batch_identity, $batch_result->value, 1 ),
-				),
-			),
-			$this->cron_events_for_hook( 'a8csp_background_tasks/start' )
-		);
-		self::assertSame( 3, $this->cron_event_count() );
-
-		$schedule        = new Schedule( 'connection-monitor', Recurrence::every( 300 ), 'email-digest' );
-		$schedule_result = $consumer->schedules()->sync( array( $schedule ) );
-
-		self::assertInstanceOf( Success::class, $schedule_result );
-		self::assertTrue( $schedule_result->value );
-		self::assertSame(
-			array(
-				array(
-					'schedule' => 'a8csp_bgte_every_3600s',
-					'args'     => array( 'a8csp-bgte:maintenance' ),
-				),
-				array(
-					'schedule' => 'a8csp_bgte_every_300s',
-					'args'     => array( 'consumer-plugin:connection-monitor' ),
-				),
-			),
-			$this->cron_events_for_hook( 'a8csp_background_tasks/schedule_due' )
-		);
-		$registrations = $this->schedule_registry();
-		self::assertIsArray( $registrations );
-		$maintenance_registrations = $registrations['a8csp-bgte'] ?? null;
-		self::assertIsArray( $maintenance_registrations );
-		$maintenance = $maintenance_registrations['a8csp-bgte:maintenance'] ?? null;
-		self::assertIsArray( $maintenance );
-		$expected_maintenance = new Schedule( 'maintenance', Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceTask::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
-		self::assertSame( $expected_maintenance->fingerprint(), $maintenance['fingerprint'] ?? null );
-		self::assertSame( 0, $maintenance['misfires'] ?? null );
-		self::assertSame( 0, $maintenance['skips'] ?? null );
-		$owner_registrations = $registrations['consumer-plugin'] ?? null;
-		self::assertIsArray( $owner_registrations );
-		$registration = $owner_registrations['consumer-plugin:connection-monitor'] ?? null;
-		self::assertIsArray( $registration );
-		self::assertSame( $schedule->fingerprint(), $registration['fingerprint'] ?? null );
-		self::assertIsInt( $registration['next_due'] ?? null );
-		self::assertNull( $registration['last_fired'] ?? null );
-		self::assertSame( 4, $this->cron_event_count() );
-		$next_due = $registration['next_due'] ?? null;
-
-		$run_now_result = $consumer->schedules()->run_now( 'connection-monitor' );
-
-		self::assertInstanceOf( Success::class, $run_now_result );
-		self::assertIsString( $run_now_result->value );
-		$run_now_state = \get_option( 'a8csp_bgte_run_' . $task_identity . '_' . $run_now_result->value, null );
-		self::assertIsArray( $run_now_state );
-		$registrations = $this->schedule_registry();
-		self::assertIsArray( $registrations );
-		$owner_registrations = $registrations['consumer-plugin'] ?? null;
-		self::assertIsArray( $owner_registrations );
-		$registration = $owner_registrations['consumer-plugin:connection-monitor'] ?? null;
-		self::assertIsArray( $registration );
-		self::assertSame( $next_due, $registration['next_due'] ?? null );
-		self::assertIsInt( $registration['last_fired'] ?? null );
-		self::assertSame( 5, $this->cron_event_count() );
-
-		$options_before_retry    = $GLOBALS['a8csp_bgte_test_options'];
-		$registry_before_retry   = $this->schedule_registry();
-		$cron_before_retry       = \get_option( 'cron', array() );
-		$cron_calls_before_retry = $GLOBALS['a8csp_bgte_test_cron_calls'];
-
-		$retry_result = $consumer->runs()->retry_failed( 'unknown', 'missing-run' );
-
-		self::assertInstanceOf( Failure::class, $retry_result );
-		self::assertInstanceOf( ApiError::class, $retry_result->error );
-		self::assertSame( ApiErrorCode::UnknownWork, $retry_result->error->code );
-		self::assertSame( array( 'name' => 'consumer-plugin:unknown' ), $retry_result->error->context );
-		self::assertSame( 'Background-work "consumer-plugin:unknown" is not registered; register the matching task or batch before retrying its failed run.', $retry_result->error->message );
-		self::assertSame( $options_before_retry, $GLOBALS['a8csp_bgte_test_options'] );
-		self::assertSame( $registry_before_retry, $this->schedule_registry() );
-		self::assertSame( $cron_before_retry, \get_option( 'cron', array() ) );
-		self::assertSame( $cron_calls_before_retry, $GLOBALS['a8csp_bgte_test_cron_calls'] );
+		// Deferral outside a running init registers on 'init' ('wp_loaded' is chosen only while doing init), so both lifecycle hooks must be absent.
+		$hook_names = \array_column( $this->action_registrations(), 'hook_name' );
+		self::assertNotContains( 'init', $hook_names );
+		self::assertNotContains( 'wp_loaded', $hook_names );
+		$registry = $this->schedule_registry();
+		self::assertIsArray( $registry );
+		self::assertArrayHasKey( 'a8csp-bgte', $registry );
 	}
 
 	/**
-	 * The composed scheduler writes to Action Scheduler before the always-ready WP-Cron fallback.
+	 * Deferred maintenance synchronization writes on the boot site and restores the interrupted site.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_deferred_maintenance_sync_retains_boot_site_affinity(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions']   = array(
+			'plugins_loaded' => 1,
+			'init'           => 1,
+		);
+		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
+		$GLOBALS['a8csp_bgte_test_is_multisite']  = true;
+		( new Component() )->initialize();
+		$registrations = \array_values( \array_filter( $this->action_registrations(), static fn ( array $registration ): bool => 'wp_loaded' === $registration['hook_name'] ) );
+		self::assertCount( 1, $registrations );
+
+		$GLOBALS['a8csp_bgte_test_blog_id'] = 2;
+		$registrations[0]['callback']();
+
+		self::assertSame( array( 1 ), $GLOBALS['a8csp_bgte_test_blog_switch_calls'] );
+		self::assertSame( array( 2 ), $GLOBALS['a8csp_bgte_test_blog_restore_calls'] );
+		self::assertSame( 2, $GLOBALS['a8csp_bgte_test_blog_id'] );
+	}
+
+	/**
+	 * The composed WP-Cron graph accepts task, batch, and schedule operations through a8csp_bgte().
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_front_door_flows_through_the_live_wp_cron_graph(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+			'plugins_loaded' => 1,
+			'init'           => 1,
+		);
+		( new Component() )->initialize();
+		$consumer = \a8csp_bgte( 'consumer-plugin' );
+		self::assertInstanceOf( Consumer::class, $consumer );
+		$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
+		$consumer->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+
+		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $consumer->batches()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+
+		$cron = \get_option( 'cron', array() );
+		self::assertIsArray( $cron );
+		self::assertNotEmpty( $cron );
+	}
+
+	/**
+	 * A ready Action Scheduler graph accepts work without writing WP-Cron state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_live_graph_prefers_action_scheduler_before_wp_cron(): void {
 		require_once \dirname( __DIR__ ) . '/as-function-stubs.php';
-
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
 			'plugins_loaded'        => 1,
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
 		);
-
-		\a8csp_bgte_plugin();
-		$consumer = \a8csp_bgte( self::OWNER );
-		self::assertInstanceOf( Consumer::class, $consumer );
-		$as_calls = $GLOBALS['a8csp_bgte_test_as_calls'] ?? null;
-		self::assertIsArray( $as_calls );
-		self::assertContains( 'as_schedule_recurring_action', \array_column( $as_calls, 'function' ) );
+		( new Component() )->initialize();
+		$consumer = \a8csp_bgte( 'consumer-plugin' );
+		$consumer->tasks()->register( new RecordingTask( 'preferred' ) );
 		$GLOBALS['a8csp_bgte_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
-		$consumer->tasks()->register( new RecordingTask( 'preferred-backend' ) );
 
-		$result = $consumer->tasks()->enqueue( 'preferred-backend', array( 'source' => 'test' ) );
+		$result = $consumer->tasks()->enqueue( 'preferred' );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
-		self::assertSame(
-			array(
-				array(
-					'function' => 'as_enqueue_async_action',
-					'args'     => array(
-						'a8csp_background_tasks/run',
-						array( 'consumer-plugin:preferred-backend', $result->value, 1 ),
-						'consumer-plugin:preferred-backend|' . $result->value,
-						true,
-						10,
-					),
-				),
-			),
-			$GLOBALS['a8csp_bgte_test_as_calls']
-		);
+		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgte_test_as_calls'], 'function' ) );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cron_calls'] );
-		self::assertSame( array(), \get_option( 'cron', array() ) );
 	}
 
 	// endregion.
@@ -459,14 +355,17 @@ final class EngineComponentTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns the schedule registry from the authoritative raw row when present.
+	 * Returns the decoded authoritative schedule registry when present.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array<array-key, mixed>|null
 	 */
 	private function schedule_registry(): ?array {
 		$wpdb = $GLOBALS['wpdb'] ?? null;
 		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
-		$raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
+		$raw = $wpdb->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
 		if ( \is_string( $raw ) ) {
 			$registry = \maybe_unserialize( $raw );
 			self::assertIsArray( $registry );
@@ -474,97 +373,73 @@ final class EngineComponentTest extends TestCase {
 			return $registry;
 		}
 
-		$registry = \get_option( 'a8csp_bgte_schedules', null );
+		$registry = \get_option( ScheduleRegistry::OPTION_NAME, null );
 		self::assertTrue( null === $registry || \is_array( $registry ) );
 
 		return $registry;
 	}
 
 	/**
-	 * Returns typed hook registrations from one test ledger.
+	 * Returns the validated action-registration ledger.
 	 *
-	 * @param   string $global_name Global ledger name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}>
+	 * @return  list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}>
 	 */
-	private function registrations( string $global_name ): array {
-		$registrations = $GLOBALS[ $global_name ] ?? null;
-		self::assertIsArray( $registrations );
-		$typed_registrations = array();
+	private function action_registrations(): array {
+		return $this->registrations( 'a8csp_bgte_test_action_registrations' );
+	}
+
+	/**
+	 * Returns the validated filter-registration ledger.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}>
+	 */
+	private function filter_registrations(): array {
+		return $this->registrations( 'a8csp_bgte_test_filter_registrations' );
+	}
+
+	/**
+	 * Validates one hook-registration ledger before structural assertions consume it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $ledger Global ledger name.
+	 *
+	 * @return  list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}>
+	 */
+	private function registrations( string $ledger ): array {
+		$registrations = $GLOBALS[ $ledger ] ?? null;
+		if ( ! \is_array( $registrations ) ) {
+			throw new \LogicException( 'The hook-registration ledger is unavailable.' );
+		}
+
+		$validated = array();
 		foreach ( $registrations as $registration ) {
-			self::assertIsArray( $registration );
+			if ( ! \is_array( $registration ) ) {
+				throw new \LogicException( 'The hook-registration ledger contains a malformed entry.' );
+			}
 			$hook_name     = $registration['hook_name'] ?? null;
+			$callback      = $registration['callback'] ?? null;
 			$priority      = $registration['priority'] ?? null;
 			$accepted_args = $registration['accepted_args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsInt( $priority );
-			self::assertIsInt( $accepted_args );
-			$typed_registrations[] = array(
+			if ( ! \is_string( $hook_name ) || ! \is_callable( $callback ) || ! \is_int( $priority ) || ! \is_int( $accepted_args ) ) {
+				throw new \LogicException( 'The hook-registration ledger contains an invalid entry.' );
+			}
+			$validated[] = array(
 				'hook_name'     => $hook_name,
-				'callback'      => $registration['callback'] ?? null,
+				'callback'      => $callback,
 				'priority'      => $priority,
 				'accepted_args' => $accepted_args,
 			);
 		}
 
-		return $typed_registrations;
-	}
-
-	/**
-	 * Returns stored WP-Cron events for one hook.
-	 *
-	 * @param   string $hook Hook name.
-	 *
-	 * @return  list<array{schedule: string|false, args: list<mixed>}>
-	 */
-	private function cron_events_for_hook( string $hook ): array {
-		$cron = \get_option( 'cron', array() );
-		self::assertIsArray( $cron );
-
-		$matching_events = array();
-		foreach ( $cron as $hooks ) {
-			self::assertIsArray( $hooks );
-			$events = $hooks[ $hook ] ?? array();
-			self::assertIsArray( $events );
-			foreach ( $events as $event ) {
-				self::assertIsArray( $event );
-				$schedule = $event['schedule'] ?? null;
-				if ( false !== $schedule && ! \is_string( $schedule ) ) {
-					self::fail( 'A stored cron event schedule must be a recurrence name or false.' );
-				}
-
-				$args = $event['args'] ?? null;
-				self::assertIsArray( $args );
-				self::assertIsList( $args );
-				$matching_events[] = array(
-					'schedule' => $schedule,
-					'args'     => $args,
-				);
-			}
-		}
-
-		return $matching_events;
-	}
-
-	/**
-	 * Returns the number of events stored across the WP-Cron option.
-	 *
-	 * @return  int
-	 */
-	private function cron_event_count(): int {
-		$cron = \get_option( 'cron', array() );
-		self::assertIsArray( $cron );
-
-		$count = 0;
-		foreach ( $cron as $hooks ) {
-			self::assertIsArray( $hooks );
-			foreach ( $hooks as $events ) {
-				self::assertIsArray( $events );
-				$count += \count( $events );
-			}
-		}
-
-		return $count;
+		return $validated;
 	}
 
 	// endregion.

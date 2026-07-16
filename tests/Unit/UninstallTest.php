@@ -9,6 +9,9 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Records the cold-uninstall option-prefix and Action Scheduler queries without requiring WordPress.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class UninstallWpdbSpy {
 	// region FIELDS AND CONSTANTS.
@@ -38,6 +41,9 @@ final class UninstallWpdbSpy {
 	/**
 	 * Escapes SQL LIKE wildcards in one literal prefix.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $text Prefix to escape.
 	 *
 	 * @return  string
@@ -48,6 +54,9 @@ final class UninstallWpdbSpy {
 
 	/**
 	 * Records a prepared query and returns a template-identifying token.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $query Query template.
 	 * @param   mixed  ...$args Prepared arguments.
@@ -65,6 +74,9 @@ final class UninstallWpdbSpy {
 
 	/**
 	 * Returns the scripted table-existence answer for a table-lookup query.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $query Prepared query token.
 	 *
@@ -94,6 +106,9 @@ final class UninstallWpdbSpy {
 	/**
 	 * Records one write query and reports the scripted affected-row count.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $query Prepared query token.
 	 *
 	 * @return  int|false
@@ -111,6 +126,9 @@ final class UninstallWpdbSpy {
 
 	/**
 	 * Returns scripted group identifiers or the stored engine-prefixed option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $query Prepared query token.
 	 *
@@ -138,18 +156,21 @@ final class UninstallWpdbSpy {
 /**
  * Exercises the real cold-bootstrap uninstall footprint against in-memory option state.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversNothing]
 final class UninstallTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const DYNAMIC_OPTIONS = array(
-		'a8csp_bgte_run_email-digest_run-1',
-		'a8csp_bgte_latest_email-digest',
-		'a8csp_bgte_history_email-digest',
-		'a8csp_bgte_lock_email-digest_args-hash',
+		'a8csp_bgte_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
+		'a8csp_bgte_latest_consumer-plugin:email-digest',
+		'a8csp_bgte_history_consumer-plugin:email-digest',
+		'a8csp_bgte_lock_consumer-plugin:email-digest_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgte_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_failed_email-digest',
+		'a8csp_bgte_cleanup_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgte_failed_consumer-plugin:email-digest',
 	);
 	private const FIXED_OPTIONS   = array(
 		'a8csp_bgte_schedules',
@@ -169,6 +190,9 @@ final class UninstallTest extends TestCase {
 
 	/**
 	 * Dynamically named rows are removed while an escaped-LIKE near miss survives.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -248,6 +272,9 @@ final class UninstallTest extends TestCase {
 	/**
 	 * A missing Action Scheduler table leaves every store row untouched.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	#[RunInSeparateProcess]
@@ -278,6 +305,9 @@ final class UninstallTest extends TestCase {
 
 	/**
 	 * Multisite uninstall visits every site and reclaims both scheduler stores in each context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -381,6 +411,9 @@ final class UninstallTest extends TestCase {
 	/**
 	 * Returns the option-call ledger after verifying its runtime representation.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  array<array-key, mixed>
 	 */
 	private function option_calls(): array {
@@ -392,6 +425,9 @@ final class UninstallTest extends TestCase {
 
 	/**
 	 * Returns the recorded prepared queries whose template contains a marker.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   UninstallWpdbSpy $wpdb   Recording connection.
 	 * @param   string           $marker Template substring selecting one query family.

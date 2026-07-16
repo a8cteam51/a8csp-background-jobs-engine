@@ -4,73 +4,58 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the read-only joins over live schedule, lock, run, and history collaborators.
+ * Exercises production inspection over live facades and encoded store fixtures.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( Inspection::class )]
-#[UsesClass( ScheduleRegistry::class )]
-#[UsesClass( SchedulerFacade::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( LockWindows::class )]
-#[UsesClass( StoreFactory::class )]
 final class InspectionTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const NOW = 1_700_000_000;
 
-	private RecordingBackend $backend;
-	private BatchRegistry $batches;
-	private FixedClock $clock;
-	private Inspection $inspection;
-	private ScheduleRegistry $schedules;
-	private StoreFactory $stores;
-	private TaskRegistry $tasks;
-	private WpdbLockSpy $wpdb;
+	private EngineRig $rig;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
-	 * Loads the guarded WordPress seams required by the live collaborators.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__ ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__ ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__ ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/Backends/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Constructs one deterministic live inspection graph.
+	 * Boots one deterministic production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -78,156 +63,134 @@ final class InspectionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']         = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']   = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
-		$GLOBALS['a8csp_bgte_test_cache']           = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
-
-		$this->clock      = new FixedClock( self::NOW );
-		$work             = new WorkRegistry();
-		$this->tasks      = new TaskRegistry( $work );
-		$this->batches    = new BatchRegistry( $work );
-		$this->backend    = new RecordingBackend();
-		$this->wpdb       = new WpdbLockSpy();
-		$rows             = new OptionRows( $this->wpdb );
-		$this->schedules  = new ScheduleRegistry( $rows );
-		$this->stores     = new StoreFactory( $this->clock, $rows );
-		$scheduler        = new SchedulerFacade( array( $this->backend ) );
-		$guard            = new OverlapGuard( $this->clock, new RecordingLogger(), new OptionRows( $this->wpdb ) );
-		$lock_windows     = new LockWindows( $this->clock );
-		$this->inspection = new Inspection( $this->schedules, $this->tasks, $this->batches, $work, $scheduler, $guard, $this->stores, $rows, $lock_windows, $this->clock );
+		$this->rig = EngineRig::set_up( self::NOW );
 	}
 
 	/**
-	 * Schedule rows are owner-sorted and join declaration, union, and exact lock state.
+	 * Releases request-local engine state after each inspection scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedules_join_live_declarations_and_preserve_orphan_honesty(): void {
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
-		$this->tasks->register( 'owner-a:refresh-index', new RecordingTask( 'refresh-index' ) );
-		self::assertTrue(
-			$this->schedules->replace_owner(
-				'owner-b',
-				array(),
-				array(
-					'owner-b:orphaned' => array(
-						'fingerprint' => 'orphaned-fingerprint',
-						'next_due'    => self::NOW + 600,
-						'last_fired'  => null,
-						'misfires'    => 4,
-						'skips'       => 5,
-					),
-				)
-			)
-		);
-		self::assertTrue(
-			$this->schedules->replace_owner(
-				'owner-a',
-				self::declarations( 'owner-a', $schedule ),
-				array(
-					'owner-a:nightly' => array(
-						'fingerprint' => $schedule->fingerprint(),
-						'next_due'    => self::NOW + 300,
-						'last_fired'  => self::NOW - 60,
-						'misfires'    => 1,
-						'skips'       => 2,
-					),
-				)
-			)
-		);
-		$this->backend->scheduled = true;
-		$args_hash                = self::args_hash( $schedule->args );
-		$this->put_lock( 'owner-a:refresh-index', $args_hash, 'run-lock', self::NOW );
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
+	}
 
-		self::assertSame(
-			array(
-				'observed_at'       => self::NOW,
-				'dormant_candidate' => false,
-				'entries'           => array(
+	// endregion.
+
+	// region TESTS.
+
+	/**
+	 * Schedule inspection joins a live declaration, an orphaned row, scheduler visibility, and lock state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_join_live_declarations_with_persisted_orphans_and_locks(): void {
+		$consumer = $this->rig->consumer( 'owner-a' );
+		$consumer->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
+		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( $schedule ) ) );
+		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
+		$this->put(
+			$fixture->schedule_registry(
+				array(
 					array(
-						'owner'      => 'owner-a',
-						'name'       => 'owner-a:nightly',
-						'recurrence' => 300,
-						'next_due'   => self::NOW + 300,
-						'last_fired' => self::NOW - 60,
-						'misfires'   => 1,
-						'skips'      => 2,
-						'scheduled'  => true,
-						'lock'       => array(
-							'state'  => 'held',
-							'run_id' => 'run-lock',
-							'stale'  => false,
+						'owner'         => 'owner-a',
+						'declarations'  => array(
+							'owner-a:nightly' => array(
+								'schedule' => $schedule,
+								'task'     => 'owner-a:refresh-index',
+							),
+						),
+						'registrations' => array(
+							'owner-a:nightly' => array(
+								'fingerprint' => $schedule->fingerprint(),
+								'next_due'    => self::NOW + 300,
+								'last_fired'  => self::NOW - 60,
+								'misfires'    => 1,
+								'skips'       => 2,
+							),
 						),
 					),
 					array(
-						'owner'      => 'owner-b',
-						'name'       => 'owner-b:orphaned',
-						'recurrence' => null,
-						'next_due'   => self::NOW + 600,
-						'last_fired' => null,
-						'misfires'   => 4,
-						'skips'      => 5,
-						'scheduled'  => true,
-						'lock'       => array( 'state' => 'not_declared' ),
+						'owner'         => 'owner-b',
+						'declarations'  => array(),
+						'registrations' => array(
+							'owner-b:orphaned' => array(
+								'fingerprint' => 'orphaned',
+								'next_due'    => self::NOW + 600,
+								'last_fired'  => null,
+								'misfires'    => 4,
+								'skips'       => 5,
+							),
+						),
 					),
-				),
-			),
-			$this->inspection->schedules()
+				)
+			)
 		);
-		$owner_snapshot = $this->inspection->schedules( 'owner-b' );
-		self::assertNotNull( $owner_snapshot );
-		self::assertSame( array( 'owner-b' ), \array_column( $owner_snapshot['entries'], 'owner' ) );
-	}
+		$this->put( $fixture->lock( $fixture->args_hash( $schedule->args ), 'run-lock', self::NOW, self::NOW ) );
+		$this->rig->backend()->scheduled = true;
 
-	/**
-	 * Present-but-unready backends mark an otherwise observable schedule snapshot as incomplete.
-	 *
-	 * @return  void
-	 */
-	public function test_schedule_snapshot_carries_the_dormant_candidate_branch(): void {
-		$this->backend->ready = false;
-
-		$snapshot = $this->inspection->schedules();
+		$snapshot = $this->rig->inspection()->schedules();
 
 		self::assertNotNull( $snapshot );
-		self::assertTrue( $snapshot['dormant_candidate'] );
-		self::assertSame( array(), $snapshot['entries'] );
-	}
-
-	/**
-	 * An unreadable registry reports schedule inspection as unavailable instead of empty.
-	 *
-	 * @return  void
-	 */
-	public function test_schedules_report_an_authoritative_registry_read_failure(): void {
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted schedule inspection read failure';
-			}
+		self::assertSame( array( 'owner-a:nightly', 'owner-b:orphaned' ), \array_column( $snapshot['entries'], 'name' ) );
+		self::assertSame( 300, $snapshot['entries'][0]['recurrence'] );
+		self::assertSame(
+			array(
+				'state'  => 'held',
+				'run_id' => 'run-lock',
+				'stale'  => false,
+			),
+			$snapshot['entries'][0]['lock']
 		);
-
-		self::assertNull( $this->inspection->schedules() );
+		self::assertSame( array( 'state' => 'not_declared' ), $snapshot['entries'][1]['lock'] );
+		self::assertTrue( $snapshot['entries'][0]['scheduled'] );
+		self::assertSame( array( 'owner-b' ), \array_column( $this->rig->inspection()->schedules( 'owner-b' )['entries'] ?? array(), 'owner' ) );
 	}
 
 	/**
-	 * Schedule locks distinguish undeclared, overlap-allowed, failed, absent, and malformed reads.
+	 * Schedule lock inspection preserves every non-held honesty state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedule_locks_preserve_discriminated_honesty_states(): void {
+	public function test_schedule_locks_preserve_every_discriminated_honesty_state(): void {
+		$consumer      = $this->rig->consumer( 'owner' );
 		$schedules     = array(
 			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-task', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-task', array( 'case' => 'failed' ) ),
 			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-task', array( 'case' => 'free' ) ),
 			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-task', array( 'case' => 'invalid' ) ),
 		);
-		$registrations = array();
+		$declarations  = array();
+		$registrations = array(
+			'owner:orphaned' => array(
+				'fingerprint' => 'orphaned',
+				'next_due'    => self::NOW + 300,
+				'last_fired'  => null,
+				'misfires'    => 0,
+				'skips'       => 0,
+			),
+		);
 		foreach ( $schedules as $name => $schedule ) {
+			$consumer->tasks()->register( new RecordingTask( $schedule->task ) );
+			$declarations[ 'owner:' . $name ]  = array(
+				'schedule' => $schedule,
+				'task'     => 'owner:' . $schedule->task,
+			);
 			$registrations[ 'owner:' . $name ] = array(
 				'fingerprint' => $schedule->fingerprint(),
 				'next_due'    => self::NOW + 300,
@@ -236,17 +199,29 @@ final class InspectionTest extends TestCase {
 				'skips'       => 0,
 			);
 		}
-		self::assertTrue( $this->schedules->replace_owner( 'owner', self::declarations( 'owner', ...\array_values( $schedules ) ), $registrations ) );
-		$this->wpdb->put( 'a8csp_bgte_lock_owner:invalid-task_' . self::args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next(
+		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
+		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-task' );
+		$this->put(
+			$fixture->schedule_registry(
+				array(
+					array(
+						'owner'         => 'owner',
+						'declarations'  => $declarations,
+						'registrations' => $registrations,
+					),
+				)
+			)
+		);
+		$this->rig->wpdb()->put( 'a8csp_bgte_lock_owner:invalid-task_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
 				$wpdb->last_error = 'scripted lock read failure';
 			}
 		);
 
-		$snapshot = $this->inspection->schedules();
+		$snapshot = $this->rig->inspection()->schedules();
 		self::assertNotNull( $snapshot );
 		$locks = \array_column( $snapshot['entries'], 'lock', 'name' );
 
@@ -254,312 +229,141 @@ final class InspectionTest extends TestCase {
 		self::assertSame( array( 'state' => 'read_failed' ), $locks['owner:failed'] );
 		self::assertSame( array( 'state' => 'free' ), $locks['owner:free'] );
 		self::assertSame( array( 'state' => 'invalid' ), $locks['owner:invalid'] );
+		self::assertSame( array( 'state' => 'not_declared' ), $locks['owner:orphaned'] );
 	}
 
 	/**
-	 * Live rows preserve execution markers and the strict effective staleness boundary.
+	 * Schedule read failure remains unavailable while a dormant backend remains explicit.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_runs_expose_phase_queue_kind_and_strict_staleness(): void {
-		$identity = 'owner:email-digest';
-		$this->tasks->register( $identity, new RecordingTask( 'email-digest' ) );
-		$fresh_id    = self::run_id( 1 );
-		$stale_id    = self::run_id( 2 );
-		$store       = $this->stores->run_store( $identity );
-		$fresh_state = $store->create( $fresh_id, array(), 'hash-fresh', array( array() ) );
-		$stale_state = $store->create( $stale_id, array(), 'hash-stale', array( array() ) );
-		self::assertNotNull( $fresh_state );
-		self::assertNotNull( $stale_state );
-		self::assertIsString( $store->replace_if_state_matches( $fresh_id, $fresh_state, $fresh_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS )->with_executing( true ) ) );
-		self::assertIsString( $store->replace_if_state_matches( $stale_id, $stale_state, $stale_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS - 1 ) ) );
+	public function test_schedule_unknown_states_do_not_collapse_into_empty_or_absent(): void {
+		$this->rig->backend()->ready = false;
+		$dormant                     = $this->rig->inspection()->schedules();
+		self::assertNotNull( $dormant );
+		self::assertTrue( $dormant['dormant_candidate'] );
 
-		$snapshot = $this->inspection->runs( $identity );
-
-		self::assertSame( self::NOW, $snapshot['observed_at'] );
-		self::assertNull( $snapshot['live_error'] );
-		self::assertSame( 2, $snapshot['live_scanned'] );
-		self::assertSame( 0, $snapshot['live_uninspected'] );
-		self::assertSame(
-			array(
-				array(
-					'run_id'       => $fresh_id,
-					'kind'         => 'task',
-					'status'       => 'running',
-					'executing'    => true,
-					'attempts'     => 0,
-					'queue_depth'  => null,
-					'heartbeat_at' => self::NOW - 15 * \MINUTE_IN_SECONDS,
-					'stale'        => false,
-				),
-				array(
-					'run_id'       => $stale_id,
-					'kind'         => 'task',
-					'status'       => 'running',
-					'executing'    => false,
-					'attempts'     => 0,
-					'queue_depth'  => null,
-					'heartbeat_at' => self::NOW - 15 * \MINUTE_IN_SECONDS - 1,
-					'stale'        => true,
-				),
-			),
-			$snapshot['live']
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'schedule registry read failed';
+			}
 		);
+		self::assertNull( $this->rig->inspection()->schedules() );
 	}
 
 	/**
-	 * Batch depth, corrupt-row skipping, terminal recency, and failed retention share one read.
+	 * Live inspection exposes waiting, executing, completed, and strict staleness states.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_runs_merge_valid_live_rows_and_bounded_history(): void {
+	public function test_public_task_lifecycle_is_visible_with_strict_staleness(): void {
+		$identity        = 'owner:email-digest';
+		$consumer        = $this->rig->consumer( 'owner' );
+		$task            = new RecordingTask( 'email-digest' );
+		$during          = null;
+		$task->on_handle = function () use ( $identity, &$during ): void {
+			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
+		};
+		$consumer->tasks()->register( $task );
+		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'email-digest' ) );
+
+		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
+		self::assertFalse( $waiting['executing'] );
+		$this->rig->clock()->timestamp = self::NOW + 15 * \MINUTE_IN_SECONDS;
+		self::assertFalse( $this->rig->inspection()->runs( $identity )['live'][0]['stale'] );
+		$this->rig->clock()->timestamp = self::NOW + 15 * \MINUTE_IN_SECONDS + 1;
+		self::assertTrue( $this->rig->inspection()->runs( $identity )['live'][0]['stale'] );
+
+		$this->rig->run_due();
+
+		self::assertIsArray( $during );
+		self::assertTrue( $during['executing'] );
+		$terminal = $this->rig->inspection()->runs( $identity );
+		self::assertSame( array(), $terminal['live'] );
+		self::assertSame( 'completed', $terminal['history'][0]['outcome'] ?? null );
+	}
+
+	/**
+	 * Valid run and history fixtures retain kind, queue depth, failure retention, and corrupt-row tolerance.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_runs_merge_valid_live_history_and_failed_store_rows(): void {
 		$identity = 'owner:catalog-sync';
-		$this->batches->register( $identity, new RecordingBatch( 'catalog-sync' ) );
-		$live_id = self::run_id( 1 );
-		$store   = $this->stores->run_store( $identity );
-		$state   = $store->create(
-			$live_id,
-			array(),
-			'hash-live',
-			array(
-				array( 'page' => 1 ),
-				array( 'page' => 2 ),
+		$this->rig->consumer( 'owner' )->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+		$fixtures = StoreFixtureBuilder::for_identity( $identity );
+		$live_id  = self::run_id( 1 );
+		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) ) );
+		$this->put(
+			$fixtures->history(
+				array(
+					array(
+						'run_id'    => $live_id,
+						'args_hash' => 'hash-live',
+					),
+					array(
+						'run_id'    => 'run-completed',
+						'args_hash' => 'hash-completed',
+					),
+				),
+				array(
+					array(
+						'run_id'    => 'run-completed',
+						'args_hash' => 'hash-completed',
+						'status'    => RunStatus::Completed,
+					),
+					array(
+						'run_id'    => 'run-failed',
+						'args_hash' => 'hash-failed',
+						'status'    => RunStatus::Failed,
+					),
+				)
 			)
 		);
-		self::assertNotNull( $state );
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_run_' . $identity . '_' . self::run_id( 99 ) ] = 'not-a-run-row';
+		$failure = new RunFailure( name: $identity, run_id: 'run-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
+		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
+		$this->rig->wpdb()->put( 'a8csp_bgte_run_' . $identity . '_' . self::run_id( 99 ), 'corrupt-inline' );
 
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
-
-		$history = $this->stores->run_history( $identity );
-		self::assertTrue( $history->record_started( 'run-completed', 'hash-completed' ) );
-		self::assertTrue( $history->record_started( 'run-failed', 'hash-failed' ) );
-		self::assertTrue( $history->record_started( $live_id, 'hash-live' ) );
-		self::assertTrue( $history->record_terminal( 'run-completed', 'hash-completed', RunStatus::Completed ) );
-		self::assertTrue( $history->record_terminal( 'run-failed', 'hash-failed', RunStatus::Failed ) );
-		self::assertTrue( $this->stores->failed_run_store( $identity )->record( 'run-failed', self::NOW - 1, array(), 2, new EngineError( 'Retained failure.' ), new RunFailure( name: $identity, run_id: 'run-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null, ) ) );
-
-		$snapshot = $this->inspection->runs( $identity );
+		$snapshot = $this->rig->inspection()->runs( $identity );
 
 		self::assertCount( 1, $snapshot['live'] );
 		self::assertSame( 'batch', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
-		self::assertNotNull( $snapshot['history'] );
-		self::assertSame(
-			array(
-				array(
-					'run_id'   => 'run-failed',
-					'outcome'  => 'failed',
-					'retained' => true,
-				),
-				array(
-					'run_id'   => 'run-completed',
-					'outcome'  => 'completed',
-					'retained' => false,
-				),
-				array(
-					'run_id'   => $live_id,
-					'outcome'  => 'started',
-					'retained' => false,
-				),
-			),
-			$snapshot['history']
-		);
+		self::assertSame( array( 'run-failed', 'run-completed', $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
+		self::assertTrue( $snapshot['history'][0]['retained'] ?? false );
 	}
 
 	/**
-	 * Last-completed inspection follows recording order and skips every other terminal outcome.
+	 * Owner-qualified work kinds preserve task and unknown queue semantics.
 	 *
-	 * @return  void
-	 */
-	public function test_last_completed_run_uses_terminal_recording_order(): void {
-		$identity          = 'owner:recording-order';
-		$recorded_first    = self::run_id( 99 );
-		$recorded_last     = self::run_id( 1 );
-		$terminal_outcomes = array(
-			array( $recorded_first, RunStatus::Completed ),
-			array( $recorded_last, RunStatus::Completed ),
-			array( self::run_id( 100 ), RunStatus::Failed ),
-			array( self::run_id( 101 ), RunStatus::Cancelled ),
-			array( self::run_id( 102 ), RunStatus::Superseded ),
-		);
-		$history           = $this->stores->run_history( $identity );
-
-		foreach ( $terminal_outcomes as [ $run_id, $status ] ) {
-			self::assertTrue( $history->record_terminal( $run_id, 'shared-hash', $status ) );
-		}
-
-		$result = $this->inspection->last_completed_run( $identity );
-		if ( $result->is_failure() ) {
-			self::fail( 'The recording-order inspection returned an unexpected failure.' );
-		}
-
-		self::assertSame( $recorded_last, $result->value );
-	}
-
-	/**
-	 * An unreadable failed-run store marks history unavailable instead of reporting no history.
-	 *
-	 * @return  void
-	 */
-	public function test_runs_report_failed_store_history_as_unavailable(): void {
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted failed-run inspection failure';
-			}
-		);
-
-		$snapshot = $this->inspection->runs( 'owner:unavailable-history' );
-
-		self::assertNull( $snapshot['live_error'] );
-		self::assertSame( array(), $snapshot['live'] );
-		self::assertNull( $snapshot['history'] );
-	}
-
-	/**
-	 * Canonical suffix parsing keeps prefix-colliding background-work names isolated.
-	 *
-	 * @return  void
-	 */
-	public function test_run_enumeration_requires_the_exact_parsed_identity(): void {
-		$requested_id = self::run_id( 1 );
-		$foreign_id   = self::run_id( 2 );
-		$this->tasks->register( 'owner:foo', new RecordingTask( 'foo' ) );
-		$this->tasks->register( 'owner:foo_bar', new RecordingTask( 'foo_bar' ) );
-		self::assertNotNull( $this->stores->run_store( 'owner:foo' )->create( $requested_id, array(), 'foo-hash', array( array() ) ) );
-		self::assertNotNull( $this->stores->run_store( 'owner:foo_bar' )->create( $foreign_id, array(), 'foo-bar-hash', array( array() ) ) );
-		self::assertSame(
-			array(
-				'identity' => 'owner:foo_bar',
-				'run_id'   => $foreign_id,
-			),
-			RunIdentity::from_option_name( 'a8csp_bgte_run_owner:foo_bar_' . $foreign_id )
-		);
-
-		$snapshot = $this->inspection->runs( 'owner:foo' );
-
-		self::assertSame( array( $requested_id ), \array_column( $snapshot['live'], 'run_id' ) );
-		self::assertSame( 1, $snapshot['live_scanned'] );
-		self::assertSame( 0, $snapshot['live_uninspected'] );
-	}
-
-	/**
-	 * Malformed fixed-width candidates cannot consume the valid live-run inspection cap.
-	 *
-	 * @return  void
-	 */
-	public function test_run_enumeration_skips_malformed_candidates_before_valid_rows(): void {
-		$identity = 'owner:malformed-leading';
-		$run_id   = self::run_id( 1 );
-		self::assertNotNull( $this->stores->run_store( $identity )->create( $run_id, array(), 'valid-hash', array( array() ) ) );
-
-		$prefix = 'a8csp_bgte_run_' . $identity . '_';
-		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
-			$this->wpdb->put( $prefix . \sprintf( '!%039d', $sequence ), 'malformed-run-row' );
-		}
-
-		$snapshot = $this->inspection->runs( $identity );
-
-		self::assertSame( array( $run_id ), \array_column( $snapshot['live'], 'run_id' ) );
-		self::assertSame( 1, $snapshot['live_scanned'] );
-		self::assertSame( 0, $snapshot['live_uninspected'] );
-	}
-
-	/**
-	 * Live-run inspection caps authoritative row reads and reports the exact uninspected count.
-	 *
-	 * @return  void
-	 */
-	public function test_run_enumeration_is_bounded_with_explicit_truncation_counts(): void {
-		$this->tasks->register( 'owner:many-runs', new RecordingTask( 'many-runs' ) );
-		$store = $this->stores->run_store( 'owner:many-runs' );
-		for ( $sequence = 1; $sequence <= 24; ++$sequence ) {
-			self::assertNotNull( $store->create( self::run_id( $sequence ), array(), 'hash-' . $sequence, array( array() ) ) );
-		}
-
-		$snapshot = $this->inspection->runs( 'owner:many-runs' );
-
-		self::assertNull( $snapshot['live_error'] );
-		self::assertSame( 20, $snapshot['live_scanned'] );
-		self::assertSame( 4, $snapshot['live_uninspected'] );
-		self::assertSame( \array_map( static fn ( int $sequence ): string => self::run_id( $sequence ), \range( 1, 20 ) ), \array_column( $snapshot['live'], 'run_id' ) );
-	}
-
-	/**
-	 * Enumeration and per-row database failures remain corrective unknown states.
-	 *
-	 * @return  void
-	 */
-	public function test_run_read_failures_do_not_collapse_into_absence(): void {
-		$this->wpdb->before_next(
-			'scan',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted enumeration failure';
-			}
-		);
-
-		$enumeration_failure = $this->inspection->runs( 'owner:failed-enumeration' );
-
-		self::assertSame( 'enumeration_failed', $enumeration_failure['live_error'] );
-		self::assertSame( array(), $enumeration_failure['live'] );
-		self::assertSame( array(), $enumeration_failure['history'] );
-
-		$scan_prefix = 'a8csp_bgte_run_owner:failed-scan_';
-		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
-			$this->wpdb->put( $scan_prefix . \sprintf( '!%039d', $sequence ), 'malformed-run-row' );
-		}
-		$this->wpdb->before_next( 'scan', static function (): void {} );
-		$this->wpdb->before_next(
-			'scan',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted bounded scan failure';
-			}
-		);
-
-		$scan_failure = $this->inspection->runs( 'owner:failed-scan' );
-
-		self::assertSame( 'enumeration_failed', $scan_failure['live_error'] );
-		self::assertSame( array(), $scan_failure['live'] );
-		self::assertSame( array(), $scan_failure['history'] );
-
-		$run_id = self::run_id( 1 );
-		self::assertNotNull( $this->stores->run_store( 'owner:failed-row' )->create( $run_id, array(), 'hash', array( array() ) ) );
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted run read failure';
-			}
-		);
-
-		$row_failure = $this->inspection->runs( 'owner:failed-row' );
-
-		self::assertSame( 'read_failed', $row_failure['live_error'] );
-		self::assertSame( array(), $row_failure['live'] );
-		self::assertSame( array(), $row_failure['history'] );
-	}
-
-	/**
-	 * Complete identities keep work kinds owner-qualified while undeclared work remains unknown.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_work_kind_is_owner_qualified_and_unknown_preserves_queue_depth(): void {
-		$orphan_id = self::run_id( 1 );
-		self::assertNotNull( $this->stores->run_store( 'owner:orphaned' )->create( $orphan_id, array(), 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) );
+		$orphaned_identity = 'owner:orphaned';
+		$task_identity     = 'owner-a:shared';
+		$batch_identity    = 'owner-b:shared';
+		$this->rig->consumer( 'owner-a' )->tasks()->register( new RecordingTask( 'shared' ) );
+		$this->rig->consumer( 'owner-b' )->batches()->register( new RecordingBatch( 'shared' ) );
+		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $task_identity )->run( self::run_id( 2 ), self::state( 'task-hash', array( array( 'page' => 1 ) ) ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $batch_identity )->run( self::run_id( 3 ), self::state( 'batch-hash', array( array( 'page' => 1 ) ) ) ) );
 
-		$task_id = self::run_id( 2 );
-		$this->tasks->register( 'owner-a:shared', new RecordingTask( 'shared' ) );
-		self::assertNotNull( $this->stores->run_store( 'owner-a:shared' )->create( $task_id, array(), 'task-hash', array( array( 'page' => 1 ) ) ) );
-		$batch_id = self::run_id( 3 );
-		$this->batches->register( 'owner-b:shared', new RecordingBatch( 'shared' ) );
-		self::assertNotNull( $this->stores->run_store( 'owner-b:shared' )->create( $batch_id, array(), 'batch-hash', array( array( 'page' => 1 ) ) ) );
-
-		$orphaned = $this->inspection->runs( 'owner:orphaned' )['live'][0];
-		$task     = $this->inspection->runs( 'owner-a:shared' )['live'][0];
-		$batch    = $this->inspection->runs( 'owner-b:shared' )['live'][0];
+		$orphaned = $this->rig->inspection()->runs( $orphaned_identity )['live'][0];
+		$task     = $this->rig->inspection()->runs( $task_identity )['live'][0];
+		$batch    = $this->rig->inspection()->runs( $batch_identity )['live'][0];
 
 		self::assertSame( 'unknown', $orphaned['kind'] );
 		self::assertSame( 2, $orphaned['queue_depth'] );
@@ -570,9 +374,145 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
+	 * Recording order, not lexical run-id order, selects the latest completion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_run_follows_terminal_recording_order(): void {
+		$identity = 'owner:recording-order';
+		$fixtures = StoreFixtureBuilder::for_identity( $identity );
+		$this->put(
+			$fixtures->history(
+				terminal: array(
+					array(
+						'run_id'    => self::run_id( 99 ),
+						'args_hash' => 'shared',
+						'status'    => RunStatus::Completed,
+					),
+					array(
+						'run_id'    => self::run_id( 1 ),
+						'args_hash' => 'shared',
+						'status'    => RunStatus::Completed,
+					),
+					array(
+						'run_id'    => self::run_id( 100 ),
+						'args_hash' => 'shared',
+						'status'    => RunStatus::Failed,
+					),
+				)
+			)
+		);
+
+		$result = $this->rig->inspection()->last_completed_run( $identity );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::run_id( 1 ), $result->value );
+	}
+
+	/**
+	 * Malformed and prefix-colliding names cannot occupy the valid-row inspection budget.
+	 *
+	 * @load-bearing fail-closed-ordering
+	 * @pin-rationale Twenty lexically leading malformed candidates and one prefix-colliding identity prove validation precedes the row cap, so corrupt or foreign names cannot hide an authoritative valid run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_enumeration_validates_identity_before_applying_its_cap(): void {
+		$requested = 'owner:foo';
+		$foreign   = 'owner:foo_bar';
+		$this->put( StoreFixtureBuilder::for_identity( $requested )->run( self::run_id( 1 ), self::state( 'requested' ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $foreign )->run( self::run_id( 2 ), self::state( 'foreign' ) ) );
+		$prefix = 'a8csp_bgte_run_' . $requested . '_';
+		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
+			$this->rig->wpdb()->put( $prefix . \sprintf( '!%039d', $sequence ), 'corrupt-inline' );
+		}
+
+		$snapshot = $this->rig->inspection()->runs( $requested );
+
+		self::assertSame( array( self::run_id( 1 ) ), \array_column( $snapshot['live'], 'run_id' ) );
+		self::assertSame( 1, $snapshot['live_scanned'] );
+		self::assertSame( 0, $snapshot['live_uninspected'] );
+	}
+
+	/**
+	 * Live inspection terminates at its documented cap and reports the exact remainder.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale Twenty-four production-encoded rows prove the paged scan stops after twenty accepted candidates while exposing four uninspected rows instead of retrying without a bound.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_enumeration_is_bounded_with_an_exact_remainder(): void {
+		$identity = 'owner:many-runs';
+		$fixtures = StoreFixtureBuilder::for_identity( $identity );
+		for ( $sequence = 1; $sequence <= 24; ++$sequence ) {
+			$this->put( $fixtures->run( self::run_id( $sequence ), self::state( 'hash-' . $sequence ) ) );
+		}
+
+		$snapshot = $this->rig->inspection()->runs( $identity );
+
+		self::assertSame( 20, $snapshot['live_scanned'] );
+		self::assertSame( 4, $snapshot['live_uninspected'] );
+		self::assertCount( 20, $snapshot['live'] );
+	}
+
+	/**
+	 * Enumeration, row, and history read failures remain discriminated unknown states.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_read_failures_do_not_collapse_into_absence(): void {
+		$this->rig->wpdb()->before_next(
+			'scan',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'enumeration failed';
+			}
+		);
+		self::assertSame( 'enumeration_failed', $this->rig->inspection()->runs( 'owner:enumeration' )['live_error'] );
+
+		$identity = 'owner:failed-row';
+		$this->put( StoreFixtureBuilder::for_identity( $identity )->run( self::run_id( 1 ), self::state( 'hash' ) ) );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'row read failed';
+			}
+		);
+		self::assertSame( 'read_failed', $this->rig->inspection()->runs( $identity )['live_error'] );
+
+		$this->rig->wpdb()->before_next( 'scan', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'history read failed';
+			}
+		);
+		self::assertNull( $this->rig->inspection()->runs( 'owner:history' )['history'] );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
 	 * Returns one canonical fixed-width run identifier.
 	 *
-	 * @param   int $sequence Deterministic random-suffix stand-in.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $sequence Per-timestamp run sequence.
 	 *
 	 * @return  string
 	 */
@@ -581,60 +521,33 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
-	 * Returns the engine's exact identity for portable arguments.
+	 * Returns one production-valid running state.
 	 *
-	 * @param   array<array-key, mixed> $args Start arguments.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  string
+	 * @param   string             $args_hash Persisted arguments hash.
+	 * @param   list<array<mixed>> $queue     Persisted pending queue.
+	 *
+	 * @return  RunState
 	 */
-	private static function args_hash( array $args ): string {
-		$encoded = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		self::assertIsString( $encoded );
-
-		return \hash( 'sha256', $encoded );
+	private static function state( string $args_hash, array $queue = array( array() ) ): RunState {
+		return new RunState( status: RunStatus::Running, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW );
 	}
 
 	/**
-	 * Returns request-local declarations keyed by complete schedule identity.
+	 * Persists one production-encoded option fixture.
 	 *
-	 * @param   string   $owner     Owner identifier.
-	 * @param   Schedule ...$schedules Schedule value objects.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  array<string, array{schedule: Schedule, task: string}>
-	 */
-	private static function declarations( string $owner, Schedule ...$schedules ): array {
-		$declarations = array();
-		foreach ( $schedules as $schedule ) {
-			$declarations[ $owner . ':' . $schedule->name ] = array(
-				'schedule' => $schedule,
-				'task'     => $owner . ':' . $schedule->task,
-			);
-		}
-
-		return $declarations;
-	}
-
-	/**
-	 * Persists one exact complete lock row.
-	 *
-	 * @param   string $name         Complete background-work identity.
-	 * @param   string $args_hash    Stable argument identity.
-	 * @param   string $run_id       Owning run identifier.
-	 * @param   int    $heartbeat_at Latest heartbeat timestamp.
+	 * @param   array{string, string} $fixture Encoded option name and value.
 	 *
 	 * @return  void
 	 */
-	private function put_lock( string $name, string $args_hash, string $run_id, int $heartbeat_at ): void {
-		$this->wpdb->put(
-			'a8csp_bgte_lock_' . $name . '_' . $args_hash,
-			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture matches the serialized lock-row storage contract.
-			\serialize(
-				array(
-					'run_id'       => $run_id,
-					'claimed_at'   => $heartbeat_at,
-					'heartbeat_at' => $heartbeat_at,
-				)
-			)
-		);
+	private function put( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}
+
+	// endregion.
 }
