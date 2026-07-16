@@ -239,6 +239,23 @@ final class EngineRig {
 		return $this->wpdb;
 	}
 
+	/**
+	 * Returns the read-only inspection service published by the production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  Inspection
+	 */
+	public function inspection(): Inspection {
+		$inspection = Component::get_inspection();
+		if ( null === $inspection ) {
+			throw new \LogicException( 'EngineRig inspection is unavailable before graph publication or after teardown.' );
+		}
+
+		return $inspection;
+	}
+
 	// endregion.
 
 	// region METHODS.

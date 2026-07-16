@@ -2,62 +2,73 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Registry;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
-/** Detects whether registry-row decoding constructs a serialized class. */
+/** Detects unsafe class construction while corrupt registry storage is inspected. */
 final class ScheduleRegistryWakeupProbe {
-	public static bool $woke = false;
+	public static int $wakeups = 0;
 
-	/** Records an unsafe object construction during unserialization. */
+	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
-		self::$woke = true;
+		++self::$wakeups;
 	}
 }
 
 /**
- * Pins owner-sliced schedule persistence and request-local definition lookup.
+ * Exercises schedule persistence through owner facades and retains whole-row CAS proofs.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( ScheduleRegistry::class )]
-#[UsesClass( Recurrence::class )]
-#[UsesClass( Schedule::class )]
-#[UsesClass( RegistrationUpdateOutcome::class )]
-#[UsesClass( RawOptionDecoder::class )]
-#[UsesClass( WorkIdentity::class )]
 final class ScheduleRegistryTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
+	private const NOW = 1_700_000_000;
+
+	private Consumer $consumer_a;
+	private Consumer $consumer_b;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private OptionRows $rows;
-	private WpdbLockSpy $wpdb;
+
+	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads WordPress option and JSON seams before registry classes are first autoloaded.
+	 * Loads guarded production files before the graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets the in-memory option store and call ledger.
+	 * Boots two owner-bound facades against one deterministic production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -65,1115 +76,380 @@ final class ScheduleRegistryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']               = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']       = array();
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']               = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                 = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
-		$this->wpdb                                       = new WpdbLockSpy();
-		$this->rows                                       = new OptionRows( $this->wpdb );
+		$this->rig        = EngineRig::set_up( self::NOW );
+		$this->consumer_a = $this->rig->consumer( 'owner-a' );
+		$this->consumer_b = $this->rig->consumer( 'owner-b' );
+		$this->consumer_a->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$this->consumer_b->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
+		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
 
 	/**
-	 * Removes option-write scripts before another test class uses the shared stubs.
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	protected function tearDown(): void {
-		unset(
-			$GLOBALS['a8csp_bgte_test_update_option_results'],
-			$GLOBALS['a8csp_bgte_test_update_option_values'],
-			$GLOBALS['a8csp_bgte_test_delete_option_results']
-		);
-
-		parent::tearDown();
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
 
-	// region TESTS.
+	// region BEHAVIOR.
 
 	/**
-	 * Reading one owner returns only its valid registration rows.
+	 * Owner syncs preserve sibling slices, expose canonical identities, and remove only their own rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registrations_for_returns_only_the_requested_owner_slice(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_schedules' => array(
-				'owner-a' => array(
-					'owner-a:nightly' => array(
-						'fingerprint' => 'fingerprint-a',
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-					),
-					'owner-a:broken'  => array( 'fingerprint' => false ),
-				),
-				'owner-b' => array(
-					'owner-b:hourly' => array(
-						'fingerprint' => 'fingerprint-b',
-						'next_due'    => 1_700_003_600,
-						'last_fired'  => 1_700_000_000,
-					),
-				),
-			),
-		);
-		$registrations                      = ( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' );
-		if ( $registrations->is_failure() ) {
-			self::fail( 'The owner schedule registrations could not be read.' );
-		}
+	public function test_owner_sync_and_removal_are_visible_through_schedule_inspection(): void {
+		$nightly = self::schedule( 'nightly', 300 );
+		$hourly  = self::schedule( 'hourly', 3_600 );
+		self::assertInstanceOf( Success::class, $this->consumer_b->schedules()->sync( array( $hourly ) ) );
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $nightly ) ) );
 
-		self::assertSame(
-			array(
-				'owner-a:nightly' => array(
-					'fingerprint' => 'fingerprint-a',
-					'next_due'    => 1_700_000_300,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
-				),
-			),
-			$registrations->value
-		);
+		$owner_a = $this->owner_entries( 'owner-a' );
+		$owner_b = $this->owner_entries( 'owner-b' );
+		self::assertSame( array( 'owner-a:nightly' ), \array_column( $owner_a, 'name' ) );
+		self::assertSame( 300, $owner_a[0]['recurrence'] );
+		self::assertSame( self::NOW + 300, $owner_a[0]['next_due'] );
+		self::assertSame( array( 'owner-b:hourly' ), \array_column( $owner_b, 'name' ) );
+		self::assertSame( 3_600, $owner_b[0]['recurrence'] );
+
+		$replacement = self::schedule( 'nightly', 600 );
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $replacement ) ) );
+		$owner_a = $this->owner_entries( 'owner-a' );
+		self::assertSame( 600, $owner_a[0]['recurrence'] );
+		self::assertSame( self::NOW + 600, $owner_a[0]['next_due'] );
+
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array() ) );
+		self::assertSame( array(), $this->owner_entries( 'owner-a' ) );
+		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'name' ) );
 	}
 
 	/**
-	 * Persisted complete identities are opaque keys inside their matching owner slice.
+	 * A delivered occurrence advances complete timing state through the schedules facade graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registrations_for_reads_only_canonical_identity_keys_belonging_to_the_owner(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_schedules' => array(
-				'owner-a' => array(
-					'owner-a:nightly' => array(
-						'fingerprint' => 'canonical-fingerprint',
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-					),
-					'nightly'         => array(
-						'fingerprint' => 'unqualified-fingerprint',
-						'next_due'    => 1_700_000_600,
-						'last_fired'  => null,
-					),
-					'owner-b:hourly'  => array(
-						'fingerprint' => 'other-owner-fingerprint',
-						'next_due'    => 1_700_003_600,
-						'last_fired'  => null,
-					),
-				),
-			),
-		);
+	public function test_occurrence_delivery_advances_registration_effects_behaviorally(): void {
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
 
-		$registrations = ( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' );
-		if ( $registrations->is_failure() ) {
-			self::fail( 'The owner schedule registrations could not be read.' );
-		}
+		$this->rig->run_due();
 
-		self::assertSame(
-			array(
-				'owner-a:nightly' => array(
-					'fingerprint' => 'canonical-fingerprint',
-					'next_due'    => 1_700_000_300,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
-				),
-			),
-			$registrations->value
-		);
+		$entries = $this->owner_entries( 'owner-a' );
+		self::assertCount( 1, $entries );
+		self::assertSame( self::NOW + 300, $entries[0]['last_fired'] );
+		self::assertSame( self::NOW + 600, $entries[0]['next_due'] );
+		self::assertSame( 0, $entries[0]['misfires'] );
+		self::assertSame( 0, $entries[0]['skips'] );
 	}
 
 	/**
-	 * A serialized object is malformed without constructing its class during registry reads.
+	 * Numeric canonical components remain string identities through sync and inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registrations_for_rejects_an_object_row_without_class_construction(): void {
-		ScheduleRegistryWakeupProbe::$woke = false;
+	public function test_numeric_owner_and_schedule_components_remain_canonical_strings(): void {
+		$consumer = $this->rig->consumer( '123' );
+		$consumer->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( self::schedule( '456', 300 ) ) ) );
 
+		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'name' ) );
+	}
+
+	/**
+	 * Valid neighbors survive malformed rows without constructing serialized classes.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The deliberately corrupt registry bypasses production serialization and mixes an object payload with one valid owner row, proving hardened inspection does not execute wakeup hooks or discard safe data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_registry_rows_are_tolerated_without_constructing_classes(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $schedule ) ) );
 		$raw = \maybe_serialize(
 			array(
 				'owner-a'      => array(
-					'owner-a:nightly' => array(
-						'fingerprint' => 'fingerprint-a',
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-					),
+					'owner-a:nightly' => self::registration( $schedule, self::NOW + 300 ),
+					'nightly'         => array( 'fingerprint' => 'unqualified' ),
 				),
 				'poison-owner' => new ScheduleRegistryWakeupProbe(),
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
-		$registrations = ( new ScheduleRegistry( $this->rows ) )->registrations_for( 'owner-a' );
-		if ( $registrations->is_failure() ) {
-			self::fail( 'The owner schedule registrations could not be read.' );
-		}
+		$this->rig->wpdb()->put( ScheduleRegistry::OPTION_NAME, $raw );
+		ScheduleRegistryWakeupProbe::$wakeups = 0;
 
-		self::assertSame(
-			array(
-				'owner-a:nightly' => array(
-					'fingerprint' => 'fingerprint-a',
-					'next_due'    => 1_700_000_300,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
-				),
-			),
-			$registrations->value
-		);
-		self::assertFalse( ScheduleRegistryWakeupProbe::$woke );
+		$entries = $this->owner_entries( 'owner-a' );
+
+		self::assertSame( array( 'owner-a:nightly' ), \array_column( $entries, 'name' ) );
+		self::assertSame( 0, ScheduleRegistryWakeupProbe::$wakeups );
 	}
 
 	/**
-	 * The all-owner read flattens the same validated owner slices under complete identities.
+	 * An authoritative read failure reaches the public facade as a storage failure without a write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_all_registrations_flattens_valid_owner_slices_without_new_decoding(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_schedules' => array(
-				'owner-b'      => array(
-					'owner-b:hourly' => array(
-						'fingerprint' => 'fingerprint-b',
-						'next_due'    => 1_700_003_600,
-						'last_fired'  => 1_700_000_000,
-						'misfires'    => 2,
-						'skips'       => 3,
-					),
-				),
-				'owner-a'      => array(
-					'owner-a:nightly' => array(
-						'fingerprint' => 'fingerprint-a',
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-					),
-					'owner-a:broken'  => array( 'fingerprint' => false ),
-				),
-				'broken-owner' => 'not-an-owner-slice',
-			),
-		);
-
-		$registry          = new ScheduleRegistry( $this->rows );
-		$owner_b           = $registry->registrations_for( 'owner-b' );
-		$owner_a           = $registry->registrations_for( 'owner-a' );
-		$all_registrations = $registry->all_registrations();
-		if ( $owner_b->is_failure() ) {
-			self::fail( 'The owner-b schedule registrations could not be read.' );
-		}
-		if ( $owner_a->is_failure() ) {
-			self::fail( 'The owner-a schedule registrations could not be read.' );
-		}
-		if ( $all_registrations->is_failure() ) {
-			self::fail( 'The complete schedule registry could not be read.' );
-		}
-
-		self::assertSame(
-			array(
-				'owner-b:hourly'  => $owner_b->value['owner-b:hourly'],
-				'owner-a:nightly' => $owner_a->value['owner-a:nightly'],
-			),
-			$all_registrations->value
-		);
-	}
-
-	/**
-	 * Numeric owner and name components remain a canonical string identity key.
-	 *
-	 * @return  void
-	 */
-	public function test_registrations_for_preserves_numeric_components_in_a_canonical_identity_key(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_schedules' => array(
-				123 => array(
-					'123:456' => array(
-						'fingerprint' => 'numeric-fingerprint',
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-					),
-				),
-			),
-		);
-		$registrations                      = ( new ScheduleRegistry( $this->rows ) )->registrations_for( '123' );
-		if ( $registrations->is_failure() ) {
-			self::fail( 'The numeric owner schedule registrations could not be read.' );
-		}
-
-		self::assertSame(
-			array(
-				'123:456' => array(
-					'fingerprint' => 'numeric-fingerprint',
-					'next_due'    => 1_700_000_300,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
-				),
-			),
-			$registrations->value
-		);
-	}
-
-	/**
-	 * Replacing one owner preserves every other owner and the registry's non-autoloaded setting.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_preserves_other_owners_and_the_non_autoloaded_setting(): void {
-		$stored     = array(
-			'owner-b' => array(
-				'owner-b:hourly' => array(
-					'fingerprint' => 'fingerprint-b',
-					'next_due'    => 1_700_003_600,
-					'last_fired'  => null,
-				),
-			),
-		);
-		$stored_raw = \maybe_serialize( $stored );
-		self::assertIsString( $stored_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
-
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$state    = array(
-			'nightly' => array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => 1_700_000_300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-
-		$registry = new ScheduleRegistry( $this->rows );
-
-		$replaced      = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
-		$persisted_raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
-		self::assertIsString( $persisted_raw );
-		$persisted = RawOptionDecoder::decode( $persisted_raw );
-		self::assertIsArray( $persisted );
-
-		self::assertTrue( $replaced );
-		self::assertSame(
-			array(
-				'owner-b' => array(
-					'owner-b:hourly' => array(
-						'fingerprint' => 'fingerprint-b',
-						'next_due'    => 1_700_003_600,
-						'last_fired'  => null,
-					),
-				),
-				'owner-a' => self::qualified_registrations( 'owner-a', $state ),
-			),
-			$persisted
-		);
-		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_schedules'] ?? null );
-		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->declaration( 'owner-a:nightly' ) );
-		self::assertNull( $registry->declaration( 'owner-b:hourly' ) );
-		self::assertCount( 2, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->wpdb->recorded_queries[1] );
-	}
-
-	/**
-	 * Creating the registry inserts an exact non-autoloaded raw option row.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_inserts_a_non_autoloaded_registry_when_the_row_is_absent(): void {
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$state    = array(
-			'nightly' => array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => 1_700_000_300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-		$registry = new ScheduleRegistry( $this->rows );
-
-		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
-
-		$raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
-		self::assertIsString( $raw );
-		self::assertSame( array( 'owner-a' => self::qualified_registrations( 'owner-a', $state ) ), RawOptionDecoder::decode( $raw ) );
-		self::assertSame( 'off', $this->wpdb->autoload['a8csp_bgte_schedules'] ?? null );
-		self::assertTrue( $replaced );
-		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 2, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'INSERT IGNORE ', $this->wpdb->recorded_queries[1] );
-	}
-
-	/** A failed authoritative registry read aborts owner replacement without writing or retaining declarations. */
-	public function test_replace_owner_aborts_without_writing_when_the_registry_read_fails(): void {
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$this->wpdb->before_next(
+	public function test_sync_reports_authoritative_read_failure_without_changing_registry_bytes(): void {
+		$before = $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
+		self::assertIsString( $before );
+		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
 				$wpdb->last_error = 'scripted registry read failure';
 			}
 		);
-		$registry = new ScheduleRegistry( $this->rows );
+		$this->rig->wpdb()->recorded_queries = array();
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			self::qualified_registrations(
-				'owner-a',
-				array(
-					'nightly' => array(
-						'fingerprint' => $schedule->fingerprint(),
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-						'misfires'    => 0,
-						'skips'       => 0,
-					),
-				)
-			)
-		);
+		$result = $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
 
-		self::assertFalse( $replaced );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 1, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( $before, $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( array(), $this->write_queries() );
 	}
 
+	// endregion.
+
+	// region KEEP CAS MICRO-SUITE.
+
 	/**
-	 * Removing the final owner deletes the empty registry option.
+	 * Owner replacement and final removal compare exact binary option bytes.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built generations and literal SQL predicates prove owner updates cannot match a collation-equivalent but byte-distinct registry row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_deletes_the_option_when_no_registrations_remain(): void {
-		$stored = array(
-			'owner-a' => array(
-				'owner-a:nightly' => array(
-					'fingerprint' => 'fingerprint-a',
-					'next_due'    => 1_700_000_300,
-					'last_fired'  => null,
-				),
-			),
-		);
-		$raw    = \maybe_serialize( $stored );
-		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
+	public function test_owner_replace_and_final_remove_use_binary_exact_row_comparisons(): void {
+		$schedule_a = self::schedule( 'nightly', 300 );
+		$schedule_b = self::schedule( 'hourly', 3_600 );
+		$owner_a    = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 300 );
+		$owner_b    = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 );
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $owner_b ) ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		$registry                            = $this->registry();
 
-		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), array() );
+		self::assertTrue( $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( $this->fixtures->schedule_registry( array( $owner_b, $owner_a ) )[1], $this->raw_row() );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
-		self::assertTrue( $replaced );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $this->wpdb->rows );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', $this->wpdb->autoload );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertCount( 2, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->wpdb->recorded_queries[1] );
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $owner_a ) ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		self::assertTrue( $registry->replace_owner( 'owner-a', array(), array() ) );
+		self::assertArrayNotHasKey( ScheduleRegistry::OPTION_NAME, $this->rig->wpdb()->rows );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
 	}
 
 	/**
-	 * An unchanged raw row after a failed exact update remains observable to the synchronization layer.
+	 * Interleaved owner writers preserve both slices and the rival's timing advance.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Both the precondition and expected merged row come from production serialization, proving the outer writer retries from fresh bytes instead of overwriting a sibling owner.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_reports_a_failed_exact_option_update(): void {
-		$stored = $this->two_registration_registry();
-		self::store_registry( $stored );
-		$this->wpdb->script_result( 'update', false );
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$state    = array(
-			'nightly' => array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => 1_700_000_300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-		$registry = new ScheduleRegistry( $this->rows );
-
-		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
-
-		self::assertFalse( $replaced );
-		self::assertSame( $stored, self::stored_registry() );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 3, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-	}
-
-	/**
-	 * A failed post-CAS reread preserves the exact concurrent registry bytes.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_preserves_concurrent_bytes_when_the_post_cas_reread_fails(): void {
-		$stored                = $this->two_registration_registry();
-		$concurrent            = $stored;
-		$concurrent['owner-b'] = array(
-			'owner-b:hourly' => array(
-				'fingerprint' => 'concurrent-fingerprint',
-				'next_due'    => 1_700_003_900,
-				'last_fired'  => 1_700_000_111,
-				'misfires'    => 2,
-				'skips'       => 3,
-			),
-		);
-		$stored_raw            = \maybe_serialize( $stored );
-		$concurrent_raw        = \maybe_serialize( $concurrent );
-		self::assertIsString( $stored_raw );
-		self::assertIsString( $concurrent_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
-		$this->wpdb->before_next(
+	public function test_interleaved_owner_writers_preserve_both_fixture_built_slices(): void {
+		$schedule_a = self::schedule( 'nightly', 300 );
+		$schedule_b = self::schedule( 'hourly', 3_600 );
+		$initial_a  = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 300 );
+		$initial_b  = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 );
+		$next_a     = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 600 );
+		$next_b     = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 7_200, self::NOW + 3_600 );
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $initial_a, $initial_b ) ) );
+		$this->rig->wpdb()->before_next(
 			'update',
-			static function ( WpdbLockSpy $wpdb ) use ( $concurrent_raw ): void {
-				$wpdb->put( 'a8csp_bgte_schedules', $concurrent_raw );
-			}
-		);
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted post-CAS registry reread failure';
+			function () use ( $next_b ): void {
+				self::assertTrue( $this->registry()->replace_owner( 'owner-b', $next_b['declarations'], $next_b['registrations'] ) );
 			}
 		);
 
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$state    = array(
-			'nightly' => array(
-				'fingerprint' => $schedule->fingerprint(),
-				'next_due'    => 1_700_000_300,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-		$registry = new ScheduleRegistry( $this->rows );
+		self::assertTrue( $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
 
-		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), self::qualified_registrations( 'owner-a', $state ) );
-
-		self::assertFalse( $replaced );
-		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 3, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
+		self::assertSame( $this->fixtures->schedule_registry( array( $next_a, $next_b ) )[1], $this->raw_row() );
 	}
 
 	/**
-	 * A lost owner replacement retries from fresh bytes and preserves a concurrent owner slice exactly.
+	 * A row deleted during owner replacement is reinserted with only the caller's authoritative slice.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Deleting the selected generation at the exact update boundary proves retry does not resurrect sibling state that no longer exists.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_retries_a_lost_cas_and_preserves_a_concurrent_owner_slice_byte_for_byte(): void {
-		$stored                = $this->two_registration_registry();
-		$owner_b               = array(
-			'owner-b:hourly' => array(
-				'fingerprint' => "owner-b-\0fingerprint",
-				'next_due'    => 1_700_003_600,
-				'last_fired'  => 1_700_000_111,
-				'misfires'    => 2,
-				'skips'       => 3,
-			),
-		);
-		$concurrent            = $stored;
-		$concurrent['owner-b'] = $owner_b;
-		$stored_raw            = \maybe_serialize( $stored );
-		$concurrent_raw        = \maybe_serialize( $concurrent );
-		self::assertIsString( $stored_raw );
-		self::assertIsString( $concurrent_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
-		$this->wpdb->before_next(
-			'update',
-			static function ( WpdbLockSpy $wpdb ) use ( $concurrent_raw ): void {
-				$wpdb->put( 'a8csp_bgte_schedules', $concurrent_raw );
-			}
-		);
-		$requested                                = $stored['owner-a'];
-		$requested['owner-a:nightly']['next_due'] = 1_700_000_900;
-		$schedule                                 = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$registry                                 = new ScheduleRegistry( $this->rows );
-
-		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), $requested );
-
-		$expected            = $concurrent;
-		$expected['owner-a'] = $requested;
-		$expected_raw        = \maybe_serialize( $expected );
-		$persisted_raw       = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
-		self::assertIsString( $expected_raw );
-		self::assertIsString( $persisted_raw );
-		self::assertSame( $expected_raw, $persisted_raw );
-		$persisted = RawOptionDecoder::decode( $persisted_raw );
-		self::assertIsArray( $persisted );
-		self::assertTrue( $replaced );
-		self::assertSame( $expected, $persisted );
-		$expected_owner_b_raw  = \maybe_serialize( $owner_b );
-		$persisted_owner_b_raw = \maybe_serialize( $persisted['owner-b'] );
-		self::assertIsString( $expected_owner_b_raw );
-		self::assertIsString( $persisted_owner_b_raw );
-		self::assertSame( $expected_owner_b_raw, $persisted_owner_b_raw );
-		self::assertStringContainsString( $expected_owner_b_raw, $persisted_raw );
-		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 5, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[4] );
-	}
-
-	/**
-	 * A lost replacement whose row vanished re-establishes only the caller's slice on the retry.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_reinserts_only_its_own_slice_after_a_concurrent_row_deletion(): void {
-		$stored     = $this->two_registration_registry();
-		$stored_raw = \maybe_serialize( $stored );
-		self::assertIsString( $stored_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $stored_raw );
-		$this->wpdb->before_next(
+	public function test_concurrent_row_deletion_reinserts_only_the_callers_slice(): void {
+		$owner_a = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$owner_b = self::owner_fixture( 'owner-b', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
+		$next_a  = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 600 );
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $owner_a, $owner_b ) ) );
+		$this->rig->wpdb()->before_next(
 			'update',
 			static function ( WpdbLockSpy $wpdb ): void {
-				unset( $wpdb->rows['a8csp_bgte_schedules'], $wpdb->autoload['a8csp_bgte_schedules'] );
+				unset( $wpdb->rows[ ScheduleRegistry::OPTION_NAME ], $wpdb->autoload[ ScheduleRegistry::OPTION_NAME ] );
 			}
 		);
-		$owner_b  = array(
-			'owner-b:hourly' => array(
-				'fingerprint' => 'owner-b-fingerprint',
-				'next_due'    => 1_700_003_600,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-		$schedule = new Schedule( 'hourly', Recurrence::every( 3600 ), 'sync-hourly' );
-		$registry = new ScheduleRegistry( $this->rows );
 
-		$replaced = $registry->replace_owner( 'owner-b', self::declarations( 'owner-b', $schedule ), $owner_b );
+		self::assertTrue( $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
 
-		$expected_raw  = \maybe_serialize( array( 'owner-b' => $owner_b ) );
-		$persisted_raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
-		self::assertIsString( $expected_raw );
-		self::assertIsString( $persisted_raw );
-		self::assertTrue( $replaced );
-		self::assertSame( $expected_raw, $persisted_raw );
-		$persisted = RawOptionDecoder::decode( $persisted_raw );
-		self::assertIsArray( $persisted );
-		self::assertArrayNotHasKey( 'owner-a', $persisted );
-		self::assertSame( self::declarations( 'owner-b', $schedule )['owner-b:hourly'], $registry->declaration( 'owner-b:hourly' ) );
-		self::assertCount( 5, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
-		self::assertStringStartsWith( 'INSERT IGNORE ', $this->wpdb->recorded_queries[4] );
+		self::assertSame( $this->fixtures->schedule_registry( array( $next_a ) )[1], $this->raw_row() );
 	}
 
 	/**
-	 * Retrying an owner replacement preserves another owner's concurrently advanced timing state.
+	 * Delivery-state updates retry sibling changes and fence replaced or pruned definitions.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Whole-row CAS must merge an unrelated sibling update, but the same retry must refuse to resurrect a definition whose fingerprint changed or whose row disappeared.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_preserves_a_concurrent_next_due_advance(): void {
-		$stored = $this->two_registration_registry();
-
-		$stored['owner-b'] = array(
-			'owner-b:hourly' => array(
-				'fingerprint' => 'owner-b-fingerprint',
-				'next_due'    => 1_700_003_600,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-		$advanced          = $stored;
-
-		$advanced['owner-b']['owner-b:hourly']['next_due']   = 1_700_003_900;
-		$advanced['owner-b']['owner-b:hourly']['last_fired'] = 1_700_003_600;
-
-		$requested = $stored['owner-a'];
-
-		$requested['owner-a:nightly']['next_due'] = 1_700_000_900;
-
-		$expected = $advanced;
-
-		$expected['owner-a'] = $requested;
-		self::store_registry( $stored );
-		$this->wpdb->before_next(
+	public function test_registration_updates_merge_siblings_and_fence_superseded_or_pruned_rows(): void {
+		$nightly = self::schedule( 'nightly', 300 );
+		$hourly  = self::schedule( 'hourly', 3_600 );
+		$owner   = self::owner_fixture_many( 'owner-a', array( $nightly, $hourly ), array( self::NOW + 300, self::NOW + 3_600 ) );
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $owner ) ) );
+		$nightly_next               = $owner['registrations']['owner-a:nightly'];
+		$nightly_next['next_due']   = self::NOW + 600;
+		$nightly_next['last_fired'] = self::NOW + 300;
+		$hourly_next                = $owner['registrations']['owner-a:hourly'];
+		$hourly_next['last_fired']  = self::NOW + 111;
+		$this->rig->wpdb()->before_next(
 			'update',
-			static function () use ( $advanced ): void {
-				self::store_registry( $advanced );
+			function () use ( $hourly_next ): void {
+				self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( 'owner-a:hourly', $hourly_next['fingerprint'], $hourly_next ) );
 			}
 		);
 
-		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), $requested );
+		self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( 'owner-a:nightly', $nightly_next['fingerprint'], $nightly_next ) );
+		$expected                                     = $owner;
+		$expected['registrations']['owner-a:nightly'] = $nightly_next;
+		$expected['registrations']['owner-a:hourly']  = $hourly_next;
+		self::assertSame( $this->fixtures->schedule_registry( array( $expected ) )[1], $this->raw_row() );
 
-		$persisted = self::stored_registry();
-		self::assertTrue( $replaced );
-		self::assertSame( $expected, $persisted );
-		self::assertSame( 1_700_003_900, $persisted['owner-b']['owner-b:hourly']['next_due'] );
-		self::assertSame( 1_700_003_600, $persisted['owner-b']['owner-b:hourly']['last_fired'] );
-		self::assertCount( 5, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[4] );
+		$replacement = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 1_200 );
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $owner ) ) );
+		$replacement_fixture = $this->fixtures->schedule_registry( array( $replacement ) );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $replacement_fixture ): void {
+				$wpdb->put( $replacement_fixture[0], $replacement_fixture[1] );
+			}
+		);
+		self::assertSame( RegistrationUpdateOutcome::Superseded, $this->registry()->update_registration( 'owner-a:nightly', $nightly_next['fingerprint'], $nightly_next ) );
+		self::assertSame( $replacement_fixture[1], $this->raw_row() );
+
+		$this->put_fixture( $this->fixtures->schedule_registry( array( $owner ) ) );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				unset( $wpdb->rows[ ScheduleRegistry::OPTION_NAME ], $wpdb->autoload[ ScheduleRegistry::OPTION_NAME ] );
+			}
+		);
+		self::assertSame( RegistrationUpdateOutcome::Pruned, $this->registry()->update_registration( 'owner-a:nightly', $nightly_next['fingerprint'], $nightly_next ) );
+		self::assertArrayNotHasKey( ScheduleRegistry::OPTION_NAME, $this->rig->wpdb()->rows );
 	}
 
 	/**
-	 * A corrupt shared registry remains byte-identical and cannot be replaced by an owner write.
+	 * An unchanged row after a failed exact update reports failure without retaining declarations.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Rereading the same selected bytes distinguishes a genuine write failure from comparison loss and prevents request-local declarations from claiming an unpersisted owner state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_rejects_a_corrupt_registry_without_writing(): void {
-		$raw = 'not-a-serialized-registry';
-		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$registry = new ScheduleRegistry( $this->rows );
+	public function test_failed_exact_owner_update_leaves_bytes_and_declarations_unchanged(): void {
+		$owner_a = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$owner_b = self::owner_fixture( 'owner-b', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
+		$fixture = $this->fixtures->schedule_registry( array( $owner_b ) );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->script_result( 'update', false );
+		$registry = $this->registry();
 
-		$replaced = $registry->replace_owner(
-			'owner-a',
-			self::declarations( 'owner-a', $schedule ),
-			self::qualified_registrations(
-				'owner-a',
-				array(
-					'nightly' => array(
-						'fingerprint' => $schedule->fingerprint(),
-						'next_due'    => 1_700_000_300,
-						'last_fired'  => null,
-						'misfires'    => 0,
-						'skips'       => 0,
-					),
-				)
-			)
-		);
+		self::assertFalse( $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
 
-		self::assertFalse( $replaced );
-		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
+		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertCount( 1, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
 	}
 
 	/**
-	 * Removing the final owner retries a delete whose exact raw precondition changed concurrently.
+	 * Owner replacement stops after five consecutive comparison losses.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The exact five-attempt bound (UPDATE_ATTEMPTS=5) is the liveness contract; an unbounded loop under permanent contention would hang schedule synchronization.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_replace_owner_retries_final_owner_removal_after_a_concurrent_change(): void {
-		$stored     = $this->two_registration_registry();
-		$concurrent = $stored;
+	public function test_owner_replace_stops_after_five_consecutive_cas_losses(): void {
+		$owner_a    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$schedule_b = self::schedule( 'hourly', 3_600 );
+		$fixture    = $this->fixtures->schedule_registry( array( self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 ) ) );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
 
-		$concurrent['owner-a']['owner-a:nightly']['next_due'] = 1_700_000_600;
-		self::store_registry( $stored );
-		$this->wpdb->before_next(
-			'delete',
-			static function () use ( $concurrent ): void {
-				self::store_registry( $concurrent );
-			}
-		);
-
-		$replaced = ( new ScheduleRegistry( $this->rows ) )->replace_owner( 'owner-a', array(), array() );
-
-		self::assertTrue( $replaced );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', self::test_options() );
-		self::assertCount( 5, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
-		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[4] );
-	}
-
-	/**
-	 * A lost final-owner delete converges when another writer already removed the row.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_confirms_final_owner_removal_when_the_row_is_already_gone(): void {
-		self::store_registry( $this->two_registration_registry() );
-		$this->wpdb->before_next(
-			'delete',
-			static function (): void {
-				$options = self::test_options();
-				unset( $options['a8csp_bgte_schedules'] );
-				$GLOBALS['a8csp_bgte_test_options'] = $options;
-			}
-		);
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$registry = new ScheduleRegistry( $this->rows );
-
-		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), array() );
-
-		self::assertTrue( $replaced );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedules', self::test_options() );
-		self::assertSame( self::declarations( 'owner-a', $schedule )['owner-a:nightly'], $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 3, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'DELETE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-	}
-
-	/**
-	 * Persistent raw-value interference exhausts the bounded owner replacement loop safely.
-	 *
-	 * @return  void
-	 */
-	public function test_replace_owner_reports_failure_after_persistent_interference_exhausts_the_retry_bound(): void {
-		$stored            = $this->two_registration_registry();
-		$stored['owner-b'] = array(
-			'owner-b:hourly' => array(
-				'fingerprint' => 'owner-b-fingerprint',
-				'next_due'    => 1_700_003_600,
-				'last_fired'  => null,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-		);
-		self::store_registry( $stored );
-		for ( $attempt = 0; $attempt < 5; ++$attempt ) {
-			$next_due = 1_700_004_000 + $attempt;
-			$this->wpdb->before_next(
+		$last_rival = $fixture;
+		for ( $attempt = 1; $attempt <= 5; ++$attempt ) {
+			$rival      = $this->fixtures->schedule_registry( array( self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 + $attempt ) ) );
+			$last_rival = $rival;
+			$this->rig->wpdb()->before_next(
 				'update',
-				static function () use ( $next_due ): void {
-					$concurrent = self::stored_registry();
-					$owner_b    = $concurrent['owner-b'] ?? null;
-					self::assertIsArray( $owner_b );
-					$hourly = $owner_b['owner-b:hourly'] ?? null;
-					self::assertIsArray( $hourly );
-					$hourly['next_due']   = $next_due;
-					$hourly['last_fired'] = $next_due - 300;
-
-					$owner_b['owner-b:hourly'] = $hourly;
-
-					$concurrent['owner-b'] = $owner_b;
-					self::store_registry( $concurrent );
+				static function ( WpdbLockSpy $wpdb ) use ( $rival ): void {
+					$wpdb->put( $rival[0], $rival[1] );
 				}
 			);
 		}
-		$requested                                = $stored['owner-a'];
-		$requested['owner-a:nightly']['next_due'] = 1_700_000_900;
-		$schedule                                 = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
-		$registry                                 = new ScheduleRegistry( $this->rows );
+		$registry = $this->registry();
 
-		$replaced = $registry->replace_owner( 'owner-a', self::declarations( 'owner-a', $schedule ), $requested );
-
-		$persisted = self::stored_registry();
-		$owner_b   = $persisted['owner-b'] ?? null;
-		self::assertIsArray( $owner_b );
-		$hourly = $owner_b['owner-b:hourly'] ?? null;
-		self::assertIsArray( $hourly );
-		self::assertFalse( $replaced );
-		self::assertSame( $stored['owner-a'], $persisted['owner-a'] ?? null );
-		self::assertSame( 1_700_004_004, $hourly['next_due'] ?? null );
+		self::assertFalse( $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
+		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );
+		self::assertSame( array(), $this->queries_starting_with( 'DELETE ' ) );
+		self::assertSame( $last_rival[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
-		self::assertCount( 15, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[14] );
-		$updates = \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
-		self::assertCount( 5, $updates );
-		self::assertSame( array(), \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'DELETE ' ) ) ) );
-	}
-
-	/**
-	 * An initial authoritative read failure reports repairable persistence failure without writing.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_failed_when_the_initial_read_fails(): void {
-		$registry = $this->two_registration_registry();
-		$raw      = \maybe_serialize( $registry );
-		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $raw );
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted initial registry read failure';
-			}
-		);
-		$nightly             = $registry['owner-a']['owner-a:nightly'];
-		$nightly['next_due'] = 1_700_000_600;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
-		self::assertSame( $raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
-		self::assertCount( 1, $this->wpdb->recorded_queries );
-	}
-
-	/**
-	 * A failed authoritative reread after a lost CAS preserves the concurrent registry bytes.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_failed_when_the_post_cas_reread_fails(): void {
-		$registry     = $this->two_registration_registry();
-		$expected_raw = \maybe_serialize( $registry );
-		$concurrent   = $registry;
-
-		$concurrent['owner-a']['owner-a:hourly']['last_fired'] = 1_700_000_111;
-
-		$concurrent_raw = \maybe_serialize( $concurrent );
-		self::assertIsString( $expected_raw );
-		self::assertIsString( $concurrent_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $expected_raw );
-		$this->wpdb->before_next(
-			'update',
-			static function ( WpdbLockSpy $wpdb ) use ( $concurrent_raw ): void {
-				$wpdb->put( 'a8csp_bgte_schedules', $concurrent_raw );
-			}
-		);
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted post-CAS registry reread failure';
-			}
-		);
-		$nightly             = $registry['owner-a']['owner-a:nightly'];
-		$nightly['next_due'] = 1_700_000_600;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
-		self::assertSame( $concurrent_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
-		self::assertCount( 3, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-	}
-
-	/**
-	 * A lost whole-option CAS retries against the fresh owner slice and preserves its sibling row.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_retries_a_lost_cas_and_preserves_the_concurrent_sibling(): void {
-		self::store_registry( $this->two_registration_registry() );
-		$this->wpdb->before_next(
-			'update',
-			static function (): void {
-				$registry = self::stored_registry();
-				$owner    = $registry['owner-a'] ?? null;
-				self::assertIsArray( $owner );
-				$hourly = $owner['owner-a:hourly'] ?? null;
-				self::assertIsArray( $hourly );
-
-				$hourly['last_fired'] = 1_700_000_111;
-
-				$owner['owner-a:hourly'] = $hourly;
-
-				$registry['owner-a'] = $owner;
-				self::store_registry( $registry );
-			}
-		);
-		$nightly             = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
-		$nightly['next_due'] = 1_700_000_600;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
-		$stored = self::stored_registry();
-		$owner  = $stored['owner-a'] ?? null;
-		self::assertIsArray( $owner );
-		$stored_nightly = $owner['owner-a:nightly'] ?? null;
-		$stored_hourly  = $owner['owner-a:hourly'] ?? null;
-		self::assertIsArray( $stored_nightly );
-		self::assertIsArray( $stored_hourly );
-		self::assertSame( 1_700_000_600, $stored_nightly['next_due'] ?? null );
-		self::assertSame( 1_700_000_111, $stored_hourly['last_fired'] ?? null );
-	}
-
-	/**
-	 * A row update persists complete timing state when its observed definition still matches.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_persists_for_the_observed_fingerprint(): void {
-		$registry = $this->two_registration_registry();
-		self::store_registry( $registry );
-		$nightly               = $registry['owner-a']['owner-a:nightly'];
-		$nightly['next_due']   = 1_700_000_600;
-		$nightly['last_fired'] = 1_700_000_300;
-		$nightly['misfires']   = 2;
-		$nightly['skips']      = 3;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		$registry['owner-a']['owner-a:nightly'] = $nightly;
-		self::assertSame( RegistrationUpdateOutcome::Updated, $outcome );
-		self::assertSame( $registry, self::stored_registry() );
-	}
-
-	/**
-	 * A definition installed after observation supersedes stale delivery state without a write.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_preserves_a_newer_definition_byte_for_byte(): void {
-		$observed = $this->two_registration_registry();
-		$current  = $observed;
-
-		$current['owner-a']['owner-a:nightly'] = array(
-			'fingerprint' => 'replacement-fingerprint',
-			'next_due'    => 1_700_001_200,
-			'last_fired'  => 1_700_000_900,
-			'misfires'    => 4,
-			'skips'       => 5,
-		);
-
-		$current_raw = \maybe_serialize( $current );
-		self::assertIsString( $current_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $current_raw );
-		$nightly             = $observed['owner-a']['owner-a:nightly'];
-		$nightly['next_due'] = 1_700_000_600;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
-		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
-		self::assertCount( 1, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-	}
-
-	/**
-	 * A lost CAS cannot write stale timing state after a retry observes a replacement definition.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_superseded_after_a_lost_cas_without_retrying_the_write(): void {
-		$observed     = $this->two_registration_registry();
-		$expected_raw = \maybe_serialize( $observed );
-		$current      = $observed;
-
-		$current['owner-a']['owner-a:nightly'] = array(
-			'fingerprint' => 'replacement-fingerprint',
-			'next_due'    => 1_700_001_200,
-			'last_fired'  => 1_700_000_900,
-			'misfires'    => 4,
-			'skips'       => 5,
-		);
-
-		$current_raw = \maybe_serialize( $current );
-		self::assertIsString( $expected_raw );
-		self::assertIsString( $current_raw );
-		$this->wpdb->put( 'a8csp_bgte_schedules', $expected_raw );
-		$this->wpdb->before_next(
-			'update',
-			static function ( WpdbLockSpy $wpdb ) use ( $current_raw ): void {
-				$wpdb->put( 'a8csp_bgte_schedules', $current_raw );
-			}
-		);
-		$nightly             = $observed['owner-a']['owner-a:nightly'];
-		$nightly['next_due'] = 1_700_000_600;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
-		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
-		self::assertCount( 4, $this->wpdb->recorded_queries );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'UPDATE ', $this->wpdb->recorded_queries[1] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[2] );
-		self::assertStringStartsWith( 'SELECT ', $this->wpdb->recorded_queries[3] );
-		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
-	}
-
-	/**
-	 * A malformed stored row is preserved as superseded instead of being overwritten.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_superseded_without_overwriting_a_malformed_row(): void {
-		$registry                               = $this->two_registration_registry();
-		$registry['owner-a']['owner-a:nightly'] = 'malformed';
-		self::store_registry( $registry );
-		$nightly = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Superseded, $outcome );
-		$stored = self::stored_registry();
-		$owner  = $stored['owner-a'] ?? null;
-		self::assertIsArray( $owner );
-		self::assertSame( 'malformed', $owner['owner-a:nightly'] ?? null );
-	}
-
-	/**
-	 * A row pruned after inspection is not resurrected by the losing delivery writer.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_pruned_without_resurrecting_the_row(): void {
-		self::store_registry( $this->two_registration_registry() );
-		$this->wpdb->before_next(
-			'update',
-			static function (): void {
-				$registry = self::stored_registry();
-				$owner    = $registry['owner-a'] ?? null;
-				self::assertIsArray( $owner );
-
-				unset( $owner['owner-a:nightly'] );
-				$registry['owner-a'] = $owner;
-				self::store_registry( $registry );
-			}
-		);
-		$nightly = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Pruned, $outcome );
-		$stored = self::stored_registry();
-		$owner  = $stored['owner-a'] ?? null;
-		self::assertIsArray( $owner );
-		self::assertArrayNotHasKey( 'owner-a:nightly', $owner );
-	}
-
-	/**
-	 * An unchanged row after a failed SQL write reports repairable persistence failure.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_write_verification_failure(): void {
-		self::store_registry( $this->two_registration_registry() );
-		$this->wpdb->script_result( 'update', false );
-		$nightly             = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
-		$nightly['next_due'] = 1_700_000_600;
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
-		$stored = self::stored_registry();
-		$owner  = $stored['owner-a'] ?? null;
-		self::assertIsArray( $owner );
-		$stored_nightly = $owner['owner-a:nightly'] ?? null;
-		self::assertIsArray( $stored_nightly );
-		self::assertSame( 1_700_000_300, $stored_nightly['next_due'] ?? null );
-	}
-
-	/**
-	 * An existing unreadable registry row is a repairable failure, not a concurrent prune.
-	 *
-	 * @return  void
-	 */
-	public function test_update_registration_reports_malformed_storage_as_failed(): void {
-		$this->wpdb->put( 'a8csp_bgte_schedules', 'not-serialized' );
-		$nightly = $this->two_registration_registry()['owner-a']['owner-a:nightly'];
-
-		$outcome = ( new ScheduleRegistry( $this->rows ) )->update_registration( 'owner-a:nightly', $nightly['fingerprint'], $nightly );
-
-		self::assertSame( RegistrationUpdateOutcome::Failed, $outcome );
-		self::assertSame( 'not-serialized', $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
 	}
 
 	// endregion.
@@ -1181,127 +457,177 @@ final class ScheduleRegistryTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns request-local declarations keyed by complete schedule identity.
+	 * Returns a schedule with one deterministic target and interval.
 	 *
-	 * @param   string   $owner        Owner identifier.
-	 * @param   Schedule ...$schedules Schedule value objects.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  array<string, array{schedule: Schedule, task: string}>
+	 * @param   string $name     Schedule name.
+	 * @param   int    $interval Recurrence interval.
+	 *
+	 * @return  Schedule
 	 */
-	private static function declarations( string $owner, Schedule ...$schedules ): array {
-		$declarations = array();
-		foreach ( $schedules as $schedule ) {
-			$identity = WorkIdentity::compose( $owner, $schedule->name );
-
-			$declarations[ $identity ] = array(
-				'schedule' => $schedule,
-				'task'     => WorkIdentity::compose( $owner, $schedule->task ),
-			);
-		}
-
-		return $declarations;
+	private static function schedule( string $name, int $interval ): Schedule {
+		return new Schedule( $name, Recurrence::every( $interval ), 'refresh-index', array( 'schedule' => $name ) );
 	}
 
 	/**
-	 * Qualifies persisted owner-slice rows for the request-local registry contract.
+	 * Returns inspected entries belonging to exactly one owner.
 	 *
-	 * @phpstan-param array<array-key, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}> $rows
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @param   string                  $owner Owner identifier.
-	 * @param   array<array-key, mixed> $rows  Persisted local-name rows.
+	 * @param   string $owner Owner filter.
 	 *
-	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 * @return  list<array<string, mixed>>
 	 */
-	private static function qualified_registrations( string $owner, array $rows ): array {
+	private function owner_entries( string $owner ): array {
+		$snapshot = $this->rig->inspection()->schedules( $owner );
+		self::assertNotNull( $snapshot );
+
+		return $snapshot['entries'];
+	}
+
+	/**
+	 * Returns one complete owner fixture request.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $owner       Owner identifier.
+	 * @param   Schedule $schedule    Schedule declaration.
+	 * @param   int      $next_due    Next occurrence timestamp.
+	 * @param   int|null $last_fired  Last occurrence timestamp.
+	 *
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
+	 */
+	private static function owner_fixture( string $owner, Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
+		return self::owner_fixture_many( $owner, array( $schedule ), array( $next_due ), array( $last_fired ) );
+	}
+
+	/**
+	 * Returns one owner fixture request containing several schedules.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<Schedule> $schedules
+	 * @phpstan-param list<int> $next_due
+	 * @phpstan-param list<int|null> $last_fired
+	 *
+	 * @param   string $owner       Owner identifier.
+	 * @param   array  $schedules   Schedule declarations.
+	 * @param   array  $next_due    Next occurrence timestamps.
+	 * @param   array  $last_fired  Last occurrence timestamps.
+	 *
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
+	 */
+	private static function owner_fixture_many( string $owner, array $schedules, array $next_due, array $last_fired = array() ): array {
+		$declarations  = array();
 		$registrations = array();
-		foreach ( $rows as $name => $row ) {
-			$registrations[ WorkIdentity::compose( $owner, (string) $name ) ] = $row;
+		foreach ( $schedules as $index => $schedule ) {
+			$identity                   = $owner . ':' . $schedule->name;
+			$declarations[ $identity ]  = array(
+				'schedule' => $schedule,
+				'task'     => $owner . ':' . $schedule->task,
+			);
+			$registrations[ $identity ] = self::registration( $schedule, $next_due[ $index ], $last_fired[ $index ] ?? null );
 		}
 
-		return $registrations;
-	}
-
-	/**
-	 * Returns two persisted registration rows for one owner.
-	 *
-	 * @return  array{
-	 *     'owner-a': array{
-	 *         'owner-a:nightly': array{
-	 *             fingerprint: string,
-	 *             next_due: int,
-	 *             last_fired: null,
-	 *             misfires: int,
-	 *             skips: int
-	 *         },
-	 *         'owner-a:hourly': array{
-	 *             fingerprint: string,
-	 *             next_due: int,
-	 *             last_fired: null,
-	 *             misfires: int,
-	 *             skips: int
-	 *         }
-	 *     }
-	 * }
-	 */
-	private function two_registration_registry(): array {
 		return array(
-			'owner-a' => array(
-				'owner-a:nightly' => array(
-					'fingerprint' => 'nightly-fingerprint',
-					'next_due'    => 1_700_000_300,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
-				),
-				'owner-a:hourly'  => array(
-					'fingerprint' => 'hourly-fingerprint',
-					'next_due'    => 1_700_003_600,
-					'last_fired'  => null,
-					'misfires'    => 0,
-					'skips'       => 0,
-				),
-			),
+			'owner'         => $owner,
+			'declarations'  => $declarations,
+			'registrations' => $registrations,
 		);
 	}
 
 	/**
-	 * Replaces the registry option while preserving the test store's outer shape.
+	 * Returns complete persisted timing state for one schedule.
 	 *
-	 * @param   array<mixed> $registry  Registry value to persist.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Schedule $schedule   Schedule declaration.
+	 * @param   int      $next_due   Next occurrence timestamp.
+	 * @param   int|null $last_fired Last occurrence timestamp.
+	 *
+	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}
+	 */
+	private static function registration( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
+		return array(
+			'fingerprint' => $schedule->fingerprint(),
+			'next_due'    => $next_due,
+			'last_fired'  => $last_fired,
+			'misfires'    => 0,
+			'skips'       => 0,
+		);
+	}
+
+	/**
+	 * Returns a registry bound to the active authoritative rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  ScheduleRegistry
+	 */
+	private function registry(): ScheduleRegistry {
+		return new ScheduleRegistry( $this->rows );
+	}
+
+	/**
+	 * Stores one production-built raw fixture in the active database.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
 	 *
 	 * @return  void
 	 */
-	private static function store_registry( array $registry ): void {
-		$options                            = self::test_options();
-		$options['a8csp_bgte_schedules']    = $registry;
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}
 
 	/**
-	 * Returns the persisted registry option.
+	 * Returns the registry's authoritative raw bytes.
 	 *
-	 * @return  array<mixed>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
 	 */
-	private static function stored_registry(): array {
-		$options  = self::test_options();
-		$registry = $options['a8csp_bgte_schedules'] ?? null;
+	private function raw_row(): string {
+		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
+		self::assertIsString( $raw );
 
-		self::assertIsArray( $registry );
-
-		return $registry;
+		return $raw;
 	}
 
 	/**
-	 * Returns the in-memory option store.
+	 * Returns authoritative write statements.
 	 *
-	 * @return  array<mixed>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<string>
 	 */
-	private static function test_options(): array {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+	private function write_queries(): array {
+		return \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'UPDATE ' ) || \str_starts_with( $query, 'DELETE ' ) ) );
+	}
 
-		self::assertIsArray( $options );
-
-		return $options;
+	/**
+	 * Returns recorded statements carrying one literal prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $prefix Statement prefix.
+	 *
+	 * @return  list<string>
+	 */
+	private function queries_starting_with( string $prefix ): array {
+		return \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, $prefix ) ) );
 	}
 
 	// endregion.

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
@@ -129,12 +130,49 @@ final readonly class StoreFixtureBuilder {
 	 * @return  array{string, string}
 	 */
 	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null ): array {
+		return $this->failed_runs(
+			array(
+				array(
+					'failed_at'  => $failed_at,
+					'start_args' => $start_args,
+					'failure'    => $failure,
+					'error'      => $error,
+				),
+			)
+		);
+	}
+
+	/**
+	 * Returns one failed-run option containing each requested entry in record order.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<array{
+	 *     failed_at: int,
+	 *     start_args: array<array-key, mixed>,
+	 *     failure: RunFailure,
+	 *     error?: EngineError|null
+	 * }> $entries
+	 *
+	 * @param   array $entries Failed-run writes in record order.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function failed_runs( array $entries ): array {
+		if ( array() === $entries ) {
+			throw new \InvalidArgumentException( 'Failed-run fixtures require at least one entry.' );
+		}
+
 		return $this->isolated(
-			function ( WpdbLockSpy $wpdb ) use ( $failed_at, $start_args, $failure, $error ): array {
-				$store    = new FailedRunStore( $this->identity, new OptionRows( $wpdb ) );
-				$recorded = $store->record( $failure->run_id, $failed_at, $start_args, $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure );
-				if ( ! $recorded ) {
-					throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
+			function ( WpdbLockSpy $wpdb ) use ( $entries ): array {
+				$store = new FailedRunStore( $this->identity, new OptionRows( $wpdb ) );
+				foreach ( $entries as $entry ) {
+					$failure = $entry['failure'];
+					$error   = $entry['error'] ?? null;
+					if ( ! $store->record( $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
+						throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
+					}
 				}
 
 				return $this->row( $wpdb, FailedRunStore::OPTION_PREFIX . $this->identity );
@@ -194,6 +232,41 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				return $this->row( $wpdb, LatestRunPointer::OPTION_PREFIX . $this->identity );
+			}
+		);
+	}
+
+	/**
+	 * Returns one schedule-registry option containing each requested owner slice.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<array{
+	 *     owner: string,
+	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule, task: string}>,
+	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>
+	 * }> $owners
+	 *
+	 * @param   array $owners Owner writes in record order.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function schedule_registry( array $owners ): array {
+		if ( array() === $owners ) {
+			throw new \InvalidArgumentException( 'Schedule-registry fixtures require at least one owner slice.' );
+		}
+
+		return $this->isolated(
+			function ( WpdbLockSpy $wpdb ) use ( $owners ): array {
+				$registry = new ScheduleRegistry( new OptionRows( $wpdb ) );
+				foreach ( $owners as $owner ) {
+					if ( ! $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
+						throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registry fixture.' );
+					}
+				}
+
+				return $this->row( $wpdb, ScheduleRegistry::OPTION_NAME );
 			}
 		);
 	}
