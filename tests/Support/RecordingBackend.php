@@ -425,6 +425,24 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
+	 * Asserts that one work or schedule identity retains no accepted delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete work or schedule identity.
+	 *
+	 * @return  void
+	 */
+	public function assert_not_scheduled( string $identity ): void {
+		Assert::assertSame(
+			array(),
+			\array_values( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $identity === $delivery['group'] || \str_starts_with( $delivery['group'], $identity . '|' ) ) ),
+			\sprintf( 'Expected no accepted backend delivery for identity "%s".', $identity )
+		);
+	}
+
+	/**
 	 * Asserts that no exact hook, argument, and group delivery is pending twice.
 	 *
 	 * @since   1.0.0

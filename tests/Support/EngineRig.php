@@ -219,6 +219,22 @@ final class EngineRig {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 */
+	public function randomizer(): RecordingRandomizer {
+		return $this->randomizer;
+	}
+
+	/**
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	public function logger(): RecordingLogger {
+		return $this->logger;
+	}
+
+	/**
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	public function wpdb(): WpdbLockSpy {
 		return $this->wpdb;
 	}
@@ -316,6 +332,20 @@ final class EngineRig {
 	 */
 	public function assert_no_retry(): void {
 		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_background_tasks/retrying' ) );
+	}
+
+	/**
+	 * Asserts the primary scheduler boundary retains no delivery for one identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete work or schedule identity.
+	 *
+	 * @return  void
+	 */
+	public function assert_no_delivery( string $identity ): void {
+		$this->backend->assert_not_scheduled( $identity );
 	}
 
 	// endregion.

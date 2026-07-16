@@ -2,124 +2,71 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\InvalidBatchChunkException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\NonRetryableTaskException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\InvalidBatchChunkException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins retry adjudication, persistence, scheduling, and failure transitions.
+ * Exercises retry adjudication and failure transitions through real task deliveries.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( FailureLifecycle::class )]
-#[UsesClass( InvalidBatchChunkException::class )]
-#[UsesClass( EngineError::class )]
-#[UsesClass( RunFailure::class )]
-#[UsesClass( FailedRunStore::class )]
-#[UsesClass( LatestRunPointer::class )]
-#[UsesClass( OptionRows::class )]
-#[UsesClass( RawOptionDecoder::class )]
-#[UsesClass( Dispatcher::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( Randomizer::class )]
-#[UsesClass( RetryPolicy::class )]
-#[UsesClass( RunHistory::class )]
-#[UsesClass( RunState::class )]
-#[UsesClass( RunStatus::class )]
-#[UsesClass( RunStore::class )]
-#[UsesClass( StoreFactory::class )]
-#[UsesClass( TerminalEffects::class )]
-#[UsesClass( TerminalTransitions::class )]
-#[UsesClass( BatchRegistry::class )]
-#[UsesClass( TaskRegistry::class )]
-#[UsesClass( WorkRegistry::class )]
 final class FailureLifecycleTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS = array(
+	private const ARGS     = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
+	private const IDENTITY = self::OWNER . ':' . self::NAME;
+	private const NAME     = 'email-digest';
+	private const NOW      = 1_700_000_000;
+	private const OWNER    = 'runs-tests';
+	private const RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const IDENTITY  = self::OWNER . ':' . self::NAME;
-	private const NAME      = 'email-digest';
-	private const NOW       = 1_700_000_000;
-	private const OWNER     = 'runs-tests';
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
-
-	private FixedClock $clock;
-	private RecordingBackend $backend;
-	private FailureLifecycle $failure_lifecycle;
-	private RecordingLogger $logger;
-	private RecordingRandomizer $randomizer;
-	private OptionRows $rows;
+	private Consumer $consumer;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private RecordingTask $task;
-	private TerminalTransitions $terminal_transitions;
-	private TaskRegistry $registry;
-	private WpdbLockSpy $wpdb;
-	private Dispatcher $dispatcher;
 
 	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress functions before orchestration classes are instantiated.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets every observable boundary and constructs one registered task lifecycle.
+	 * Boots one registered task against deterministic interface fakes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -127,192 +74,135 @@ final class FailureLifecycleTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->consumer = $this->rig->consumer( self::OWNER );
+		$this->task     = new RecordingTask( self::NAME );
+		$this->consumer->tasks()->register( $this->task );
+		$this->fixtures                 = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rig->backend()->calls    = array();
+		$this->rig->randomizer()->calls = array();
+	}
 
-		$this->clock      = new FixedClock( self::NOW );
-		$this->backend    = new RecordingBackend();
-		$this->logger     = new RecordingLogger();
-		$this->randomizer = new RecordingRandomizer( 42 );
-		$this->task       = new RecordingTask( self::NAME );
-		$work             = new WorkRegistry();
-		$this->registry   = new TaskRegistry( $work );
-		$this->registry->register( self::IDENTITY, $this->task );
-		$this->wpdb                 = new WpdbLockSpy();
-		$this->rows                 = new OptionRows( $this->wpdb );
-		$batches                    = new BatchRegistry( $work );
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
-		$stores                     = new StoreFactory( $this->clock, $this->rows );
-		$lock_windows               = new LockWindows( $this->clock );
-		$terminal_effects           = new TerminalEffects( $guard, $stores, $this->logger );
-		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
-
-		$this->dispatcher = new Dispatcher( $this->registry, $batches, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects, );
+	/**
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
 
 	// region TESTS.
-	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/**
-	 * A throwing task that loses ownership supersedes before entering the retry ladder.
+	 * A throwing task that loses ownership supersedes before retry adjudication.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built foreign lock and pointer generations replace authority inside the real throwing callback before failure fencing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_when_throwing_task_loses_ownership(): void {
 		$this->task->throwable = new \RuntimeException( 'Task exploded.' );
-		$this->prepare_run_action();
-		$this->task->on_handle = function ( array $args ): void {
-			self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
-			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+		$this->task->on_handle = function (): void {
+			$this->install_foreign_generation();
 		};
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_post_callback_superseded_task();
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * Ownership loss in the retry-policy filter supersedes before applying the terminal cap.
+	 * Ownership loss in the retry-policy filter wins over its terminal cap.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The policy hook installs a production-built foreign generation before returning a terminal policy, proving the expired attempt cannot fail it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_retry_policy_cap_failure_after_ownership_loss(): void {
 		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
-		$this->prepare_run_action();
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			function ( RetryPolicy $policy ): RetryPolicy {
-				self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
-				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+			function (): RetryPolicy {
+				$this->install_foreign_generation();
 
 				return new RetryPolicy( max_attempts: 1 );
 			}
 		);
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-		$this->assert_post_callback_superseded_task();
+		self::assertSame( array(), $this->rig->randomizer()->calls );
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * Ownership loss in retrying listeners supersedes before the retry action is scheduled.
+	 * Ownership loss in retrying listeners fences the retry successor.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The public retrying hook installs a fixture-built foreign generation after delay selection but before the retry scheduling write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_retry_schedule_after_retrying_listener_ownership_loss(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
-		$this->set_filter_value(
-			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			function ( RetryPolicy $policy ): RetryPolicy {
-				for ( $index = 0; 3 > $index; ++$index ) {
-					$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $lock_spy ): void {} );
-				}
-				$this->wpdb->before_next(
-					'select',
-					function ( WpdbLockSpy $lock_spy ): void {
-						self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
-						$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
-					}
-				);
-
-				return $policy;
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Transient failure.' );
+		$this->rig->randomizer()->value = 7;
+		$this->observe_action(
+			'a8csp_background_tasks/retrying/' . self::IDENTITY,
+			function (): void {
+				$this->install_foreign_generation();
 			}
 		);
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/retrying/' . self::IDENTITY,
-				'a8csp_background_tasks/retrying',
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_post_callback_superseded_task();
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * An ordinary throwable below the cap persists retry state and reschedules the same run.
+	 * An ordinary throwable below the cap schedules the same real run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_reschedules_an_ordinary_failure_below_the_cap(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 17;
-		$this->randomizer->calls = array();
-		$scheduled_state         = null;
-		$this->backend->before_next(
-			'schedule_single',
-			function () use ( &$scheduled_state ): void {
-				$scheduled_state = $this->option( $this->run_option_name() );
-			}
-		);
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 17;
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		$state = $this->option( $this->run_option_name() );
-		self::assertIsArray( $state );
-		self::assertSame( 'running', $state['status'] ?? null );
-		self::assertFalse( $state['executing'] ?? null );
-		self::assertSame( 1, $state['failed_attempts'] ?? null );
-		self::assertSame( 2, $state['action_seq'] ?? null );
-		self::assertSame( self::NOW + 107, $state['heartbeat_at'] ?? null );
-		self::assertSame(
-			array(
-				'stage'    => 'run',
-				'mode'     => 'single',
-				'fire_at'  => self::NOW + 107,
-				'priority' => 10,
-			),
-			$state['pending'] ?? null
-		);
-		self::assertSame( $state, $scheduled_state );
-		self::assertSame( self::NOW + 107, $this->lock()['heartbeat_at'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'schedule_single',
-					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run',
-						'timestamp' => self::NOW + 107,
-						'args'      => array( self::IDENTITY, self::RUN_ID, 2 ),
-						'group'     => self::IDENTITY . '|' . self::RUN_ID,
-						'priority'  => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
 		self::assertSame(
 			array(
 				array(
@@ -320,249 +210,176 @@ final class FailureLifecycleTest extends TestCase {
 					'max' => 30,
 				),
 			),
-			$this->randomizer->calls
+			$this->rig->randomizer()->calls
 		);
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/retrying/' . self::IDENTITY,
-					'args'      => array( self::RUN_ID, self::ARGS, 1, 17 ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/retrying',
-					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS, 1, 17 ),
-				),
-			),
-			$this->fired_actions()
-		);
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, 1, 17 ), $this->latest_retry() );
+		$this->rig->assert_retry_scheduled();
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 
 	/**
-	 * Seeded full jitter reproduces the exact delays of a [0, base_delay] draw.
+	 * The retry call site requests full-jitter bounds and passes the recorded delay to the retry hook and schedule.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $recorded_delay Deterministic randomizer result.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'seeded_jitter_delays' )]
-	public function test_retry_call_site_preserves_seeded_full_jitter_distribution( int $seed, int $expected_delay ): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->prepare_run_action();
+	#[DataProvider( 'recorded_jitter_delay' )]
+	public function test_retry_call_site_requests_full_jitter_bounds_and_passes_recorded_delay_to_retry_hook_and_schedule( int $recorded_delay ): void {
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = $recorded_delay;
+		$this->enqueue_task();
 
-		$randomizer = new class( $seed ) implements RandomizerInterface {
-			private \Random\Randomizer $randomizer;
+		$this->rig->run_due();
 
-			/**
-			 * Seeds one deterministic random source.
-			 *
-			 * @param   int $seed MT19937 seed.
-			 */
-			public function __construct( int $seed ) {
-				$this->randomizer = new \Random\Randomizer( new \Random\Engine\Mt19937( $seed ) );
-			}
-
-			/**
-			 * Draws one integer from the seeded source.
-			 *
-			 * @param   int $min Inclusive lower boundary.
-			 * @param   int $max Inclusive upper boundary.
-			 *
-			 * @return  int
-			 */
-			#[\Override]
-			public function int( int $min, int $max ): int {
-				return $this->randomizer->getInt( $min, $max );
-			}
-		};
-
-		$this->failure_lifecycle = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
-
-		$this->handle_failed_task_attempt();
-
-		self::assertSame( self::NOW + 90 + $expected_delay, $this->backend->calls[0]['args']['timestamp'] ?? null );
-		self::assertSame( $expected_delay, $this->fired_actions()[0]['args'][3] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'min' => 0,
+					'max' => 30,
+				),
+			),
+			$this->rig->randomizer()->calls
+		);
+		self::assertSame( $recorded_delay, $this->latest_retry()[4] ?? null );
+		self::assertSame( self::NOW + $recorded_delay, $this->single_retry_call()['args']['timestamp'] ?? null );
 	}
 
 	/**
-	 * Supplies byte-pinned MT19937 draws from the former in-policy jitter call.
+	 * Supplies one deterministic delay for the retry-hook and scheduling pass-through assertions.
 	 *
-	 * @return  array<string, array{seed: int, expected_delay: int}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{recorded_delay: int}>
 	 */
-	public static function seeded_jitter_delays(): array {
+	public static function recorded_jitter_delay(): array {
 		return array(
-			'seed zero'      => array(
-				'seed'           => 0,
-				'expected_delay' => 18,
-			),
-			'seed one'       => array(
-				'seed'           => 1,
-				'expected_delay' => 10,
-			),
-			'seed forty-two' => array(
-				'seed'           => 42,
-				'expected_delay' => 19,
-			),
-			'seed phrase'    => array(
-				'seed'           => 8_675_309,
-				'expected_delay' => 11,
+			'recorded delay passes through' => array(
+				'recorded_delay' => 19,
 			),
 		);
 	}
 
 	/**
-	 * A two-attempt policy executes exactly twice and records the exhausted cap.
+	 * A two-attempt policy executes exactly twice and publishes the exhausted count.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_stops_exactly_at_the_max_attempts_boundary(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 5;
-		$this->randomizer->calls = array();
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 5;
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
-		$this->clock->timestamp = self::NOW + 95;
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
+		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS, self::ARGS ), $this->task->calls );
-		self::assertCount( 1, $this->backend->calls );
-		self::assertSame( 'schedule_single', $this->backend->calls[0]['verb'] );
-		self::assertSame(
-			array(
-				array(
-					'min' => 0,
-					'max' => 30,
-				),
-			),
-			$this->randomizer->calls
-		);
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 2, $failed_run['attempts'] ?? null );
-		self::assertSame( self::NOW + 95, $failed_run['failed_at'] ?? null );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		self::assertSame( 2, $failure->attempts );
 	}
 
 	/**
-	 * An identity-specific RetryPolicy replacement controls the cap for that task.
+	 * The identity-specific RetryPolicy replacement controls the terminal cap.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_honors_the_name_specific_retry_policy_filter(): void {
-		$contract_policy = new RetryPolicy( max_attempts: 3 );
-
-		$this->task->retry_policy = $contract_policy;
+		$contract                 = new RetryPolicy( max_attempts: 3 );
+		$observed                 = null;
+		$this->task->retry_policy = $contract;
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-
-		$filter_args = null;
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			static function ( RetryPolicy $policy ) use ( &$filter_args ): RetryPolicy {
-				$filter_args = array(
-					'arity' => \func_num_args(),
-					'args'  => \func_get_args(),
-				);
+			static function ( RetryPolicy $policy ) use ( &$observed ): RetryPolicy {
+				$observed = $policy;
 
 				return new RetryPolicy( max_attempts: 1 );
 			}
 		);
-		$this->prepare_run_action();
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame(
-			array(
-				'arity' => 1,
-				'args'  => array( $contract_policy ),
-			),
-			$filter_args
-		);
-		self::assertSame( array(), $this->backend->calls );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
+		self::assertSame( $contract, $observed );
+		self::assertSame( 1, $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' )->attempts );
+		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * Failure adjudication resets both credited heartbeats before resolving retry policy.
+	 * Failure adjudication resets callback credit before policy resolution.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Callback-time production lock and run bytes are the only evidence that long-runtime credit is removed before user-controlled policy code runs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_callback_credit_before_retry_policy_resolution(): void {
+		$lock                     = null;
+		$run                      = null;
 		$this->task->max_runtime  = 1_200;
 		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$observed_lock            = null;
-		$observed_run             = null;
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			function ( RetryPolicy $policy ) use ( &$observed_lock, &$observed_run ): RetryPolicy {
-				$observed_lock = $this->lock();
-				$observed_run  = $this->option( $this->run_option_name() );
+			function ( RetryPolicy $policy ) use ( &$lock, &$run ): RetryPolicy {
+				$lock = $this->lock();
+				$run  = $this->run_state();
 
 				return $policy;
 			}
 		);
-		$this->prepare_run_action();
+		$this->enqueue_task();
+		$this->rig->clock()->timestamp = self::NOW + 90;
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertIsArray( $observed_lock );
-		self::assertSame( self::NOW + 90, $observed_lock['heartbeat_at'] );
-		self::assertIsArray( $observed_run );
-		self::assertSame( self::NOW + 90, $observed_run['heartbeat_at'] ?? null );
-		self::assertTrue( $observed_run['executing'] ?? null );
+		self::assertSame( self::NOW + 90, $lock['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 90, $run['heartbeat_at'] ?? null );
+		self::assertTrue( $run['executing'] ?? false );
 	}
 
 	/**
-	 * A foreign policy-filter return falls back to the contract policy and names the correction.
+	 * A foreign policy value falls back to the contract and records its warning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_falls_back_and_warns_for_a_foreign_retry_policy(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
 		$this->set_filter_value( 'a8csp_background_tasks/retry_policy/' . self::IDENTITY, 'invalid-policy' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertCount( 1, $this->backend->calls );
-		self::assertSame( self::NOW + 97, $this->backend->calls[0]['args']['timestamp'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'min' => 0,
-					'max' => 30,
-				),
-			),
-			$this->randomizer->calls
-		);
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.',
-					'context' => array(
-						'name'          => self::IDENTITY,
-						'returned_type' => 'string',
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertSame( 7, $this->latest_retry()[4] ?? null );
+		self::assertSame( 'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 
 	/**
-	 * A throwing retry-policy filter terminalizes the run instead of leaving it stalled.
+	 * A throwing retry-policy filter terminalizes instead of stalling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -571,39 +388,27 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			static function ( RetryPolicy $policy ): RetryPolicy {
+			static function (): never {
 				throw new \DomainException( 'Retry policy filter exploded.' );
 			}
 		);
-		$this->prepare_run_action();
-		$this->randomizer->calls = array();
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
-		$stored_error = $failed_run['error'] ?? null;
-		self::assertIsArray( $stored_error );
-		self::assertSame( \DomainException::class, $stored_error['class'] ?? null );
-		self::assertSame( 'Task "runs-tests:email-digest" could not resolve the retry policy because DomainException was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $stored_error['message'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::IDENTITY,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( array(), $this->rig->randomizer()->calls );
 	}
 
 	/**
-	 * A throwing retry-policy filter that loses ownership supersedes instead of recording failure.
+	 * A throwing policy filter that loses ownership supersedes instead.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The policy filter installs fixture-built foreign ownership before throwing, so terminal retention must not target the expired generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -612,150 +417,100 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			function ( RetryPolicy $policy ): RetryPolicy {
-				self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
-				$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+			function (): never {
+				$this->install_foreign_generation();
 
 				throw new \DomainException( 'Retry policy filter exploded.' );
 			}
 		);
-		$this->prepare_run_action();
-		$this->randomizer->calls = array();
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-		$this->assert_post_callback_superseded_task();
+		$this->assert_foreign_superseded();
+		self::assertSame( array(), $this->rig->randomizer()->calls );
 	}
 
 	/**
-	 * A throwing retrying listener terminalizes after both retrying hooks without scheduling.
+	 * A throwing retrying listener terminalizes after both public retrying hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_throwing_retrying_listener(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
+		$this->set_action_throwable( 'a8csp_background_tasks/retrying/' . self::IDENTITY, new \RuntimeException( 'Retrying listener exploded.' ) );
+		$this->enqueue_task();
 
-		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY => new \RuntimeException( 'Retrying listener exploded.' ),
-		);
+		$this->rig->run_due();
 
-		$this->handle_failed_task_attempt();
-
-		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
-		$stored_error = $failed_run['error'] ?? null;
-		self::assertIsArray( $stored_error );
-		self::assertSame( \RuntimeException::class, $stored_error['class'] ?? null );
-		self::assertSame( 'Task "runs-tests:email-digest" could not prepare the retry action because RuntimeException was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.', $stored_error['message'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/retrying/' . self::IDENTITY,
-				'a8csp_background_tasks/retrying',
-				'a8csp_background_tasks/failed/' . self::IDENTITY,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
 	}
 
 	/**
-	 * Ownership loss after a retrying-listener error supersedes before terminal failure is recorded.
+	 * Ownership loss after a retrying-listener error supersedes before failure retention.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The public retrying hook installs a fixture-built foreign generation before its scripted throwable reaches failure preparation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_after_retry_preparation_error_loses_ownership(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
-		$this->set_filter_value(
-			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
-			function ( RetryPolicy $policy ): RetryPolicy {
-				for ( $index = 0; 3 > $index; ++$index ) {
-					$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $lock_spy ): void {} );
-				}
-				$this->wpdb->before_next(
-					'select',
-					function ( WpdbLockSpy $lock_spy ): void {
-						self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
-						$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
-					}
-				);
-
-				return $policy;
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
+		$this->observe_action(
+			'a8csp_background_tasks/retrying/' . self::IDENTITY,
+			function (): void {
+				$this->install_foreign_generation();
 			}
 		);
-		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY => new \RuntimeException( 'Retrying listener exploded.' ),
-		);
+		$this->set_action_throwable( 'a8csp_background_tasks/retrying/' . self::IDENTITY, new \RuntimeException( 'Retrying listener exploded.' ) );
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/retrying/' . self::IDENTITY,
-				'a8csp_background_tasks/retrying',
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_post_callback_superseded_task();
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * A retry scheduling failure terminalizes the run and identifies the failed stage.
+	 * A retry scheduling failure identifies its public failure stage.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The retrying hooks precede the rejected write; an empty delivery boundary proves terminalization leaves no delayed retry generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_retry_reschedule_failure(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->prepare_run_action();
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
+		$this->task->retry_policy                         = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->task->throwable                            = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value                   = 7;
+		$this->rig->backend()->results['schedule_single'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying the task.' ) );
+		$this->enqueue_task();
 
-		$this->backend->results['schedule_single'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying the task.' ) );
+		$this->rig->run_due();
 
-		$this->handle_failed_task_attempt();
-
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::IDENTITY );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
-		$stored_error = $failed_run['error'] ?? null;
-		self::assertIsArray( $stored_error );
-		self::assertSame( 'Task "runs-tests:email-digest" could not schedule the retry action: Restore the scheduler before retrying the task.', $stored_error['message'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/retrying/' . self::IDENTITY,
-				'a8csp_background_tasks/retrying',
-				'a8csp_background_tasks/failed/' . self::IDENTITY,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		$this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling' );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
-	 * A one-attempt ordinary policy enters the existing terminal failure path.
+	 * A one-attempt ordinary policy enters terminal failure immediately.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -766,7 +521,10 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A non-retryable throwable enters the same immediate terminal failure path.
+	 * A non-retryable throwable enters terminal failure immediately.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -775,7 +533,10 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A batch-only validation subtype remains a generic consumer failure on the task path.
+	 * A batch-only validation subtype remains a generic task failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -785,76 +546,35 @@ final class FailureLifecycleTest extends TestCase {
 		$this->assert_terminal_task_failure( new InvalidBatchChunkException() );
 	}
 
-	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
 	// endregion.
 
 	// region HELPERS.
 
 	/**
-	 * Returns the internal run option name for the deterministic enqueue.
+	 * Enqueues the deterministic task through its owner-bound facade.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
-	}
-
-	/**
-	 * Returns the newest scheduled lifecycle action sequence for one live run.
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  int
-	 */
-	private function action_seq( string $run_id = self::RUN_ID ): int {
-		$state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id );
-		self::assertIsArray( $state );
-		$action_seq = $state['action_seq'] ?? null;
-		self::assertIsInt( $action_seq );
-
-		return $action_seq;
-	}
-
-	/**
-	 * Enqueues the deterministic run and clears enqueue observations before action handling.
-	 *
-	 * @return  void
-	 */
-	private function prepare_run_action(): void {
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
+	private function enqueue_task(): string {
+		$retry_value                    = $this->rig->randomizer()->value;
+		$this->rig->randomizer()->value = 42;
+		$result                         = $this->consumer->tasks()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$this->rig->randomizer()->value = $retry_value;
+		$this->rig->randomizer()->calls = array();
 
-		$this->clock->timestamp       = self::NOW + 90;
-		$this->backend->calls         = array();
-		$this->logger->records        = array();
-		$this->wpdb->recorded_queries = array();
-
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		return $result->value;
 	}
 
 	/**
-	 * Applies failure adjudication to one fenced task attempt.
+	 * Executes and asserts one immediate terminal task failure.
 	 *
-	 * @return  void
-	 */
-	private function handle_failed_task_attempt(): void {
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, fn (): int => $this->clock->timestamp + $this->task->max_runtime() );
-		if ( null === $state ) {
-			return;
-		}
-
-		try {
-			$this->task->handle( $state->start_args );
-		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_task_failure( $this->task, self::IDENTITY, self::RUN_ID, $state, $run_store, $throwable );
-		}
-	}
-
-	/**
-	 * Asserts one throwable's failed-store entry, hooks, cleanup, and global transition order.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   \Throwable $throwable Task failure.
 	 *
@@ -862,328 +582,235 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	private function assert_terminal_task_failure( \Throwable $throwable ): void {
 		$this->task->throwable = $throwable;
-		$this->prepare_run_action();
-		$this->randomizer->calls = array();
-		$expected_message        = \sprintf( 'Background-work execution failed because %s was thrown.', \get_debug_type( $throwable ) );
+		$this->enqueue_task();
 
-		$this->handle_failed_task_attempt();
+		$this->rig->run_due();
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame(
-			array(
-				array(
-					'run_id'     => self::RUN_ID,
-					'failed_at'  => self::NOW + 90,
-					'start_args' => self::ARGS,
-					'attempts'   => 1,
-					'error'      => array(
-						'class'   => $throwable::class,
-						'message' => $expected_message,
-						'stage'   => 'execution',
-						'code'    => ApiErrorCode::ExecutionFailed->value,
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_failed_' . self::IDENTITY )
-		);
-
-		$actions = $this->fired_actions();
-		self::assertCount( 2, $actions );
-		self::assertSame( 'a8csp_background_tasks/failed/' . self::IDENTITY, $actions[0]['hook_name'] );
-		self::assertSame( self::RUN_ID, $actions[0]['args'][0] );
-		self::assertSame( self::ARGS, $actions[0]['args'][1] );
-		self::assertInstanceOf( RunFailure::class, $actions[0]['args'][2] );
-		self::assertSame( self::IDENTITY, $actions[0]['args'][2]->name );
-		self::assertSame( self::RUN_ID, $actions[0]['args'][2]->run_id );
-		self::assertSame( 1, $actions[0]['args'][2]->attempts );
-		self::assertSame( 'execution', $actions[0]['args'][2]->stage );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $actions[0]['args'][2]->code );
-		self::assertSame( $expected_message, $actions[0]['args'][2]->summary );
-		self::assertNull( $actions[0]['args'][2]->failed_chunk );
-		self::assertSame( 'a8csp_background_tasks/failed', $actions[1]['hook_name'] );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, $actions[0]['args'][2] ), $actions[1]['args'] );
-		self::assertSame(
-			array(
-				'lock:update',
-				'run:running',
-				'task:handle',
-				'lock:update',
-				'run:running',
-				...( $throwable instanceof NonRetryableTaskException ? array() : array( 'lock:update' ) ),
-				'run:failed',
-				'failed-store',
-				'run:failed',
-				'hook:failed/' . self::IDENTITY,
-				'hook:failed',
-				'run:failed',
-				'history',
-				'run:failed',
-				'lock:delete',
-				'run:delete',
-			),
-			$this->lifecycle_labels()
-		);
-		$this->assert_terminal_history( RunStatus::Failed );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		self::assertSame( 1, $failure->attempts );
+		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * Asserts a post-callback fence loss terminalizes only the incumbent as Superseded.
+	 * Installs one production-built foreign lock and latest-pointer generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	private function assert_post_callback_superseded_task(): void {
-		self::assertNull( $this->option( $this->run_option_name() ) );
+	private function install_foreign_generation(): void {
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => 'run-newer',
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-newer', self::NOW, self::NOW ) );
+	}
+
+	/**
+	 * Asserts the incumbent superseded while foreign ownership survived.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function assert_foreign_superseded(): void {
+		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::IDENTITY ) );
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/superseded/' . self::IDENTITY,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/superseded',
-					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
-				),
-			),
-			\array_slice( $this->fired_actions(), -2 )
-		);
-		$this->assert_terminal_history( RunStatus::Superseded );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 
 	/**
-	 * Asserts that both terminal-history buffers record the terminal outcome.
+	 * Asserts and returns the latest public failure payload.
 	 *
-	 * @param   RunStatus $status Terminal run status.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ApiErrorCode $code  Expected failure code.
+	 * @param   string       $stage Expected failure stage.
+	 *
+	 * @return  RunFailure
+	 */
+	private function assert_failure( ApiErrorCode $code, string $stage ): RunFailure {
+		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' );
+		self::assertNotEmpty( $events );
+		$failure = $events[ \count( $events ) - 1 ][3] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( $code, $failure->code );
+		self::assertSame( $stage, $failure->stage );
+
+		return $failure;
+	}
+
+	/**
+	 * Returns the latest generic retrying-hook payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<mixed>
+	 */
+	private function latest_retry(): array {
+		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' );
+		self::assertNotEmpty( $events );
+
+		return $events[ \count( $events ) - 1 ];
+	}
+
+	/**
+	 * Returns the only accepted task-retry scheduling call.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array{verb: string, args: array<string, mixed>}
+	 */
+	private function single_retry_call(): array {
+		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] && 'a8csp_background_tasks/run' === ( $call['args']['hook'] ?? null ) ) );
+		self::assertCount( 1, $calls );
+
+		return $calls[0];
+	}
+
+	/**
+	 * Stores one production-built raw fixture in the active database.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_history( RunStatus $status ): void {
-		$entry = array(
-			'run_id' => self::RUN_ID,
-			'status' => $status->value,
-		);
-
-		self::assertSame(
-			array(
-				'started'  => array( self::RUN_ID ),
-				'terminal' => array( $entry ),
-				'by_hash'  => array(
-					self::ARGS_HASH => array(
-						'started'  => array( self::RUN_ID ),
-						'terminal' => array( $entry ),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
-		);
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}
 
 	/**
-	 * Reduces the unified boundary ledger to lifecycle-significant labels.
+	 * Returns the canonical argument identity.
 	 *
-	 * @return  list<string>
-	 */
-	private function lifecycle_labels(): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
-		self::assertIsArray( $events );
-		$labels = array();
-
-		foreach ( $events as $event ) {
-			self::assertIsArray( $event );
-			$type = $event['type'] ?? null;
-			if ( 'lock' === $type ) {
-				$operation = $event['operation'] ?? null;
-				self::assertIsString( $operation );
-				if ( $this->run_option_name() === ( $event['key'] ?? null ) ) {
-					if ( 'delete' === $operation ) {
-						$labels[] = 'run:delete';
-					} elseif ( 'update' === $operation ) {
-						$value = \maybe_unserialize( $event['raw'] ?? null );
-						self::assertIsArray( $value );
-						self::assertIsString( $value['status'] ?? null );
-						$labels[] = 'run:' . $value['status'];
-					}
-
-					continue;
-				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_failed_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
-					$labels[] = 'failed-store';
-					continue;
-				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
-					$labels[] = 'history';
-					continue;
-				}
-				$labels[] = 'lock:' . $operation;
-				continue;
-			}
-
-			if ( 'task' === $type ) {
-				$labels[] = 'task:handle';
-				continue;
-			}
-
-			if ( 'action' === $type ) {
-				$hook_name = $event['hook_name'];
-				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
-				continue;
-			}
-
-			if ( 'option' !== $type ) {
-				continue;
-			}
-
-			$function = $event['function'] ?? null;
-			$args     = $event['args'] ?? null;
-			self::assertIsArray( $args );
-			$option_name = $args[0] ?? null;
-			self::assertIsString( $option_name );
-			if ( 'delete_option' === $function && $this->run_option_name() === $option_name ) {
-				$labels[] = 'run:delete';
-				continue;
-			}
-
-			if ( 'update_option' !== $function ) {
-				continue;
-			}
-
-			if ( $this->run_option_name() === $option_name ) {
-				$value = $args[1] ?? null;
-				self::assertIsArray( $value );
-				self::assertIsString( $value['status'] ?? null );
-				$labels[] = 'run:' . $value['status'];
-			} elseif ( 'a8csp_bgte_failed_' . self::IDENTITY === $option_name ) {
-				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::IDENTITY === $option_name ) {
-				$labels[] = 'history';
-			}
-		}
-
-		return $labels;
-	}
-
-	/**
-	 * Returns the argument-identity lock option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
+	private function args_hash(): string {
+		return $this->fixtures->args_hash( self::ARGS );
 	}
 
 	/**
-	 * Replaces the current lock with one foreign owner.
+	 * Returns the current decoded overlap lock.
 	 *
-	 * @param   string $run_id       Foreign run identifier.
-	 * @param   int    $heartbeat_at Foreign heartbeat timestamp.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  void
-	 */
-	private function replace_lock_owner( string $run_id, int $heartbeat_at ): void {
-		$raw = \maybe_serialize(
-			array(
-				'run_id'       => $run_id,
-				'claimed_at'   => $heartbeat_at,
-				'heartbeat_at' => $heartbeat_at,
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( $this->lock_option_name(), $raw );
-	}
-
-	/**
-	 * Returns the decoded lock row for the deterministic argument identity.
-	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @return  array<array-key, mixed>|null
 	 */
 	private function lock(): ?array {
-		$raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		if ( ! \is_string( $raw ) ) {
-			return null;
-		}
+		$value = $this->decoded_row( 'a8csp_bgte_lock_' . self::IDENTITY . '_' . $this->args_hash() );
 
-		$value = \maybe_unserialize( $raw );
-		if (
-			! \is_array( $value )
-			|| ! \is_string( $value['run_id'] ?? null )
-			|| ! \is_int( $value['claimed_at'] ?? null )
-			|| ! \is_int( $value['heartbeat_at'] ?? null )
-		) {
-			return null;
-		}
-
-		return array(
-			'run_id'       => $value['run_id'],
-			'claimed_at'   => $value['claimed_at'],
-			'heartbeat_at' => $value['heartbeat_at'],
-		);
+		return \is_array( $value ) ? $value : null;
 	}
 
 	/**
-	 * Returns one persisted option value.
+	 * Returns the current decoded deterministic run state.
 	 *
-	 * @param   string $name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private function run_state(): ?array {
+		$value = $this->decoded_row( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+
+		return \is_array( $value ) ? $value : null;
+	}
+
+	/**
+	 * Decodes one authoritative row or its initial option-seam value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
 	 */
-	private function option( string $name ): mixed {
-		$raw = $this->wpdb->rows[ $name ] ?? null;
+	private function decoded_row( string $option_name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 		if ( null !== $raw ) {
-			self::assertIsString( $raw );
-
-			return RawOptionDecoder::decode( $raw );
+			return \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 		}
 
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
 
-		return $options[ $name ] ?? null;
+		return $options[ $option_name ] ?? null;
 	}
 
 	/**
-	 * Returns fired lifecycle actions.
+	 * Scripts one legitimate WordPress filter seam.
 	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
-	 */
-	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
-		self::assertIsArray( $actions );
-		$typed_actions = array();
-		foreach ( $actions as $action ) {
-			self::assertIsArray( $action );
-			$hook_name = $action['hook_name'] ?? null;
-			$args      = $action['args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsArray( $args );
-			$typed_actions[] = array(
-				'hook_name' => $hook_name,
-				'args'      => \array_values( $args ),
-			);
-		}
-
-		return $typed_actions;
-	}
-
-	/**
-	 * Scripts one WordPress filter value through a typed global boundary.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @param   string $hook_name Hook name.
-	 * @param   mixed  $value     Scripted value.
+	 * @param   string $hook_name Filter hook name.
+	 * @param   mixed  $value     Filter return or callback.
 	 *
 	 * @return  void
 	 */
 	private function set_filter_value( string $hook_name, mixed $value ): void {
 		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
-		$filters[ $hook_name ] = $value;
-
+		$filters[ $hook_name ]                    = $value;
 		$GLOBALS['a8csp_bgte_test_filter_values'] = $filters;
+	}
+
+	/**
+	 * Scripts one legitimate WordPress action failure seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string     $hook_name Action hook name.
+	 * @param   \Throwable $throwable Failure raised by the hook seam.
+	 *
+	 * @return  void
+	 */
+	private function set_action_throwable( string $hook_name, \Throwable $throwable ): void {
+		$throwables = $GLOBALS['a8csp_bgte_test_action_throwables'] ?? null;
+		self::assertIsArray( $throwables );
+		$throwables[ $hook_name ]                     = $throwable;
+		$GLOBALS['a8csp_bgte_test_action_throwables'] = $throwables;
+	}
+
+	/**
+	 * Observes one legitimate WordPress action boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $hook_name Exact action hook.
+	 * @param   \Closure $observe   Observation callback.
+	 *
+	 * @return  void
+	 */
+	private function observe_action( string $hook_name, \Closure $observe ): void {
+		$observers = $GLOBALS['a8csp_bgte_test_action_observers'] ?? null;
+		self::assertIsArray( $observers );
+		$observers[]                                 = static function ( string $hook ) use ( $hook_name, $observe ): void {
+			if ( $hook_name === $hook ) {
+				$observe();
+			}
+		};
+		$GLOBALS['a8csp_bgte_test_action_observers'] = $observers;
 	}
 
 	// endregion.
