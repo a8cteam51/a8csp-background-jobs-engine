@@ -97,14 +97,13 @@ final class ResetCommandTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Every owner constant participates in the canonical reset prefix census.
+	 * Every owner constant participates in the canonical reset name census.
 	 *
 	 * @return  void
 	 */
-	public function test_option_prefixes_are_derived_from_their_owning_classes(): void {
+	public function test_option_names_are_derived_from_their_owning_classes(): void {
 		self::assertSame(
 			array(
-				ScheduleRegistry::OPTION_NAME,
 				RunStore::OPTION_PREFIX,
 				FailedRunStore::OPTION_PREFIX,
 				RunHistory::OPTION_PREFIX,
@@ -115,6 +114,7 @@ final class ResetCommandTest extends TestCase {
 			),
 			ResetCommand::option_prefixes()
 		);
+		self::assertSame( array( ScheduleRegistry::OPTION_NAME ), ResetCommand::exact_option_names() );
 	}
 
 	/**
@@ -245,15 +245,17 @@ final class ResetCommandTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Seeds one row under every canonical prefix plus one unrelated option.
+	 * Seeds one row under every canonical prefix and exact name plus one unrelated option.
 	 *
 	 * @return  WpdbLockSpy
 	 */
 	private function seed_option_rows(): WpdbLockSpy {
 		$wpdb = new WpdbLockSpy();
 		foreach ( ResetCommand::option_prefixes() as $prefix ) {
-			$option_name = ScheduleRegistry::OPTION_NAME === $prefix ? $prefix : $prefix . 'fixture';
-			$wpdb->put( $option_name, 'raw-' . $prefix );
+			$wpdb->put( $prefix . 'fixture', 'raw-' . $prefix );
+		}
+		foreach ( ResetCommand::exact_option_names() as $option_name ) {
+			$wpdb->put( $option_name, 'raw-' . $option_name );
 		}
 		$wpdb->put( self::UNRELATED_OPTION, 'keep' );
 

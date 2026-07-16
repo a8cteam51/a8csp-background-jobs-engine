@@ -94,20 +94,20 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
 	}
 
-	/** A heartbeat exactly sixty seconds old remains a held lease. */
+	/** A claim exactly sixty seconds old remains a held lease. */
 	public function test_fresh_lease_is_held_at_the_sixty_second_boundary(): void {
 		$this->put_lease( self::NOW - 60 );
 
 		self::assertNull( $this->lease->claim( self::KEY ) );
-		self::assertSame( self::NOW - 60, $this->stored_lease()['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW - 60, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
-	/** A heartbeat older than sixty seconds is reclaimed by raw-value CAS. */
+	/** A claim older than sixty seconds is reclaimed by raw-value CAS. */
 	public function test_stale_lease_is_reclaimed_after_sixty_seconds(): void {
 		$this->put_lease( self::NOW - 61 );
 
 		self::assertInstanceOf( ClaimedLease::class, $this->lease->claim( self::KEY ) );
-		self::assertSame( self::NOW, $this->stored_lease()['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
 	/** An unreadable incumbent is not replaced from non-authoritative absence. */
@@ -134,7 +134,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		$this->wpdb->put( self::option_name(), 'malformed' );
 
 		self::assertInstanceOf( ClaimedLease::class, $this->lease->claim( self::KEY ) );
-		self::assertSame( self::NOW, $this->stored_lease()['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
 	/** A stale reclaim that loses its CAS leaves the winner untouched. */
@@ -155,50 +155,47 @@ final class OccurrenceLeaseTest extends TestCase {
 	/**
 	 * Stores one valid lease row as a test precondition.
 	 *
-	 * @param   int $heartbeat_at  Lease heartbeat timestamp.
+	 * @param   int $claimed_at Lease claim timestamp.
 	 *
 	 * @return  void
 	 */
-	private function put_lease( int $heartbeat_at ): void {
-		$this->wpdb->put( self::option_name(), self::raw_lease( 'incumbent', $heartbeat_at ) );
+	private function put_lease( int $claimed_at ): void {
+		$this->wpdb->put( self::option_name(), self::raw_lease( 'incumbent', $claimed_at ) );
 	}
 
 	/**
 	 * Returns the decoded lease row.
 	 *
-	 * @return  array{claim_token: string, claimed_at: int, heartbeat_at: int}
+	 * @return  array{claim_token: string, claimed_at: int}
 	 */
 	private function stored_lease(): array {
 		$row = \maybe_unserialize( $this->wpdb->rows[ self::option_name() ] ?? '' );
 		self::assertIsArray( $row );
-		$claim_token  = $row['claim_token'] ?? null;
-		$claimed_at   = $row['claimed_at'] ?? null;
-		$heartbeat_at = $row['heartbeat_at'] ?? null;
+		$claim_token = $row['claim_token'] ?? null;
+		$claimed_at  = $row['claimed_at'] ?? null;
 		self::assertIsString( $claim_token );
 		self::assertIsInt( $claimed_at );
-		self::assertIsInt( $heartbeat_at );
+		self::assertCount( 2, $row );
 
 		return array(
-			'claim_token'  => $claim_token,
-			'claimed_at'   => $claimed_at,
-			'heartbeat_at' => $heartbeat_at,
+			'claim_token' => $claim_token,
+			'claimed_at'  => $claimed_at,
 		);
 	}
 
 	/**
 	 * Returns one exact raw lease row.
 	 *
-	 * @param   string $claim_token   Lease claim token.
-	 * @param   int    $heartbeat_at  Lease heartbeat timestamp.
+	 * @param   string $claim_token Lease claim token.
+	 * @param   int    $claimed_at  Lease claim timestamp.
 	 *
 	 * @return  string
 	 */
-	private static function raw_lease( string $claim_token, int $heartbeat_at ): string {
+	private static function raw_lease( string $claim_token, int $claimed_at ): string {
 		$raw = \maybe_serialize(
 			array(
-				'claim_token'  => $claim_token,
-				'claimed_at'   => $heartbeat_at,
-				'heartbeat_at' => $heartbeat_at,
+				'claim_token' => $claim_token,
+				'claimed_at'  => $claimed_at,
 			)
 		);
 		self::assertIsString( $raw );
