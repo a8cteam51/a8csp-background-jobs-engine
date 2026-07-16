@@ -122,7 +122,9 @@ final class TaskRegistryTest extends TestCase {
 			 *
 			 * @param   string $name Task name.
 			 */
-			public function __construct( private readonly string $name ) {}
+			public function __construct(
+				private readonly string $name,
+			) {}
 
 			/** {@inheritDoc} */
 			#[\Override]

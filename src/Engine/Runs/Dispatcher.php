@@ -75,7 +75,20 @@ final readonly class Dispatcher {
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 */
-	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private WorkRegistry $work, private BackendInterface $scheduler, private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private RandomizerInterface $randomizer, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects ) {}
+	public function __construct(
+		private TaskRegistry $tasks,
+		private BatchRegistry $batches,
+		private WorkRegistry $work,
+		private BackendInterface $scheduler,
+		private OverlapGuard $overlap_guard,
+		private StoreFactory $stores,
+		private ClockInterface $clock,
+		private RandomizerInterface $randomizer,
+		private LoggerInterface $logger,
+		private LockWindows $lock_windows,
+		private TerminalTransitions $terminal_transitions,
+		private TerminalEffects $terminal_effects,
+	) {}
 
 	// endregion
 

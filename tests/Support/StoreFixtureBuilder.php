@@ -36,7 +36,9 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @param   string $identity Complete owner-qualified work identity.
 	 */
-	private function __construct( private string $identity ) {}
+	private function __construct(
+		private string $identity,
+	) {}
 
 	// endregion.
 

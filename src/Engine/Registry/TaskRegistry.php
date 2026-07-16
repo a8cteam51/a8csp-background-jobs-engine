@@ -41,7 +41,7 @@ final class TaskRegistry {
 	 * @param   WorkRegistry $work Shared task-and-batch identity registry.
 	 */
 	public function __construct(
-		private readonly WorkRegistry $work
+		private readonly WorkRegistry $work,
 	) {}
 
 	// endregion

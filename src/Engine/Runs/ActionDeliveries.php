@@ -98,7 +98,19 @@ final readonly class ActionDeliveries {
 	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 * @param   FailureLifecycle    $failure_lifecycle    Retry adjudication coordinator.
 	 */
-	public function __construct( private TaskRegistry $tasks, private BatchRegistry $batches, private WorkRegistry $work, private BackendInterface $scheduler, private StoreFactory $stores, private LoggerInterface $logger, private ClockInterface $clock, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private FailureLifecycle $failure_lifecycle ) {}
+	public function __construct(
+		private TaskRegistry $tasks,
+		private BatchRegistry $batches,
+		private WorkRegistry $work,
+		private BackendInterface $scheduler,
+		private StoreFactory $stores,
+		private LoggerInterface $logger,
+		private ClockInterface $clock,
+		private LockWindows $lock_windows,
+		private TerminalTransitions $terminal_transitions,
+		private TerminalEffects $terminal_effects,
+		private FailureLifecycle $failure_lifecycle,
+	) {}
 
 	// endregion
 

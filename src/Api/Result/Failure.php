@@ -33,7 +33,7 @@ final readonly class Failure extends AbstractResult {
 	 * @throws  \LogicException When the supplied value does not implement the error contract.
 	 */
 	public function __construct(
-		public mixed $error
+		public mixed $error,
 	) {
 		if ( ! $this->error instanceof ErrorInterface ) {
 			throw new \LogicException( 'A failed result requires an error implementing ErrorInterface.' );

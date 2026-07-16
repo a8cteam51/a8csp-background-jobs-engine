@@ -30,7 +30,15 @@ final readonly class RunFailure implements ErrorInterface {
 	 * @param   string                       $summary      Engine-authored redacted failure summary.
 	 * @param   array<array-key, mixed>|null $failed_chunk Batch chunk arguments for the failing chunk, or null for a task or non-chunk failure.
 	 */
-	public function __construct( public string $identity, public string $run_id, public int $attempts, public RunFailureStage $stage, public ApiErrorCode $code, public string $summary, public ?array $failed_chunk ) {}
+	public function __construct(
+		public string $identity,
+		public string $run_id,
+		public int $attempts,
+		public RunFailureStage $stage,
+		public ApiErrorCode $code,
+		public string $summary,
+		public ?array $failed_chunk,
+	) {}
 
 	// endregion
 }

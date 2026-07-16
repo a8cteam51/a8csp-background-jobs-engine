@@ -41,7 +41,11 @@ final class ClaimedLease {
 	 * @param   string     $option_name  Complete lease option name computed by the claiming lease.
 	 * @param   string     $expected_raw Exact claimed row bytes.
 	 */
-	public function __construct( private readonly OptionRows $rows, private readonly string $option_name, private readonly string $expected_raw ) {}
+	public function __construct(
+		private readonly OptionRows $rows,
+		private readonly string $option_name,
+		private readonly string $expected_raw,
+	) {}
 
 	// endregion
 

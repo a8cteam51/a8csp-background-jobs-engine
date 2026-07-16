@@ -67,7 +67,7 @@ final readonly class DemoConsumer {
 	 * @throws  \InvalidArgumentException When the interval is not positive.
 	 */
 	public function __construct(
-		private int $site_health_interval = \HOUR_IN_SECONDS
+		private int $site_health_interval = \HOUR_IN_SECONDS,
 	) {
 		if ( 1 > $this->site_health_interval ) {
 			throw new \InvalidArgumentException( 'The demo site-health interval must be positive; pass at least one second.' );

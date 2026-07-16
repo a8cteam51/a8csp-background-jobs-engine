@@ -124,7 +124,9 @@ final class BatchRegistryTest extends TestCase {
 			 *
 			 * @param   string $name Batch name.
 			 */
-			public function __construct( private readonly string $name ) {}
+			public function __construct(
+				private readonly string $name,
+			) {}
 
 			/** {@inheritDoc} */
 			#[\Override]

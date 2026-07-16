@@ -100,7 +100,9 @@ final class RecordingBatch implements BatchInterface {
 	 *
 	 * @param   string $name Stable batch name.
 	 */
-	public function __construct( private readonly string $name ) {
+	public function __construct(
+		private readonly string $name,
+	) {
 		$this->retry_policy = new RetryPolicy();
 	}
 

@@ -48,7 +48,7 @@ final readonly class OptionRows {
 	 * @param   wpdb $wpdb Site-bound WordPress database connection.
 	 */
 	public function __construct(
-		private wpdb $wpdb
+		private wpdb $wpdb,
 	) {
 		$this->site_id = \get_current_blog_id();
 	}

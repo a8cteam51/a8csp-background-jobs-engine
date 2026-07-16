@@ -40,7 +40,9 @@ final class RecordingTask implements TaskInterface {
 	 *
 	 * @param   string $name Stable task name.
 	 */
-	public function __construct( private readonly string $name ) {
+	public function __construct(
+		private readonly string $name,
+	) {
 		$this->retry_policy = new RetryPolicy();
 	}
 

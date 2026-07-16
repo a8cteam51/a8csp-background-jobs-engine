@@ -41,7 +41,14 @@ final readonly class TerminalTransitions {
 	 * @param   LoggerInterface $logger           Log event sink.
 	 * @param   TerminalEffects $terminal_effects Claimed terminal-effect executor.
 	 */
-	public function __construct( private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private LockWindows $lock_windows, private LoggerInterface $logger, private TerminalEffects $terminal_effects ) {}
+	public function __construct(
+		private OverlapGuard $overlap_guard,
+		private StoreFactory $stores,
+		private ClockInterface $clock,
+		private LockWindows $lock_windows,
+		private LoggerInterface $logger,
+		private TerminalEffects $terminal_effects,
+	) {}
 
 	// endregion
 

@@ -52,7 +52,18 @@ final readonly class RunReconciliation {
 	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 */
-	public function __construct( private OverlapGuard $overlap_guard, private StoreFactory $stores, private ClockInterface $clock, private LoggerInterface $logger, private LockWindows $lock_windows, private TerminalTransitions $terminal_transitions, private TerminalEffects $terminal_effects, private BatchRegistry $batches, private WorkRegistry $work, private BackendInterface $scheduler ) {}
+	public function __construct(
+		private OverlapGuard $overlap_guard,
+		private StoreFactory $stores,
+		private ClockInterface $clock,
+		private LoggerInterface $logger,
+		private LockWindows $lock_windows,
+		private TerminalTransitions $terminal_transitions,
+		private TerminalEffects $terminal_effects,
+		private BatchRegistry $batches,
+		private WorkRegistry $work,
+		private BackendInterface $scheduler,
+	) {}
 
 	// endregion
 

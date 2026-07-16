@@ -83,7 +83,11 @@ final readonly class TerminalEffects {
 	 * @param   StoreFactory    $stores        Name-bound store factory.
 	 * @param   LoggerInterface $logger        Log event sink.
 	 */
-	public function __construct( private OverlapGuard $overlap_guard, private StoreFactory $stores, private LoggerInterface $logger ) {}
+	public function __construct(
+		private OverlapGuard $overlap_guard,
+		private StoreFactory $stores,
+		private LoggerInterface $logger,
+	) {}
 
 	// endregion
 
