@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -30,7 +29,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpd
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
@@ -51,6 +49,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 	/** Registry seam used only to age occurrence fixtures through production CAS. */
 	private ?ScheduleRegistry $deterministic_registry = null;
+
+	/** Registered work used by the deterministic graph. */
+	private ?WorkRegistry $deterministic_work = null;
 
 	/** Fixed interval shared by deterministic recurrence probes. */
 	private const INTERVAL = 300;
@@ -132,7 +133,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::RUN_ONCE_TASK_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::RUN_ONCE_TASK );
-		$engine->tasks->register( self::RUN_ONCE_TASK_IDENTITY, $task );
+		$this->register_deterministic_task( self::RUN_ONCE_TASK_IDENTITY, $task );
 		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_TASK, array( 'policy' => 'run-once' ), OverlapPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::RUN_ONCE_OWNER, array( $schedule ) );
 
@@ -171,7 +172,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_schedules' );
 		$engine = $this->build_engine( $clock, $logger );
 		$task   = new RecordingTask( self::SKIP_TASK );
-		$engine->tasks->register( self::SKIP_TASK_IDENTITY, $task );
+		$this->register_deterministic_task( self::SKIP_TASK_IDENTITY, $task );
 		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_TASK, array( 'policy' => 'skip' ), OverlapPolicy::Skip, CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::SKIP_OWNER, array( $schedule ) );
 
@@ -224,8 +225,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine      = $this->build_engine( $clock, $logger );
 		$exact_task  = new RecordingTask( self::EXACT_TASK );
 		$beyond_task = new RecordingTask( self::BEYOND_TASK );
-		$engine->tasks->register( self::EXACT_TASK_IDENTITY, $exact_task );
-		$engine->tasks->register( self::BEYOND_TASK_IDENTITY, $beyond_task );
+		$this->register_deterministic_task( self::EXACT_TASK_IDENTITY, $exact_task );
+		$this->register_deterministic_task( self::BEYOND_TASK_IDENTITY, $beyond_task );
 		$exact  = new Schedule( self::EXACT_SCHEDULE, Recurrence::every( self::INTERVAL ), self::EXACT_TASK, catch_up: CatchUpPolicy::Skip );
 		$beyond = new Schedule( self::BEYOND_SCHEDULE, Recurrence::every( self::INTERVAL ), self::BEYOND_TASK, catch_up: CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::BOUNDARY_OWNER, array( $exact, $beyond ) );
@@ -269,6 +270,20 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	// region HELPERS.
 
 	/**
+	 * Registers one task in the deterministic graph.
+	 *
+	 * @param   string        $identity Complete owner-qualified task identity.
+	 * @param   RecordingTask $task     Task to register.
+	 *
+	 * @return  void
+	 */
+	private function register_deterministic_task( string $identity, RecordingTask $task ): void {
+		$work = $this->deterministic_work;
+		self::assertNotNull( $work );
+		$work->register_task( $identity, $task );
+	}
+
+	/**
 	 * Builds a live engine graph with deterministic time and observation-only logger seams.
 	 *
 	 * @since   1.0.0
@@ -308,10 +323,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
 		$inspection           = new Inspection( $schedule_registry, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
-		$engine               = new EngineFacade( new Tasks( $work, $dispatcher ), $schedules, new Batches( $work, $dispatcher ), $dispatcher, $inspection );
+		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
 		$this->deterministic_inspection = $inspection;
 		$this->deterministic_registry   = $schedule_registry;
+		$this->deterministic_work       = $work;
 
 		\remove_all_actions( 'a8csp_background_tasks/start' );
 		\remove_all_actions( 'a8csp_background_tasks/continue' );

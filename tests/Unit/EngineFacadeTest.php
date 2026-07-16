@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\ApiAdapter;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
@@ -27,6 +28,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( EngineFacade::class )]
+#[CoversClass( ApiAdapter::class )]
 final class EngineFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 

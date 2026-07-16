@@ -26,16 +26,12 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Tasks      $tasks      Task API.
 	 * @param   Schedules  $schedules  Schedule API.
-	 * @param   Batches    $batches    Batch API.
 	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
 	 * @param   Inspection $inspection Read-only run inspection.
 	 */
 	public function __construct(
-		public Tasks $tasks,
 		public Schedules $schedules,
-		public Batches $batches,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
 	) {}

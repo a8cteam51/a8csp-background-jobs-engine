@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\SchedulesCommand;
-use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
+use A8C\SpecialProjects\BackgroundTasksEngine\ComponentInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class Component implements ComponentContract {
+final class Component implements ComponentInterface {
 	// region INHERITED METHODS
 
 	/**

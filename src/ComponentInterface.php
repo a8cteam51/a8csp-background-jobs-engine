@@ -15,7 +15,9 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface Component {
+interface ComponentInterface {
+	// region METHODS
+
 	/**
 	 * Returns true if the component should be initialized on the current site.
 	 *
@@ -35,4 +37,6 @@ interface Component {
 	 * @return  void
 	 */
 	public function initialize(): void;
+
+	// endregion
 }

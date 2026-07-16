@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -23,14 +24,12 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                            $identity Owner-qualified identity composer.
-	 * @param   \Closure(string, BatchInterface): void                                                              $register Batch registration delegate.
-	 * @param   \Closure(string, array<array-key, mixed>, ExistingRunPolicy, int): AbstractResult<string, ApiError> $start    Batch admission delegate.
+	 * @param   string                 $owner  Consumer plugin owner.
+	 * @param   BatchesEngineInterface $engine Batch engine operations.
 	 */
 	public function __construct(
-		private \Closure $identity,
-		private \Closure $register,
-		private \Closure $start,
+		private string $owner,
+		private BatchesEngineInterface $engine,
 	) {}
 
 	// endregion
@@ -51,7 +50,7 @@ final readonly class Batches {
 	 * @return  void
 	 */
 	public function register( BatchInterface $batch ): void {
-		( $this->register )( $this->identity( $batch->get_name() ), $batch );
+		$this->engine->register_batch( WorkIdentity::compose( $this->owner, $batch->get_name() ), $batch );
 	}
 
 	/**
@@ -76,29 +75,11 @@ final readonly class Batches {
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
-		$identity = $this->identity( $name );
+		$identity = WorkIdentity::compose( $this->owner, $name );
 		AdmissionValidator::assert_priority( $priority, \sprintf( 'Batch "%s"', $name ) );
 		AdmissionValidator::assert_portable_args( $start_args, \sprintf( 'Batch "%s"', $name ) );
 
-		return ( $this->start )( $identity, $start_args, $existing, $priority );
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Returns the complete identity for one owner-local name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Owner-local name.
-	 *
-	 * @return  string
-	 */
-	private function identity( string $name ): string {
-		return ( $this->identity )( $name );
+		return $this->engine->start( $identity, $start_args, $existing, $priority );
 	}
 
 	// endregion

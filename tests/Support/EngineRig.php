@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
@@ -29,7 +28,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use PHPUnit\Framework\Assert;
 
@@ -397,12 +395,12 @@ final class EngineRig {
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
-		$engine               = new EngineFacade( new Tasks( $work, $dispatcher ), $schedule_api, new Batches( $work, $dispatcher ), $dispatcher, $inspection );
+		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
-		self::publish_component( $engine, $inspection, $scheduler );
+		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );
 		$maintenance_schedule->register_hooks();
 		$this->activate_registered_hooks();
 	}
@@ -483,13 +481,19 @@ final class EngineRig {
 	 * @param   EngineFacade    $engine     Engine facade.
 	 * @param   Inspection      $inspection Inspection facade.
 	 * @param   SchedulerFacade $scheduler  Scheduler facade.
+	 * @param   WorkRegistry    $work       Registered task and batch instances.
+	 * @param   Schedules       $schedules  Schedule engine operations.
+	 * @param   Dispatcher      $dispatcher Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler ): void {
+	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, WorkRegistry $work, Schedules $schedules, Dispatcher $dispatcher ): void {
 		self::set_component_property( 'engine', $engine );
 		self::set_component_property( 'inspection', $inspection );
 		self::set_component_property( 'scheduler', $scheduler );
+		self::set_component_property( 'work', $work );
+		self::set_component_property( 'schedules', $schedules );
+		self::set_component_property( 'dispatcher', $dispatcher );
 		self::set_component_property( 'booting', false );
 	}
 
@@ -505,6 +509,9 @@ final class EngineRig {
 		self::set_component_property( 'engine', null );
 		self::set_component_property( 'inspection', null );
 		self::set_component_property( 'scheduler', null );
+		self::set_component_property( 'work', null );
+		self::set_component_property( 'schedules', null );
+		self::set_component_property( 'dispatcher', null );
 		self::set_component_property( 'booting', false );
 	}
 

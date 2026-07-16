@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Run;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,16 +23,12 @@ final readonly class Runs {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                   $identity              Owner-qualified identity composer.
-	 * @param   \Closure(string, string): AbstractResult<string, ApiError> $retry_failed          Failed-run retry delegate.
-	 * @param   \Closure(string, string): AbstractResult<string, ApiError> $cancel                Run cancellation delegate.
-	 * @param   \Closure(string): AbstractResult<string|null, ApiError>    $last_completed_run_id Last-completed-run inspection delegate.
+	 * @param   string              $owner  Consumer plugin owner.
+	 * @param   RunsEngineInterface $engine Run engine operations.
 	 */
 	public function __construct(
-		private \Closure $identity,
-		private \Closure $retry_failed,
-		private \Closure $cancel,
-		private \Closure $last_completed_run_id,
+		private string $owner,
+		private RunsEngineInterface $engine,
 	) {}
 
 	// endregion
@@ -59,7 +56,7 @@ final readonly class Runs {
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed_run_id( string $name ): AbstractResult {
-		return ( $this->last_completed_run_id )( $this->identity( $name ) );
+		return $this->engine->last_completed_run_id( WorkIdentity::compose( $this->owner, $name ) );
 	}
 
 	/**
@@ -81,7 +78,7 @@ final readonly class Runs {
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		return ( $this->retry_failed )( $this->identity( $name ), $run_id );
+		return $this->engine->retry_failed( WorkIdentity::compose( $this->owner, $name ), $run_id );
 	}
 
 	/**
@@ -99,25 +96,7 @@ final readonly class Runs {
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, string $run_id ): AbstractResult {
-		return ( $this->cancel )( $this->identity( $name ), $run_id );
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Returns the complete identity for one owner-local name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Owner-local name.
-	 *
-	 * @return  string
-	 */
-	private function identity( string $name ): string {
-		return ( $this->identity )( $name );
+		return $this->engine->cancel( WorkIdentity::compose( $this->owner, $name ), $run_id );
 	}
 
 	// endregion

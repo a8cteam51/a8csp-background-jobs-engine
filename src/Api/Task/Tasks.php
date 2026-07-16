@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -37,14 +38,12 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                           $identity Owner-qualified identity composer.
-	 * @param   \Closure(string, TaskInterface): void                                                              $register Task registration delegate.
-	 * @param   \Closure(string, array<array-key, mixed>, int, string|null, int): AbstractResult<string, ApiError> $enqueue  Task admission delegate.
+	 * @param   string               $owner  Consumer plugin owner.
+	 * @param   TasksEngineInterface $engine Task engine operations.
 	 */
 	public function __construct(
-		private \Closure $identity,
-		private \Closure $register,
-		private \Closure $enqueue,
+		private string $owner,
+		private TasksEngineInterface $engine,
 	) {}
 
 	// endregion
@@ -65,7 +64,7 @@ final readonly class Tasks {
 	 * @return  void
 	 */
 	public function register( TaskInterface $task ): void {
-		( $this->register )( $this->identity( $task->get_name() ), $task );
+		$this->engine->register_task( WorkIdentity::compose( $this->owner, $task->get_name() ), $task );
 	}
 
 	/**
@@ -93,7 +92,7 @@ final readonly class Tasks {
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	public function enqueue( string $name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
-		$identity = $this->identity( $name );
+		$identity = WorkIdentity::compose( $this->owner, $name );
 		AdmissionValidator::assert_priority( $priority, \sprintf( 'Task "%s"', $name ) );
 
 		if ( 0 > $delay ) {
@@ -108,25 +107,7 @@ final readonly class Tasks {
 
 		AdmissionValidator::assert_portable_args( $args, \sprintf( 'Task "%s"', $name ) );
 
-		return ( $this->enqueue )( $identity, $args, $delay, $dedup_key, $priority );
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Returns the complete identity for one owner-local name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Owner-local name.
-	 *
-	 * @return  string
-	 */
-	private function identity( string $name ): string {
-		return ( $this->identity )( $name );
+		return $this->engine->enqueue( $identity, $args, $delay, $dedup_key, $priority );
 	}
 
 	// endregion

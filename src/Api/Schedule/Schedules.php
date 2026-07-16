@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,14 +23,12 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Closure(string): string                                                                         $identity     Owner-qualified identity composer.
-	 * @param   \Closure(array<string, array{schedule: Schedule, task: string}>): AbstractResult<true, ApiError> $sync         Schedule synchronization delegate.
-	 * @param   \Closure(string): AbstractResult<string, ApiError>                                               $dispatch_now Immediate schedule delegate.
+	 * @param   string                   $owner  Consumer plugin owner.
+	 * @param   SchedulesEngineInterface $engine Schedule engine operations.
 	 */
 	public function __construct(
-		private \Closure $identity,
-		private \Closure $sync,
-		private \Closure $dispatch_now,
+		private string $owner,
+		private SchedulesEngineInterface $engine,
 	) {}
 
 	// endregion
@@ -56,18 +55,18 @@ final readonly class Schedules {
 				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
 			}
 
-			$identity = $this->identity( $schedule->name );
+			$identity = WorkIdentity::compose( $this->owner, $schedule->name );
 			if ( isset( $declarations[ $identity ] ) ) {
 				throw new \InvalidArgumentException( 'Schedule sync accepts each owner-local schedule name exactly once.' );
 			}
 
 			$declarations[ $identity ] = array(
 				'schedule' => $schedule,
-				'task'     => $this->identity( $schedule->task ),
+				'task'     => WorkIdentity::compose( $this->owner, $schedule->task ),
 			);
 		}
 
-		return ( $this->sync )( $declarations );
+		return $this->engine->sync( $declarations );
 	}
 
 	/**
@@ -84,25 +83,7 @@ final readonly class Schedules {
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $name ): AbstractResult {
-		return ( $this->dispatch_now )( $this->identity( $name ) );
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Returns the complete identity for one owner-local name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Owner-local name.
-	 *
-	 * @return  string
-	 */
-	private function identity( string $name ): string {
-		return ( $this->identity )( $name );
+		return $this->engine->dispatch_now( WorkIdentity::compose( $this->owner, $name ) );
 	}
 
 	// endregion

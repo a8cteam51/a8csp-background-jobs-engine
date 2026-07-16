@@ -16,6 +16,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeBatchesEngine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeRunsEngine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeSchedulesEngine;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeTasksEngine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -56,11 +60,10 @@ final class ConsumerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_accessors_return_the_bound_facades(): void {
-		$identity  = self::identity( 'consumer-plugin' );
-		$tasks     = new Tasks( $identity, static function (): void {}, static fn (): Success => new Success( 'task-run' ) );
-		$batches   = new Batches( $identity, static function (): void {}, static fn (): Success => new Success( 'batch-run' ) );
-		$schedules = new Schedules( $identity, static fn (): Success => new Success( true ), static fn (): Success => new Success( 'schedule-run' ) );
-		$runs      = new Runs( $identity, static fn (): Success => new Success( 'retry-run' ), static fn (): Success => new Success( 'cancelled-run' ), static fn (): Success => new Success( null ) );
+		$tasks     = new Tasks( 'consumer-plugin', new FakeTasksEngine( new Success( 'task-run' ) ) );
+		$batches   = new Batches( 'consumer-plugin', new FakeBatchesEngine( new Success( 'batch-run' ) ) );
+		$schedules = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
+		$runs      = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
 		$consumer  = new Consumer( 'consumer-plugin', $tasks, $batches, $schedules, $runs );
 
 		self::assertSame( $tasks, $consumer->tasks() );
@@ -75,19 +78,10 @@ final class ConsumerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_tasks_register_and_enqueue_owner_qualified_work(): void {
-		$calls   = array();
 		$failure = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
 		$task    = new RecordingTask( 'sync' );
-		$tasks   = new Tasks(
-			self::identity( 'consumer-plugin' ),
-			static function ( string $identity, object $registered ) use ( &$calls ): void {
-				$calls[] = array( 'register', $identity, $registered );
-			},
-			static function ( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ) use ( &$calls, $failure ): Failure {
-				$calls[] = array( 'enqueue', $identity, $args, $delay, $dedup_key, $priority );
-				return $failure;
-			}
-		);
+		$engine  = new FakeTasksEngine( $failure );
+		$tasks   = new Tasks( 'consumer-plugin', $engine );
 
 		$tasks->register( $task );
 		$result = $tasks->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, dedup_key: 'site-7-sync', priority: 5 );
@@ -95,10 +89,10 @@ final class ConsumerTest extends TestCase {
 		self::assertSame( $failure, $result );
 		self::assertSame(
 			array(
-				array( 'register', 'consumer-plugin:sync', $task ),
+				array( 'register_task', 'consumer-plugin:sync', $task ),
 				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, 'site-7-sync', 5 ),
 			),
-			$calls
+			$engine->calls
 		);
 	}
 
@@ -108,19 +102,10 @@ final class ConsumerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_batches_register_and_start_owner_qualified_work(): void {
-		$calls   = array();
 		$success = new Success( 'batch-run' );
 		$batch   = new RecordingBatch( 'sync' );
-		$batches = new Batches(
-			self::identity( 'consumer-plugin' ),
-			static function ( string $identity, object $registered ) use ( &$calls ): void {
-				$calls[] = array( 'register', $identity, $registered );
-			},
-			static function ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ) use ( &$calls, $success ): Success {
-				$calls[] = array( 'start', $identity, $args, $existing, $priority );
-				return $success;
-			}
-		);
+		$engine  = new FakeBatchesEngine( $success );
+		$batches = new Batches( 'consumer-plugin', $engine );
 
 		$batches->register( $batch );
 		$result = $batches->start( 'sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 5 );
@@ -128,10 +113,10 @@ final class ConsumerTest extends TestCase {
 		self::assertSame( $success, $result );
 		self::assertSame(
 			array(
-				array( 'register', 'consumer-plugin:sync', $batch ),
+				array( 'register_batch', 'consumer-plugin:sync', $batch ),
 				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), ExistingRunPolicy::Reject, 5 ),
 			),
-			$calls
+			$engine->calls
 		);
 	}
 
@@ -141,19 +126,9 @@ final class ConsumerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedules_sync_and_dispatch_now_with_the_bound_owner_only(): void {
-		$calls     = array();
 		$schedule  = new Schedule( 'nightly', Recurrence::every( 300 ), 'sync' );
-		$schedules = new Schedules(
-			self::identity( 'consumer-plugin' ),
-			static function ( array $declarations ) use ( &$calls ): Success {
-				$calls[] = array( 'sync', $declarations );
-				return new Success( true );
-			},
-			static function ( string $identity ) use ( &$calls ): Success {
-				$calls[] = array( 'dispatch_now', $identity );
-				return new Success( 'schedule-run' );
-			}
-		);
+		$engine    = new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) );
+		$schedules = new Schedules( 'consumer-plugin', $engine );
 
 		$sync_result = $schedules->sync( array( $schedule ) );
 		$run_result  = $schedules->dispatch_now( 'nightly' );
@@ -173,10 +148,13 @@ final class ConsumerTest extends TestCase {
 				),
 				array( 'dispatch_now', 'consumer-plugin:nightly' ),
 			),
-			$calls
+			$engine->calls
 		);
 
 		foreach ( ( new \ReflectionClass( Schedules::class ) )->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
+			if ( '__construct' === $method->getName() ) {
+				continue;
+			}
 			self::assertNotContains( 'owner', \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $method->getParameters() ) );
 		}
 		self::assertSame( array( 'schedules' ), self::parameter_names( Schedules::class, 'sync' ) );
@@ -189,22 +167,8 @@ final class ConsumerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_inspect_retry_and_cancel_owner_qualified_work(): void {
-		$calls = array();
-		$runs  = new Runs(
-			self::identity( 'consumer-plugin' ),
-			static function ( string $identity, string $run_id ) use ( &$calls ): Success {
-				$calls[] = array( 'retry_failed', $identity, $run_id );
-				return new Success( 'replacement-run' );
-			},
-			static function ( string $identity, string $run_id ) use ( &$calls ): Success {
-				$calls[] = array( 'cancel', $identity, $run_id );
-				return new Success( $run_id );
-			},
-			static function ( string $identity ) use ( &$calls ): Success {
-				$calls[] = array( 'last_completed_run_id', $identity );
-				return new Success( 'completed-run' );
-			}
-		);
+		$engine = new FakeRunsEngine( new Success( 'completed-run' ), new Success( 'replacement-run' ), new Success( 'live-run' ) );
+		$runs   = new Runs( 'consumer-plugin', $engine );
 
 		$completed = $runs->last_completed_run_id( 'sync' );
 		$retry     = $runs->retry_failed( 'sync', 'failed-run' );
@@ -228,10 +192,13 @@ final class ConsumerTest extends TestCase {
 				array( 'retry_failed', 'consumer-plugin:sync', 'failed-run' ),
 				array( 'cancel', 'consumer-plugin:sync', 'live-run' ),
 			),
-			$calls
+			$engine->calls
 		);
 
 		foreach ( ( new \ReflectionClass( Runs::class ) )->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
+			if ( '__construct' === $method->getName() ) {
+				continue;
+			}
 			self::assertNotContains( 'owner', \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $method->getParameters() ) );
 		}
 		self::assertSame( array( 'name' ), self::parameter_names( Runs::class, 'last_completed_run_id' ) );
@@ -244,11 +211,10 @@ final class ConsumerTest extends TestCase {
 	 */
 	public function test_result_methods_preserve_the_delegated_failure_instance(): void {
 		$failure   = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
-		$identity  = self::identity( 'consumer-plugin' );
-		$tasks     = new Tasks( $identity, static function (): void {}, static fn () => $failure );
-		$batches   = new Batches( $identity, static function (): void {}, static fn () => $failure );
-		$schedules = new Schedules( $identity, static fn () => $failure, static fn () => $failure );
-		$runs      = new Runs( $identity, static fn () => $failure, static fn () => $failure, static fn () => $failure );
+		$tasks     = new Tasks( 'consumer-plugin', new FakeTasksEngine( $failure ) );
+		$batches   = new Batches( 'consumer-plugin', new FakeBatchesEngine( $failure ) );
+		$schedules = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( $failure, $failure ) );
+		$runs      = new Runs( 'consumer-plugin', new FakeRunsEngine( $failure, $failure, $failure ) );
 
 		self::assertSame( $failure, $tasks->enqueue( 'sync' ) );
 		self::assertSame( $failure, $batches->start( 'sync' ) );
@@ -271,19 +237,11 @@ final class ConsumerTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_task_commands' )]
 	public function test_tasks_throw_for_deterministic_contract_violations( array $args, int $delay, int $priority, string $message ): void {
-		$delegated = false;
-		$tasks     = new Tasks(
-			self::identity( 'consumer-plugin' ),
-			static function (): void {},
-			static function () use ( &$delegated ): Success {
-				$delegated = true;
-
-				return new Success( 'unexpected-run' );
-			}
-		);
+		$engine = new FakeTasksEngine( new Success( 'unexpected-run' ) );
+		$tasks  = new Tasks( 'consumer-plugin', $engine );
 
 		self::assert_invalid_argument( static fn () => $tasks->enqueue( 'sync', $args, $delay, priority: $priority ), $message );
-		self::assertFalse( $delegated );
+		self::assertSame( array(), $engine->calls );
 	}
 
 	/**
@@ -338,20 +296,12 @@ final class ConsumerTest extends TestCase {
 	 */
 	#[DataProvider( 'task_deduplication_keys' )]
 	public function test_tasks_validate_deduplication_keys( string $dedup_key, bool $accepted ): void {
-		$calls = array();
-		$tasks = new Tasks(
-			self::identity( 'consumer-plugin' ),
-			static function (): void {},
-			static function ( string $identity, array $args, int $delay, ?string $key, int $priority ) use ( &$calls ): Success {
-				$calls[] = array( $identity, $args, $delay, $key, $priority );
-
-				return new Success( 'task-run' );
-			}
-		);
+		$engine = new FakeTasksEngine( new Success( 'task-run' ) );
+		$tasks  = new Tasks( 'consumer-plugin', $engine );
 
 		if ( ! $accepted ) {
 			self::assert_invalid_argument( static fn () => $tasks->enqueue( 'sync', dedup_key: $dedup_key ), 'Task "sync" deduplication key must contain 1 to 64 bytes when provided.' );
-			self::assertSame( array(), $calls );
+			self::assertSame( array(), $engine->calls );
 
 			return;
 		}
@@ -359,7 +309,7 @@ final class ConsumerTest extends TestCase {
 		$result = $tasks->enqueue( 'sync', dedup_key: $dedup_key );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array( array( 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ), $calls );
+		self::assertSame( array( array( 'enqueue', 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ), $engine->calls );
 	}
 
 	/**
@@ -399,19 +349,11 @@ final class ConsumerTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_batch_commands' )]
 	public function test_batches_throw_for_deterministic_contract_violations( array $args, int $priority, string $message ): void {
-		$delegated = false;
-		$batches   = new Batches(
-			self::identity( 'consumer-plugin' ),
-			static function (): void {},
-			static function () use ( &$delegated ): Success {
-				$delegated = true;
-
-				return new Success( 'unexpected-run' );
-			}
-		);
+		$engine  = new FakeBatchesEngine( new Success( 'unexpected-run' ) );
+		$batches = new Batches( 'consumer-plugin', $engine );
 
 		self::assert_invalid_argument( static fn () => $batches->start( 'sync', $args, priority: $priority ), $message );
-		self::assertFalse( $delegated );
+		self::assertSame( array(), $engine->calls );
 	}
 
 	/**
@@ -452,34 +394,20 @@ final class ConsumerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dispatch_defaults_match_the_deleted_wrapper_contracts(): void {
-		$calls    = array();
-		$identity = self::identity( 'consumer-plugin' );
-		$tasks    = new Tasks(
-			$identity,
-			static function (): void {},
-			static function ( string $name, array $args, int $delay, ?string $dedup_key, int $priority ) use ( &$calls ): Success {
-				$calls[] = array( 'task', $name, $args, $delay, $dedup_key, $priority );
-				return new Success( 'task-run' );
-			}
-		);
-		$batches  = new Batches(
-			$identity,
-			static function (): void {},
-			static function ( string $name, array $args, ExistingRunPolicy $existing, int $priority ) use ( &$calls ): Success {
-				$calls[] = array( 'batch', $name, $args, $existing, $priority );
-				return new Success( 'batch-run' );
-			}
-		);
+		$tasks_engine   = new FakeTasksEngine( new Success( 'task-run' ) );
+		$batches_engine = new FakeBatchesEngine( new Success( 'batch-run' ) );
+		$tasks          = new Tasks( 'consumer-plugin', $tasks_engine );
+		$batches        = new Batches( 'consumer-plugin', $batches_engine );
 
 		self::assertInstanceOf( Success::class, $tasks->enqueue( 'sync' ) );
 		self::assertInstanceOf( Success::class, $batches->start( 'sync' ) );
 
 		self::assertSame(
 			array(
-				array( 'task', 'consumer-plugin:sync', array(), 0, null, 10 ),
-				array( 'batch', 'consumer-plugin:sync', array(), ExistingRunPolicy::Replace, 10 ),
+				array( 'enqueue', 'consumer-plugin:sync', array(), 0, null, 10 ),
+				array( 'start', 'consumer-plugin:sync', array(), ExistingRunPolicy::Replace, 10 ),
 			),
-			$calls
+			\array_merge( $tasks_engine->calls, $batches_engine->calls )
 		);
 	}
 
@@ -502,17 +430,6 @@ final class ConsumerTest extends TestCase {
 		foreach ( $methods as [ $class, $method ] ) {
 			self::assertCount( 1, ( new \ReflectionMethod( $class, $method ) )->getAttributes( \NoDiscard::class ) );
 		}
-	}
-
-	/**
-	 * Returns one owner-capturing canonical identity function.
-	 *
-	 * @param   string $owner Consumer owner.
-	 *
-	 * @return  \Closure(string): string
-	 */
-	private static function identity( string $owner ): \Closure {
-		return static fn ( string $name ): string => WorkIdentity::compose( $owner, $name );
 	}
 
 	/**

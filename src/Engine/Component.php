@@ -3,15 +3,11 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches as ApiBatches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\AdmissionErrorMapper;
+use A8C\SpecialProjects\BackgroundTasksEngine\ComponentInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -48,7 +44,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class Component implements ComponentContract {
+final class Component implements ComponentInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -80,6 +76,36 @@ final class Component implements ComponentContract {
 	 * @var     Inspection|null
 	 */
 	private static ?Inspection $inspection = null;
+
+	/**
+	 * Registered task and batch instances published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     WorkRegistry|null
+	 */
+	private static ?WorkRegistry $work = null;
+
+	/**
+	 * Schedule operations published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     Schedules|null
+	 */
+	private static ?Schedules $schedules = null;
+
+	/**
+	 * Background-work admission coordinator published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     Dispatcher|null
+	 */
+	private static ?Dispatcher $dispatcher = null;
 
 	/**
 	 * Scheduling facade published by the initialized component.
@@ -163,7 +189,7 @@ final class Component implements ComponentContract {
 			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
-			$engine               = new EngineFacade( new Tasks( $work, $dispatcher ), $schedule_api, new Batches( $work, $dispatcher ), $dispatcher, $inspection );
+			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 			$scheduler->register_hooks();
 			$action_deliveries->register_hooks();
@@ -172,6 +198,9 @@ final class Component implements ComponentContract {
 			self::$engine     = $engine;
 			self::$inspection = $inspection;
 			self::$scheduler  = $scheduler;
+			self::$work       = $work;
+			self::$schedules  = $schedule_api;
+			self::$dispatcher = $dispatcher;
 		} finally {
 			self::$booting = false;
 		}
@@ -200,31 +229,22 @@ final class Component implements ComponentContract {
 	 */
 	public static function consumer( string $owner ): Consumer {
 		WorkIdentity::validate_owner( $owner );
-		$engine = self::$engine;
-		if ( null === $engine ) {
+		$work       = self::$work;
+		$schedules  = self::$schedules;
+		$dispatcher = self::$dispatcher;
+		$inspection = self::$inspection;
+		if ( null === self::$engine || null === $work || null === $schedules || null === $dispatcher || null === $inspection ) {
 			throw new \LogicException( 'The background tasks engine graph is unavailable after engine boot.' );
 		}
 
-		$identity = static fn ( string $name ): string => WorkIdentity::compose( $owner, $name );
+		$adapter = new ApiAdapter( $owner, $work, $schedules, $dispatcher, $inspection );
 
 		return new Consumer(
 			$owner,
-			new ApiTasks(
-				$identity,
-				static function ( string $identity, TaskInterface $task ) use ( $engine ): void {
-					$engine->tasks->register( $identity, $task );
-				},
-				static fn ( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ) => AdmissionErrorMapper::map( $engine->tasks->enqueue( $identity, $args, $delay, $dedup_key, $priority ) )
-			),
-			new ApiBatches(
-				$identity,
-				static function ( string $identity, BatchInterface $batch ) use ( $engine ): void {
-					$engine->batches->register( $identity, $batch );
-				},
-				static fn ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map( $engine->batches->start( $identity, $args, $existing, $priority ) )
-			),
-			new ApiSchedules( $identity, static fn ( array $declarations ) => AdmissionErrorMapper::map( $engine->schedules->sync( $owner, $declarations ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->schedules->dispatch_now( $identity ) ) ),
-			new ApiRuns( $identity, static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->retry_failed( $identity, $run_id ) ), static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->cancel( $identity, $run_id ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->last_completed_run_id( $identity ) ) )
+			new ApiTasks( $owner, $adapter ),
+			new ApiBatches( $owner, $adapter ),
+			new ApiSchedules( $owner, $adapter ),
+			new ApiRuns( $owner, $adapter )
 		);
 	}
 
