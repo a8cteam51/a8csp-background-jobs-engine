@@ -227,12 +227,14 @@ final class ScheduleRegistryTest extends TestCase {
 			}
 		);
 		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->backend()->calls         = array();
 
 		$result = $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertSame( $before, $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
 		self::assertSame( array(), $this->write_queries() );
 	}

@@ -199,29 +199,37 @@ final class ApiTest extends TestCase {
 	/**
 	 * Invalid and reserved owners fail at the front door.
 	 *
-	 * @param   string $owner Invalid consumer owner.
+	 * @param   string      $owner   Invalid consumer owner.
+	 * @param   string|null $message Exact rejection message when the boundary is part of the contract.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'invalid_owners' )]
-	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
+	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner, ?string $message = null ): void {
 		$GLOBALS['a8csp_bgte_test_did_actions']   = array( 'init' => 1 );
 		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 
 		$this->expectException( \InvalidArgumentException::class );
+		if ( null !== $message ) {
+			$this->expectExceptionMessageIs( $message );
+		}
 		\a8csp_bgte( $owner );
 	}
 
 	/**
 	 * Supplies the required owner rejection table.
 	 *
-	 * @return  array<string, array{owner: string}>
+	 * @return  array<string, array{owner: string, message?: string}>
 	 */
 	public static function invalid_owners(): array {
 		return array(
 			'empty'           => array( 'owner' => '' ),
 			'uppercase'       => array( 'owner' => 'Consumer' ),
 			'colon'           => array( 'owner' => 'consumer:plugin' ),
+			'33 bytes'        => array(
+				'owner'   => \str_repeat( 'o', 33 ),
+				'message' => 'Background-work owner is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.',
+			),
 			'reserved owner'  => array( 'owner' => 'a8csp-bgte' ),
 			'reserved prefix' => array( 'owner' => 'a8csp-bgte-addon' ),
 		);

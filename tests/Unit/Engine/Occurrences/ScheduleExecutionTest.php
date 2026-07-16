@@ -2,104 +2,102 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ClaimedLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins schedule delivery, misfire, overlap, and immediate-run behavior.
+ * Detects unsafe native object construction while poisoned storage is inspected.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
-#[CoversClass( Schedules::class )]
+final class ScheduleExecutionWakeupProbe {
+	// region FIELDS AND CONSTANTS.
+
+	public static int $wakeups = 0;
+
+	// endregion.
+
+	// region MAGIC METHODS.
+
+	/**
+	 * Records an unsafe native object construction.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	public function __wakeup(): void {
+		++self::$wakeups;
+	}
+
+	// endregion.
+}
+
+/**
+ * Exercises schedule occurrence policies through the owner-bound production graph.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
 #[CoversClass( OccurrenceDelivery::class )]
-#[UsesClass( Recurrence::class )]
-#[UsesClass( Schedule::class )]
 #[UsesClass( ScheduleRegistry::class )]
-#[UsesClass( OccurrenceLease::class )]
-#[UsesClass( ClaimedLease::class )]
-#[UsesClass( Dispatcher::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( OptionRows::class )]
-#[UsesClass( StoreFactory::class )]
-#[UsesClass( TerminalEffects::class )]
 final class ScheduleExecutionTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS             = array( 'site_id' => 7 );
-	private const ARGS_HASH        = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
+	private const ARGS             = array(
+		'site_id' => 7,
+		'mode'    => 'full',
+	);
 	private const INTERVAL         = 300;
 	private const NAME             = 'nightly';
 	private const NOW              = 1_700_000_000;
 	private const OWNER            = 'owner-a';
-	private const REGISTRATION_KEY = 'owner-a:nightly';
-	private const RUN_ID           = '00000000001700000300-0000000000000000042';
+	private const REGISTRATION_KEY = self::OWNER . ':' . self::NAME;
 	private const TASK             = 'refresh-index';
-	private const TASK_IDENTITY    = 'owner-a:refresh-index';
+	private const TASK_IDENTITY    = self::OWNER . ':' . self::TASK;
 
-	private Schedules $api;
-	private RecordingBackend $backend;
-	private FixedClock $clock;
-	private OccurrenceDelivery $delivery;
-	private RecordingLogger $logger;
-	private ScheduleRegistry $registry;
-	private WpdbLockSpy $wpdb;
+	private Consumer $consumer;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
+	private RecordingTask $task;
 
 	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads the guarded WordPress seams required by the execution graph.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Constructs one registered target task and schedule API.
+	 * Boots one declared task against deterministic production boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -107,646 +105,266 @@ final class ScheduleExecutionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']               = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']       = array();
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']         = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']         = array();
-		$GLOBALS['a8csp_bgte_test_action_callbacks']      = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']     = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                 = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations']  = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']               = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                 = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->consumer = $this->rig->consumer( self::OWNER );
+		$this->task     = new RecordingTask( self::TASK );
+		$this->consumer->tasks()->register( $this->task );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::TASK_IDENTITY );
+		$this->reset_observations();
+	}
 
-		$this->backend  = new RecordingBackend();
-		$this->clock    = new FixedClock( self::NOW );
-		$this->logger   = new RecordingLogger();
-		$this->wpdb     = new WpdbLockSpy();
-		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
-		$this->delivery = $this->new_delivery( $this->registry );
-		$this->api      = new Schedules( $this->registry, $this->backend, $this->clock, $this->delivery );
+	/**
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
 
-	// region TESTS.
+	// region BEHAVIOR.
 
 	/**
-	 * An on-time occurrence dispatches, advances its next-due token, and releases its lease once.
+	 * A Skip schedule delivered inside grace dispatches normally without a misfire hook.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_on_time_occurrence_enqueues_and_advances_next_due(): void {
-		$this->sync_schedule( $this->schedule() );
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
+	public function test_within_grace_skip_schedule_dispatches_normally(): void {
+		$this->sync_schedule( self::schedule( catch_up: CatchUpPolicy::Skip ) );
+		$this->rig->clock()->timestamp = self::NOW + 2 * self::INTERVAL - 1;
 
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->rig->run_due();
 
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		$scheduled_args = $this->backend->calls[0]['args']['args'] ?? null;
-		self::assertIsArray( $scheduled_args );
-		self::assertSame( self::RUN_ID, $scheduled_args[1] ?? null );
-		self::assertSame(
-			array(
-				'fingerprint' => $this->schedule()->fingerprint(),
-				'next_due'    => self::NOW + 2 * self::INTERVAL,
-				'last_fired'  => self::NOW + self::INTERVAL,
-				'misfires'    => 0,
-				'skips'       => 0,
-			),
-			$this->registration()
-		);
-		$lease_key = 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY );
-		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'DELETE ' ) && \str_contains( $query, $lease_key ) ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfired' ) );
+		$registration = $this->registration();
+		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
+		self::assertSame( 0, $registration['misfires'] ?? null );
 	}
 
 	/**
-	 * An unreadable registry releases the occurrence lease without dispatching or creating cleanup state.
+	 * RunOnce makes up one beyond-grace occurrence and realigns without firing misfire hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_beyond_grace_run_once_dispatches_one_make_up_run(): void {
+		$this->sync_schedule( self::schedule( catch_up: CatchUpPolicy::RunOnce ) );
+		$fired_at                      = self::NOW + self::INTERVAL + 901;
+		$this->rig->clock()->timestamp = $fired_at;
+
+		$this->rig->run_due();
+
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfired' ) );
+		$registration = $this->registration();
+		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
+		self::assertSame( $fired_at, $registration['last_fired'] ?? null );
+		self::assertSame( 0, $registration['misfires'] ?? null );
+	}
+
+	/**
+	 * Skip drops one beyond-grace occurrence and publishes both documented misfire hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_beyond_grace_skip_publishes_misfire_outcomes(): void {
+		$this->sync_schedule( self::schedule( catch_up: CatchUpPolicy::Skip ) );
+		$fired_at                      = self::NOW + self::INTERVAL + 901;
+		$this->rig->clock()->timestamp = $fired_at;
+
+		$this->rig->run_due();
+
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
+		self::assertSame(
+			array( array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
+			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY )
+		);
+		self::assertSame(
+			array( array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
+			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfired' )
+		);
+		$registration = $this->registration();
+		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
+		self::assertNull( $registration['last_fired'] ?? null );
+		self::assertSame( 1, $registration['misfires'] ?? null );
+	}
+
+	/**
+	 * An unreadable registry aborts delivery without retaining scheduler, lease, or cleanup state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_occurrence_aborts_when_the_registry_read_fails(): void {
-		$this->wpdb->before_next( 'select', static function (): void {} );
-		$this->wpdb->before_next(
+		$this->sync_schedule( self::schedule() );
+		$before = $this->rig->wpdb()->rows;
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
 				$wpdb->last_error = 'scripted occurrence registry read failure';
 			}
 		);
 
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertArrayNotHasKey( 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ), $this->wpdb->rows );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertSame( array(), $this->task->calls );
+		self::assertSame( 'scripted occurrence registry read failure', $this->rig->wpdb()->last_error );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
+		self::assertArrayNotHasKey( CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
 	}
 
+	// endregion.
+
+	// region KEEP GENERATION AND SECURITY MICRO-SUITE.
+
 	/**
-	 * Accepted state is persisted and unlocked before an unbounded started listener can redeliver it.
+	 * A concurrent public sync wins over stale accepted occurrence state.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The replacement lands at the occurrence registry CAS boundary, proving a delivery cannot overwrite a newer definition generation after its backend action is accepted.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_slow_started_listener_cannot_redispatch_the_accepted_occurrence(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-
-		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => function (): void {
-				$this->clock->timestamp += 61;
-				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-			},
-		);
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['last_fired'] ?? null );
-		self::assertSame( 'Stale schedule occurrence redelivery dropped after its next-due token advanced.', $this->logger->records[0]['message'] ?? null );
-	}
-
-	/**
-	 * Accepted state is persisted before the started-history size filter can delay dispatch completion.
-	 *
-	 * @return  void
-	 */
-	public function test_slow_history_filter_cannot_redispatch_the_accepted_occurrence(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp_background_tasks/history_size' => function ( int $size ): int {
-				$this->clock->timestamp += 61;
-				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-				return $size;
-			},
-		);
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['last_fired'] ?? null );
-	}
-
-	/**
-	 * A started-listener failure does not reopen an occurrence whose backend action was accepted.
-	 *
-	 * @return  void
-	 */
-	public function test_started_listener_failure_keeps_the_accepted_occurrence_advanced(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-
-		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => new \RuntimeException( 'listener failed' ),
-		);
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['last_fired'] ?? null );
-		self::assertSame( 'Schedule occurrence could not enqueue its target task: {error}', $this->logger->records[0]['message'] ?? null );
-	}
-
-	/**
-	 * A delivery inside the grace window remains a normal occurrence.
-	 *
-	 * @return  void
-	 */
-	public function test_within_grace_occurrence_enqueues_normally(): void {
-		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
-		$this->clock->timestamp = self::NOW + 2 * self::INTERVAL - 1;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( 0, $this->registration()['misfires'] ?? null );
-	}
-
-	/**
-	 * A Skip occurrence exactly at next-due plus grace remains a normal run.
-	 *
-	 * @return  void
-	 */
-	public function test_skip_at_exact_grace_enqueues_without_recording_a_misfire(): void {
-		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
-		$this->clock->timestamp = self::NOW + 2 * self::INTERVAL;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( 0, $this->registration()['misfires'] ?? null );
-		self::assertSame( array(), $this->misfired_actions() );
-	}
-
-	/**
-	 * The per-registration misfire-grace filter receives the default, owner, and complete schedule identity.
-	 *
-	 * @return  void
-	 */
-	public function test_misfire_grace_filter_receives_its_complete_payload(): void {
-		$this->sync_schedule( $this->schedule() );
-		$filter_args                              = null;
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp_background_tasks/misfire_grace/' . self::REGISTRATION_KEY =>
-			static function ( int $grace, string $owner, string $schedule ) use ( &$filter_args ): int {
-				$filter_args = array(
-					'arity' => \func_num_args(),
-					'args'  => array( $grace, $owner, $schedule ),
-				);
-
-				return $grace;
-			},
-		);
-		$this->clock->timestamp                   = self::NOW + self::INTERVAL;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame(
-			array(
-				'arity' => 3,
-				'args'  => array( self::INTERVAL, self::OWNER, self::REGISTRATION_KEY ),
-			),
-			$filter_args
-		);
-	}
-
-	/**
-	 * RunOnce performs one make-up run and advances by whole intervals into the future.
-	 *
-	 * @return  void
-	 */
-	public function test_beyond_grace_run_once_enqueues_once_and_realigns_without_stacking(): void {
-		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::RunOnce ) );
-		$this->clock->timestamp = self::NOW + self::INTERVAL + 901;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( self::NOW + self::INTERVAL + 901, $this->registration()['last_fired'] ?? null );
-		self::assertSame( array(), $this->misfired_actions() );
-	}
-
-	/**
-	 * Skip drops one late occurrence, fires both hooks, increments the counter, and realigns.
-	 *
-	 * @return  void
-	 */
-	public function test_beyond_grace_skip_records_the_misfire_without_enqueueing(): void {
-		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
-		$fired_at               = self::NOW + self::INTERVAL + 901;
-		$this->clock->timestamp = $fired_at;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY,
-					'args'      => array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/misfired',
-					'args'      => array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ),
-				),
-			),
-			$this->fired_actions()
-		);
-		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertNull( $this->registration()['last_fired'] ?? null );
-		self::assertSame( 1, $this->registration()['misfires'] ?? null );
-		self::assertSame( 0, $this->registration()['skips'] ?? null );
-	}
-
-	/**
-	 * A throwing misfire listener cannot prevent recurrence realignment and counter persistence.
-	 *
-	 * @return  void
-	 */
-	public function test_misfire_listener_failure_is_logged_after_state_persists(): void {
-		$throwable = new \RuntimeException( 'listener failed' );
-
-		$this->sync_schedule( $this->schedule( catch_up: CatchUpPolicy::Skip ) );
-		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY => $throwable,
-		);
-		$this->clock->timestamp                       = self::NOW + self::INTERVAL + 901;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( self::NOW + 5 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( 1, $this->registration()['misfires'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY,
-				'a8csp_background_tasks/misfired',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		self::assertSame(
-			array(
-				'level'   => 'error',
-				'message' => 'Misfired schedule listener failed after the occurrence state was persisted; fix the hook listener.',
-				'context' => array(
-					'owner'     => self::OWNER,
-					'name'      => self::NAME,
-					'exception' => $throwable,
-				),
-			),
-			$this->logger->records[0] ?? null
-		);
-	}
-
-	/**
-	 * A concurrent redelivery observes the held occurrence lease and cannot enqueue a second run.
-	 *
-	 * @return  void
-	 */
-	public function test_concurrent_delivery_quietly_skips_while_occurrence_lease_is_held(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-		$this->wpdb->before_next(
-			'select',
-			function (): void {
-				$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+	public function test_occurrence_state_cannot_overwrite_a_concurrently_synchronized_generation(): void {
+		$this->sync_schedule( self::schedule( overlap: OverlapPolicy::Allow ) );
+		$replacement     = self::schedule( interval: 600, overlap: OverlapPolicy::Allow );
+		$replacement_raw = null;
+		$this->rig->wpdb()->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
+				self::assertInstanceOf( Success::class, $this->consumer->schedules()->sync( array( $replacement ) ) );
+				$replacement_raw = $wpdb->rows[ ScheduleRegistry::OPTION_NAME ] ?? null;
+				self::assertIsString( $replacement_raw );
 			}
 		);
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->rig->run_due();
 
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', $this->logger->records[0]['message'] ?? null );
+		self::assertIsString( $replacement_raw );
+		self::assertSame( $replacement_raw, $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( 600, $this->registration()['recurrence'] ?? null );
+		self::assertContains( 'enqueue_async', \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertSame( 'Schedule registration superseded concurrently; delivery state discarded.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 
 	/**
-	 * A persisted owner absent from this request remains registered and is skipped quietly.
+	 * A stale request declaration cannot dispatch a newer persisted registration generation.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Production-built replacement bytes retain a newer fingerprint while the request keeps its original declaration, proving delivery fences the registry generation before task admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_inactive_owner_skips_without_unscheduling(): void {
-		$this->sync_schedule( $this->schedule() );
-		$this->delivery        = $this->new_delivery( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
-		$this->backend->calls  = array();
-		$this->logger->records = array();
+	public function test_stale_declaration_does_not_dispatch_a_replaced_registry_generation(): void {
+		$original    = self::schedule();
+		$replacement = self::schedule( interval: 600 );
+		$this->sync_schedule( $original );
+		$fixture = $this->fixtures->schedule_registry(
+			array(
+				self::owner_fixture( $replacement, self::NOW + 600 ),
+			)
+		);
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+		$this->rig->clock()->timestamp = self::NOW + 600;
 
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
+		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::OPTION_NAME ] ?? null );
+		self::assertSame( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 
 	/**
-	 * The advanced next-due token drops a stale at-least-once redelivery.
+	 * A production-serialized incumbent lock generation causes a benign Skip outcome.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built lock and latest-pointer rows prove the occurrence observes one coherent incumbent generation instead of a hand-authored approximation of private storage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_advanced_next_due_drops_a_stale_redelivery(): void {
-		$this->sync_schedule( $this->schedule() );
+	public function test_skip_policy_respects_a_fixture_built_lock_generation(): void {
+		$this->sync_schedule( self::schedule( overlap: OverlapPolicy::Skip ) );
+		$args_hash = $this->fixtures->args_hash( self::ARGS );
+		$this->put_fixture( $this->fixtures->lock( $args_hash, 'run-incumbent', self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => 'run-incumbent',
+						'args_hash' => $args_hash,
+					),
+				)
+			)
+		);
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['next_due'] ?? null );
-	}
-
-	/**
-	 * A request-local declaration cannot dispatch after another request replaces its fingerprint.
-	 *
-	 * @return  void
-	 */
-	public function test_stale_request_declaration_does_not_dispatch_a_replaced_registration(): void {
-		$this->sync_schedule( $this->schedule() );
-		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
-		$current     = new Schedule( self::NAME, Recurrence::every( 600 ), self::TASK, self::ARGS, OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 23 );
-		$result      = $current_api->sync( self::OWNER, self::declarations( self::OWNER, $current ) );
-		self::assertInstanceOf( Success::class, $result );
-		$this->backend->calls   = array();
-		$this->logger->records  = array();
-		$this->clock->timestamp = self::NOW + 600;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( $current->fingerprint(), $this->registration()['fingerprint'] ?? null );
-	}
-
-	/**
-	 * A held Skip occurrence advances recurrence and records a benign overlap skip.
-	 *
-	 * @return  void
-	 */
-	public function test_held_skip_occurrence_advances_and_increments_skips(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Skip ) );
-		$this->seed_held_lock();
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
 		self::assertSame( 1, $this->registration()['skips'] ?? null );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertNull( $this->registration()['last_fired'] ?? null );
-		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Schedule occurrence skipped because the target task lock is held.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 
 	/**
-	 * A failed post-enqueue registry write is logged so the next delivery can retry the token advance.
+	 * A poisoned lock row is recovered without constructing its serialized class.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The deliberately corrupt row bypasses production serialization and places an object at the task-lock boundary, proving occurrence admission neither runs wakeup code nor treats poison as an incumbent generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_successful_enqueue_logs_a_failed_registry_write(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->wpdb->script_result( 'update', false );
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
+	public function test_poisoned_lock_row_is_tolerated_without_constructing_classes(): void {
+		$this->sync_schedule( self::schedule( overlap: OverlapPolicy::Skip ) );
+		$args_hash = $this->fixtures->args_hash( self::ARGS );
+		$raw       = \maybe_serialize( new ScheduleExecutionWakeupProbe() );
+		self::assertIsString( $raw );
+		$lock_fixture = $this->fixtures->lock( $args_hash, 'poisoned-row-key', self::NOW, self::NOW );
+		$this->rig->wpdb()->put( $lock_fixture[0], $raw );
+		ScheduleExecutionWakeupProbe::$wakeups = 0;
+		$this->rig->clock()->timestamp         = self::NOW + self::INTERVAL;
 
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+		$this->rig->run_due();
 
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Schedule occurrence state could not be persisted: {error}', $this->logger->records[0]['message'] ?? null );
-		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $this->logger->records[0]['context']['error'] ?? null );
-	}
-
-	/**
-	 * A concurrently pruned registration discards delivery state without a repair-write error.
-	 *
-	 * @return  void
-	 */
-	public function test_concurrently_pruned_registration_logs_delivery_state_discard(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->wpdb->before_next(
-			'update',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
-				self::assertIsString( $raw );
-				$registry = \maybe_unserialize( $raw );
-				self::assertIsArray( $registry );
-
-				$owner = $registry[ self::OWNER ] ?? null;
-				self::assertIsArray( $owner );
-				unset( $owner[ self::REGISTRATION_KEY ] );
-
-				$registry[ self::OWNER ] = $owner;
-				$replacement_raw         = \maybe_serialize( $registry );
-				self::assertIsString( $replacement_raw );
-				$wpdb->put( 'a8csp_bgte_schedules', $replacement_raw );
-			}
-		);
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Schedule registration pruned concurrently; delivery state discarded.', $this->logger->records[0]['message'] ?? null );
-	}
-
-	/**
-	 * A definition synchronized after acceptance supersedes stale delivery state without an error.
-	 *
-	 * @return  void
-	 */
-	public function test_post_acceptance_persist_preserves_a_concurrently_synchronized_definition(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$current_api = $this->new_api( new ScheduleRegistry( new OptionRows( $this->wpdb ) ) );
-		$current     = new Schedule( self::NAME, Recurrence::every( 600 ), self::TASK, self::ARGS, OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 23 );
-		$current_raw = null;
-		$this->wpdb->before_next(
-			'update',
-			static function ( WpdbLockSpy $wpdb ) use ( $current_api, $current, &$current_raw ): void {
-				$result = $current_api->sync( self::OWNER, self::declarations( self::OWNER, $current ) );
-				self::assertInstanceOf( Success::class, $result );
-
-				$current_raw = $wpdb->rows['a8csp_bgte_schedules'] ?? null;
-				self::assertIsString( $current_raw );
-			}
-		);
-		$this->clock->timestamp = self::NOW + self::INTERVAL;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertIsString( $current_raw );
-		self::assertSame( $current_raw, $this->wpdb->rows['a8csp_bgte_schedules'] ?? null );
-		self::assertSame( $current->fingerprint(), $this->registration()['fingerprint'] ?? null );
-		self::assertContains( 'enqueue_async', \array_column( $this->backend->calls, 'verb' ) );
-		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Schedule registration superseded concurrently; delivery state discarded.', $this->logger->records[0]['message'] ?? null );
-		self::assertSame(
-			array(
-				'owner'            => self::OWNER,
-				'registration_key' => self::REGISTRATION_KEY,
-			),
-			$this->logger->records[0]['context'] ?? null
-		);
-	}
-
-	/**
-	 * A dispatch failure leaves recurrence timing unchanged for a later occurrence retry.
-	 *
-	 * @return  void
-	 */
-	public function test_dispatch_failure_preserves_occurrence_timing(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$before                                  = $this->registration();
-		$this->backend->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying.' ) );
-		$this->clock->timestamp                  = self::NOW + self::INTERVAL;
-
-		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
-
-		self::assertSame( $before, $this->registration() );
-		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
-	}
-
-	/**
-	 * Run-now accepts a persisted registration and its request-local declaration after recurring scheduling fails.
-	 *
-	 * @return  void
-	 */
-	public function test_run_now_accepts_a_persisted_chainless_registration_in_the_same_request(): void {
-		$schedule = $this->schedule();
-		$failure  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the scheduler store before retrying schedule sync.' ) );
-
-		$this->backend->results['schedule_recurring'] = $failure;
-
-		$synced = $this->api->sync( self::OWNER, self::declarations( self::OWNER, $schedule ) );
-
-		self::assertSame( $failure, $synced );
-		self::assertSame( $schedule->fingerprint(), $this->registration()['fingerprint'] ?? null );
-		self::assertSame( array( 'is_scheduled', 'schedule_recurring' ), \array_column( $this->backend->calls, 'verb' ) );
-
-		unset( $this->backend->results['schedule_recurring'] );
-		$this->backend->calls = array();
-
-		$result = $this->api->run_now( self::REGISTRATION_KEY );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( self::NOW + self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
-	}
-
-	/**
-	 * Run-now dispatches immediately, records last-fired, and preserves recurrence.
-	 *
-	 * @return  void
-	 */
-	public function test_run_now_updates_last_fired_without_touching_next_due(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->seed_held_lock();
-		$next_due               = $this->registration()['next_due'] ?? null;
-		$this->clock->timestamp = self::NOW + 10;
-
-		$result = $this->api->run_now( self::REGISTRATION_KEY );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
-		self::assertSame( $next_due, $this->registration()['next_due'] ?? null );
-		self::assertSame( self::NOW + 10, $this->registration()['last_fired'] ?? null );
-		self::assertSame( 'run-incumbent', $this->lock_owner( self::ARGS_HASH ) );
-	}
-
-	/**
-	 * Run-now commits its accepted metadata and releases decision ownership before started listeners.
-	 *
-	 * @return  void
-	 */
-	public function test_run_now_persists_and_releases_before_started_hooks(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->clock->timestamp = self::NOW + 10;
-
-		$observed = null;
-
-		$GLOBALS['a8csp_bgte_test_action_callbacks'] = array(
-			'a8csp_background_tasks/started/' . self::TASK_IDENTITY => function () use ( &$observed ): void {
-				$observed = array(
-					'last_fired' => $this->registration()['last_fired'] ?? null,
-					'lease_held' => \array_key_exists( 'a8csp_bgte_lease_' . \hash( 'sha256', self::REGISTRATION_KEY ), $this->wpdb->rows ),
-				);
-			},
-		);
-
-		$result = $this->api->run_now( self::REGISTRATION_KEY );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame(
-			array(
-				'last_fired' => self::NOW + 10,
-				'lease_held' => false,
-			),
-			$observed
-		);
-	}
-
-	/**
-	 * A post-dispatch registry failure logs metadata loss without hiding the accepted run identifier.
-	 *
-	 * @return  void
-	 */
-	public function test_run_now_returns_success_after_a_failed_last_fired_write(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Allow ) );
-		$this->wpdb->script_result( 'update', false );
-
-		$result = $this->api->run_now( self::REGISTRATION_KEY );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
-		self::assertSame( array( 'enqueue_async' ), \array_column( $this->backend->calls, 'verb' ) );
-		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
-	}
-
-	/**
-	 * Run-now returns the held failure for Skip without changing registry timing.
-	 *
-	 * @return  void
-	 */
-	public function test_run_now_surfaces_skip_contention_without_changing_registry(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Skip ) );
-		$this->seed_held_lock();
-		$before = $this->registration();
-
-		$result = $this->api->run_now( self::REGISTRATION_KEY );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertStringContainsString( 'before dispatching the same arguments or deduplication key', $result->error->message );
-		self::assertSame( $before, $this->registration() );
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Run-now applies Replace ownership transfer to a held target lock.
-	 *
-	 * @return  void
-	 */
-	public function test_run_now_replace_takes_the_target_lock(): void {
-		$this->sync_schedule( $this->schedule( overlap: OverlapPolicy::Replace ) );
-		$this->seed_held_lock();
-
-		$result = $this->api->run_now( self::REGISTRATION_KEY );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( $result->value, $this->lock_owner( self::ARGS_HASH ) );
+		self::assertSame( 0, ScheduleExecutionWakeupProbe::$wakeups );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
 	}
 
 	// endregion.
@@ -756,202 +374,122 @@ final class ScheduleExecutionTest extends TestCase {
 	/**
 	 * Returns one schedule declaration for the requested policies.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int           $interval Recurrence interval.
 	 * @param   OverlapPolicy $overlap  Overlap policy.
 	 * @param   CatchUpPolicy $catch_up Catch-up policy.
 	 *
 	 * @return  Schedule
 	 */
-	private function schedule(
-		OverlapPolicy $overlap = OverlapPolicy::Skip,
-		CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce
-	): Schedule {
-		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::TASK, self::ARGS, $overlap, $catch_up, 23 );
-	}
-
-	/**
-	 * Returns request-local declarations keyed by complete schedule identity.
-	 *
-	 * @param   string   $owner     Owner identifier.
-	 * @param   Schedule ...$schedules Schedule value objects.
-	 *
-	 * @return  array<string, array{schedule: Schedule, task: string}>
-	 */
-	private static function declarations( string $owner, Schedule ...$schedules ): array {
-		$declarations = array();
-		foreach ( $schedules as $schedule ) {
-			$declarations[ $owner . ':' . $schedule->name ] = array(
-				'schedule' => $schedule,
-				'task'     => $owner . ':' . $schedule->task,
-			);
-		}
-
-		return $declarations;
+	private static function schedule( int $interval = self::INTERVAL, OverlapPolicy $overlap = OverlapPolicy::Skip, CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce ): Schedule {
+		return new Schedule( self::NAME, Recurrence::every( $interval ), self::TASK, self::ARGS, $overlap, $catch_up, 23 );
 	}
 
 	/**
 	 * Synchronizes one declaration and clears setup observations.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   Schedule $schedule Schedule declaration.
 	 *
 	 * @return  void
 	 */
 	private function sync_schedule( Schedule $schedule ): void {
-		$result = $this->api->sync( self::OWNER, self::declarations( self::OWNER, $schedule ) );
-		self::assertInstanceOf( Success::class, $result );
-
-		$this->backend->calls                     = array();
-		$this->logger->records                    = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']  = array();
+		self::assertInstanceOf( Success::class, $this->consumer->schedules()->sync( array( $schedule ) ) );
+		$this->reset_observations();
 	}
 
 	/**
-	 * Returns another API over the same runtime seams.
+	 * Returns one complete owner fixture request.
 	 *
-	 * @param   ScheduleRegistry $registry Request-local schedule registry.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  Schedules
+	 * @param   Schedule $schedule Schedule declaration.
+	 * @param   int      $next_due Next occurrence timestamp.
+	 *
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfires: int, skips: int}>}
 	 */
-	private function new_api( ScheduleRegistry $registry ): Schedules {
-		$delivery = $this->new_delivery( $registry );
-
-		return new Schedules( $registry, $this->backend, $this->clock, $delivery );
+	private static function owner_fixture( Schedule $schedule, int $next_due ): array {
+		return array(
+			'owner'         => self::OWNER,
+			'declarations'  => array(
+				self::REGISTRATION_KEY => array(
+					'schedule' => $schedule,
+					'task'     => self::TASK_IDENTITY,
+				),
+			),
+			'registrations' => array(
+				self::REGISTRATION_KEY => array(
+					'fingerprint' => $schedule->fingerprint(),
+					'next_due'    => $next_due,
+					'last_fired'  => null,
+					'misfires'    => 0,
+					'skips'       => 0,
+				),
+			),
+		);
 	}
 
 	/**
-	 * Returns another occurrence delivery service over the same runtime seams.
+	 * Returns the persisted registration through production inspection.
 	 *
-	 * @param   ScheduleRegistry $registry  Request-local schedule registry.
-	 * @param   SchedulerFacade  $scheduler Scheduling facade, or null for the default recording backend.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  OccurrenceDelivery
+	 * @return  array<string, mixed>
 	 */
-	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
-		$work    = new WorkRegistry();
-		$tasks   = new TaskRegistry( $work );
-		$batches = new BatchRegistry( $work );
-		$tasks->register( self::TASK_IDENTITY, new RecordingTask( self::TASK ) );
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$randomizer           = new RecordingRandomizer( 42 );
-		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $work, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
+	private function registration(): array {
+		$snapshot = $this->rig->inspection()->schedules( self::OWNER );
+		self::assertNotNull( $snapshot );
+		$entry = $snapshot['entries'][0] ?? null;
+		self::assertIsArray( $entry );
 
-		$scheduler     ??= new SchedulerFacade( array( $this->backend ) );
-		$cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
-
-		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $cleanup_intents, $this->clock, $this->logger );
+		return $entry;
 	}
 
 	/**
-	 * Returns the durable cleanup-intent option for the fixture registration.
+	 * Returns primary-backend calls for one verb.
 	 *
-	 * @return  string
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $verb Backend verb.
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
-	private function intent_option_name(): string {
-		return CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+	private function calls( string $verb ): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => $verb === $call['verb'] ) );
 	}
 
 	/**
-	 * Stores one fresh incumbent target lock and discovery pointer.
+	 * Stores one production-built raw fixture in the active graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
 	 *
 	 * @return  void
 	 */
-	private function seed_held_lock(): void {
-		$raw = \maybe_serialize(
-			array(
-				'run_id'       => 'run-incumbent',
-				'claimed_at'   => self::NOW,
-				'heartbeat_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::TASK_IDENTITY . '_' . self::ARGS_HASH, $raw );
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::TASK_IDENTITY ] = array(
-			'all'     => 'run-incumbent',
-			'by_hash' => array( self::ARGS_HASH => 'run-incumbent' ),
-		);
-		$GLOBALS['a8csp_bgte_test_options']                    = $options;
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}
 
 	/**
-	 * Returns the owner of one target lock.
+	 * Clears behavioral observations without changing accepted deliveries.
 	 *
-	 * @param   string $args_hash Argument identity.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  string|null
+	 * @return  void
 	 */
-	private function lock_owner( string $args_hash ): ?string {
-		$raw = $this->wpdb->rows[ 'a8csp_bgte_lock_' . self::TASK_IDENTITY . '_' . $args_hash ] ?? null;
-		if ( ! \is_string( $raw ) ) {
-			return null;
-		}
-
-		$lock = \maybe_unserialize( $raw );
-
-		return \is_array( $lock ) && \is_string( $lock['run_id'] ?? null )
-			? $lock['run_id']
-			: null;
-	}
-
-	/**
-	 * Returns the persisted registration row.
-	 *
-	 * @return  array<array-key, mixed>
-	 */
-	private function registration(): array {
-		$raw = $this->wpdb->rows['a8csp_bgte_schedules'] ?? null;
-		if ( \is_string( $raw ) ) {
-			$owners = \maybe_unserialize( $raw );
-		} else {
-			$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-			self::assertIsArray( $options );
-			$owners = $options['a8csp_bgte_schedules'] ?? null;
-		}
-		self::assertIsArray( $owners );
-		$schedules = $owners[ self::OWNER ] ?? null;
-		self::assertIsArray( $schedules );
-		$registration = $schedules[ self::REGISTRATION_KEY ] ?? null;
-		self::assertIsArray( $registration );
-
-		return $registration;
-	}
-
-	/**
-	 * Returns fired consumer actions in order.
-	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
-	 */
-	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
-		self::assertIsArray( $actions );
-		$typed = array();
-		foreach ( $actions as $action ) {
-			self::assertIsArray( $action );
-			$hook_name = $action['hook_name'] ?? null;
-			$args      = $action['args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsArray( $args );
-			$typed[] = array(
-				'hook_name' => $hook_name,
-				'args'      => \array_values( $args ),
-			);
-		}
-
-		return $typed;
-	}
-
-	/**
-	 * Returns only misfire lifecycle actions in delivery order.
-	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
-	 */
-	private function misfired_actions(): array {
-		return \array_values( \array_filter( $this->fired_actions(), static fn ( array $action ): bool => \str_starts_with( $action['hook_name'], 'a8csp_background_tasks/misfired' ) ) );
+	private function reset_observations(): void {
+		$this->rig->backend()->calls  = array();
+		$this->rig->logger()->records = array();
 	}
 
 	// endregion.

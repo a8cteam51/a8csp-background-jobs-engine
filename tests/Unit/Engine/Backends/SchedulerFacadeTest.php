@@ -2,53 +2,61 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Backends;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendClearance;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins ordered routing and payload protection at the scheduling facade boundary.
+ * Exercises ordered backend routing through the production engine graph.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( SchedulerFacade::class )]
-#[UsesClass( BackendInterface::class )]
-#[UsesClass( WPCronBackend::class )]
-#[UsesClass( BackendClearance::class )]
-#[UsesClass( Success::class )]
-#[UsesClass( Failure::class )]
-#[UsesClass( SchedulingError::class )]
-#[UsesClass( SchedulingErrorReason::class )]
 final class SchedulerFacadeTest extends TestCase {
-	private const HOOK = 'a8csp_bgte_test_hook';
+	// region FIELDS AND CONSTANTS.
+
+	private const IDENTITY  = self::OWNER . ':' . self::TASK_NAME;
+	private const NOW       = 1_700_000_000;
+	private const OWNER     = 'scheduler-tests';
+	private const TASK_NAME = 'refresh-index';
+
+	private Consumer $consumer;
+	private EngineRig $rig;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
-	 * Keeps facade tests independent of a WordPress bootstrap while satisfying production guards.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once __DIR__ . '/wp-json-encode-stub.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-cron-stubs.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Keeps the WP-Cron fallback isolated from process-global fake state.
+	 * Boots preferred and fallback recording boundaries in production order.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -56,1005 +64,242 @@ final class SchedulerFacadeTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_results']        = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
+		$this->rig      = EngineRig::set_up( self::NOW, 2 );
+		$this->consumer = $this->rig->consumer( self::OWNER );
+		$this->consumer->tasks()->register( new RecordingTask( self::TASK_NAME ) );
+		$this->reset_backend_observations();
 	}
 
 	/**
-	 * Empty configuration identifies the baseline backend the caller must supply.
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_constructor_rejects_an_empty_backend_list_with_the_fix(): void {
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.' );
-
-		new SchedulerFacade( array() );
-	}
-
-	/**
-	 * A present backend excluded from the ready read union is reported as dormant.
-	 *
-	 * @return  void
-	 */
-	public function test_dormant_candidate_detects_a_present_but_unready_backend(): void {
-		$dormant        = new RecordingBackend();
-		$dormant->ready = false;
-		$ready          = new RecordingBackend();
-
-		$result = ( new SchedulerFacade( array( $dormant, $ready ) ) )->has_dormant_candidate();
-
-		self::assertTrue( $result );
-		self::assertSame( array( 'is_ready', 'is_absent' ), $this->call_verbs( $dormant ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $ready ) );
-	}
-
-	/**
-	 * An absent backend does not make currently ready union reads incomplete.
-	 *
-	 * @return  void
-	 */
-	public function test_dormant_candidate_ignores_an_absent_backend(): void {
-		$absent         = new RecordingBackend();
-		$absent->ready  = false;
-		$absent->absent = true;
-		$ready          = new RecordingBackend();
-
-		$result = ( new SchedulerFacade( array( $absent, $ready ) ) )->has_dormant_candidate();
-
-		self::assertFalse( $result );
-		self::assertSame( array( 'is_ready', 'is_absent' ), $this->call_verbs( $absent ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $ready ) );
-	}
-
-	/**
-	 * Fully ready backend candidates require no union-read caveat.
-	 *
-	 * @return  void
-	 */
-	public function test_dormant_candidate_is_false_when_every_backend_is_ready(): void {
-		$first  = new RecordingBackend();
-		$second = new RecordingBackend();
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->has_dormant_candidate();
-
-		self::assertFalse( $result );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $second ) );
-	}
-
-	/**
-	 * Cron capability requires one backend that is both ready and capable.
-	 *
-	 * @return  void
-	 */
-	public function test_cron_capability_consults_only_ready_backends(): void {
-		$unready_supported                 = new RecordingBackend();
-		$unready_supported->ready          = false;
-		$unready_supported->cron_supported = true;
-		$ready_unsupported                 = new RecordingBackend();
-		$ready_supported                   = new RecordingBackend();
-		$ready_supported->cron_supported   = true;
-		$unused                            = new RecordingBackend();
-
-		$facade = new SchedulerFacade( array( $unready_supported, $ready_unsupported, $ready_supported, $unused ) );
-
-		self::assertTrue( $facade->supports_cron_expressions() );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready_supported ) );
-		self::assertSame( array( 'is_ready', 'supports_cron_expressions' ), $this->call_verbs( $ready_unsupported ) );
-		self::assertSame( array( 'is_ready', 'supports_cron_expressions' ), $this->call_verbs( $ready_supported ) );
-		self::assertSame( array(), $unused->calls );
-	}
-
-	/**
-	 * Constructor keys do not affect declaration order or first-ready routing.
-	 *
-	 * @return  void
-	 */
-	public function test_constructor_ignores_string_and_non_sequential_backend_keys(): void {
-		$first        = new RecordingBackend();
-		$first->ready = false;
-		$second       = new RecordingBackend();
-		$third        = new RecordingBackend();
-
-		$result = ( new SchedulerFacade(
-			array(
-				'preferred' => $first,
-				42          => $second,
-				'later'     => $third,
-			)
-		) )->enqueue_async( self::HOOK );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $second ) );
-		self::assertSame( array(), $third->calls );
-	}
-
-	/**
-	 * Sparse constructor keys leave the declared final backend available for fallback routing.
-	 *
-	 * @return  void
-	 */
-	public function test_constructor_reindexes_sparse_keys_for_fallback_lookup(): void {
-		$first                          = new RecordingBackend();
-		$last                           = new RecordingBackend();
-		$expected                       = new Success( true );
-		$first->ready                   = false;
-		$last->ready                    = false;
-		$last->results['enqueue_async'] = $expected;
-
-		$result = ( new SchedulerFacade(
-			array(
-				'preferred' => $first,
-				42          => $last,
-			)
-		) )->enqueue_async( self::HOOK );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $last ) );
-	}
-
-	/**
-	 * A write reaches the first ready backend and leaves every later backend untouched.
-	 *
-	 * @return  void
-	 */
-	public function test_write_uses_only_the_first_ready_backend(): void {
-		$first    = new RecordingBackend();
-		$second   = new RecordingBackend();
-		$expected = new Success( true );
-
-		$first->results['schedule_recurring'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_recurring( self::HOOK, 300, array( 'run-17' ), 1_700_000_000, 'reports', 20 );
-
-		self::assertSame( $expected, $result );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'is_ready',
-					'args' => array(),
-				),
-				array(
-					'verb' => 'schedule_recurring',
-					'args' => array(
-						'hook'                => self::HOOK,
-						'interval'            => 300,
-						'args'                => array( 'run-17' ),
-						'first_run_timestamp' => 1_700_000_000,
-						'group'               => 'reports',
-						'priority'            => 20,
-					),
-				),
-			),
-			$first->calls
-		);
-		self::assertSame( array(), $second->calls );
-	}
-
-	/**
-	 * Write preference advances past an unready backend without invoking its write API.
-	 *
-	 * @return  void
-	 */
-	public function test_write_uses_the_second_backend_when_the_first_is_not_ready(): void {
-		$first    = new RecordingBackend();
-		$second   = new RecordingBackend();
-		$expected = new Success( true );
-
-		$first->ready = false;
-
-		$second->results['schedule_single'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single( self::HOOK, 1_700_000_000, array( 'run-18' ), 'imports', 30 );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'schedule_single' ), $this->call_verbs( $second ) );
-		self::assertSame(
-			array(
-				'hook'      => self::HOOK,
-				'timestamp' => 1_700_000_000,
-				'args'      => array( 'run-18' ),
-				'group'     => 'imports',
-				'priority'  => 30,
-			),
-			$second->calls[1]['args']
-		);
-	}
-
-	/**
-	 * A grouped async write reaches WP-Cron when the preferred backend is unavailable.
-	 *
-	 * @return  void
-	 */
-	public function test_grouped_enqueue_async_falls_back_to_wp_cron(): void {
-		$preferred        = new RecordingBackend();
-		$preferred->ready = false;
-		$args             = array( 'run-19' );
-
-		$result = ( new SchedulerFacade( array( $preferred, new WPCronBackend() ) ) )->enqueue_async( self::HOOK, $args, 'reports|run-19', 40 );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertTrue( $result->value );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $preferred ) );
-		self::assertIsInt( \wp_next_scheduled( self::HOOK, $args ) );
-	}
-
-	/**
-	 * With no ready backend, the last backend receives the write and supplies its own failure.
-	 *
-	 * @return  void
-	 */
-	public function test_write_falls_back_to_the_last_backend_when_none_are_ready(): void {
-		$first    = new RecordingBackend();
-		$last     = new RecordingBackend();
-		$expected = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load the baseline scheduler before enqueueing the hook.' ) );
-
-		$first->ready = false;
-		$last->ready  = false;
-
-		$last->results['enqueue_async'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $last ) ) )->enqueue_async( self::HOOK, array( 'run-19' ), 'exports', 40 );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $last ) );
-		self::assertSame(
-			array(
-				'hook'     => self::HOOK,
-				'args'     => array( 'run-19' ),
-				'group'    => 'exports',
-				'priority' => 40,
-			),
-			$last->calls[1]['args']
-		);
-	}
-
-	/**
-	 * A backend that becomes unready during its write yields to the next ready backend.
-	 *
-	 * @return  void
-	 */
-	public function test_write_falls_through_when_the_selected_backend_becomes_unready(): void {
-		$first                    = new RecordingBackend();
-		$first->readiness_results = array( true, false );
-		$second                   = new RecordingBackend();
-		$expected                 = new Success( true );
-
-		$second->results['enqueue_async'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->enqueue_async( self::HOOK, array( 'run-20' ), 'exports', 40 );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $second ) );
-		self::assertSame(
-			array(
-				'hook'     => self::HOOK,
-				'args'     => array( 'run-20' ),
-				'group'    => 'exports',
-				'priority' => 40,
-			),
-			$second->calls[1]['args']
-		);
-	}
-
-	/**
-	 * Only backend-readiness failures permit a write to reach another backend.
-	 *
-	 * @param   string $reason_value Non-readiness failure backing value.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'non_readiness_failure_provider' )]
-	public function test_write_returns_every_non_readiness_failure_unchanged( string $reason_value ): void {
-		$first    = new RecordingBackend();
-		$second   = new RecordingBackend();
-		$expected = new Failure( new SchedulingError( SchedulingErrorReason::from( $reason_value ), 'Correct the rejected scheduling request before retrying.' ) );
-
-		$first->results['enqueue_async'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->enqueue_async( self::HOOK );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $first ) );
-		self::assertSame( array(), $second->calls );
-	}
-
-	/**
-	 * When every selected backend declines a write, the last decline retains diagnostic precedence.
-	 *
-	 * @return  void
-	 */
-	public function test_write_returns_the_last_failure_when_every_backend_declines(): void {
-		$first        = new RecordingBackend();
-		$second       = new RecordingBackend();
-		$first_result = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Initialize the first backend before retrying the write.' ) );
-		$last_result  = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Initialize the fallback backend before retrying the write.' ) );
-
-		$first->results['schedule_single']  = $first_result;
-		$second->results['schedule_single'] = $last_result;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->schedule_single( self::HOOK, 1_700_000_000 );
-
-		self::assertSame( $last_result, $result );
-		self::assertSame( array( 'is_ready', 'schedule_single' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'schedule_single' ), $this->call_verbs( $second ) );
-	}
-
-	/**
-	 * Scheduled state is the union of the currently ready backends.
-	 *
-	 * @return  void
-	 */
-	public function test_is_scheduled_returns_true_when_only_the_second_backend_reports_it(): void {
-		$first             = new RecordingBackend();
-		$second            = new RecordingBackend();
-		$second->scheduled = true;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->is_scheduled( self::HOOK, array( 'run-20' ), 'reports' );
-
-		self::assertTrue( $result );
-		self::assertSame( array( 'is_ready', 'is_scheduled' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'is_scheduled' ), $this->call_verbs( $second ) );
-		self::assertSame(
-			array(
-				'hook'  => self::HOOK,
-				'args'  => array( 'run-20' ),
-				'group' => 'reports',
-			),
-			$first->calls[1]['args']
-		);
-		self::assertSame( $first->calls[1]['args'], $second->calls[1]['args'] );
-	}
-
-	/**
-	 * The next run is the earliest concrete answer across every ready backend.
-	 *
-	 * @return  void
-	 */
-	public function test_get_next_scheduled_returns_the_minimum_and_ignores_null_answers(): void {
-		$first                 = new RecordingBackend();
-		$first->next_scheduled = 1_700_000_300;
-		$second                = new RecordingBackend();
-		$third                 = new RecordingBackend();
-		$third->next_scheduled = 1_700_000_100;
-
-		$result = ( new SchedulerFacade( array( $first, $second, $third ) ) )->get_next_scheduled( self::HOOK, array( 'run-21' ), 'imports' );
-
-		self::assertSame( 1_700_000_100, $result );
-		foreach ( array( $first, $second, $third ) as $backend ) {
-			self::assertSame( array( 'is_ready', 'get_next_scheduled' ), $this->call_verbs( $backend ) );
-			self::assertSame(
-				array(
-					'hook'  => self::HOOK,
-					'args'  => array( 'run-21' ),
-					'group' => 'imports',
-				),
-				$backend->calls[1]['args']
-			);
-		}
-	}
-
-	/**
-	 * The next run remains absent when every ready backend has no timestamp.
-	 *
-	 * @return  void
-	 */
-	public function test_get_next_scheduled_returns_null_when_all_answers_are_null(): void {
-		$first  = new RecordingBackend();
-		$second = new RecordingBackend();
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->get_next_scheduled( self::HOOK );
-
-		self::assertNull( $result );
-	}
-
-	/**
-	 * Read operations test readiness but never query an unready backend.
-	 *
-	 * @return  void
-	 */
-	public function test_reads_never_query_an_unready_backend(): void {
-		$unready                 = new RecordingBackend();
-		$unready->ready          = false;
-		$unready->scheduled      = true;
-		$unready->next_scheduled = 1_700_000_000;
-		$ready                   = new RecordingBackend();
-		$facade                  = new SchedulerFacade( array( $unready, $ready ) );
-
-		self::assertFalse( $facade->is_scheduled( self::HOOK ) );
-		self::assertNull( $facade->get_next_scheduled( self::HOOK ) );
-		self::assertSame( array( 'is_ready', 'is_ready' ), $this->call_verbs( $unready ) );
-		self::assertSame( array( 'is_ready', 'is_scheduled', 'is_ready', 'get_next_scheduled' ), $this->call_verbs( $ready ) );
-	}
-
-	/**
-	 * A successful clear reaches every ready backend.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_clears_every_ready_backend(): void {
-		$first          = new RecordingBackend();
-		$unready        = new RecordingBackend();
-		$second         = new RecordingBackend();
-		$unready->ready = false;
-
-		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )->unschedule( self::HOOK, array( 'run-22' ), 'cleanup' );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertTrue( $result->value );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
-		self::assertSame(
-			array(
-				'hook'  => self::HOOK,
-				'args'  => array( 'run-22' ),
-				'group' => 'cleanup',
-			),
-			$first->calls[1]['args']
-		);
-		self::assertSame( $first->calls[1]['args'], $second->calls[1]['args'] );
-	}
-
-	/**
-	 * A group-only clear reaches every ready backend with no hook or argument identity.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_group_clears_the_exact_group_across_every_ready_backend(): void {
-		$first          = new RecordingBackend();
-		$unready        = new RecordingBackend();
-		$second         = new RecordingBackend();
-		$unready->ready = false;
-
-		$result = ( new SchedulerFacade( array( $first, $unready, $second ) ) )->unschedule_group( 'reports|run-22' );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertTrue( $result->value );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $unready ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
-		self::assertSame(
-			array(
-				'hook'  => '',
-				'args'  => array(),
-				'group' => 'reports|run-22',
-			),
-			$first->calls[1]['args']
-		);
-		self::assertSame( $first->calls[1]['args'], $second->calls[1]['args'] );
-	}
-
-	/**
-	 * Hook-wide clearance aggregates exact pending counts across every ready backend.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_hooks_aggregates_counts_across_every_ready_backend(): void {
-		$first                   = new RecordingBackend();
-		$second                  = new RecordingBackend();
-		$first->pending_actions  = array( self::HOOK => 2 );
-		$second->pending_actions = array(
-			self::HOOK                  => 1,
-			'a8csp_bgte_sibling_hook'   => 3,
-			'a8csp_bgte_unrelated_hook' => 4,
-		);
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->unschedule_hooks( array( self::HOOK, 'a8csp_bgte_sibling_hook' ) );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( 6, $result->value );
-		self::assertSame( array(), $first->pending_actions );
-		self::assertSame( array( 'a8csp_bgte_unrelated_hook' => 4 ), $second->pending_actions );
-		self::assertSame( array( 'is_ready', 'unschedule_hooks' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'unschedule_hooks' ), $this->call_verbs( $second ) );
-	}
-
-	/**
-	 * Hook-wide clearance refuses a partial backend view before mutating a ready store.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_hooks_rejects_a_present_dormant_backend_before_clearing(): void {
-		$dormant        = new RecordingBackend();
-		$dormant->ready = false;
-
-		$ready = new RecordingBackend();
-
-		$ready->pending_actions = array( self::HOOK => 2 );
-
-		$result = ( new SchedulerFacade( array( $dormant, $ready ) ) )->unschedule_hooks( array( self::HOOK ) );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::BackendNotReady, $result->error->reason );
-		self::assertSame( array( 'is_ready', 'is_absent' ), $this->call_verbs( $dormant ) );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $ready ) );
-		self::assertSame( array( self::HOOK => 2 ), $ready->pending_actions );
-	}
-
-	/**
-	 * The earliest failure wins after every ready backend receives the clear.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_returns_the_first_failure_after_clearing_remaining_ready_backends(): void {
-		$first          = new RecordingBackend();
-		$second         = new RecordingBackend();
-		$first_failure  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the first backend schedule and retry the clear.' ) );
-		$second_failure = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the second backend schedule and retry the clear.' ) );
-
-		$first->results['unschedule']  = $first_failure;
-		$second->results['unschedule'] = $second_failure;
-
-		$result = ( new SchedulerFacade( array( $first, $second ) ) )->unschedule( self::HOOK );
-
-		self::assertSame( $first_failure, $result );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
-	}
-
-	/**
-	 * A later failure is returned after every ready backend receives the clear.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_returns_a_later_failure_after_clearing_remaining_ready_backends(): void {
-		$first    = new RecordingBackend();
-		$second   = new RecordingBackend();
-		$third    = new RecordingBackend();
-		$expected = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the second backend schedule and retry the clear.' ) );
-
-		$second->results['unschedule'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $second, $third ) ) )->unschedule( self::HOOK );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $second ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $third ) );
-	}
-
-	/**
-	 * With no ready backend, the final backend supplies the clear failure diagnostics.
-	 *
-	 * @return  void
-	 */
-	public function test_unschedule_falls_back_to_the_last_backend_when_none_are_ready(): void {
-		$first    = new RecordingBackend();
-		$last     = new RecordingBackend();
-		$expected = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load the baseline scheduler before clearing the hook.' ) );
-
-		$first->ready = false;
-		$last->ready  = false;
-
-		$last->results['unschedule'] = $expected;
-
-		$result = ( new SchedulerFacade( array( $first, $last ) ) )->unschedule( self::HOOK );
-
-		self::assertSame( $expected, $result );
-		self::assertSame( array( 'is_ready' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'is_ready', 'unschedule' ), $this->call_verbs( $last ) );
-	}
-
-	/**
-	 * Facade readiness follows whether any configured backend is ready.
-	 *
-	 * @return  void
-	 */
-	public function test_is_ready_returns_true_when_any_backend_is_ready(): void {
-		$first        = new RecordingBackend();
-		$first->ready = false;
-		$second       = new RecordingBackend();
-
-		self::assertTrue( ( new SchedulerFacade( array( $first, $second ) ) )->is_ready() );
-
-		$second->ready = false;
-		self::assertFalse( ( new SchedulerFacade( array( $first, $second ) ) )->is_ready() );
-	}
-
-	/**
-	 * Convergence authority stays bound to the readiness snapshot used by the clear.
-	 *
-	 * @return  void
-	 */
-	public function test_convergence_clear_authority_uses_the_cleared_readiness_snapshot(): void {
-		$absent         = new RecordingBackend();
-		$absent->ready  = false;
-		$absent->absent = true;
-		$ready          = new RecordingBackend();
-
-		$authoritative = ( new SchedulerFacade( array( $absent, $ready ) ) )->unschedule_for_convergence( self::HOOK );
-
-		self::assertTrue( $authoritative->authoritative );
-		self::assertInstanceOf( Success::class, $authoritative->result );
-
-		$transitioning                    = new RecordingBackend();
-		$transitioning->readiness_results = array( false, true );
-		$not_authoritative                = ( new SchedulerFacade( array( $transitioning, $ready ) ) )->unschedule_for_convergence( self::HOOK );
-
-		self::assertFalse( $not_authoritative->authoritative );
-		self::assertTrue( $transitioning->is_ready() );
-	}
-
-	/**
-	 * Hook registration reaches every backend without consulting readiness.
-	 *
-	 * @return  void
-	 */
-	public function test_register_hooks_reaches_every_backend_including_unready_backends(): void {
-		$first        = new RecordingBackend();
-		$first->ready = false;
-		$second       = new RecordingBackend();
-		$facade       = new SchedulerFacade( array( $first, $second ) );
-
-		$facade->register_hooks();
-
-		self::assertSame( array( 'register_hooks' ), $this->call_verbs( $first ) );
-		self::assertSame( array( 'register_hooks' ), $this->call_verbs( $second ) );
-	}
-
-	/**
-	 * Every scheduling write rejects oversized arguments before backend selection.
-	 *
-	 * @param   'schedule_recurring'|'schedule_single'|'enqueue_async' $verb Write method to exercise.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'guarded_write_provider' )]
-	public function test_args_guard_blocks_every_write_before_routing( string $verb ): void {
-		$backend = new RecordingBackend();
-		$facade  = new SchedulerFacade( array( $backend ) );
-		$result  = $this->invoke_guarded_write( $facade, $verb, $this->args_with_json_length( 8_001 ) );
-		$error   = $this->assert_invalid_payload( $result );
-
-		self::assertSame( 'Scheduling hook "a8csp_bgte_test_hook" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.', $error->message );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Nested objects fail the portable-storage shape guard before JSON size validation.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_rejects_an_object_nested_inside_arrays(): void {
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async(
-			self::HOOK,
-			array(
-				array(
-					'payload' => new \stdClass(),
-				),
-			)
-		);
-		$error   = $this->assert_invalid_payload( $result );
-
-		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
-		self::assertStringContainsString( 'store objects by identifier', $error->message );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Nested closures fail the portable-storage shape guard before backend selection.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_rejects_a_nested_closure(): void {
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, array( array( static fn (): string => 'not portable' ) ) );
-		$error   = $this->assert_invalid_payload( $result );
-
-		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
-		self::assertStringContainsString( 'store objects by identifier', $error->message );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Resources fail the same portable-storage shape guard before backend selection.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_rejects_a_nested_resource(): void {
-		$resource = \STDIN;
-
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, array( array( $resource ) ) );
-		$error   = $this->assert_invalid_payload( $result );
-
-		self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Argument nesting beyond the JSON encoder's depth fails before backend selection.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_rejects_nesting_beyond_the_portable_depth(): void {
-		$args = array( null );
-		for ( $depth = 1; 513 > $depth; ++$depth ) {
-			$args = array( $args );
-		}
-
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, $args );
-		$error   = $this->assert_invalid_payload( $result );
-
-		self::assertStringContainsString( 'keep nesting within 512 levels', $error->message );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Self-referential arrays fail the finite-tree guard before backend selection.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_rejects_a_self_referential_array(): void {
-		$recursive         = array();
-		$recursive['self'] =& $recursive;
-
+	#[\Override]
+	protected function tearDown(): void {
 		try {
-			$backend = new RecordingBackend();
-			$result  = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, array( $recursive ) );
-			$error   = $this->assert_invalid_payload( $result );
-
-			self::assertStringContainsString( 'tree of scalars and arrays', $error->message );
-			self::assertSame( array(), $backend->calls );
+			$this->rig->tear_down();
 		} finally {
-			unset( $recursive['self'] );
+			parent::tearDown();
+		}
+	}
+
+	// endregion.
+
+	// region TESTS.
+
+	/**
+	 * A ready Action Scheduler candidate accepts work without touching the WP-Cron fallback.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_ready_preferred_backend_accepts_public_task_admission(): void {
+		$result = $this->consumer->tasks()->enqueue( self::TASK_NAME, array( 'site_id' => 7 ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->preferred() ) );
+		self::assertSame( array(), $this->fallback()->calls );
+		$this->preferred()->assert_scheduled( self::IDENTITY );
+		$this->fallback()->assert_not_scheduled( self::IDENTITY );
+	}
+
+	/**
+	 * An unavailable Action Scheduler candidate yields public task admission to the WP-Cron fallback.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unready_preferred_backend_falls_back_for_public_task_admission(): void {
+		$this->preferred()->ready = false;
+
+		$result = $this->consumer->tasks()->enqueue( self::TASK_NAME, array( 'site_id' => 7 ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( array( 'is_ready' ), $this->verbs( $this->preferred() ) );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->fallback() ) );
+		$this->preferred()->assert_not_scheduled( self::IDENTITY );
+		$this->fallback()->assert_scheduled( self::IDENTITY );
+	}
+
+	/**
+	 * A preferred backend that becomes unready during its write yields to the ready fallback.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_mid_write_readiness_loss_falls_through_without_losing_the_run(): void {
+		$this->preferred()->readiness_results = array( true, false );
+
+		$result = $this->consumer->tasks()->enqueue( self::TASK_NAME, array( 'site_id' => 7 ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), $this->verbs( $this->preferred() ) );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->fallback() ) );
+		$this->preferred()->assert_not_scheduled( self::IDENTITY );
+		$this->fallback()->assert_scheduled( self::IDENTITY );
+	}
+
+	/**
+	 * Schedule removal clears the same owner-qualified chain from every ready backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_public_schedule_removal_clears_every_ready_backend(): void {
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), self::TASK_NAME );
+		self::assertInstanceOf( Success::class, $this->consumer->schedules()->sync( array( $schedule ) ) );
+		$this->reset_backend_observations();
+
+		$result = $this->consumer->schedules()->sync( array() );
+
+		self::assertInstanceOf( Success::class, $result );
+		foreach ( $this->rig->backends() as $backend ) {
+			$calls = $this->calls( $backend, 'unschedule' );
+			self::assertCount( 1, $calls );
+			self::assertSame( 'scheduler-tests:nightly', $calls[0]['args']['group'] ?? null );
 		}
 	}
 
 	/**
-	 * Nested arrays containing scalar and null leaves remain portable.
+	 * The production-published scheduler accepts the exact JSON ceiling and rejects the next byte.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_args_guard_accepts_nested_scalar_and_null_values(): void {
-		$backend = new RecordingBackend();
-		$args    = array(
-			null,
-			array(
-				'string',
-				42,
-				1.5,
-				true,
-				false,
-				array( 'nullable' => null ),
-			),
+	public function test_publication_retains_the_8000_byte_argument_ceiling(): void {
+		$scheduler = Component::get_scheduler();
+		self::assertInstanceOf( SchedulerFacade::class, $scheduler );
+
+		$accepted = $scheduler->enqueue_async(
+			'a8csp_background_tasks/payload_boundary',
+			self::args_with_json_length( 8_000 ),
+			'scheduler-tests:payload-boundary'
 		);
 
-		$result = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, $args );
+		self::assertInstanceOf( Success::class, $accepted );
+		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->preferred() ) );
+		self::assertSame( array(), $this->fallback()->calls );
+		$this->preferred()->assert_scheduled( 'scheduler-tests:payload-boundary' );
+		$this->reset_backend_observations();
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( $args, $backend->calls[1]['args']['args'] );
-	}
-
-	/**
-	 * Non-positive recurring first-run timestamps fail before backend selection.
-	 *
-	 * @param   int $timestamp Invalid first-run timestamp.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'non_positive_timestamp_provider' )]
-	public function test_schedule_recurring_rejects_a_non_positive_first_run_timestamp( int $timestamp ): void {
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_recurring( self::HOOK, 300, first_run_timestamp: $timestamp );
-		$error   = $this->assert_invalid_time_input( $result );
-
-		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
-		self::assertSame( array( 'first_run_timestamp' => $timestamp ), $error->context );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Non-positive single-run timestamps fail before backend selection.
-	 *
-	 * @param   int $timestamp Invalid run timestamp.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'non_positive_timestamp_provider' )]
-	public function test_schedule_single_rejects_a_non_positive_timestamp( int $timestamp ): void {
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_single( self::HOOK, $timestamp );
-		$error   = $this->assert_invalid_time_input( $result );
-
-		self::assertStringContainsString( 'positive UNIX seconds', $error->message );
-		self::assertSame( array( 'timestamp' => $timestamp ), $error->context );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * The documented ceiling remains accepted and routes normally.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_accepts_an_exactly_8000_byte_json_payload(): void {
-		$backend = new RecordingBackend();
-		$args    = $this->args_with_json_length( 8_000 );
-
-		$result = ( new SchedulerFacade( array( $backend ) ) )->enqueue_async( self::HOOK, $args );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->call_verbs( $backend ) );
-	}
-
-	/**
-	 * JSON encoding failures use the same corrective payload failure as oversized arguments.
-	 *
-	 * @return  void
-	 */
-	public function test_args_guard_rejects_unencodable_arguments_before_routing(): void {
-		$backend = new RecordingBackend();
-		$result  = ( new SchedulerFacade( array( $backend ) ) )->schedule_single( self::HOOK, 1_700_000_000, array( \INF ) );
-
-		$this->assert_invalid_payload( $result );
-		self::assertSame( array(), $backend->calls );
-	}
-
-	/**
-	 * Oversized identities remain available to clear and query operations.
-	 *
-	 * @return  void
-	 */
-	public function test_oversized_arguments_do_not_block_unschedule_or_reads(): void {
-		$backend                 = new RecordingBackend();
-		$backend->scheduled      = true;
-		$backend->next_scheduled = 1_700_000_000;
-		$facade                  = new SchedulerFacade( array( $backend ) );
-		$args                    = $this->args_with_json_length( 8_001 );
-
-		$clear = $facade->unschedule( self::HOOK, $args );
-
-		self::assertInstanceOf( Success::class, $clear );
-		self::assertTrue( $facade->is_scheduled( self::HOOK, $args ) );
-		self::assertSame( 1_700_000_000, $facade->get_next_scheduled( self::HOOK, $args ) );
-		self::assertSame(
-			array(
-				'is_ready',
-				'unschedule',
-				'is_ready',
-				'is_scheduled',
-				'is_ready',
-				'get_next_scheduled',
-			),
-			$this->call_verbs( $backend )
+		$rejected = $scheduler->enqueue_async(
+			'a8csp_background_tasks/payload_boundary',
+			self::args_with_json_length( 8_001 ),
+			'scheduler-tests:payload-boundary'
 		);
-		self::assertSame( $args, $backend->calls[1]['args']['args'] );
-		self::assertSame( $args, $backend->calls[3]['args']['args'] );
-		self::assertSame( $args, $backend->calls[5]['args']['args'] );
+
+		self::assertInstanceOf( Failure::class, $rejected );
+		self::assertInstanceOf( SchedulingError::class, $rejected->error );
+		self::assertSame( SchedulingErrorReason::InvalidPayload, $rejected->error->reason );
+		self::assertSame( 8_000, $rejected->error->context['maximum_json_length'] ?? null );
+		self::assertSame( array(), $this->preferred()->calls );
+		self::assertSame( array(), $this->fallback()->calls );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
-	 * Supplies every scheduling write guarded by the facade.
+	 * Returns the first backend candidate, mirroring Action Scheduler's production position.
 	 *
-	 * @return  array<string, array{0: 'schedule_recurring'|'schedule_single'|'enqueue_async'}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  RecordingBackend
 	 */
-	public static function guarded_write_provider(): array {
-		return array(
-			'schedule recurring' => array( 'schedule_recurring' ),
-			'schedule single'    => array( 'schedule_single' ),
-			'enqueue async'      => array( 'enqueue_async' ),
-		);
+	private function preferred(): RecordingBackend {
+		return $this->rig->backends()[0];
 	}
 
 	/**
-	 * Supplies every failure reason that must not fall through write routing.
+	 * Returns the final backend candidate, mirroring WP-Cron's fallback position.
 	 *
-	 * @return  array<string, array{0: string}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  RecordingBackend
 	 */
-	public static function non_readiness_failure_provider(): array {
-		return array(
-			'unsupported group'      => array( 'unsupported_group' ),
-			'unsupported recurrence' => array( 'unsupported_recurrence' ),
-			'invalid time input'     => array( 'invalid_time_input' ),
-			'invalid payload'        => array( 'invalid_payload' ),
-			'schedule failed'        => array( 'schedule_failed' ),
-		);
+	private function fallback(): RecordingBackend {
+		return $this->rig->backends()[1];
 	}
 
 	/**
-	 * Supplies timestamps outside the positive UNIX-seconds domain.
+	 * Returns one backend's recorded verb sequence.
 	 *
-	 * @return  array<string, array{0: int}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   RecordingBackend $backend Backend to inspect.
+	 *
+	 * @return  list<string>
 	 */
-	public static function non_positive_timestamp_provider(): array {
-		return array(
-			'zero'     => array( 0 ),
-			'negative' => array( -1 ),
-		);
+	private function verbs( RecordingBackend $backend ): array {
+		return \array_column( $backend->calls, 'verb' );
 	}
 
 	/**
-	 * Invokes one guarded write with the supplied hook arguments.
+	 * Returns one backend's calls for an exact verb.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async' $verb
-	 * @phpstan-param list<mixed> $args
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @param   SchedulerFacade $facade Facade under test.
-	 * @param   string          $verb   Write method to exercise.
-	 * @param   array           $args   Hook arguments.
+	 * @param   RecordingBackend $backend Backend to inspect.
+	 * @param   string           $verb    Exact verb.
 	 *
-	 * @return  AbstractResult<true, SchedulingError>
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
-	private function invoke_guarded_write( SchedulerFacade $facade, string $verb, array $args ): AbstractResult {
-		return match ( $verb ) {
-			'schedule_recurring' => $facade->schedule_recurring( self::HOOK, 300, $args ),
-			'schedule_single'    => $facade->schedule_single( self::HOOK, 1_700_000_000, $args ),
-			'enqueue_async'      => $facade->enqueue_async( self::HOOK, $args ),
-		};
+	private function calls( RecordingBackend $backend, string $verb ): array {
+		return \array_values( \array_filter( $backend->calls, static fn ( array $call ): bool => $verb === $call['verb'] ) );
 	}
 
 	/**
-	 * Builds one list whose default JSON encoding has the requested length.
+	 * Builds one list whose default JSON encoding has the requested byte length.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   int $json_length Requested encoded length.
 	 *
 	 * @return  list<string>
 	 */
-	private function args_with_json_length( int $json_length ): array {
+	private static function args_with_json_length( int $json_length ): array {
 		$args    = array( \str_repeat( 'x', $json_length - 4 ) );
 		$encoded = \wp_json_encode( $args );
-
 		if ( ! \is_string( $encoded ) || \strlen( $encoded ) !== $json_length ) {
-			throw new \LogicException( 'The test fixture must produce the requested JSON length.' );
+			throw new \LogicException( 'The scheduler payload fixture must produce the requested JSON length.' );
 		}
 
 		return $args;
 	}
 
 	/**
-	 * Returns a payload failure after checking its machine-readable reason.
+	 * Clears backend observations without changing accepted deliveries.
 	 *
-	 * @phpstan-param AbstractResult<true, SchedulingError> $result
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @param   AbstractResult $result Result to inspect.
-	 *
-	 * @return  SchedulingError
+	 * @return  void
 	 */
-	private function assert_invalid_payload( AbstractResult $result ): SchedulingError {
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::InvalidPayload, $result->error->reason );
-
-		return $result->error;
+	private function reset_backend_observations(): void {
+		foreach ( $this->rig->backends() as $backend ) {
+			$backend->calls = array();
+		}
 	}
 
-	/**
-	 * Returns a timing failure after checking its machine-readable reason.
-	 *
-	 * @phpstan-param AbstractResult<true, SchedulingError> $result
-	 *
-	 * @param   AbstractResult $result Result to inspect.
-	 *
-	 * @return  SchedulingError
-	 */
-	private function assert_invalid_time_input( AbstractResult $result ): SchedulingError {
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( SchedulingError::class, $result->error );
-		self::assertSame( SchedulingErrorReason::InvalidTimeInput, $result->error->reason );
-
-		return $result->error;
-	}
-
-	/**
-	 * Returns a backend's recorded verb sequence.
-	 *
-	 * @param   RecordingBackend $backend Backend to inspect.
-	 *
-	 * @return  list<string>
-	 */
-	private function call_verbs( RecordingBackend $backend ): array {
-		return \array_column( $backend->calls, 'verb' );
-	}
+	// endregion.
 }
