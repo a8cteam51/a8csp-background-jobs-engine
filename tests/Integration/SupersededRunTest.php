@@ -219,10 +219,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 					'start_args' => $start_args,
 				),
 			),
-			$batch->success_calls,
-			'Only the replacement batch must receive terminal success'
+			$batch->completed_calls,
+			'Only the replacement batch must receive on_completed()'
 		);
-		self::assertSame( array(), $batch->failure_calls, 'Supersession must not invoke the batch failure callback' );
+		self::assertSame( array(), $batch->failed_calls, 'Supersession must not invoke the batch on_failed() callback' );
 		self::assertSame( array( array( $run_b, $start_args ) ), $named_completed, 'The identity-specific completed hook must receive only the replacement payload' );
 		self::assertSame( array( array( self::IDENTITY, $run_b, $start_args ) ), $generic_completed, 'The generic completed hook must prepend the batch name to the replacement payload' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The replacement lifecycle must not repeat the identity-specific superseded hook' );

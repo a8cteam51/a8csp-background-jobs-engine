@@ -129,7 +129,7 @@ final class EngineFacadeTest extends TestCase {
 		$this->rig->run_due();
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $batch->generate_calls );
-		self::assertCount( 1, $batch->success_calls );
+		self::assertCount( 1, $batch->completed_calls );
 		$this->rig->assert_completed();
 	}
 

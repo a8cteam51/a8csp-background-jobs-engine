@@ -44,7 +44,7 @@ final readonly class Runs {
 	 * The lookup covers only the retained history window. Each history buffer retains at most the
 	 * positive `a8csp_background_tasks/history_size` filter value, 30 by default. A completed run
 	 * older than that window returns `Success(null)` as if absent. Consumers needing indefinite
-	 * retention keep their own pointer from `on_success()` or the completed lifecycle hook. History
+	 * retention keep their own pointer from `on_completed()` or the completed lifecycle hook. History
 	 * is recorded after those notifications, so a lookup inside either observes the previous retained
 	 * completion.
 	 *

@@ -78,9 +78,9 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			'a8csp_background_tasks/completed/' . self::IDENTITY,
 			static function ( string $run_id, array $args ) use ( $batch, &$completion_observations ): void {
 				$completion_observations[] = array(
-					'hook'          => 'named',
-					'payload'       => array( $run_id, $args ),
-					'success_calls' => \count( $batch->success_calls ),
+					'hook'            => 'named',
+					'payload'         => array( $run_id, $args ),
+					'completed_calls' => \count( $batch->completed_calls ),
 				);
 			},
 			10,
@@ -90,9 +90,9 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			'a8csp_background_tasks/completed',
 			static function ( string $name, string $run_id, array $args ) use ( $batch, &$completion_observations ): void {
 				$completion_observations[] = array(
-					'hook'          => 'generic',
-					'payload'       => array( $name, $run_id, $args ),
-					'success_calls' => \count( $batch->success_calls ),
+					'hook'            => 'generic',
+					'payload'         => array( $name, $run_id, $args ),
+					'completed_calls' => \count( $batch->completed_calls ),
 				);
 			},
 			10,
@@ -146,31 +146,31 @@ final class BatchChunkingTest extends IntegrationTestCase {
 					'start_args' => $start_args,
 				),
 			),
-			$batch->success_calls,
-			'Batch success must run exactly once with run ID and original start arguments'
+			$batch->completed_calls,
+			'Batch on_completed() must run exactly once with run ID and original start arguments'
 		);
 		self::assertSame(
 			array(
 				array(
-					'hook'          => 'named',
-					'payload'       => array( $run_id, $start_args ),
-					'success_calls' => 1,
+					'hook'            => 'named',
+					'payload'         => array( $run_id, $start_args ),
+					'completed_calls' => 1,
 				),
 				array(
-					'hook'          => 'generic',
-					'payload'       => array( self::IDENTITY, $run_id, $start_args ),
-					'success_calls' => 1,
+					'hook'            => 'generic',
+					'payload'         => array( self::IDENTITY, $run_id, $start_args ),
+					'completed_calls' => 1,
 				),
 			),
 			$completion_observations,
-			'Completed hooks must follow on_success and preserve identity-specific then generic payload order'
+			'Completed hooks must follow on_completed() and preserve identity-specific then generic payload order'
 		);
 
 		$last_completed = $consumer->runs()->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::IDENTITY );
-		self::assertSame( array(), $runs['live'], 'Terminal batch success must leave no live run' );
+		self::assertSame( array(), $runs['live'], 'Terminal batch completion must leave no live run' );
 		self::assertSame(
 			array(
 				array(

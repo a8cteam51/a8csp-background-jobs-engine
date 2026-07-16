@@ -302,14 +302,14 @@ final class RunReconciliationTest extends TestCase {
 		self::assertFalse( $state['executing'] ?? true );
 		self::assertSame( 2, $state['action_seq'] ?? null );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . $name, $this->options() );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
 		$this->lifecycle_deliveries->handle_run_action( $name, self::RUN_ID, $chunk, 3 );
 
 		self::assertCount( 1, $batch->process_calls );
 		self::assertSame( $chunk, $batch->process_calls[0]['chunk_args'] ?? null );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 	}
 
 	/**
@@ -356,7 +356,7 @@ final class RunReconciliationTest extends TestCase {
 			$this->backend->calls
 		);
 		self::assertSame( 'running', $this->run_state( $name )['status'] ?? null );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 	}
 
 	/**
@@ -625,7 +625,7 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		self::assertArrayHasKey( $this->run_option_name( $name ), $options );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . $name, $options );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame(
 			array(
@@ -651,7 +651,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $rejected_call, $this->backend->calls[1] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . $name, $this->options() );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 	}
 
@@ -823,7 +823,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->lifecycle_deliveries->handle_run_action( $name, self::RUN_ID, $chunk, 3 );
 
 		self::assertCount( 1, $batch->process_calls );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 	}
 
 	/**
@@ -868,7 +868,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
 		self::assertArrayNotHasKey( 'a8csp_bgte_run_' . $healthy_name . '_' . self::RUN_ID, $options );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_' . $healthy_name, $options );
-		self::assertCount( 1, $healthy_batch->failure_calls );
+		self::assertCount( 1, $healthy_batch->failed_calls );
 		self::assertSame(
 			array(
 				'level'   => 'warning',
@@ -1185,7 +1185,7 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A crashed batch follows its registered failure callback before common terminal cleanup.
+	 * A crashed batch follows its registered `on_failed()` callback before common terminal cleanup.
 	 *
 	 * @return  void
 	 */
@@ -1205,10 +1205,10 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
-		self::assertCount( 1, $batch->failure_calls );
-		self::assertSame( self::RUN_ID, $batch->failure_calls[0]['run_id'] ?? null );
-		self::assertSame( self::ARGS, $batch->failure_calls[0]['start_args'] ?? null );
-		$failure = $batch->failure_calls[0]['error'];
+		self::assertCount( 1, $batch->failed_calls );
+		self::assertSame( self::RUN_ID, $batch->failed_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $batch->failed_calls[0]['start_args'] ?? null );
+		$failure = $batch->failed_calls[0]['error'];
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
@@ -1232,11 +1232,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A throwing batch failure callback cannot starve a later consumer's crash reconciliation.
+	 * A throwing batch `on_failed()` callback cannot starve a later consumer's crash reconciliation.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_continues_after_a_batch_failure_callback_throws(): void {
+	public function test_sweep_continues_after_a_batch_on_failed_callback_throws(): void {
 		$throwing_name  = self::identity( 'broken-batch' );
 		$throwing_batch = new RecordingBatch( 'broken-batch' );
 		$this->batches->register( $throwing_name, $throwing_batch );
@@ -1249,13 +1249,13 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
-		$throwable                         = new \RuntimeException( 'Batch failure callback exploded.' );
-		$throwing_batch->failure_throwable = $throwable;
+		$throwable                        = new \RuntimeException( 'Batch on_failed callback exploded.' );
+		$throwing_batch->failed_throwable = $throwable;
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		self::assertCount( 1, $throwing_batch->failure_calls );
+		self::assertCount( 1, $throwing_batch->failed_calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_' . self::IDENTITY, $options );
 		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
@@ -1534,10 +1534,10 @@ final class RunReconciliationTest extends TestCase {
 			),
 			$failed
 		);
-		self::assertCount( 1, $batch->failure_calls );
-		self::assertSame( self::RUN_ID, $batch->failure_calls[0]['run_id'] ?? null );
-		self::assertSame( self::ARGS, $batch->failure_calls[0]['start_args'] ?? null );
-		$failure = $batch->failure_calls[0]['error'];
+		self::assertCount( 1, $batch->failed_calls );
+		self::assertSame( self::RUN_ID, $batch->failed_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $batch->failed_calls[0]['start_args'] ?? null );
+		$failure = $batch->failed_calls[0]['error'];
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
@@ -1592,8 +1592,8 @@ final class RunReconciliationTest extends TestCase {
 			),
 			$failed
 		);
-		self::assertCount( 1, $batch->failure_calls );
-		$failure = $batch->failure_calls[0]['error'];
+		self::assertCount( 1, $batch->failed_calls );
+		$failure = $batch->failed_calls[0]['error'];
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
@@ -1635,7 +1635,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertSame( $failed_raw, $this->wpdb->rows[ $failed_option ] ?? null );
-		self::assertSame( array(), $batch->failure_calls );
+		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
@@ -1662,9 +1662,9 @@ final class RunReconciliationTest extends TestCase {
 			),
 			2
 		);
-		$run_store         = $this->stores->run_store( $name );
-		$rival_started     = false;
-		$batch->on_failure = function () use ( $batch, $name, $run_store, &$rival_started ): void {
+		$run_store        = $this->stores->run_store( $name );
+		$rival_started    = false;
+		$batch->on_failed = function () use ( $batch, $name, $run_store, &$rival_started ): void {
 			if ( $rival_started ) {
 				return;
 			}
@@ -1697,7 +1697,7 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertInstanceOf( \RuntimeException::class, $caught );
 		self::assertSame( 'Original callback worker resumed after rival cleanup.', $caught->getMessage() );
-		self::assertCount( 2, $batch->failure_calls );
+		self::assertCount( 2, $batch->failed_calls );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . $name,
@@ -1735,7 +1735,7 @@ final class RunReconciliationTest extends TestCase {
 					'start_args' => self::ARGS,
 				),
 			),
-			$batch->success_calls
+			$batch->completed_calls
 		);
 		self::assertSame(
 			array(

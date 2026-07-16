@@ -123,7 +123,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $this->batch->process_calls[0]['chunk_args'] ?? null );
-		self::assertCount( 1, $this->batch->success_calls );
+		self::assertCount( 1, $this->batch->completed_calls );
 		$this->rig->assert_completed();
 	}
 
@@ -209,7 +209,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 		$this->rig->assert_no_retry();
 	}
 
@@ -315,7 +315,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( $queue, $this->run_state()['queue'] ?? null );
-		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame( array(), $this->batch->failed_calls );
 	}
 
 	/**
@@ -573,7 +573,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 		self::assertStringNotContainsString( 'callback-private-payload', $failure->summary );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 	}
 
 	/**
@@ -739,7 +739,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -766,7 +766,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 	}
 
 	/**
@@ -857,7 +857,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 			$this->rig->randomizer()->calls
 		);
 		$this->rig->assert_retry_scheduled();
-		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame( array(), $this->batch->failed_calls );
 	}
 
 	/**
@@ -944,7 +944,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$failure = $this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
 		self::assertSame( 1, $failure->attempts );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -991,15 +991,15 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		}
 
 		self::assertSame( $listener, $caught );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 
 	/**
-	 * Cleanup fences terminal success before the callback and public hooks.
+	 * Cleanup fences terminal completion before the callback and public hooks.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Callback-time production state is the only evidence that cleanup publishes its terminal generation before invoking consumer success code.
+	 * @pin-rationale Callback-time production state is the only evidence that cleanup publishes its terminal generation before invoking consumer completion code.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1008,8 +1008,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 */
 	public function test_handle_cleanup_action_fences_before_callback_and_preserves_hook_order(): void {
 		$this->prepare_cleanup_delivery();
-		$observed                = null;
-		$this->batch->on_success = function () use ( &$observed ): void {
+		$observed                  = null;
+		$this->batch->on_completed = function () use ( &$observed ): void {
 			$observed = $this->run_state();
 		};
 
@@ -1017,44 +1017,44 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		self::assertSame( 'completed', $observed['status'] ?? null );
 		self::assertTrue( $observed['executing'] ?? false );
-		self::assertCount( 1, $this->batch->success_calls );
+		self::assertCount( 1, $this->batch->completed_calls );
 		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A success-callback throwable cannot change the completed outcome.
+	 * An `on_completed()` throwable cannot change the completed outcome.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_completes_and_logs_when_success_callback_throws(): void {
+	public function test_handle_cleanup_action_completes_and_logs_when_on_completed_throws(): void {
 		$this->prepare_cleanup_delivery();
-		$this->batch->success_throwable = new class( 'Success callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
+		$this->batch->completed_throwable = new class( 'on_completed callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->batch->success_calls );
-		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->completed_calls );
+		self::assertSame( array(), $this->batch->failed_calls );
 		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A replacement started by on_success survives the finishing cleanup.
+	 * A replacement started by `on_completed()` survives the finishing cleanup.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A real facade admission from the success callback creates the successor generation that incumbent cleanup must not delete.
+	 * @pin-rationale A real facade admission from the `on_completed()` callback creates the successor generation that incumbent cleanup must not delete.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_completes_when_success_callback_starts_replacement(): void {
+	public function test_handle_cleanup_action_completes_when_on_completed_starts_replacement(): void {
 		$this->prepare_cleanup_delivery();
-		$replacement             = null;
-		$this->batch->on_success = function () use ( &$replacement ): void {
+		$replacement               = null;
+		$this->batch->on_completed = function () use ( &$replacement ): void {
 			$replacement = $this->consumer->batches()->start( self::NAME, self::ARGS );
 		};
 
@@ -1067,7 +1067,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * A sequential duplicate cleanup delivery cannot repeat success.
+	 * A sequential duplicate cleanup delivery cannot repeat `on_completed()`.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Redelivering the registered cleanup generation after state consumption proves the terminal callback is idempotent under at-least-once scheduling.
@@ -1077,7 +1077,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_duplicate_cleanup_delivery_fires_success_once(): void {
+	public function test_duplicate_cleanup_delivery_fires_on_completed_once(): void {
 		$this->prepare_cleanup_delivery();
 		$sequence = $this->run_state()['action_seq'] ?? null;
 		self::assertIsInt( $sequence );
@@ -1085,7 +1085,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 		\do_action( 'a8csp_background_tasks/cleanup', self::IDENTITY, self::RUN_ID, $sequence );
 
-		self::assertCount( 1, $this->batch->success_calls );
+		self::assertCount( 1, $this->batch->completed_calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/completed' ) );
 	}
 
@@ -1108,7 +1108,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
-		self::assertCount( 1, $this->batch->failure_calls );
+		self::assertCount( 1, $this->batch->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -1299,7 +1299,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private function assert_foreign_superseded(): void {
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame( array(), $this->batch->failed_calls );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 

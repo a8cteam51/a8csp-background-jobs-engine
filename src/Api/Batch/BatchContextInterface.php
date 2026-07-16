@@ -48,8 +48,8 @@ interface BatchContextInterface {
 	/**
 	 * Returns the identifier the engine assigns when the run starts.
 	 *
-	 * The engine passes the same value as `$run_id` to `BatchInterface::on_success()` or
-	 * `BatchInterface::on_failure()` when either callback is invoked.
+	 * The engine passes the same value as `$run_id` to `BatchInterface::on_completed()` or
+	 * `BatchInterface::on_failed()` when either callback is invoked.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

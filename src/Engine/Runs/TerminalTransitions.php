@@ -180,7 +180,7 @@ final readonly class TerminalTransitions {
 	}
 
 	/**
-	 * Marks a successful batch before completing its durable terminal effects.
+	 * Marks a completed batch before completing its durable terminal effects.
 	 *
 	 * @internal Engine product service.
 	 *

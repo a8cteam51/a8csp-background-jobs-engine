@@ -124,7 +124,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					'start_args' => $start_args,
 				),
 			),
-			$batch->success_calls,
+			$batch->completed_calls,
 			'The accepted incumbent must complete normally after the rejected start'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Incumbent completion must release the overlap lock' );
@@ -247,10 +247,10 @@ final class OverlapLockTest extends IntegrationTestCase {
 					'start_args' => $start_args,
 				),
 			),
-			$batch->success_calls,
+			$batch->completed_calls,
 			'The reclaimed run must complete normally'
 		);
-		self::assertSame( array(), $batch->failure_calls, 'Stale reclaim must not invoke the batch failure callback' );
+		self::assertSame( array(), $batch->failed_calls, 'Stale reclaim must not invoke the batch on_failed() callback' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Reclaimed-run completion must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Reclaimed-run completion must not repeat the generic superseded hook' );
 		self::assertCount( 2, $log_records );

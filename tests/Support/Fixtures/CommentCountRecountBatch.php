@@ -196,7 +196,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_success( string $run_id, array $start_args ): void {
+	public function on_completed( string $run_id, array $start_args ): void {
 		/**
 		 * Fires after every comment-count chunk succeeds.
 		 *
@@ -222,7 +222,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void {
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
 		/**
 		 * Fires after the demo batch reaches terminal failure.
 		 *

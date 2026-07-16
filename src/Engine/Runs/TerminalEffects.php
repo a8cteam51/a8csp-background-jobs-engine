@@ -371,7 +371,7 @@ final readonly class TerminalEffects {
 	}
 
 	/**
-	 * Fires one successful or failed batch callback with its established throwable policy.
+	 * Fires one completed or failed batch callback with its established throwable policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -403,10 +403,10 @@ final readonly class TerminalEffects {
 
 		if ( RunStatus::Completed === $state->status ) {
 			try {
-				$batch->on_success( $run_id, $state->start_args );
+				$batch->on_completed( $run_id, $state->start_args );
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(
-					'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
+					'Batch on_completed callback failed after all chunks completed; fix the batch callback.',
 					array(
 						'batch_name' => $identity,
 						'run_id'     => $run_id,
@@ -419,10 +419,10 @@ final readonly class TerminalEffects {
 		}
 
 		if ( RunStatus::Failed !== $state->status || null === $failure ) {
-			throw new \LogicException( 'Batch failure callbacks require a failed terminal state and failure detail.' );
+			throw new \LogicException( 'Batch on_failed callbacks require a failed terminal state and failure detail.' );
 		}
 
-		$batch->on_failure( $run_id, $state->start_args, $failure );
+		$batch->on_failed( $run_id, $state->start_args, $failure );
 
 		return true;
 	}

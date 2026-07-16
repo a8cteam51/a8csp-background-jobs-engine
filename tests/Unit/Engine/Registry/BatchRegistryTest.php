@@ -164,7 +164,7 @@ final class BatchRegistryTest extends TestCase {
 			public function process_chunk( array $chunk_args, BatchContextInterface $context ): void {}
 
 			/**
-			 * Accepts an unused success because registry coverage never executes work.
+			 * Accepts an unused completion because registry coverage never executes work.
 			 *
 			 * @param   string                  $run_id     Unused run identifier.
 			 * @param   array<array-key, mixed> $start_args Unused start arguments.
@@ -172,10 +172,10 @@ final class BatchRegistryTest extends TestCase {
 			 * @return  void
 			 */
 			#[\Override]
-			public function on_success( string $run_id, array $start_args ): void {}
+			public function on_completed( string $run_id, array $start_args ): void {}
 
 			/**
-			 * Accepts an unused failure because registry coverage never executes work.
+			 * Accepts an unused failed outcome because registry coverage never executes work.
 			 *
 			 * @param   string                  $run_id     Unused run identifier.
 			 * @param   array<array-key, mixed> $start_args Unused start arguments.
@@ -184,7 +184,7 @@ final class BatchRegistryTest extends TestCase {
 			 * @return  void
 			 */
 			#[\Override]
-			public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void {}
+			public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {}
 
 			/** {@inheritDoc} */
 			#[\Override]

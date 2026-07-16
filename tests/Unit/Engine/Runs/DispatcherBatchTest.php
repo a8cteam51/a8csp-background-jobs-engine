@@ -208,7 +208,7 @@ final class DispatcherBatchTest extends TestCase {
 		$readmitted = $this->consumer->batches()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $readmitted );
 		self::assertSame( array(), $this->batch->generate_calls );
-		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertSame( array(), $this->batch->failed_calls );
 	}
 
 	/**

@@ -126,7 +126,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $batch->generate_calls );
 		self::assertCount( 1, $batch->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $batch->process_calls[0]['chunk_args'] );
-		self::assertCount( 1, $batch->success_calls );
+		self::assertCount( 1, $batch->completed_calls );
 		$this->rig->assert_completed();
 	}
 

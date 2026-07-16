@@ -17,7 +17,7 @@ A Task is one named unit of background work. A consumer registers a `TaskInterfa
 
 A Schedule is an owner-scoped declaration that dispatches a registered Task on a fixed recurrence. The declaration includes the task arguments, overlap policy, catch-up policy, and advisory priority.
 
-A Batch is named work split into independently processed chunks. A consumer registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after success or failure. Cancelled and superseded Batches invoke neither terminal callback. Tasks and Batches share one site-global `{owner}:{name}` identity namespace, so one owner cannot register the same local name as both kinds.
+A Batch is named work split into independently processed chunks. A consumer registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after the run completes or fails. Cancelled and superseded Batches invoke neither terminal callback. Tasks and Batches share one site-global `{owner}:{name}` identity namespace, so one owner cannot register the same local name as both kinds.
 
 Consumers use the same API with either scheduling backend. An occurrence on a temporarily unavailable backend is dormant, not lost; writes can use another ready backend, and the dormant occurrence becomes visible when its backend recovers.
 
@@ -241,7 +241,7 @@ interface TaskInterface extends WorkInterface {
 
 ### Batch and batch context
 
-`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives a terminal callback after success or failure, and supplies the retry policy used independently for each failed chunk. Chunk execution is at-least-once: queue advancement persists only after `process_chunk()` returns, so a crash in between redelivers the same chunk, and implementations converge replays through stable business identifiers carried in the chunk arguments. Terminal callbacks are likewise at-least-once across crash recovery — durable under Action Scheduler, best-effort under the WP-Cron fallback, whose sweeps only run while site traffic triggers them: a process can stop after the callback returns but before its completion marker persists, so implementations use the run ID to converge a replay. Cancellation and supersession invoke neither callback.
+`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives a terminal callback after the run completes or fails, and supplies the retry policy used independently for each failed chunk. Chunk execution is at-least-once: queue advancement persists only after `process_chunk()` returns, so a crash in between redelivers the same chunk, and implementations converge replays through stable business identifiers carried in the chunk arguments. Terminal callbacks are likewise at-least-once across crash recovery — durable under Action Scheduler, best-effort under the WP-Cron fallback, whose sweeps only run while site traffic triggers them: a process can stop after the callback returns but before its completion marker persists, so implementations use the run ID to converge a replay. Cancellation and supersession invoke neither callback.
 
 ```php
 interface BatchInterface extends WorkInterface {
@@ -256,9 +256,9 @@ interface BatchInterface extends WorkInterface {
 		BatchContextInterface $context
 	): void;
 
-	public function on_success( string $run_id, array $start_args ): void;
+	public function on_completed( string $run_id, array $start_args ): void;
 
-	public function on_failure(
+	public function on_failed(
 		string $run_id,
 		array $start_args,
 		RunFailure $failure
@@ -268,7 +268,7 @@ interface BatchInterface extends WorkInterface {
 }
 ```
 
-The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. Direct batch implementations must declare it; invalid values use the shared 300-second default, and the engine caps the credited window at six hours.
+The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. `WorkInterface` owns the shared 300-second default, which `AbstractBatch` supplies automatically. Direct implementations must declare it; invalid or non-positive declarations use that default, and the engine caps the credited window at six hours.
 
 `RunFailure::$identity` is the complete `{owner}:{name}` work identity. The value also carries the run ID, consumed attempt count, typed `RunFailureStage`, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
 
@@ -306,7 +306,7 @@ Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization.
 
 ## Idempotency invariant
 
-Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and lifecycle hooks have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. A throwing failure callback or lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
+Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and lifecycle hooks have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. A throwing `on_failed()` callback or lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
 
 ## Admission overlap and catch-up policies
 
@@ -397,15 +397,15 @@ Bulk data belongs in storage that the Task or Batch reads by key. Pass identifyi
 
 `$consumer->runs()->last_completed_run_id( $name )` returns the most recently recorded `Completed` run ID for the owner-local Task or Batch name. A successful lookup carries the run ID or `null` when no completed run remains in the retained history window; a failed, cancelled, or superseded run recorded later does not displace a retained completion. The lookup follows terminal recording order and does not re-sort the timestamp-prefixed run IDs.
 
-Each history buffer retains at most the positive `a8csp_background_tasks/history_size` filter value, 30 by default. Once later terminal outcomes evict a completion, the lookup returns `Success(null)` as if that completion were absent. Consumers needing an indefinite checkpoint persist their own pointer from a Batch's `on_success()` callback or the completed lifecycle hook. Terminal history is recorded after those notifications, so a lookup from either intentionally returns the previous retained completion.
+Each history buffer retains at most the positive `a8csp_background_tasks/history_size` filter value, 30 by default. Once later terminal outcomes evict a completion, the lookup returns `Success(null)` as if that completion were absent. Consumers needing an indefinite checkpoint persist their own pointer from a Batch's `on_completed()` callback or the completed lifecycle hook. Terminal history is recorded after those notifications, so a lookup from either intentionally returns the previous retained completion.
 
 A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total, including the first, a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw `NonRetryableException`, or another exception implementing `NonRetryableExceptionInterface`, to bypass the remaining attempts for a permanent failure.
 
-After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch failure callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
+After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch `on_failed()` callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
 
 Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. Cancellation is refused while an admitted lifecycle action is executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
 
-Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking consumer work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_success()` nor `on_failure()`.
+Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking consumer work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_completed()` nor `on_failed()`.
 
 ## WP-CLI
 

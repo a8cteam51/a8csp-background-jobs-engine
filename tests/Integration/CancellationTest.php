@@ -246,8 +246,8 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 		self::assertSame( array( $first_chunk ), \array_column( $batch->process_calls, 'chunk_args' ) );
-		self::assertSame( array(), $batch->success_calls, 'Cancellation must not invoke the batch success callback' );
-		self::assertSame( array(), $batch->failure_calls, 'Cancellation must not invoke the batch failure callback' );
+		self::assertSame( array(), $batch->completed_calls, 'Cancellation must not invoke the batch on_completed() callback' );
+		self::assertSame( array(), $batch->failed_calls, 'Cancellation must not invoke the batch on_failed() callback' );
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $continue_action_id ) );
 		self::assertSame(

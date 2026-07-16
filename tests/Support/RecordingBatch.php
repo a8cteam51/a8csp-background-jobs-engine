@@ -33,18 +33,18 @@ final class RecordingBatch implements BatchInterface {
 	public array $process_calls = array();
 
 	/**
-	 * Successful-run callback payloads in call order.
+	 * Completed-run callback payloads in call order.
 	 *
 	 * @var list<array{run_id: string, start_args: array<array-key, mixed>}>
 	 */
-	public array $success_calls = array();
+	public array $completed_calls = array();
 
 	/**
 	 * Failed-run callback payloads in call order.
 	 *
 	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: RunFailure}>
 	 */
-	public array $failure_calls = array();
+	public array $failed_calls = array();
 
 	/** Throwable raised after queue generation is recorded and observed. */
 	public ?\Throwable $generate_throwable = null;
@@ -55,25 +55,25 @@ final class RecordingBatch implements BatchInterface {
 	/** Throwable raised after chunk processing is recorded and observed. */
 	public ?\Throwable $process_throwable = null;
 
-	/** Throwable raised after successful-run handling is recorded. */
-	public ?\Throwable $success_throwable = null;
+	/** Throwable raised after completed-run handling is recorded. */
+	public ?\Throwable $completed_throwable = null;
 
 	/** Throwable raised after failed-run handling is recorded. */
-	public ?\Throwable $failure_throwable = null;
+	public ?\Throwable $failed_throwable = null;
 
 	/**
-	 * Observation run after recording successful-run handling and before an optional failure.
+	 * Observation run after recording completed-run handling and before an optional failure.
 	 *
 	 * @var (\Closure(string, array<array-key, mixed>): void)|null
 	 */
-	public ?\Closure $on_success = null;
+	public ?\Closure $on_completed = null;
 
 	/**
 	 * Observation run after recording failed-run handling and before an optional failure.
 	 *
 	 * @var (\Closure(string, array<array-key, mixed>, RunFailure): void)|null
 	 */
-	public ?\Closure $on_failure = null;
+	public ?\Closure $on_failed = null;
 
 	/**
 	 * Observation run after recording queue generation and before an optional failure.
@@ -170,7 +170,7 @@ final class RecordingBatch implements BatchInterface {
 	}
 
 	/**
-	 * Records one successful-run callback.
+	 * Records one completed-run callback.
 	 *
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
@@ -178,19 +178,19 @@ final class RecordingBatch implements BatchInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_success( string $run_id, array $start_args ): void {
-		$this->success_calls[] = array(
+	public function on_completed( string $run_id, array $start_args ): void {
+		$this->completed_calls[] = array(
 			'run_id'     => $run_id,
 			'start_args' => $start_args,
 		);
-		$this->record_lifecycle_event( 'success' );
+		$this->record_lifecycle_event( 'completed' );
 
-		if ( null !== $this->on_success ) {
-			( $this->on_success )( $run_id, $start_args );
+		if ( null !== $this->on_completed ) {
+			( $this->on_completed )( $run_id, $start_args );
 		}
 
-		if ( null !== $this->success_throwable ) {
-			throw $this->success_throwable;
+		if ( null !== $this->completed_throwable ) {
+			throw $this->completed_throwable;
 		}
 	}
 
@@ -204,20 +204,20 @@ final class RecordingBatch implements BatchInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void {
-		$this->failure_calls[] = array(
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+		$this->failed_calls[] = array(
 			'run_id'     => $run_id,
 			'start_args' => $start_args,
 			'error'      => $failure,
 		);
-		$this->record_lifecycle_event( 'failure' );
+		$this->record_lifecycle_event( 'failed' );
 
-		if ( null !== $this->on_failure ) {
-			( $this->on_failure )( $run_id, $start_args, $failure );
+		if ( null !== $this->on_failed ) {
+			( $this->on_failed )( $run_id, $start_args, $failure );
 		}
 
-		if ( null !== $this->failure_throwable ) {
-			throw $this->failure_throwable;
+		if ( null !== $this->failed_throwable ) {
+			throw $this->failed_throwable;
 		}
 	}
 

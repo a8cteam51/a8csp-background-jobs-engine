@@ -13,11 +13,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface
  * Contract for background work split into independently processed chunks.
  *
  * Queue generation defines the initial chunks, and processing handles one chunk. The engine invokes
- * `on_success()` after every chunk succeeds or `on_failure()` after the run fails. Terminal callbacks
+ * `on_completed()` after every chunk succeeds or `on_failed()` after the run fails. Terminal callbacks
  * are at-least-once across crash recovery, replayed durably under Action Scheduler and best-effort
  * under the WP-Cron fallback, because a process can stop after the callback returns but
  * before its completion marker persists; implementations use the run identifier to converge replays.
- * A throwing `on_failure()` remains pending for a later maintenance attempt.
+ * A throwing `on_failed()` remains pending for a later maintenance attempt.
  *
  * A cancelled or superseded run ends without either callback; those outcomes surface through engine
  * hooks.
@@ -110,12 +110,12 @@ interface BatchInterface extends WorkInterface {
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
-	 * @throws  \Throwable When success handling fails; the engine logs the throwable and the run
+	 * @throws  \Throwable When `on_completed()` handling fails; the engine logs the throwable and the run
 	 *                     still completes — every chunk has already succeeded.
 	 *
 	 * @return  void
 	 */
-	public function on_success( string $run_id, array $start_args ): void;
+	public function on_completed( string $run_id, array $start_args ): void;
 
 	/**
 	 * Handles a failed run.
@@ -127,12 +127,12 @@ interface BatchInterface extends WorkInterface {
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   RunFailure              $failure    Persisted terminal-failure value.
 	 *
-	 * @throws  \Throwable When failure handling fails; the callback effect remains pending for
+	 * @throws  \Throwable When `on_failed()` handling fails; the callback effect remains pending for
 	 *                     at-least-once replay by terminal maintenance.
 	 *
 	 * @return  void
 	 */
-	public function on_failure( string $run_id, array $start_args, RunFailure $failure ): void;
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void;
 
 	/**
 	 * Returns the retry policy for failed chunks.

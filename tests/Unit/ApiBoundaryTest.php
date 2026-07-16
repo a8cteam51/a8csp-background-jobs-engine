@@ -17,6 +17,7 @@ final class ApiBoundaryTest extends TestCase {
 	private const ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
 
 	private const EXPECTED_API_TYPES = array(
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\AbstractBatch',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchContextInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\Batches',
@@ -73,7 +74,7 @@ final class ApiBoundaryTest extends TestCase {
 	public function test_api_declarations_do_not_reference_internal_namespaces(): void {
 		$types = self::declared_api_types();
 		self::assertNotEmpty( $types );
-		self::assertCount( 26, $types );
+		self::assertCount( 27, $types );
 		self::assertSame( self::EXPECTED_API_TYPES, $types );
 
 		foreach ( $types as $type ) {

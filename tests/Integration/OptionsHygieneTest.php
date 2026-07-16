@@ -86,8 +86,8 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 					'start_args' => $batch_args,
 				),
 			),
-			$batch->success_calls,
-			'The census batch must complete its terminal success callback'
+			$batch->completed_calls,
+			'The census batch must invoke its on_completed() callback'
 		);
 
 		$rows = $this->engine_option_rows();
