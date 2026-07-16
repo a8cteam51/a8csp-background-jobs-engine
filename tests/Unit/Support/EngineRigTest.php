@@ -91,7 +91,7 @@ final class EngineRigTest extends TestCase {
 		}
 	}
 
-	/** A retryable task failure emits retrying and retains the real scheduled redelivery. */
+	/** A retryable task failure emits the retry-scheduled notification and retains the real scheduled redelivery. */
 	public function test_retry_helper_observes_real_failure_redelivery(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {

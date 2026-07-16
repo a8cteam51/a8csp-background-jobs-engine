@@ -296,7 +296,7 @@ final readonly class FailureLifecycle {
 		$state = $replacement;
 
 		try {
-			$this->fire_retrying_hooks( $identity, $run_id, $state->start_args, $attempt, $delay );
+			$this->fire_retry_scheduled_hooks( $identity, $run_id, $state->start_args, $attempt, $delay );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -339,7 +339,9 @@ final readonly class FailureLifecycle {
 	}
 
 	/**
-	 * Fires the identity-specific retrying hook before its generic companion.
+	 * Fires the retry-scheduled hooks after the retry state persists.
+	 *
+	 * The identity-specific hook precedes its generic companion and the retry action scheduling write.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -352,11 +354,11 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fire_retrying_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
+	private function fire_retry_scheduled_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
 		try {
-			\do_action( 'a8csp_background_tasks/retrying/' . $identity, $run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_background_tasks/retry_scheduled/' . $identity, $run_id, $start_args, $attempt, $delay );
 		} finally {
-			\do_action( 'a8csp_background_tasks/retrying', $identity, $run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_background_tasks/retry_scheduled', $identity, $run_id, $start_args, $attempt, $delay );
 		}
 	}
 

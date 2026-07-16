@@ -286,10 +286,10 @@ final readonly class OccurrenceDelivery {
 					 * @param   int    $misfired_due Dropped occurrence due timestamp.
 					 * @param   int    $now          Occurrence observation timestamp.
 					 */
-					\do_action( 'a8csp_background_tasks/misfired/' . $registration_key, $owner, $misfired_due, $now );
+					\do_action( 'a8csp_background_tasks/misfire_skipped/' . $registration_key, $owner, $misfired_due, $now );
 				} finally {
 					/**
-					 * Fires after the identity-specific misfired schedule hook.
+					 * Fires after the identity-specific misfire-skipped schedule hook.
 					 *
 					 * @since   1.0.0
 					 * @version 1.0.0
@@ -299,11 +299,11 @@ final readonly class OccurrenceDelivery {
 					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
 					 * @param   int    $now              Occurrence observation timestamp.
 					 */
-					\do_action( 'a8csp_background_tasks/misfired', $registration_key, $owner, $misfired_due, $now );
+					\do_action( 'a8csp_background_tasks/misfire_skipped', $registration_key, $owner, $misfired_due, $now );
 				}
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(
-					'Misfired schedule listener failed after the occurrence state was persisted; fix the hook listener.',
+					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
 					array(
 						'owner'     => $owner,
 						'name'      => $name,

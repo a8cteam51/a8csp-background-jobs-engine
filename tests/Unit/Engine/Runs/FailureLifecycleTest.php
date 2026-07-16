@@ -160,22 +160,22 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * Ownership loss in retrying listeners fences the retry successor.
+	 * Ownership loss in retry-scheduled listeners fences the retry successor.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The public retrying hook installs a fixture-built foreign generation after delay selection but before the retry scheduling write.
+	 * @pin-rationale The public retry-scheduled hook installs a fixture-built foreign generation after delay selection but before the retry scheduling write.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_before_retry_schedule_after_retrying_listener_ownership_loss(): void {
+	public function test_handle_run_action_supersedes_before_retry_schedule_after_retry_scheduled_listener_ownership_loss(): void {
 		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable          = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
 		$this->observe_action(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY,
+			'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY,
 			function (): void {
 				$this->install_foreign_generation();
 			}
@@ -184,7 +184,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' ) );
 		$this->assert_foreign_superseded();
 	}
 
@@ -284,7 +284,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS, self::ARGS ), $this->task->calls );
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' ) );
 		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 2, $failure->attempts );
 	}
@@ -433,31 +433,31 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A throwing retrying listener terminalizes after both public retrying hooks.
+	 * A throwing retry-scheduled listener terminalizes after both public retry-scheduled hooks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_terminalizes_a_throwing_retrying_listener(): void {
+	public function test_handle_run_action_terminalizes_a_throwing_retry_scheduled_listener(): void {
 		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 7;
-		$this->set_action_throwable( 'a8csp_background_tasks/retrying/' . self::IDENTITY, new \RuntimeException( 'Retrying listener exploded.' ) );
+		$this->set_action_throwable( 'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY, new \RuntimeException( 'Retry-scheduled listener exploded.' ) );
 		$this->enqueue_task();
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' ) );
 		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
 	}
 
 	/**
-	 * Ownership loss after a retrying-listener error supersedes before failure retention.
+	 * Ownership loss after a retry-scheduled listener error supersedes before failure retention.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The public retrying hook installs a fixture-built foreign generation before its scripted throwable reaches failure preparation.
+	 * @pin-rationale The public retry-scheduled hook installs a fixture-built foreign generation before its scripted throwable reaches failure preparation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -469,12 +469,12 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->throwable          = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 7;
 		$this->observe_action(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY,
+			'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY,
 			function (): void {
 				$this->install_foreign_generation();
 			}
 		);
-		$this->set_action_throwable( 'a8csp_background_tasks/retrying/' . self::IDENTITY, new \RuntimeException( 'Retrying listener exploded.' ) );
+		$this->set_action_throwable( 'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY, new \RuntimeException( 'Retry-scheduled listener exploded.' ) );
 		$this->enqueue_task();
 
 		$this->rig->run_due();
@@ -486,7 +486,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * A retry scheduling failure identifies its public failure stage.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The retrying hooks precede the rejected write; an empty delivery boundary proves terminalization leaves no delayed retry generation.
+	 * @pin-rationale The retry-scheduled hooks precede the rejected write; an empty delivery boundary proves terminalization leaves no delayed retry generation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -502,7 +502,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' ) );
 		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -651,7 +651,7 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * Returns the latest generic retrying-hook payload.
+	 * Returns the latest generic retry-scheduled hook payload.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -659,7 +659,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  list<mixed>
 	 */
 	private function latest_retry(): array {
-		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' );
+		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' );
 		self::assertNotEmpty( $events );
 
 		return $events[ \count( $events ) - 1 ];

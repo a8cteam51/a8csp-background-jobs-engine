@@ -169,7 +169,7 @@ final class EngineErrorTest extends TestCase {
 				'throwable'        => new \UnexpectedValueException( 'password=hunter2' ),
 				'secret'           => 'password=hunter2',
 				'expected_class'   => \UnexpectedValueException::class,
-				'corrective_prose' => 'Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.',
+				'corrective_prose' => 'Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.',
 			),
 		);
 	}

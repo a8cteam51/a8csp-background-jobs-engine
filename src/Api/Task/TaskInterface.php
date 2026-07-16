@@ -52,9 +52,10 @@ interface TaskInterface extends WorkInterface {
 	 * identity prepended to the same payload. The `{identity}` suffix is the complete `{owner}:{name}`
 	 * task identity.
 	 *
-	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{identity}` with the exact signature
-	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
-	 * by `a8csp_background_tasks/retrying` with the complete task identity prepended to the same
+	 * After persisting a retry disposition, the engine dispatches
+	 * `a8csp_background_tasks/retry_scheduled/{identity}` with the exact signature `(string $run_id,
+	 * array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed by
+	 * `a8csp_background_tasks/retry_scheduled` with the complete task identity prepended to the same
 	 * payload.
 	 *
 	 * @since   1.0.0

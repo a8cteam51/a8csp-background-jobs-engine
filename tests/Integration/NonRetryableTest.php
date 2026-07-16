@@ -57,22 +57,22 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgte_latest_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgte_failed_' . self::IDENTITY );
 
-		$named_retrying   = array();
-		$generic_retrying = array();
-		$named_failed     = array();
-		$generic_failed   = array();
+		$named_retry_scheduled   = array();
+		$generic_retry_scheduled = array();
+		$named_failed            = array();
+		$generic_failed          = array();
 		\add_action(
-			'a8csp_background_tasks/retrying/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retrying ): void {
-				$named_retrying[] = array( $run_id, $start_args, $attempt, $delay );
+			'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY,
+			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
+				$named_retry_scheduled[] = array( $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			4
 		);
 		\add_action(
-			'a8csp_background_tasks/retrying',
-			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retrying ): void {
-				$generic_retrying[] = array( $name, $run_id, $start_args, $attempt, $delay );
+			'a8csp_background_tasks/retry_scheduled',
+			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
+				$generic_retry_scheduled[] = array( $name, $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			5
@@ -102,8 +102,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable task action' );
 
 		self::assertSame( array( $args ), $task->calls, 'A non-retryable task must execute exactly once' );
-		self::assertSame( array(), $named_retrying, 'A non-retryable failure must not fire the identity-specific retrying hook' );
-		self::assertSame( array(), $generic_retrying, 'A non-retryable failure must not fire the generic retrying hook' );
+		self::assertSame( array(), $named_retry_scheduled, 'A non-retryable failure must not fire the identity-specific retry-scheduled hook' );
+		self::assertSame( array(), $generic_retry_scheduled, 'A non-retryable failure must not fire the generic retry-scheduled hook' );
 		self::assertCount( 1, $named_failed, 'A non-retryable failure must fire the identity-specific failed hook once' );
 		self::assertCount( 1, $generic_failed, 'A non-retryable failure must fire the generic failed hook once' );
 

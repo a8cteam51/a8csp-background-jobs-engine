@@ -82,9 +82,10 @@ interface BatchInterface extends WorkInterface {
 	 * process that stops between the chunk's side effects and that persistence redelivers the same
 	 * chunk. Implementations MUST be idempotent per chunk and carry the stable business identifiers
 	 * that let a replayed chunk converge inside the chunk arguments.
-	 * Retry reschedules dispatch `a8csp_background_tasks/retrying/{identity}` with the exact signature
-	 * `(string $run_id, array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed
-	 * by `a8csp_background_tasks/retrying` with the complete batch identity prepended to the same
+	 * After persisting a retry disposition, the engine dispatches
+	 * `a8csp_background_tasks/retry_scheduled/{identity}` with the exact signature `(string $run_id,
+	 * array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed by
+	 * `a8csp_background_tasks/retry_scheduled` with the complete batch identity prepended to the same
 	 * payload. The `{identity}` suffix is the complete `{owner}:{name}` batch identity.
 	 *
 	 * @since   1.0.0

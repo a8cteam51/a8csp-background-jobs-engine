@@ -322,11 +322,11 @@ Schedule overlap is configured independently through `OverlapPolicy`. Catch-up d
 
 `Allow` gives each run an independent overlap identity. `Skip` leaves the active run in place. `Replace` transfers a held matching lock, or acquires or reclaims it when no matching lock is held. An incumbent already inside a callback reaches its next fencing boundary rather than being interrupted mid-callback.
 
-An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{identity}`. The `{identity}` suffix and `$identity` filter argument are the complete `{owner}:{name}` schedule identity. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfired hooks.
+An occurrence becomes due at `next_due`. It is a misfire only when observed strictly after `next_due + grace`; equality is still within grace. Grace defaults to one interval and is filterable through `a8csp_background_tasks/misfire_grace/{identity}`. The `{identity}` suffix and `$identity` filter argument are the complete `{owner}:{name}` schedule identity. `RunOnce` attempts one make-up occurrence and realigns the recurrence without replaying every missed interval. `Skip` drops the occurrence, realigns the recurrence, and emits the misfire-skipped hooks.
 
 ## Hooks and filters
 
-For each lifecycle pair, the identity-specific hook fires first and the generic companion follows with the identity prepended. Every `{identity}` suffix and every generic `$identity` payload is the complete `{owner}:{name}` identity. The misfired hooks likewise receive the complete schedule identity; `$owner` remains a separate argument.
+For each lifecycle pair, the identity-specific hook fires first and the generic companion follows with the identity prepended. Every `{identity}` suffix and every generic `$identity` payload is the complete `{owner}:{name}` identity. The misfire-skipped hooks likewise receive the complete schedule identity; `$owner` remains a separate argument.
 
 | Event | Identity-specific hook and payload | Generic hook and payload |
 | --- | --- | --- |
@@ -334,12 +334,12 @@ For each lifecycle pair, the identity-specific hook fires first and the generic 
 | Completed | `a8csp_background_tasks/completed/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/completed`: `($identity, $run_id, $start_args)` |
 | Failed | `a8csp_background_tasks/failed/{identity}`: `($run_id, $start_args, RunFailure $failure)` | `a8csp_background_tasks/failed`: `($identity, $run_id, $start_args, RunFailure $failure)` |
 | Cancelled | `a8csp_background_tasks/cancelled/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/cancelled`: `($identity, $run_id, $start_args)` |
-| Retrying | `a8csp_background_tasks/retrying/{identity}`: `($run_id, $start_args, $attempt, $delay)` | `a8csp_background_tasks/retrying`: `($identity, $run_id, $start_args, $attempt, $delay)` |
+| Retry scheduled | `a8csp_background_tasks/retry_scheduled/{identity}`: `($run_id, $start_args, $attempt, $delay)` | `a8csp_background_tasks/retry_scheduled`: `($identity, $run_id, $start_args, $attempt, $delay)` |
 | Superseded | `a8csp_background_tasks/superseded/{identity}`: `($run_id, $start_args)` | `a8csp_background_tasks/superseded`: `($identity, $run_id, $start_args)` |
-| Misfired | `a8csp_background_tasks/misfired/{identity}`: `($owner, $due_at, $observed_at)` | `a8csp_background_tasks/misfired`: `($identity, $owner, $due_at, $observed_at)` |
+| Misfire skipped | `a8csp_background_tasks/misfire_skipped/{identity}`: `($owner, $due_at, $observed_at)` | `a8csp_background_tasks/misfire_skipped`: `($identity, $owner, $due_at, $observed_at)` |
 | Log | `a8csp_background_tasks/log`: `($level, $message, $context)` | No generic companion. |
 
-Run IDs, identities, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfired hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
+Run IDs, identities, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfire-skipped hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
 Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start`, `a8csp_background_tasks/continue`, `a8csp_background_tasks/run`, `a8csp_background_tasks/cleanup`, or `a8csp_background_tasks/schedule_due`.
 

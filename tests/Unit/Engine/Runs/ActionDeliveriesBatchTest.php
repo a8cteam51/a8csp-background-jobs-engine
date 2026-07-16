@@ -917,7 +917,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( $chunk_a, $chunk_a, $chunk_b ), \array_column( $this->batch->process_calls, 'chunk_args' ) );
-		self::assertCount( 2, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
+		self::assertCount( 2, $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' ) );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 
@@ -925,7 +925,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * A failed retry schedule terminalizes at the consumed-attempt count.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The retrying hooks fire before the rejected write; an empty delivery boundary proves no delayed copy survives terminalization.
+	 * @pin-rationale The retry-scheduled hooks fire before the rejected write; an empty delivery boundary proves no delayed copy survives terminalization.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

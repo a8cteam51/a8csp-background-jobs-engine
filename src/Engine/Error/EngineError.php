@@ -165,7 +165,7 @@ final readonly class EngineError implements ErrorInterface {
 	public static function retry_preparation( string $work_type, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retrying hook, or scheduler before retrying the failed run manually.', $work_type, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.', $work_type, $identity, $exception_type ), $exception_type );
 	}
 
 	// endregion

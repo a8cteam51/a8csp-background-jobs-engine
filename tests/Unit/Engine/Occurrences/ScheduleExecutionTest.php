@@ -135,7 +135,7 @@ final class ScheduleExecutionTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
-	 * A Skip schedule delivered inside grace dispatches normally without a misfire hook.
+	 * A Skip schedule delivered inside grace dispatches normally without a misfire-skipped hook.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -149,14 +149,14 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfired' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( 0, $registration['misfires'] ?? null );
 	}
 
 	/**
-	 * RunOnce makes up one beyond-grace occurrence and realigns without firing misfire hooks.
+	 * RunOnce makes up one beyond-grace occurrence and realigns without firing misfire-skipped hooks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -171,7 +171,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfired' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( $fired_at, $registration['last_fired'] ?? null );
@@ -179,14 +179,14 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * Skip drops one beyond-grace occurrence and publishes both documented misfire hooks.
+	 * Skip drops one beyond-grace occurrence and publishes both documented misfire-skipped hooks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_beyond_grace_skip_publishes_misfire_outcomes(): void {
+	public function test_beyond_grace_skip_publishes_misfire_skipped_outcomes(): void {
 		$this->sync_schedule( self::schedule( catch_up: CatchUpPolicy::Skip ) );
 		$fired_at                      = self::NOW + self::INTERVAL + 901;
 		$this->rig->clock()->timestamp = $fired_at;
@@ -196,11 +196,11 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
 		self::assertSame(
 			array( array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
-			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfired/' . self::REGISTRATION_KEY )
+			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped/' . self::REGISTRATION_KEY )
 		);
 		self::assertSame(
 			array( array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
-			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfired' )
+			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' )
 		);
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );

@@ -321,7 +321,7 @@ final class EngineRig {
 	 * @version 1.0.0
 	 */
 	public function assert_retry_scheduled(): void {
-		$args     = $this->latest_event( 'retrying' );
+		$args     = $this->latest_event( 'retry_scheduled' );
 		$identity = $args[0] ?? null;
 		Assert::assertIsString( $identity );
 		$this->backend->assert_scheduled( $identity );
@@ -348,7 +348,7 @@ final class EngineRig {
 	 * @version 1.0.0
 	 */
 	public function assert_no_retry(): void {
-		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_background_tasks/retrying' ) );
+		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_background_tasks/retry_scheduled' ) );
 	}
 
 	/**

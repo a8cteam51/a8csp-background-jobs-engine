@@ -142,15 +142,15 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->set_next_due( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE, $aged_due );
 		$dynamic_misfires = array();
 		$generic_misfires = array();
-		$this->record_misfire_hooks( self::RUN_ONCE_SCHEDULE_IDENTITY, $dynamic_misfires, $generic_misfires );
+		$this->record_misfire_skipped_hooks( self::RUN_ONCE_SCHEDULE_IDENTITY, $dynamic_misfires, $generic_misfires );
 
 		\do_action( 'a8csp_background_tasks/schedule_due', self::RUN_ONCE_SCHEDULE_IDENTITY );
 		self::assertSame( array(), $task->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the task inline' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the single RunOnce make-up occurrence' );
 
 		self::assertSame( array( array( 'policy' => 'run-once' ) ), $task->calls, 'RunOnce must execute exactly one make-up occurrence' );
-		self::assertSame( array(), $dynamic_misfires, 'RunOnce must not publish the Skip-policy dynamic misfire hook' );
-		self::assertSame( array(), $generic_misfires, 'RunOnce must not publish the Skip-policy generic misfire hook' );
+		self::assertSame( array(), $dynamic_misfires, 'RunOnce must not publish the dynamic misfire-skipped hook' );
+		self::assertSame( array(), $generic_misfires, 'RunOnce must not publish the generic misfire-skipped hook' );
 		$registration = $this->registration( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE );
 		self::assertSame( $now, $registration['last_fired'] );
 		self::assertSame( 0, $registration['misfires'] );
@@ -181,14 +181,14 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->set_next_due( self::SKIP_OWNER, self::SKIP_SCHEDULE, $aged_due );
 		$dynamic_misfires = array();
 		$generic_misfires = array();
-		$this->record_misfire_hooks( self::SKIP_SCHEDULE_IDENTITY, $dynamic_misfires, $generic_misfires );
+		$this->record_misfire_skipped_hooks( self::SKIP_SCHEDULE_IDENTITY, $dynamic_misfires, $generic_misfires );
 
 		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-task action for the dropped occurrence' );
 		self::assertSame( array(), $task->calls, 'Skip must not execute a task for the dropped occurrence' );
-		self::assertSame( array( array( self::SKIP_OWNER, $aged_due, $now ) ), $dynamic_misfires, 'The dynamic misfire hook must receive owner, due instant, and fired instant' );
-		self::assertSame( array( array( self::SKIP_SCHEDULE_IDENTITY, self::SKIP_OWNER, $aged_due, $now ) ), $generic_misfires, 'The generic misfire hook must prepend the complete schedule identity to the same payload' );
+		self::assertSame( array( array( self::SKIP_OWNER, $aged_due, $now ) ), $dynamic_misfires, 'The dynamic misfire-skipped hook must receive owner, due instant, and fired instant' );
+		self::assertSame( array( array( self::SKIP_SCHEDULE_IDENTITY, self::SKIP_OWNER, $aged_due, $now ) ), $generic_misfires, 'The generic misfire-skipped hook must prepend the complete schedule identity to the same payload' );
 		$expected_due = self::realigned_due( $aged_due, $now );
 		$registration = $this->registration( self::SKIP_OWNER, self::SKIP_SCHEDULE );
 		self::assertNull( $registration['last_fired'] );
@@ -240,8 +240,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$exact_generic  = array();
 		$beyond_dynamic = array();
 		$beyond_generic = array();
-		$this->record_misfire_hooks( self::EXACT_SCHEDULE_IDENTITY, $exact_dynamic, $exact_generic );
-		$this->record_misfire_hooks( self::BEYOND_SCHEDULE_IDENTITY, $beyond_dynamic, $beyond_generic );
+		$this->record_misfire_skipped_hooks( self::EXACT_SCHEDULE_IDENTITY, $exact_dynamic, $exact_generic );
+		$this->record_misfire_skipped_hooks( self::BEYOND_SCHEDULE_IDENTITY, $beyond_dynamic, $beyond_generic );
 
 		\do_action( 'a8csp_background_tasks/schedule_due', self::EXACT_SCHEDULE_IDENTITY );
 		self::assertSame( 1, $this->run_next_due_action(), 'An occurrence exactly at grace must execute normally' );
@@ -250,10 +250,10 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		self::assertSame( array( array() ), $exact_task->calls, 'Exactly-at-grace must remain a due task occurrence' );
 		self::assertSame( array(), $beyond_task->calls, 'One-second-beyond must not execute the target task' );
-		self::assertSame( array(), $exact_dynamic, 'Exactly-at-grace must not fire the dynamic misfire hook' );
-		self::assertSame( array(), $exact_generic, 'Exactly-at-grace must not fire the generic misfire hook' );
-		self::assertSame( array( array( self::BOUNDARY_OWNER, $beyond_due, $now ) ), $beyond_dynamic, 'One-second-beyond must fire the dynamic misfire hook' );
-		self::assertSame( array( array( self::BEYOND_SCHEDULE_IDENTITY, self::BOUNDARY_OWNER, $beyond_due, $now ) ), $beyond_generic, 'One-second-beyond must fire the generic misfire hook' );
+		self::assertSame( array(), $exact_dynamic, 'Exactly-at-grace must not fire the dynamic misfire-skipped hook' );
+		self::assertSame( array(), $exact_generic, 'Exactly-at-grace must not fire the generic misfire-skipped hook' );
+		self::assertSame( array( array( self::BOUNDARY_OWNER, $beyond_due, $now ) ), $beyond_dynamic, 'One-second-beyond must fire the dynamic misfire-skipped hook' );
+		self::assertSame( array( array( self::BEYOND_SCHEDULE_IDENTITY, self::BOUNDARY_OWNER, $beyond_due, $now ) ), $beyond_generic, 'One-second-beyond must fire the generic misfire-skipped hook' );
 		$exact_registration  = $this->registration( self::BOUNDARY_OWNER, self::EXACT_SCHEDULE );
 		$beyond_registration = $this->registration( self::BOUNDARY_OWNER, self::BEYOND_SCHEDULE );
 		self::assertSame( 0, $exact_registration['misfires'] );
@@ -434,7 +434,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Records the dynamic and generic misfire hook payloads for one schedule.
+	 * Records the dynamic and generic misfire-skipped hook payloads for one schedule.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -445,9 +445,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	private function record_misfire_hooks( string $identity, array &$dynamic, array &$generic ): void {
+	private function record_misfire_skipped_hooks( string $identity, array &$dynamic, array &$generic ): void {
 		\add_action(
-			'a8csp_background_tasks/misfired/' . $identity,
+			'a8csp_background_tasks/misfire_skipped/' . $identity,
 			static function ( string $owner, int $due, int $fired_at ) use ( &$dynamic ): void {
 				$dynamic[] = array( $owner, $due, $fired_at );
 			},
@@ -455,7 +455,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_background_tasks/misfired',
+			'a8csp_background_tasks/misfire_skipped',
 			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $identity, &$generic ): void {
 				if ( $schedule === $identity ) {
 					$generic[] = array( $schedule, $owner, $due, $fired_at );
