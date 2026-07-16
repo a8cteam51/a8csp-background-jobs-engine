@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
@@ -284,7 +285,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		self::assertSame( array( self::ARGS, self::ARGS ), $this->task->calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 2, $failure->attempts );
 	}
 
@@ -314,7 +315,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( $contract, $observed );
-		self::assertSame( 1, $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' )->attempts );
+		self::assertSame( 1, $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution )->attempts );
 		$this->rig->assert_no_retry();
 	}
 
@@ -396,7 +397,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( array(), $this->rig->randomizer()->calls );
 	}
@@ -449,7 +450,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
 	}
 
 	/**
@@ -502,7 +503,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/retrying' ) );
-		$this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling' );
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -586,7 +587,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution' );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 	}
@@ -633,12 +634,12 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode $code  Expected failure code.
-	 * @param   string       $stage Expected failure stage.
+	 * @param   ApiErrorCode    $code  Expected failure code.
+	 * @param   RunFailureStage $stage Expected failure stage.
 	 *
 	 * @return  RunFailure
 	 */
-	private function assert_failure( ApiErrorCode $code, string $stage ): RunFailure {
+	private function assert_failure( ApiErrorCode $code, RunFailureStage $stage ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' );
 		self::assertNotEmpty( $events );
 		$failure = $events[ \count( $events ) - 1 ][3] ?? null;

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
@@ -616,7 +617,7 @@ final readonly class Dispatcher {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_task( $task_name, $run_id, $state, $run_store, $error, 1, 'execution', ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_task( $task_name, $run_id, $state, $run_store, $error, 1, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return new Failure( $error );
 		}

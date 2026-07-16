@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
@@ -230,7 +231,7 @@ final class EngineErrorTest extends TestCase {
 	 * @return  RunFailure
 	 */
 	private static function failure( ApiErrorCode $code, string $summary ): RunFailure {
-		return new RunFailure( name: 'consumer-plugin:sync', run_id: 'run-7', attempts: 1, stage: 'scheduling', code: $code, summary: $summary, failed_chunk: null, );
+		return new RunFailure( identity: 'consumer-plugin:sync', run_id: 'run-7', attempts: 1, stage: RunFailureStage::Scheduling, code: $code, summary: $summary, failed_chunk: null, );
 	}
 
 	// endregion.

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
@@ -366,9 +367,9 @@ final readonly class RunReconciliation {
 			? ( $state->queue[0] ?? null )
 			: null;
 		if ( null !== $batch ) {
-			$this->terminal_transitions->fail_batch( $batch, $identity, $run_id, $state, $run_store, $error, 'crash-reclaim', ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
+			$this->terminal_transitions->fail_batch( $batch, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
-			$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts, 'crash-reclaim', ApiErrorCode::ExecutionFailed, null, $expected_raw );
+			$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, null, $expected_raw );
 		}
 
 		return new Success( null );
@@ -443,7 +444,7 @@ final readonly class RunReconciliation {
 	}
 
 	/**
-	 * Returns the stable crash-reclaim terminal failure detail.
+	 * Returns the stable crash reclaim terminal failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -454,7 +455,7 @@ final readonly class RunReconciliation {
 	 * @return  EngineError
 	 */
 	private function crash_reclaim_error( string $identity, string $run_id ): EngineError {
-		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash-reclaim path because its owned lock was stale or missing.', $run_id, $identity ) );
+		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash reclaim path because its owned lock was stale or missing.', $run_id, $identity ) );
 	}
 
 	// endregion

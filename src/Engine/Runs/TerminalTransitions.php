@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
@@ -252,7 +253,7 @@ final readonly class TerminalTransitions {
 	 */
 	public function fail_unregistered_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
-		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, 'execution', ApiErrorCode::UnknownWork, self::failed_chunk_for_state( $work_type, $state ) ) );
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, RunFailureStage::Execution, ApiErrorCode::UnknownWork, self::failed_chunk_for_state( $work_type, $state ) ) );
 
 		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $work_type );
 	}
@@ -267,21 +268,21 @@ final readonly class TerminalTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   BatchInterface $batch      Failed batch.
-	 * @param   string         $batch_name Complete owner-qualified batch identity.
-	 * @param   string         $run_id     Run identifier.
-	 * @param   RunState       $state      Running state.
-	 * @param   RunStore       $run_store  Active-run store.
-	 * @param   EngineError    $error      Failure detail.
-	 * @param   string         $stage      Terminalization stage.
-	 * @param   ApiErrorCode   $code       Machine-readable cause classification.
-	 * @param   array|null     $failed_chunk Batch chunk arguments for the failing chunk, or null.
-	 * @param   int|null       $attempts   Attempts consumed before failure, or null to derive the count.
-	 * @param   string|null    $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @param   BatchInterface  $batch      Failed batch.
+	 * @param   string          $batch_name Complete owner-qualified batch identity.
+	 * @param   string          $run_id     Run identifier.
+	 * @param   RunState        $state      Running state.
+	 * @param   RunStore        $run_store  Active-run store.
+	 * @param   EngineError     $error      Failure detail.
+	 * @param   RunFailureStage $stage     Terminalization stage.
+	 * @param   ApiErrorCode    $code       Machine-readable cause classification.
+	 * @param   array|null      $failed_chunk Batch chunk arguments for the failing chunk, or null.
+	 * @param   int|null        $attempts   Attempts consumed before failure, or null to derive the count.
+	 * @param   string|null     $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
+	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
@@ -298,20 +299,20 @@ final readonly class TerminalTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   string       $task_name    Complete owner-qualified task identity.
-	 * @param   string       $run_id       Run identifier.
-	 * @param   RunState     $state        Running state.
-	 * @param   RunStore     $run_store    Active-run store.
-	 * @param   EngineError  $error         Task failure detail.
-	 * @param   int          $attempts_used Attempts consumed by the invocation.
-	 * @param   string       $stage         Terminalization stage.
-	 * @param   ApiErrorCode $code         Machine-readable cause classification.
-	 * @param   array|null   $failed_chunk  Batch chunk arguments for the failing chunk, or null for a task.
-	 * @param   string|null  $expected_raw  Exact maintenance snapshot, or null for a live transition.
+	 * @param   string          $task_name    Complete owner-qualified task identity.
+	 * @param   string          $run_id       Run identifier.
+	 * @param   RunState        $state        Running state.
+	 * @param   RunStore        $run_store    Active-run store.
+	 * @param   EngineError     $error         Task failure detail.
+	 * @param   int             $attempts_used Attempts consumed by the invocation.
+	 * @param   RunFailureStage $stage        Terminalization stage.
+	 * @param   ApiErrorCode    $code         Machine-readable cause classification.
+	 * @param   array|null      $failed_chunk  Batch chunk arguments for the failing chunk, or null for a task.
+	 * @param   string|null     $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_task( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
+	public function fail_task( string $task_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts_used )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
 		$this->claim_and_execute_terminal_transition( $task_name, $run_id, $state, $terminal_state, $run_store, 'Task', null, $expected_raw );
@@ -458,17 +459,17 @@ final readonly class TerminalTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   EngineError                  $error        Failure detail.
-	 * @param   string                       $stage        Terminalization stage.
+	 * @param   RunFailureStage              $stage        Terminalization stage.
 	 * @param   ApiErrorCode                 $code         Machine-readable cause classification.
 	 * @param   array<array-key, mixed>|null $failed_chunk Batch chunk arguments for the failing chunk, or null.
 	 *
 	 * @return  array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
 	 */
-	private static function error_detail( EngineError $error, string $stage, ApiErrorCode $code, ?array $failed_chunk ): array {
+	private static function error_detail( EngineError $error, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk ): array {
 		$detail = array(
 			'class'   => $error->exception_class,
 			'message' => $error->message,
-			'stage'   => $stage,
+			'stage'   => $stage->value,
 			'code'    => $code->value,
 		);
 		if ( null !== $failed_chunk ) {

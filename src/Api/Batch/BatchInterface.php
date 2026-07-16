@@ -39,7 +39,7 @@ interface BatchInterface extends WorkInterface {
 	public function get_name(): string;
 
 	/**
-	 * Returns the declared ceiling in seconds for one queue-generation or chunk invocation.
+	 * Returns the declared ceiling in seconds for one queue generation or chunk invocation.
 	 *
 	 * The ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to
 	 * the whole batch run. The engine credits run liveness for this window immediately before either
@@ -68,7 +68,7 @@ interface BatchInterface extends WorkInterface {
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 *
 	 * @throws  \Throwable When queue generation fails; the engine terminalizes the run as a
-	 *                     queue-generation failure.
+	 *                     queue generation failure.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */

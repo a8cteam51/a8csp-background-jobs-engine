@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Support;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
@@ -159,7 +160,7 @@ final class EngineRigTest extends TestCase {
 		self::assertSame( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID, $run_name );
 		self::assertSame( self::ARGS, self::decoded( $run_raw )['start_args'] ?? null );
 
-		$failure = new RunFailure( name: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
 
 		[ $failed_name, $failed_raw ] = $fixtures->failed( self::NOW, self::ARGS, $failure, new EngineError( $failure->summary ) );
 		self::assertSame( 'a8csp_bgte_failed_' . self::IDENTITY, $failed_name );

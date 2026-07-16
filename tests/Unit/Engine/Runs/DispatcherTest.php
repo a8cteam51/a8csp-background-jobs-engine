@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
@@ -793,7 +794,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
-		$failure = new RunFailure( name: self::IDENTITY, run_id: $run_id, attempts: $attempts, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: $attempts, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
 		$this->reset_observations();
 	}
@@ -820,7 +821,7 @@ final class DispatcherTest extends TestCase {
 			'error'      => array(
 				'class'   => null,
 				'message' => 'Database unavailable.',
-				'stage'   => 'execution',
+				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 		);

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
@@ -207,13 +208,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution', null );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * A queue-generation throwable fails without exposing a started lifecycle.
+	 * A queue generation throwable fails without exposing a started lifecycle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -226,7 +227,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, 'queue-generation', null );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started' ) );
 	}
 
@@ -248,7 +249,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'queue-generation', null );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'token secret', $failure->summary );
 	}
 
@@ -269,7 +270,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, 'queue-generation', null );
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'private-payload-must-not-leak', $failure->summary );
 	}
 
@@ -332,7 +333,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::PayloadRejected, 'queue-generation', null );
+		$this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 	}
 
 	/**
@@ -355,7 +356,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'queue-generation', null );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'credential secret', $failure->summary );
 	}
 
@@ -374,7 +375,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, 'queue-generation', null );
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'filtered-private-payload', $failure->summary );
 	}
 
@@ -570,7 +571,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution', $current );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 		self::assertStringNotContainsString( 'callback-private-payload', $failure->summary );
 		self::assertCount( 1, $this->batch->failure_calls );
 	}
@@ -737,7 +738,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling', null );
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -764,7 +765,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution', null );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
 		self::assertCount( 1, $this->batch->failure_calls );
 	}
 
@@ -941,7 +942,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling', $current );
+		$failure = $this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
 		self::assertSame( 1, $failure->attempts );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
@@ -962,7 +963,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, 'execution', $current );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 	}
@@ -1106,7 +1107,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling', null );
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		self::assertCount( 1, $this->batch->failure_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1129,7 +1130,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling', $current );
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -1150,7 +1151,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, 'scheduling', null );
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -1309,12 +1310,12 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   ApiErrorCode                 $code         Expected failure code.
-	 * @param   string                       $stage        Expected failure stage.
+	 * @param   RunFailureStage              $stage        Expected failure stage.
 	 * @param   array<array-key, mixed>|null $failed_chunk Expected failed chunk.
 	 *
 	 * @return  RunFailure
 	 */
-	private function assert_failure( ApiErrorCode $code, string $stage, ?array $failed_chunk ): RunFailure {
+	private function assert_failure( ApiErrorCode $code, RunFailureStage $stage, ?array $failed_chunk ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' );
 		self::assertNotEmpty( $events );
 		$failure = $events[ \count( $events ) - 1 ][3] ?? null;

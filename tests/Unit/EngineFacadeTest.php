@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
@@ -172,7 +173,7 @@ final class EngineFacadeTest extends TestCase {
 		$identity = 'facade-tests:email-digest';
 		$consumer = $this->rig->consumer( 'facade-tests' );
 		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$failure               = new RunFailure( name: $identity, run_id: 'failed-run', attempts: 1, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure               = new RunFailure( identity: $identity, run_id: 'failed-run', attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
 		$GLOBALS['a8csp_bgte_test_option_calls'] = array();

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
@@ -147,7 +148,7 @@ final class TerminalEffectsTest extends TestCase {
 			array(
 				'class'   => $error->exception_class,
 				'message' => $error->message,
-				'stage'   => 'execution',
+				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			)
 		);

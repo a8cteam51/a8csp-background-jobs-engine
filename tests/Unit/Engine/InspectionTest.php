@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -330,7 +331,7 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		$failure = new RunFailure( name: $identity, run_id: 'run-failed', attempts: 2, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: $identity, run_id: 'run-failed', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
 		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
 		$this->rig->wpdb()->put( 'a8csp_bgte_run_' . $identity . '_' . self::run_id( 99 ), 'corrupt-inline' );
 

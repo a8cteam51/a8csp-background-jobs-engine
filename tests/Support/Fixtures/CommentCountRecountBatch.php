@@ -78,7 +78,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
-	 * Returns the shared ceiling for one queue-generation or recount invocation.
+	 * Returns the shared ceiling for one queue generation or recount invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

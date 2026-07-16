@@ -12,7 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 
 /**
- * Verifies held-lock rejection and stale crash-reclaim semantics.
+ * Verifies held-lock rejection and stale crash reclaim semantics.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -29,10 +29,10 @@ final class OverlapLockTest extends IntegrationTestCase {
 	/** Owner-qualified identity isolated to the held-lock Skip case. */
 	private const SKIP_IDENTITY = self::OWNER . ':' . self::SKIP_NAME;
 
-	/** Batch identity isolated to the stale crash-reclaim case. */
+	/** Batch identity isolated to the stale crash reclaim case. */
 	private const RECLAIM_NAME = 'integration-overlap-reclaim';
 
-	/** Owner-qualified identity isolated to the stale crash-reclaim case. */
+	/** Owner-qualified identity isolated to the stale crash reclaim case. */
 	private const RECLAIM_IDENTITY = self::OWNER . ':' . self::RECLAIM_NAME;
 
 	// endregion.

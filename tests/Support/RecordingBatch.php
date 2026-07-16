@@ -92,7 +92,7 @@ final class RecordingBatch implements BatchInterface {
 	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
-	/** Declared ceiling for one queue-generation or chunk invocation. */
+	/** Declared ceiling for one queue generation or chunk invocation. */
 	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
 
 	/**

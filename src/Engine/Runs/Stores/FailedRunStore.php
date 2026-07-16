@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
@@ -127,7 +128,7 @@ final readonly class FailedRunStore {
 			$error_detail = array(
 				'class'   => $error->exception_class,
 				'message' => $error->message,
-				'stage'   => $failure->stage,
+				'stage'   => $failure->stage->value,
 				'code'    => $failure->code->value,
 			);
 			if ( null !== $failure->failed_chunk ) {
@@ -410,7 +411,7 @@ final readonly class FailedRunStore {
 		if (
 			! \in_array( \count( $error ), array( 4, 5 ), true )
 			|| ! \is_string( $error['stage'] ?? null )
-			|| ! \in_array( $error['stage'], array( 'execution', 'queue-generation', 'crash-reclaim', 'scheduling' ), true )
+			|| null === RunFailureStage::tryFrom( $error['stage'] )
 			|| ! \is_string( $error['code'] ?? null )
 			|| null === ApiErrorCode::tryFrom( $error['code'] )
 		) {

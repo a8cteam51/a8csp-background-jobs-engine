@@ -26,6 +26,7 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ApiErrorCode',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ErrorInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailure',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailureStage',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\AbstractResult',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Failure',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Success',
@@ -73,7 +74,7 @@ final class ApiBoundaryTest extends TestCase {
 	public function test_api_declarations_do_not_reference_internal_namespaces(): void {
 		$types = self::declared_api_types();
 		self::assertNotEmpty( $types );
-		self::assertCount( 26, $types );
+		self::assertCount( 27, $types );
 		self::assertSame( self::EXPECTED_API_TYPES, $types );
 
 		foreach ( $types as $type ) {

@@ -480,6 +480,14 @@ final class RunStoreTest extends TestCase {
 					'extra'   => true,
 				),
 			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'stage'   => 'unknown',
+					'code'    => ApiErrorCode::ExecutionFailed->value,
+				),
+			),
 			array( 'effects' => array() ),
 			array( 'effects' => array( 'key' => 'hooks' ) ),
 			array( 'effects' => array( 1 ) ),

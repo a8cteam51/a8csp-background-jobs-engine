@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
@@ -211,10 +212,10 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 
 		$failure = $recorded_named_failed[0][2] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
-		self::assertSame( self::IDENTITY, $failure->name );
+		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( $failed_run_id, $failure->run_id );
 		self::assertSame( 2, $failure->attempts );
-		self::assertSame( 'execution', $failure->stage );
+		self::assertSame( RunFailureStage::Execution, $failure->stage );
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
@@ -251,7 +252,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Background-work execution failed because RuntimeException was thrown.',
-				'stage'   => 'execution',
+				'stage'   => RunFailureStage::Execution->value,
 				'code'    => 'execution_failed',
 			),
 			$failed_entry['error'] ?? null

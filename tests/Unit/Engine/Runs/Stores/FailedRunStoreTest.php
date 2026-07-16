@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
@@ -193,6 +194,35 @@ final class FailedRunStoreTest extends TestCase {
 		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
 		self::assertSame( array(), $snapshot['history'] );
 		$result = $this->consumer->runs()->retry_failed( self::NAME, 'legacy-run' );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
+	}
+
+	/**
+	 * Unknown terminalization stages inspect as unretained data and never fatal.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A canonical fixture cannot contain an unknown stage, so corrupting only that scalar proves read validation fails closed through the public inspection and retry seams.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_failure_stages_are_tolerated_as_unretained_data(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( 'run-unknown-stage', self::NOW ) ) );
+		$entries = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $entries );
+		self::assertIsArray( $entries[0] ?? null );
+		self::assertIsArray( $entries[0]['error'] ?? null );
+		$entries[0]['error']['stage'] = 'unknown';
+		$raw                          = \maybe_serialize( $entries );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
+
+		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
+		$result = $this->consumer->runs()->retry_failed( self::NAME, 'run-unknown-stage' );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
@@ -403,7 +433,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
-		$failure = new RunFailure( name: self::IDENTITY, run_id: $run_id, attempts: 1, stage: 'execution', code: ApiErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
 
 		return array(
 			'failed_at'  => $failed_at,

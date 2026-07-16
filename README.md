@@ -270,7 +270,7 @@ interface BatchInterface extends WorkInterface {
 
 The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. Direct batch implementations must declare it; invalid values use the shared 300-second default, and the engine caps the credited window at six hours.
 
-`RunFailure` carries the work identity, run ID, consumed attempt count, terminalization stage, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
+`RunFailure::$identity` is the complete `{owner}:{name}` work identity. The value also carries the run ID, consumed attempt count, typed `RunFailureStage`, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
 

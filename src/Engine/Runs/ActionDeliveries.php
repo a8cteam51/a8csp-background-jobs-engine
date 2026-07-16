@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
@@ -178,7 +179,7 @@ final readonly class ActionDeliveries {
 				return;
 			}
 
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), 'execution', ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
@@ -189,7 +190,7 @@ final readonly class ActionDeliveries {
 
 		$scheduled = $this->scheduler->enqueue_async( self::CONTINUE_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), 'scheduling', EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 
 			return;
 		}
@@ -229,7 +230,7 @@ final readonly class ActionDeliveries {
 			$state     = $replacement;
 			$scheduled = $this->scheduler->enqueue_async( self::CLEANUP_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
 			if ( $scheduled->is_failure() ) {
-				$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error ), 'scheduling', EngineError::api_code_for_scheduling( $scheduled->error ) );
+				$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 			}
 
 			return;
@@ -243,7 +244,7 @@ final readonly class ActionDeliveries {
 		$state     = $replacement;
 		$scheduled = $this->scheduler->enqueue_async( self::RUN_HOOK, array( $batch_name, $run_id, $chunk_args, $state->action_seq ), $batch_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error ), 'scheduling', EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
 		}
 	}
 
@@ -361,7 +362,7 @@ final readonly class ActionDeliveries {
 		}
 
 		if ( array() !== $state->queue ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Batch "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $batch_name ) ), 'execution', ApiErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Batch "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $batch_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
 
 			return;
 		}
@@ -414,7 +415,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, $error, 'queue-generation', $code );
+		$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, $error, RunFailureStage::QueueGeneration, $code );
 	}
 
 	/**
@@ -484,7 +485,7 @@ final readonly class ActionDeliveries {
 				return;
 			}
 
-			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), 'execution', ApiErrorCode::ExecutionFailed );
+			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
@@ -495,7 +496,7 @@ final readonly class ActionDeliveries {
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $batch_name ) ), 'scheduling', ApiErrorCode::BackendRejected );
+			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $batch_name ) ), RunFailureStage::Scheduling, ApiErrorCode::BackendRejected );
 
 			return;
 		}
@@ -508,7 +509,7 @@ final readonly class ActionDeliveries {
 
 		$scheduled = $this->scheduler->schedule_single( self::CONTINUE_HOOK, $fire_at, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, 10 );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), 'scheduling', EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
 	}
 
@@ -526,12 +527,12 @@ final readonly class ActionDeliveries {
 	 * @param   list<array<array-key, mixed>> $queue      Committed queue after the processed chunk.
 	 * @param   int                           $reset_at   Post-callback liveness timestamp.
 	 * @param   EngineError                   $error      Terminal failure detail.
-	 * @param   string                        $stage      Terminalization stage.
+	 * @param   RunFailureStage               $stage      Terminalization stage.
 	 * @param   ApiErrorCode                  $code       Machine-readable cause classification.
 	 *
 	 * @return  void
 	 */
-	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, string $stage, ApiErrorCode $code ): void {
+	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ApiErrorCode $code ): void {
 		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( null );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
