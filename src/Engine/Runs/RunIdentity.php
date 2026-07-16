@@ -102,12 +102,12 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  string
 	 */
-	public static function option_name_prefix( string $name ): string {
-		return self::option_prefix() . $name . '_';
+	public static function option_name_prefix( string $identity ): string {
+		return self::option_prefix() . $identity . '_';
 	}
 
 	/**
@@ -116,13 +116,13 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Complete owner-qualified task or batch identity.
-	 * @param   string $run_id Run identifier.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  string
 	 */
-	public static function option_name( string $name, string $run_id ): string {
-		return self::option_name_prefix( $name ) . $run_id;
+	public static function option_name( string $identity, string $run_id ): string {
+		return self::option_name_prefix( $identity ) . $run_id;
 	}
 
 	/**
@@ -133,20 +133,20 @@ final class RunIdentity {
 	 *
 	 * @param   string $option_name Complete option name.
 	 *
-	 * @return  array{name: string, run_id: string}|null
+	 * @return  array{identity: string, run_id: string}|null
 	 */
 	public static function from_option_name( string $option_name ): ?array {
-		$matched = \preg_match( '/\A' . \preg_quote( self::option_prefix(), '/' ) . '(?<name>.+)_(?<run_id>' . self::pattern() . ')\z/D', $option_name, $matches );
+		$matched = \preg_match( '/\A' . \preg_quote( self::option_prefix(), '/' ) . '(?<identity>.+)_(?<run_id>' . self::pattern() . ')\z/D', $option_name, $matches );
 		if (
 			1 !== $matched
-			|| null === WorkIdentity::parts( $matches['name'] )
+			|| null === WorkIdentity::parts( $matches['identity'] )
 		) {
 			return null;
 		}
 
 		return array(
-			'name'   => $matches['name'],
-			'run_id' => $matches['run_id'],
+			'identity' => $matches['identity'],
+			'run_id'   => $matches['run_id'],
 		);
 	}
 

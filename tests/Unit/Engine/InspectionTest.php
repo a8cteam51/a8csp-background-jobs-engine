@@ -424,7 +424,7 @@ final class InspectionTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_run_enumeration_requires_the_exact_parsed_name(): void {
+	public function test_run_enumeration_requires_the_exact_parsed_identity(): void {
 		$requested_id = self::run_id( 1 );
 		$foreign_id   = self::run_id( 2 );
 		$this->tasks->register( 'owner:foo', new RecordingTask( 'foo' ) );
@@ -433,8 +433,8 @@ final class InspectionTest extends TestCase {
 		self::assertNotNull( $this->stores->run_store( 'owner:foo_bar' )->create( $foreign_id, array(), 'foo-bar-hash', array( array() ) ) );
 		self::assertSame(
 			array(
-				'name'   => 'owner:foo_bar',
-				'run_id' => $foreign_id,
+				'identity' => 'owner:foo_bar',
+				'run_id'   => $foreign_id,
 			),
 			RunIdentity::from_option_name( 'a8csp_bgte_run_owner:foo_bar_' . $foreign_id )
 		);

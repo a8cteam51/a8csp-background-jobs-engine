@@ -53,8 +53,8 @@ final class RunIdentityTest extends TestCase {
 		self::assertSame( $option_name, RunIdentity::option_name( 'owner:sync_job', $run_id ) );
 		self::assertSame(
 			array(
-				'name'   => 'owner:sync_job',
-				'run_id' => $run_id,
+				'identity' => 'owner:sync_job',
+				'run_id'   => $run_id,
 			),
 			RunIdentity::from_option_name( $option_name )
 		);
@@ -96,8 +96,8 @@ final class RunIdentityTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'name'   => 'owner:under_score',
-				'run_id' => $run_id,
+				'identity' => 'owner:under_score',
+				'run_id'   => $run_id,
 			),
 			RunIdentity::from_option_name( 'a8csp_bgte_run_owner:under_score_' . $run_id )
 		);

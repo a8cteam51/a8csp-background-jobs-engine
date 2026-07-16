@@ -70,7 +70,7 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Complete owner-qualified batch identity.
+	 * @param   string                  $identity   Complete owner-qualified batch identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
@@ -78,8 +78,8 @@ final readonly class Batches {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
-		return $this->dispatcher->start_batch( $name, $start_args, $existing, $priority );
+	public function start( string $identity, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
+		return $this->dispatcher->start_batch( $identity, $start_args, $existing, $priority );
 	}
 
 	// endregion

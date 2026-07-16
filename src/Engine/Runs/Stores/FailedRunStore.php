@@ -78,11 +78,11 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $name Complete owner-qualified task or batch identity.
-	 * @param   OptionRows $rows Authoritative raw option-row I/O.
+	 * @param   string     $identity Complete owner-qualified task or batch identity.
+	 * @param   OptionRows $rows     Authoritative raw option-row I/O.
 	 */
 	public function __construct(
-		private string $name,
+		private string $identity,
 		private OptionRows $rows,
 	) {}
 
@@ -339,7 +339,7 @@ final readonly class FailedRunStore {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->name;
+		return self::OPTION_PREFIX . $this->identity;
 	}
 
 	/**

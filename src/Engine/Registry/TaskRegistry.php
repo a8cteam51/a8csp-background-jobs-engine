@@ -70,7 +70,7 @@ final class TaskRegistry {
 			throw new \InvalidArgumentException( 'Task identity must be canonical and end with the task\'s declared local name.' );
 		}
 
-		$this->work->claim( $identity, 'task' );
+		$this->work->register_kind( $identity, 'task' );
 		$this->tasks[ $identity ] = $task;
 	}
 

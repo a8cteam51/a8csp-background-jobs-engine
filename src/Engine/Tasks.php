@@ -68,7 +68,7 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name      Complete owner-qualified task identity.
+	 * @param   string                  $identity  Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
 	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
@@ -77,8 +77,8 @@ final readonly class Tasks {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
-		return $this->dispatcher->enqueue( $name, $args, $delay, $dedup_key, $priority );
+	public function enqueue( string $identity, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
+		return $this->dispatcher->enqueue( $identity, $args, $delay, $dedup_key, $priority );
 	}
 
 	// endregion

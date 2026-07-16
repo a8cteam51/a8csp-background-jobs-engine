@@ -70,7 +70,7 @@ final class BatchRegistry {
 			throw new \InvalidArgumentException( 'Batch identity must be canonical and end with the batch\'s declared local name.' );
 		}
 
-		$this->work->claim( $identity, 'batch' );
+		$this->work->register_kind( $identity, 'batch' );
 		$this->batches[ $identity ] = $batch;
 	}
 

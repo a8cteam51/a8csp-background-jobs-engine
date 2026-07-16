@@ -251,28 +251,28 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                      $name                     Complete owner-qualified task or batch identity.
+	 * @param   string                      $identity                 Complete owner-qualified task or batch identity.
 	 * @param   string                      $run_id                   Run identifier.
 	 * @param   array<array-key, mixed>|int $chunk_args_or_action_seq Batch chunk arguments or a task action sequence.
 	 * @param   int|null                    $action_seq               Batch action sequence, or null for a task action.
 	 *
 	 * @return  void
 	 */
-	public function handle_run_action( string $name, string $run_id, array|int $chunk_args_or_action_seq, ?int $action_seq = null ): void {
+	public function handle_run_action( string $identity, string $run_id, array|int $chunk_args_or_action_seq, ?int $action_seq = null ): void {
 		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
 		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
 		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
-		$kind         = $this->tasks->kind( $name );
-		$task         = 'task' === $kind ? $this->tasks->get( $name ) : null;
-		$batch        = 'batch' === $kind ? $this->batches->get( $name ) : null;
+		$kind         = $this->tasks->kind( $identity );
+		$task         = 'task' === $kind ? $this->tasks->get( $identity ) : null;
+		$batch        = 'batch' === $kind ? $this->batches->get( $identity ) : null;
 		$liveness_at  = null;
 		if ( null === $chunk_args && null !== $task ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $task );
 		} elseif ( null !== $chunk_args && null !== $batch ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
 		}
-		$run_store = $this->stores->run_store( $name );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( $work_type, $name, $run_id, $received_seq, $run_store, $liveness_at );
+		$run_store = $this->stores->run_store( $identity );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( $work_type, $identity, $run_id, $received_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
@@ -282,7 +282,7 @@ final readonly class ActionDeliveries {
 				$this->logger->warning(
 					'Task run action carries batch chunk arguments; schedule task runs with only the task name and run identifier.',
 					array(
-						'task_name' => $name,
+						'task_name' => $identity,
 						'run_id'    => $run_id,
 					)
 				);
@@ -291,7 +291,7 @@ final readonly class ActionDeliveries {
 				return;
 			}
 
-			$this->handle_task_run_action( $task, $name, $run_id, $state, $run_store );
+			$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
 
 			return;
 		}
@@ -301,7 +301,7 @@ final readonly class ActionDeliveries {
 				$this->logger->warning(
 					'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
 					array(
-						'batch_name' => $name,
+						'batch_name' => $identity,
 						'run_id'     => $run_id,
 					)
 				);
@@ -310,7 +310,7 @@ final readonly class ActionDeliveries {
 				return;
 			}
 
-			$this->handle_batch_run_action( $batch, $name, $run_id, $chunk_args, $state, $run_store );
+			$this->handle_batch_run_action( $batch, $identity, $run_id, $chunk_args, $state, $run_store );
 
 			return;
 		}
@@ -320,11 +320,11 @@ final readonly class ActionDeliveries {
 				? 'Task run action references an unregistered task; register the task before dispatching its run action.'
 				: 'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
 			array(
-				( null === $chunk_args ? 'task_name' : 'batch_name' ) => $name,
+				( null === $chunk_args ? 'task_name' : 'batch_name' ) => $identity,
 				'run_id' => $run_id,
 			)
 		);
-		$this->fail_orphaned_run( $work_type, $name, $run_id, $state, $run_store );
+		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -603,17 +603,17 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Complete owner-qualified task or batch identity.
+	 * @param   string         $identity  Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id    Run identifier.
 	 * @param   RunState       $state     Fenced running state.
 	 * @param   RunStore       $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function fail_orphaned_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type, $name, $run_id, \strtolower( $work_type ) ) );
+	private function fail_orphaned_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type, $identity, $run_id, \strtolower( $work_type ) ) );
 
-		$this->terminal_transitions->fail_unregistered_run( $work_type, $name, $run_id, $state, $run_store, $error );
+		$this->terminal_transitions->fail_unregistered_run( $work_type, $identity, $run_id, $state, $run_store, $error );
 	}
 
 	/**

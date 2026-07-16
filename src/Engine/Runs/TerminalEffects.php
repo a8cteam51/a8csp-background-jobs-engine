@@ -118,14 +118,14 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity   Complete owner-qualified task or batch identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
 	 * @return  void
 	 */
-	public function fire_started( string $name, string $run_id, array $start_args ): void {
-		$this->fire_lifecycle_hooks( 'started', $name, $run_id, $start_args );
+	public function fire_started( string $identity, string $run_id, array $start_args ): void {
+		$this->fire_lifecycle_hooks( 'started', $identity, $run_id, $start_args );
 	}
 
 	/**
@@ -136,7 +136,7 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name         Complete owner-qualified task or batch identity.
+	 * @param   string         $identity     Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id       Run identifier.
 	 * @param   RunState       $state        Terminalizing run state.
 	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
@@ -145,8 +145,8 @@ final readonly class TerminalEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function finish_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type ): bool {
-		return $this->finish_terminal_run( $name, $run_id, $state, $terminal_raw, $run_store, $work_type );
+	public function finish_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type ): bool {
+		return $this->finish_terminal_run( $identity, $run_id, $state, $terminal_raw, $run_store, $work_type );
 	}
 
 	/**
@@ -157,7 +157,7 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name         Complete owner-qualified task or batch identity.
+	 * @param   string              $identity     Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id       Run identifier.
 	 * @param   RunState            $state        Terminal run state.
 	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
@@ -167,8 +167,8 @@ final readonly class TerminalEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function replay_terminal_run( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
-		return $this->execute_claimed_transition( $name, $run_id, $state, $terminal_raw, $run_store, $work_type, $batch );
+	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
+		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $work_type, $batch );
 	}
 
 	/**
@@ -177,7 +177,7 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name         Complete owner-qualified task or batch identity.
+	 * @param   string              $identity     Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id       Run identifier.
 	 * @param   RunState            $state        Terminal run state.
 	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
@@ -189,11 +189,11 @@ final readonly class TerminalEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function execute_claimed_transition( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
+	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
 		$expected       = self::expected_effects( $state->status, $work_type );
 		$missing        = \array_values( \array_diff( $expected, $state->effects ) );
 		$failure_detail = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'callbacks', 'hooks' ), $missing )
-			? $this->failure_detail( $name, $run_id, $state, $work_type )
+			? $this->failure_detail( $identity, $run_id, $state, $work_type )
 			: null;
 		$snapshot       = array(
 			'raw'   => $terminal_raw,
@@ -208,7 +208,7 @@ final readonly class TerminalEffects {
 			}
 
 			try {
-				$landed = $this->execute_terminal_effect( $effect, $name, $run_id, $current, $work_type, $batch, $failure_detail );
+				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $work_type, $batch, $failure_detail );
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
@@ -253,7 +253,7 @@ final readonly class TerminalEffects {
 			$snapshot = $updated;
 		}
 
-		$finished = $this->finish_terminal_run( $name, $run_id, $snapshot['state'], $snapshot['raw'], $run_store, $work_type );
+		$finished = $this->finish_terminal_run( $identity, $run_id, $snapshot['state'], $snapshot['raw'], $run_store, $work_type );
 		if ( null !== $effect_failure ) {
 			throw $effect_failure;
 		}
@@ -304,7 +304,7 @@ final readonly class TerminalEffects {
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
 	 * @param   string              $effect         Terminal effect key.
-	 * @param   string              $name           Complete owner-qualified task or batch identity.
+	 * @param   string              $identity       Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id         Run identifier.
 	 * @param   RunState            $state          Current terminal state.
 	 * @param   'Task'|'Batch'      $work_type      Work contract type.
@@ -316,12 +316,12 @@ final readonly class TerminalEffects {
 	 *
 	 * @return  bool Whether the effect landed and may be marked complete.
 	 */
-	private function execute_terminal_effect( string $effect, string $name, string $run_id, RunState $state, string $work_type, ?BatchInterface $batch, ?array $failure_detail ): bool {
+	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, string $work_type, ?BatchInterface $batch, ?array $failure_detail ): bool {
 		return match ( $effect ) {
-			'retention' => $this->record_failed_run( $name, $run_id, $state, $work_type, $failure_detail ),
-			'callbacks' => $this->fire_batch_callback( $name, $run_id, $state, $batch, $failure_detail['failure'] ?? null ),
-			'hooks'     => $this->fire_terminal_hooks( $name, $run_id, $state, $failure_detail['failure'] ?? null ),
-			'history'   => $this->record_terminal_history( $name, $run_id, $state ),
+			'retention' => $this->record_failed_run( $identity, $run_id, $state, $work_type, $failure_detail ),
+			'callbacks' => $this->fire_batch_callback( $identity, $run_id, $state, $batch, $failure_detail['failure'] ?? null ),
+			'hooks'     => $this->fire_terminal_hooks( $identity, $run_id, $state, $failure_detail['failure'] ?? null ),
+			'history'   => $this->record_terminal_history( $identity, $run_id, $state ),
 			default     => throw new \LogicException( 'The terminal effect table contains an unsupported effect key.' ),
 		};
 	}
@@ -334,7 +334,7 @@ final readonly class TerminalEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string         $name           Complete owner-qualified task or batch identity.
+	 * @param   string         $identity       Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id         Run identifier.
 	 * @param   RunState       $state          Failed terminal state.
 	 * @param   'Task'|'Batch' $work_type      Work contract type.
@@ -344,12 +344,12 @@ final readonly class TerminalEffects {
 	 *
 	 * @return  bool Whether the failed-run entry is confirmed persisted.
 	 */
-	private function record_failed_run( string $name, string $run_id, RunState $state, string $work_type, ?array $failure_detail ): bool {
+	private function record_failed_run( string $identity, string $run_id, RunState $state, string $work_type, ?array $failure_detail ): bool {
 		if ( null === $failure_detail ) {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
 
-		$retained = $this->stores->failed_run_store( $name )->record( $run_id, $state->heartbeat_at, $state->start_args, $failure_detail['failure']->attempts, $failure_detail['error'], $failure_detail['failure'] );
+		$retained = $this->stores->failed_run_store( $identity )->record( $run_id, $state->heartbeat_at, $state->start_args, $failure_detail['failure']->attempts, $failure_detail['error'], $failure_detail['failure'] );
 		if ( $retained ) {
 			return true;
 		}
@@ -358,7 +358,7 @@ final readonly class TerminalEffects {
 		$this->logger->warning(
 			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
 			array(
-				$context_name => $name,
+				$context_name => $identity,
 				'run_id'      => $run_id,
 			)
 		);
@@ -372,23 +372,23 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name    Complete owner-qualified batch identity.
-	 * @param   string              $run_id  Run identifier.
-	 * @param   RunState            $state   Terminal batch state.
-	 * @param   BatchInterface|null $batch   Registered batch, or null when the callback must be skipped.
-	 * @param   RunFailure|null     $failure Reconstructed consumer failure value.
+	 * @param   string              $identity Complete owner-qualified batch identity.
+	 * @param   string              $run_id   Run identifier.
+	 * @param   RunState            $state    Terminal batch state.
+	 * @param   BatchInterface|null $batch    Registered batch, or null when the callback must be skipped.
+	 * @param   RunFailure|null     $failure  Reconstructed consumer failure value.
 	 *
 	 * @throws  \LogicException When the state cannot support a batch callback.
 	 * @throws  \Throwable      When a failed callback fails.
 	 *
 	 * @return  true
 	 */
-	private function fire_batch_callback( string $name, string $run_id, RunState $state, ?BatchInterface $batch, ?RunFailure $failure ): bool {
+	private function fire_batch_callback( string $identity, string $run_id, RunState $state, ?BatchInterface $batch, ?RunFailure $failure ): bool {
 		if ( null === $batch ) {
 			$this->logger->warning(
 				'Terminal batch callback was skipped because the batch is not registered in this request.',
 				array(
-					'batch_name' => $name,
+					'batch_name' => $identity,
 					'run_id'     => $run_id,
 					'status'     => $state->status->value,
 				)
@@ -404,7 +404,7 @@ final readonly class TerminalEffects {
 				$this->logger->error(
 					'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
 					array(
-						'batch_name' => $name,
+						'batch_name' => $identity,
 						'run_id'     => $run_id,
 						'exception'  => $throwable,
 					)
@@ -429,17 +429,17 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name    Complete owner-qualified task or batch identity.
-	 * @param   string          $run_id  Run identifier.
-	 * @param   RunState        $state   Terminal run state.
-	 * @param   RunFailure|null $failure Reconstructed consumer failure value.
+	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   string          $run_id   Run identifier.
+	 * @param   RunState        $state    Terminal run state.
+	 * @param   RunFailure|null $failure  Reconstructed consumer failure value.
 	 *
 	 * @throws  \LogicException When the state is not terminal.
 	 * @throws  \Throwable      When a lifecycle hook fails.
 	 *
 	 * @return  true
 	 */
-	private function fire_terminal_hooks( string $name, string $run_id, RunState $state, ?RunFailure $failure ): bool {
+	private function fire_terminal_hooks( string $identity, string $run_id, RunState $state, ?RunFailure $failure ): bool {
 		$event = match ( $state->status ) {
 			RunStatus::Completed  => 'completed',
 			RunStatus::Failed     => 'failed',
@@ -447,7 +447,7 @@ final readonly class TerminalEffects {
 			RunStatus::Superseded => 'superseded',
 			RunStatus::Running    => throw new \LogicException( 'Terminal hooks require a terminal run state.' ),
 		};
-		$this->fire_lifecycle_hooks( $event, $name, $run_id, $state->start_args, $failure );
+		$this->fire_lifecycle_hooks( $event, $identity, $run_id, $state->start_args, $failure );
 
 		return true;
 	}
@@ -458,21 +458,21 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name   Complete owner-qualified task or batch identity.
-	 * @param   string   $run_id Run identifier.
-	 * @param   RunState $state  Terminal run state.
+	 * @param   string   $identity Complete owner-qualified task or batch identity.
+	 * @param   string   $run_id   Run identifier.
+	 * @param   RunState $state    Terminal run state.
 	 *
 	 * @return  bool Whether the history entry is confirmed persisted.
 	 */
-	private function record_terminal_history( string $name, string $run_id, RunState $state ): bool {
-		if ( $this->stores->run_history( $name )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
+	private function record_terminal_history( string $identity, string $run_id, RunState $state ): bool {
+		if ( $this->stores->run_history( $identity )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
 			return true;
 		}
 
 		$this->logger->warning(
 			'Terminal run history could not be persisted; inspection data may be incomplete.',
 			array(
-				'name'   => $name,
+				'name'   => $identity,
 				'run_id' => $run_id,
 			)
 		);
@@ -486,21 +486,21 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name      Complete owner-qualified task or batch identity.
+	 * @param   string         $identity  Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id    Run identifier.
 	 * @param   RunState       $state     Failed terminal state.
 	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 *
 	 * @return  array{error: EngineError, failure: RunFailure}
 	 */
-	private function failure_detail( string $name, string $run_id, RunState $state, string $work_type ): array {
+	private function failure_detail( string $identity, string $run_id, RunState $state, string $work_type ): array {
 		if ( null !== $state->error ) {
 			$error = new EngineError( $state->error['message'], $state->error['class'] );
 
 			return array(
 				'error'   => $error,
 				'failure' => new RunFailure(
-					name: $name,
+					name: $identity,
 					run_id: $run_id,
 					attempts: \max( 1, $state->failed_attempts ),
 					stage: $state->error['stage'],
@@ -515,16 +515,16 @@ final readonly class TerminalEffects {
 		$this->logger->warning(
 			'Failed terminal run has no persisted failure detail; replay uses a generic failure.',
 			array(
-				'name'   => $name,
+				'name'   => $identity,
 				'run_id' => $run_id,
 			)
 		);
 
-		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, $name ) );
+		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, $identity ) );
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( name: $name, run_id: $run_id, attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: 'crash-reclaim', code: ApiErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
+			'failure' => new RunFailure( name: $identity, run_id: $run_id, attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: 'crash-reclaim', code: ApiErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
 		);
 	}
 
@@ -555,7 +555,7 @@ final readonly class TerminalEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name         Complete owner-qualified task or batch identity.
+	 * @param   string         $identity     Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id       Run identifier.
 	 * @param   RunState       $state        Terminal run state.
 	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
@@ -564,8 +564,8 @@ final readonly class TerminalEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	private function finish_terminal_run( string $name, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type ): bool {
-		$this->overlap_guard->release( $name, $state->args_hash, $run_id );
+	private function finish_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type ): bool {
+		$this->overlap_guard->release( $identity, $state->args_hash, $run_id );
 		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status, $work_type ), $state->effects ) ) ) {
 			return false;
 		}
@@ -588,7 +588,7 @@ final readonly class TerminalEffects {
 		$this->logger->error(
 			'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
 			array(
-				'name'   => $name,
+				'name'   => $identity,
 				'run_id' => $run_id,
 				'status' => $state->status->value,
 			)

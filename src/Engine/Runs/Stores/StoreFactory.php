@@ -45,12 +45,12 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  RunStore
 	 */
-	public function run_store( string $name ): RunStore {
-		return new RunStore( $name, $this->clock, $this->rows );
+	public function run_store( string $identity ): RunStore {
+		return new RunStore( $identity, $this->clock, $this->rows );
 	}
 
 	/**
@@ -59,12 +59,12 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  LatestRunPointer
 	 */
-	public function latest_run_pointer( string $name ): LatestRunPointer {
-		return new LatestRunPointer( $name, $this->rows );
+	public function latest_run_pointer( string $identity ): LatestRunPointer {
+		return new LatestRunPointer( $identity, $this->rows );
 	}
 
 	/**
@@ -73,12 +73,12 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  RunHistory
 	 */
-	public function run_history( string $name ): RunHistory {
-		return new RunHistory( $name, $this->rows );
+	public function run_history( string $identity ): RunHistory {
+		return new RunHistory( $identity, $this->rows );
 	}
 
 	/**
@@ -87,12 +87,12 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  FailedRunStore
 	 */
-	public function failed_run_store( string $name ): FailedRunStore {
-		return new FailedRunStore( $name, $this->rows );
+	public function failed_run_store( string $identity ): FailedRunStore {
+		return new FailedRunStore( $identity, $this->rows );
 	}
 
 	// endregion

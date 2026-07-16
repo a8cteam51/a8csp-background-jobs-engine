@@ -33,7 +33,20 @@ final class WorkRegistryTest extends TestCase {
 	}
 
 	/**
-	 * A task identity cannot be claimed by a batch.
+	 * A complete identity records its work kind through registration terminology.
+	 *
+	 * @return  void
+	 */
+	public function test_register_kind_records_the_identity_kind(): void {
+		$work = new WorkRegistry();
+
+		$work->register_kind( 'consumer:sync', 'task' );
+
+		self::assertSame( 'task', $work->kind( 'consumer:sync' ) );
+	}
+
+	/**
+	 * A task identity cannot be registered by a batch.
 	 *
 	 * @return  void
 	 */
@@ -50,7 +63,7 @@ final class WorkRegistryTest extends TestCase {
 	}
 
 	/**
-	 * A batch identity cannot be claimed by a task.
+	 * A batch identity cannot be registered by a task.
 	 *
 	 * @return  void
 	 */

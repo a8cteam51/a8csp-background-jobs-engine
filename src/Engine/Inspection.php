@@ -216,7 +216,7 @@ final readonly class Inspection {
 			static function ( string $option_name ) use ( $identity ): bool {
 				$run_identity = RunIdentity::from_option_name( $option_name );
 
-				return null !== $run_identity && $identity === $run_identity['name'];
+				return null !== $run_identity && $identity === $run_identity['identity'];
 			}
 		);
 		if ( null === $page ) {
@@ -235,7 +235,7 @@ final readonly class Inspection {
 
 		foreach ( $page['names'] as $option_name ) {
 			$run_identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $run_identity || $identity !== $run_identity['name'] ) {
+			if ( null === $run_identity || $identity !== $run_identity['identity'] ) {
 				continue;
 			}
 

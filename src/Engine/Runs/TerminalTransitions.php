@@ -57,7 +57,7 @@ final readonly class TerminalTransitions {
 	 * @phpstan-param (\Closure(): int)|null $liveness_at
 	 *
 	 * @param   'Task'|'Batch' $work_type   Work contract type.
-	 * @param   string         $name        Complete owner-qualified task or batch identity.
+	 * @param   string         $identity    Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id      Run identifier.
 	 * @param   int|null       $action_seq  Received lifecycle action sequence.
 	 * @param   RunStore       $run_store   Active-run store.
@@ -65,14 +65,14 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  RunState|null
 	 */
-	public function claim_delivery_ownership( string $work_type, string $name, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
+	public function claim_delivery_ownership( string $work_type, string $identity, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
 		$state        = $run_store->get( $run_id );
 		$context_name = \strtolower( $work_type ) . '_name';
 		if ( null === $state ) {
 			$this->logger->warning(
 				$work_type . ' run state is missing or corrupt; allow the reconciliation sweep to release any remaining lock.',
 				array(
-					$context_name => $name,
+					$context_name => $identity,
 					'run_id'      => $run_id,
 				)
 			);
@@ -97,7 +97,7 @@ final readonly class TerminalTransitions {
 			$this->logger->warning(
 				$work_type . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
 				array(
-					$context_name => $name,
+					$context_name => $identity,
 					'run_id'      => $run_id,
 					'status'      => $state->status->value,
 				)
@@ -108,12 +108,12 @@ final readonly class TerminalTransitions {
 
 		if (
 			$state->executing
-			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->lock_staleness( $name, $run_id ) )
+			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->lock_staleness( $identity, $run_id ) )
 		) {
 			$this->logger->debug(
 				'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
 				array(
-					$context_name => $name,
+					$context_name => $identity,
 					'run_id'      => $run_id,
 					'action_seq'  => $state->action_seq,
 				)
@@ -125,7 +125,7 @@ final readonly class TerminalTransitions {
 		$at = null !== $liveness_at ? $liveness_at() : $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
+		if ( $this->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
@@ -134,7 +134,7 @@ final readonly class TerminalTransitions {
 			return null;
 		}
 
-		$latest_pointer = $this->stores->latest_run_pointer( $name );
+		$latest_pointer = $this->stores->latest_run_pointer( $identity );
 		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
@@ -142,7 +142,7 @@ final readonly class TerminalTransitions {
 			$this->logger->warning(
 				'Latest-run pointer repair failed; discovery metadata may remain stale.',
 				array(
-					'name'   => $name,
+					'name'   => $identity,
 					'run_id' => $run_id,
 				)
 			);
@@ -205,17 +205,17 @@ final readonly class TerminalTransitions {
 	 *
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
-	 * @param   'Task'|'Batch' $work_type            Work contract type.
-	 * @param   string         $name                 Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id               Run identifier.
-	 * @param   RunState       $state                Running state from the exact inspected snapshot.
-	 * @param   RunStore       $run_store            Active-run store.
-	 * @param   string         $expected_raw         Exact pre-cancel snapshot.
+	 * @param   'Task'|'Batch' $work_type             Work contract type.
+	 * @param   string         $identity              Complete owner-qualified task or batch identity.
+	 * @param   string         $run_id                Run identifier.
+	 * @param   RunState       $state                 Running state from the exact inspected snapshot.
+	 * @param   RunStore       $run_store             Active-run store.
+	 * @param   string         $expected_raw          Exact pre-cancel snapshot.
 	 * @param   \Closure       $clear_pending_actions Winner-only scheduler-group clear.
 	 *
 	 * @return  bool Whether the cancellation transition was claimed.
 	 */
-	public function cancel_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
+	public function cancel_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
 		if ( null === $terminal_raw ) {
@@ -225,7 +225,7 @@ final readonly class TerminalTransitions {
 		try {
 			$clear_pending_actions();
 		} finally {
-			$this->terminal_effects->execute_claimed_transition( $name, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
+			$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
 		}
 
 		return true;
@@ -239,20 +239,20 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type  Work contract type carried by the lifecycle delivery.
-	 * @param   string         $name       Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id     Run identifier.
-	 * @param   RunState       $state      Running state.
-	 * @param   RunStore       $run_store  Active-run store.
-	 * @param   EngineError    $error      Failure detail.
+	 * @param   'Task'|'Batch' $work_type Work contract type carried by the lifecycle delivery.
+	 * @param   string         $identity  Complete owner-qualified task or batch identity.
+	 * @param   string         $run_id    Run identifier.
+	 * @param   RunState       $state     Running state.
+	 * @param   RunStore       $run_store Active-run store.
+	 * @param   EngineError    $error     Failure detail.
 	 *
 	 * @return  void
 	 */
-	public function fail_unregistered_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+	public function fail_unregistered_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, 'execution', ApiErrorCode::UnknownWork, self::failed_chunk_for_state( $work_type, $state ) ) );
 
-		$this->claim_and_execute_terminal_transition( $name, $run_id, $state, $terminal_state, $run_store, $work_type );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $work_type );
 	}
 
 	/**
@@ -326,18 +326,18 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type            Work contract type.
-	 * @param   string         $name                 Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id               Run identifier.
-	 * @param   RunState       $state                Running state observed before the fence.
-	 * @param   RunStore       $run_store            Active-run store.
-	 * @param   int|null       $at                   Liveness timestamp, or null to use the current clock time.
+	 * @param   'Task'|'Batch' $work_type             Work contract type.
+	 * @param   string         $identity              Complete owner-qualified task or batch identity.
+	 * @param   string         $run_id                Run identifier.
+	 * @param   RunState       $state                 Running state observed before the fence.
+	 * @param   RunStore       $run_store             Active-run store.
+	 * @param   int|null       $at                    Liveness timestamp, or null to use the current clock time.
 	 * @param   int|null       $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	public function enforce_delivery_fence( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
-		$outcome = $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
+	public function enforce_delivery_fence( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
+		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
 		}
@@ -350,7 +350,7 @@ final readonly class TerminalTransitions {
 			$this->logger->debug(
 				$work_type . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
 				array(
-					$context_name => $name,
+					$context_name => $identity,
 					'run_id'      => $run_id,
 				)
 			);
@@ -358,8 +358,8 @@ final readonly class TerminalTransitions {
 			return true;
 		}
 
-		$latest_run_id = $this->stores->latest_run_pointer( $name )->get_latest_for_hash( $state->args_hash );
-		$this->supersede_run( $name, $run_id, $latest_run_id, $state, $run_store, $work_type );
+		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
+		$this->supersede_run( $identity, $run_id, $latest_run_id, $state, $run_store, $work_type );
 
 		return true;
 	}
@@ -370,7 +370,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name          Complete owner-qualified task or batch identity.
+	 * @param   string         $identity      Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id        Run identifier.
 	 * @param   string|null    $latest_run_id Latest discoverable pointer value for the single-flight identity.
 	 * @param   RunState       $state         Running state.
@@ -380,7 +380,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  void
 	 */
-	public function supersede_run( string $name, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, string $work_type, ?string $expected_raw = null ): void {
+	public function supersede_run( string $identity, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, string $work_type, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
@@ -390,13 +390,13 @@ final readonly class TerminalTransitions {
 		$this->logger->info(
 			'Superseded ' . \strtolower( $work_type ) . ' run after its ownership fence failed.',
 			array(
-				$context_name   => $name,
+				$context_name   => $identity,
 				'run_id'        => $run_id,
 				'latest_run_id' => $latest_run_id,
 			)
 		);
 
-		$this->terminal_effects->execute_claimed_transition( $name, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
 	}
 
 	/**
@@ -405,7 +405,7 @@ final readonly class TerminalTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name         Complete owner-qualified task or batch identity.
+	 * @param   string              $identity     Complete owner-qualified task or batch identity.
 	 * @param   string              $run_id       Run identifier.
 	 * @param   RunState            $expected     Complete running state observed by the terminalizing path.
 	 * @param   RunState            $replacement  Terminal replacement state.
@@ -416,13 +416,13 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	private function claim_and_execute_terminal_transition( string $name, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, string $work_type, ?BatchInterface $batch = null, ?string $expected_raw = null ): bool {
+	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, string $work_type, ?BatchInterface $batch = null, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return false;
 		}
 
-		$this->terminal_effects->execute_claimed_transition( $name, $run_id, $replacement, $terminal_raw, $run_store, $work_type, $batch );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $work_type, $batch );
 
 		return true;
 	}

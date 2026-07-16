@@ -63,12 +63,12 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $name  Complete owner-qualified task or batch identity.
-	 * @param   ClockInterface $clock Timestamp source.
-	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
+	 * @param   string         $identity Complete owner-qualified task or batch identity.
+	 * @param   ClockInterface $clock    Timestamp source.
+	 * @param   OptionRows     $rows     Authoritative raw option-row I/O.
 	 */
 	public function __construct(
-		private string $name,
+		private string $identity,
 		private ClockInterface $clock,
 		private OptionRows $rows,
 	) {}
@@ -96,7 +96,7 @@ final readonly class RunStore {
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState( status: RunStatus::Running, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
 
-		if ( ! \add_option( RunIdentity::option_name( $this->name, $run_id ), self::to_option( $state ), '', false ) ) {
+		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
 		}
 
@@ -114,7 +114,7 @@ final readonly class RunStore {
 	 * @return  RunState|null
 	 */
 	public function get( string $run_id ): ?RunState {
-		$selected = $this->rows->read( RunIdentity::option_name( $this->name, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return null;
 		}
@@ -147,7 +147,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'a run-state read outcome must be handled, not dropped' )]
 	public function inspect( string $run_id ): AbstractResult {
-		$selected = $this->rows->read( RunIdentity::option_name( $this->name, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -184,7 +184,7 @@ final readonly class RunStore {
 	 */
 	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->name, $run_id ), $expected_raw, $replacement_raw ) ) {
+		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ) ) {
 			return null;
 		}
 
@@ -210,7 +210,7 @@ final readonly class RunStore {
 	 */
 	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->name, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
+		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
 			return null;
 		}
 
@@ -300,7 +300,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_exact( string $run_id, string $expected_raw ): bool {
-		return $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->name, $run_id ), $expected_raw );
+		return $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw );
 	}
 
 	/**
@@ -351,8 +351,8 @@ final readonly class RunStore {
 	 * @return  bool True when the run option is confirmed absent.
 	 */
 	public function delete( string $run_id ): bool {
-		\delete_option( RunIdentity::option_name( $this->name, $run_id ) );
-		$selected = $this->rows->read( RunIdentity::option_name( $this->name, $run_id ) );
+		\delete_option( RunIdentity::option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return false;
 		}

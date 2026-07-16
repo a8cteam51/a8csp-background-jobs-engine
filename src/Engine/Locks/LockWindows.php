@@ -83,16 +83,16 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Complete owner-qualified task or batch identity.
-	 * @param   string $run_id Run identifier.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	public function lock_staleness( string $name, string $run_id ): int {
-		$continue_delay = $this->continue_delay( $name, $run_id );
+	public function lock_staleness( string $identity, string $run_id ): int {
+		$continue_delay = $this->continue_delay( $identity, $run_id );
 
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
-		$staleness         = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $name, $default_staleness );
+		$staleness         = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $identity, $default_staleness );
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
 			$staleness = $default_staleness;
 		}

@@ -33,7 +33,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
@@ -217,20 +216,20 @@ final class Component implements ComponentContract {
 			$owner,
 			new ApiTasks(
 				$identity,
-				static function ( string $name, TaskInterface $task ) use ( $engine ): void {
-					$engine->tasks->register( $name, $task );
+				static function ( string $identity, TaskInterface $task ) use ( $engine ): void {
+					$engine->tasks->register( $identity, $task );
 				},
-				static fn ( string $name, array $args, int $delay, ?string $dedup_key, int $priority ) => AdmissionErrorMapper::map( $engine->tasks->enqueue( $name, $args, $delay, $dedup_key, $priority ) )
+				static fn ( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ) => AdmissionErrorMapper::map( $engine->tasks->enqueue( $identity, $args, $delay, $dedup_key, $priority ) )
 			),
 			new ApiBatches(
 				$identity,
-				static function ( string $name, BatchInterface $batch ) use ( $engine ): void {
-					$engine->batches->register( $name, $batch );
+				static function ( string $identity, BatchInterface $batch ) use ( $engine ): void {
+					$engine->batches->register( $identity, $batch );
 				},
-				static fn ( string $name, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map( $engine->batches->start( $name, $args, $existing, $priority ) )
+				static fn ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ) => AdmissionErrorMapper::map( $engine->batches->start( $identity, $args, $existing, $priority ) )
 			),
-			new ApiSchedules( $identity, static fn ( array $declarations ) => AdmissionErrorMapper::map( $engine->schedules->sync( $owner, $declarations ) ), static fn ( string $name ) => AdmissionErrorMapper::map( $engine->schedules->run_now( $name ) ) ),
-			new ApiRuns( $identity, static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map( $engine->retry_failed( $name, $run_id ) ), static fn ( string $name, string $run_id ) => AdmissionErrorMapper::map( $engine->cancel( $name, $run_id ) ), static fn ( string $name ) => AdmissionErrorMapper::map( $engine->last_completed_run( $name ) ) )
+			new ApiSchedules( $identity, static fn ( array $declarations ) => AdmissionErrorMapper::map( $engine->schedules->sync( $owner, $declarations ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->schedules->run_now( $identity ) ) ),
+			new ApiRuns( $identity, static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->retry_failed( $identity, $run_id ) ), static fn ( string $identity, string $run_id ) => AdmissionErrorMapper::map( $engine->cancel( $identity, $run_id ) ), static fn ( string $identity ) => AdmissionErrorMapper::map( $engine->last_completed_run( $identity ) ) )
 		);
 	}
 

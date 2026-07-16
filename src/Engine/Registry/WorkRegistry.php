@@ -32,7 +32,7 @@ final class WorkRegistry {
 	// region METHODS
 
 	/**
-	 * Claims one complete identity for exactly one work kind.
+	 * Registers one complete identity for exactly one work kind.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -45,7 +45,7 @@ final class WorkRegistry {
 	 *
 	 * @return  void
 	 */
-	public function claim( string $identity, string $kind ): void {
+	public function register_kind( string $identity, string $kind ): void {
 		if ( null === WorkIdentity::parts( $identity ) ) {
 			throw new \InvalidArgumentException( 'Background-work identity is invalid; pass one canonical {owner}:{name} identity.' );
 		}

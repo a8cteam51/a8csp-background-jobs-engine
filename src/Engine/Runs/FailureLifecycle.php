@@ -99,7 +99,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   TaskInterface|BatchInterface $contract   Failed work contract.
-	 * @param   string                       $name       Complete owner-qualified work identity.
+	 * @param   string                       $identity   Complete owner-qualified work identity.
 	 * @param   string                       $run_id     Run identifier.
 	 * @param   RunState                     $state      Fenced running state.
 	 * @param   RunStore                     $run_store  Active-run store.
@@ -108,10 +108,10 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function handle_failure( TaskInterface|BatchInterface $contract, string $name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
+	private function handle_failure( TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
 		$work_type = $contract instanceof BatchInterface ? 'Batch' : 'Task';
 		$reset_at  = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
@@ -124,41 +124,41 @@ final readonly class FailureLifecycle {
 			? new EngineError( InvalidBatchChunkException::MESSAGE, \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
-			$this->fail_terminally( $contract, $name, $run_id, $state, $run_store, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
 
 		try {
-			$policy = $this->retry_policy( $name, $contract->get_retry_policy() );
+			$policy = $this->retry_policy( $identity, $contract->get_retry_policy() );
 		} catch ( \Throwable $retry_policy_failure ) {
-			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
-			$this->fail_terminally( $contract, $name, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $name, $retry_policy_failure ), $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$this->fail_terminally( $contract, $name, $run_id, $state, $run_store, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, 'execution', ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
 
-		$retry_failure = $this->reschedule_retry( $work_type, $name, $run_id, $state, $run_store, $policy, $attempts_used, $chunk_args );
+		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $chunk_args );
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
-			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
 				return;
 			}
 
-			$this->fail_terminally( $contract, $name, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $chunk_args );
+			$this->fail_terminally( $contract, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $chunk_args );
 		}
 	}
 
@@ -168,27 +168,27 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskInterface|BatchInterface $contract     Failed work contract.
-	 * @param   string                       $name         Complete owner-qualified work identity.
-	 * @param   string                       $run_id       Run identifier.
-	 * @param   RunState                     $state        Fenced running state.
-	 * @param   RunStore                     $run_store    Active-run store.
-	 * @param   EngineError                  $error        Terminal failure detail.
+	 * @param   TaskInterface|BatchInterface $contract      Failed work contract.
+	 * @param   string                       $identity      Complete owner-qualified work identity.
+	 * @param   string                       $run_id        Run identifier.
+	 * @param   RunState                     $state         Fenced running state.
+	 * @param   RunStore                     $run_store     Active-run store.
+	 * @param   EngineError                  $error         Terminal failure detail.
 	 * @param   int                          $attempts_used Attempts consumed by the invocation.
-	 * @param   string                       $stage        Terminalization stage.
-	 * @param   ApiErrorCode                 $code         Machine-readable cause classification.
-	 * @param   array<array-key, mixed>|null $chunk_args   Batch chunk arguments, or null for a task.
+	 * @param   string                       $stage         Terminalization stage.
+	 * @param   ApiErrorCode                 $code          Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null $chunk_args    Batch chunk arguments, or null for a task.
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( TaskInterface|BatchInterface $contract, string $name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $chunk_args ): void {
+	private function fail_terminally( TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, string $stage, ApiErrorCode $code, ?array $chunk_args ): void {
 		if ( $contract instanceof BatchInterface ) {
-			$this->terminal_transitions->fail_batch( $contract, $name, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
+			$this->terminal_transitions->fail_batch( $contract, $identity, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
 
 			return;
 		}
 
-		$this->terminal_transitions->fail_run( $name, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
+		$this->terminal_transitions->fail_run( $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
 	}
 
 	/**
@@ -226,7 +226,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch'               $work_type  Work contract type.
-	 * @param   string                       $name       Complete owner-qualified task or batch identity.
+	 * @param   string                       $identity   Complete owner-qualified task or batch identity.
 	 * @param   string                       $run_id     Run identifier.
 	 * @param   RunState                     $state      Exact persisted state before the retry transition.
 	 * @param   RunStore                     $run_store  Active-run store.
@@ -237,14 +237,14 @@ final readonly class FailureLifecycle {
 	 * @return  array{state: RunState, error: EngineError, stage: string, code: ApiErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
-	private function reschedule_retry( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, ?array $chunk_args = null ): ?array {
+	private function reschedule_retry( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, ?array $chunk_args = null ): ?array {
 		try {
 			$delay = $this->randomizer->int( 0, $policy->delay_ceiling_for_attempt( $attempt ) );
 			$now   = $this->clock->now()->getTimestamp();
 			if ( $delay > \PHP_INT_MAX - $now ) {
 				return array(
 					'state' => $state,
-					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $work_type, $name ) ),
+					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $work_type, $identity ) ),
 					'stage' => 'scheduling',
 					'code'  => ApiErrorCode::BackendRejected,
 				);
@@ -252,14 +252,14 @@ final readonly class FailureLifecycle {
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => EngineError::retry_preparation( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_preparation( $work_type, $identity, $throwable ),
 				'stage' => 'scheduling',
 				'code'  => ApiErrorCode::EngineUnavailable,
 			);
 		}
 
 		$fire_at = $now + $delay;
-		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
@@ -268,7 +268,7 @@ final readonly class FailureLifecycle {
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => EngineError::retry_state( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_state( $work_type, $identity, $throwable ),
 				'stage' => 'scheduling',
 				'code'  => ApiErrorCode::EngineUnavailable,
 			);
@@ -281,7 +281,7 @@ final readonly class FailureLifecycle {
 			$this->logger->warning(
 				'Retry state could not be persisted; the reconciliation sweep retains the run until storage recovers.',
 				array(
-					$context_name     => $name,
+					$context_name     => $identity,
 					'run_id'          => $run_id,
 					'exception_class' => \get_debug_type( $throwable ),
 				)
@@ -295,32 +295,32 @@ final readonly class FailureLifecycle {
 		$state = $replacement;
 
 		try {
-			$this->fire_retrying_hooks( $name, $run_id, $state->start_args, $attempt, $delay );
+			$this->fire_retrying_hooks( $identity, $run_id, $state->start_args, $attempt, $delay );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => EngineError::retry_preparation( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_preparation( $work_type, $identity, $throwable ),
 				'stage' => 'execution',
 				'code'  => ApiErrorCode::ExecutionFailed,
 			);
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
 		try {
-			$action_args = array( $name, $run_id );
+			$action_args = array( $identity, $run_id );
 			if ( null !== $chunk_args ) {
 				$action_args[] = $chunk_args;
 			}
 			$action_args[] = $state->action_seq;
 
-			$scheduled = $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $fire_at, $action_args, $name . '|' . $run_id, 10 );
+			$scheduled = $this->scheduler->schedule_single( 'a8csp_background_tasks/run', $fire_at, $action_args, $identity . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,
-					'error' => EngineError::scheduling( $work_type, $name, 'retry', $scheduled->error ),
+					'error' => EngineError::scheduling( $work_type, $identity, 'retry', $scheduled->error ),
 					'stage' => 'scheduling',
 					'code'  => EngineError::api_code_for_scheduling( $scheduled->error ),
 				);
@@ -330,7 +330,7 @@ final readonly class FailureLifecycle {
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
-				'error' => EngineError::retry_preparation( $work_type, $name, $throwable ),
+				'error' => EngineError::retry_preparation( $work_type, $identity, $throwable ),
 				'stage' => 'scheduling',
 				'code'  => ApiErrorCode::BackendUnavailable,
 			);
