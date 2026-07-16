@@ -63,6 +63,11 @@ final readonly class LockWindows {
 	/**
 	 * Resolves the non-negative continuation delay for one task or batch run.
 	 *
+	 * The resolved delay also sets the crash-reclamation floor: a run's lock staleness is never
+	 * below twice this value, because a chunk legitimately sleeping its continuation delay must
+	 * never look abandoned. Once twice the delay exceeds the lock-staleness window, filtering
+	 * the delay up extends how long a crashed run waits for reclamation.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

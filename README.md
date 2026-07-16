@@ -21,6 +21,8 @@ A Batch is named work split into independently processed chunks. A consumer regi
 
 Consumers use the same API with either scheduling backend. An occurrence on a temporarily unavailable backend is dormant, not lost; writes can use another ready backend, and the dormant occurrence becomes visible when its backend recovers.
 
+The engine's own state persists in `wp_options` rows under the reserved `a8csp_bgte_` prefix, and no engine row is ever autoloaded, so engine storage adds no weight to ordinary page loads.
+
 ## Installation
 
 The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-tasks-engine/releases). Download the ZIP, upload it as a WordPress plugin, and activate it. The release ZIP includes production Composer dependencies and the translation template (`.pot`), so it needs no Composer step.
@@ -344,7 +346,7 @@ Consumers do not hook the engine's internal delivery actions: `a8csp_background_
 | Filter | Input and required return |
 | --- | --- |
 | `a8csp_background_tasks/queue/{identity}` | `($queue, $start_args, $run_id)` returns the complete list of chunk argument arrays. |
-| `a8csp_background_tasks/continue_delay` | `($delay, $identity, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives complete Task identities as well as complete Batch identities because the value also feeds every run's lock-staleness floor. |
+| `a8csp_background_tasks/continue_delay` | `($delay, $identity, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives complete Task identities as well as complete Batch identities because the value also sets every run's lock-staleness floor at twice the delay — once twice the delay exceeds the lock-staleness window, raising it extends how long a crashed run waits for reclamation. |
 | `a8csp_background_tasks/lock_staleness/{identity}` | `($seconds)` returns a positive lock window; the default is 900 and the effective value is at least twice the continue delay. |
 | `a8csp_background_tasks/history_size` | `($size)` returns a positive per-buffer history cap; the default is 30. |
 | `a8csp_background_tasks/retry_policy/{identity}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |

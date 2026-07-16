@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 /**
  * Returns the plugin instance, booting it on first access.
  *
+ * @internal Boot primitive for the engine's own hooks; consumers enter through `a8csp_bgte()`.
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
