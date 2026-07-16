@@ -182,7 +182,7 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$declaration = $this->registry->get( $registration_key );
+		$declaration = $this->registry->declaration( $registration_key );
 		if ( null === $declaration ) {
 			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'registration_key' => $registration_key ) );
 
@@ -404,7 +404,7 @@ final readonly class OccurrenceDelivery {
 			);
 		}
 
-		$declaration = $this->registry->get( $registration_key );
+		$declaration = $this->registry->declaration( $registration_key );
 		if ( null === $declaration ) {
 			return new Failure(
 				new EngineError(

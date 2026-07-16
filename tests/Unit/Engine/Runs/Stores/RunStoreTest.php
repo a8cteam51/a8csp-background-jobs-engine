@@ -178,7 +178,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $pending_option, $stored['pending'] ?? null );
 
 		$replacement     = $state->with_pending( null );
-		$replacement_raw = $store->transition_state( 'run-pending', $state, $replacement );
+		$replacement_raw = $store->replace_if_state_matches( 'run-pending', $state, $replacement );
 		self::assertIsString( $replacement_raw );
 		$stored = $this->option( 'a8csp_bgte_run_runs-tests:email-digest_run-pending' );
 		self::assertIsArray( $stored );
@@ -212,7 +212,7 @@ final class RunStoreTest extends TestCase {
 		);
 		$terminal = $state->with_status( RunStatus::Failed )->with_error( $error )->with_effects( array( 'retention', 'callbacks' ) );
 
-		$terminal_raw = $store->transition_state( 'run-terminal', $state, $terminal );
+		$terminal_raw = $store->replace_if_state_matches( 'run-terminal', $state, $terminal );
 		$expected     = array(
 			'status'          => 'failed',
 			'executing'       => false,
@@ -233,7 +233,7 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( array( 'retention', 'callbacks' ), $stored->effects );
 
 		$cleared     = $terminal->with_error( null )->with_effects( array() );
-		$cleared_raw = $store->transition_state( 'run-terminal', $terminal, $cleared );
+		$cleared_raw = $store->replace_if_state_matches( 'run-terminal', $terminal, $cleared );
 		unset( $expected['error'], $expected['effects'] );
 		self::assertSame( \maybe_serialize( $expected ), $cleared_raw );
 	}
@@ -253,7 +253,7 @@ final class RunStoreTest extends TestCase {
 					'code'    => ApiErrorCode::EngineUnavailable->value,
 				)
 			);
-		$raw      = $store->transition_state( 'run-effect', $state, $terminal );
+		$raw      = $store->replace_if_state_matches( 'run-effect', $state, $terminal );
 		self::assertIsString( $raw );
 
 		$appended = $store->append_terminal_effect( 'run-effect', $terminal, $raw, 'consumer-effect' );
@@ -275,7 +275,7 @@ final class RunStoreTest extends TestCase {
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$terminal = $state->with_status( RunStatus::Completed );
-		$raw      = $store->transition_state( 'run-effect', $state, $terminal );
+		$raw      = $store->replace_if_state_matches( 'run-effect', $state, $terminal );
 		self::assertIsString( $raw );
 		$rival = null;
 		$this->wpdb->before_next(
@@ -299,7 +299,7 @@ final class RunStoreTest extends TestCase {
 		$state = $store->create( 'run-effect', array(), 'hash-a', array() );
 		self::assertNotNull( $state );
 		$terminal = $state->with_status( RunStatus::Completed );
-		$raw      = $store->transition_state( 'run-effect', $state, $terminal );
+		$raw      = $store->replace_if_state_matches( 'run-effect', $state, $terminal );
 		self::assertIsString( $raw );
 		$this->wpdb->before_next(
 			'update',
@@ -387,57 +387,57 @@ final class RunStoreTest extends TestCase {
 		self::assertNotNull( $state );
 
 		$replacement = $state->with_queue( \array_slice( $state->queue, 1 ) );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( array( array( 'page' => 2 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
 
 		$queue       = $state->queue;
 		$queue[]     = array( 'page' => 3 );
 		$replacement = $state->with_queue( $queue );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( array( array( 'page' => 2 ), array( 'page' => 3 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
 
 		$queue = $state->queue;
 		\array_unshift( $queue, array( 'page' => 0 ) );
 		$replacement = $state->with_queue( $queue );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( array( array( 'page' => 0 ), array( 'page' => 2 ), array( 'page' => 3 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
 
 		$replacement = $state->with_failed_attempts( $state->failed_attempts + 1 );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( 1, $this->stored_state( $store, 'run-rmw' )->failed_attempts );
 
 		$replacement = $state->with_failed_attempts( 0 );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( 0, $this->stored_state( $store, 'run-rmw' )->failed_attempts );
 
 		$replacement = $state->with_action_seq( 2 );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( 2, $this->stored_state( $store, 'run-rmw' )->action_seq );
 
 		$replacement = $state->with_executing( true );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertTrue( $this->stored_state( $store, 'run-rmw' )->executing );
 
 		$replacement = $state->with_executing( false );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertFalse( $this->stored_state( $store, 'run-rmw' )->executing );
 
 		$pending     = PendingAction::async( 'continue', 10 );
 		$replacement = $state->with_pending( $pending );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertEquals( $pending, $this->stored_state( $store, 'run-rmw' )->pending );
 
 		$replacement = $state->with_status( RunStatus::Failed );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-rmw', $state, $replacement ) );
 		$state = $replacement;
 		self::assertSame( RunStatus::Failed, $this->stored_state( $store, 'run-rmw' )->status );
 
@@ -458,8 +458,8 @@ final class RunStoreTest extends TestCase {
 		self::assertNotNull( $state );
 
 		$newer = $state->with_action_seq( 2 );
-		self::assertIsString( $store->transition_state( 'run-live', $state, $newer ) );
-		self::assertNull( $store->transition_state( 'run-live', $state, $state->with_action_seq( 3 ) ) );
+		self::assertIsString( $store->replace_if_state_matches( 'run-live', $state, $newer ) );
+		self::assertNull( $store->replace_if_state_matches( 'run-live', $state, $state->with_action_seq( 3 ) ) );
 		self::assertSame( 2, $store->get( 'run-live' )?->action_seq );
 
 		$inspection = $store->inspect( 'run-live' );
@@ -469,7 +469,7 @@ final class RunStoreTest extends TestCase {
 		$snapshot = $inspection->value;
 		self::assertNotNull( $snapshot );
 		self::assertTrue( $store->delete_exact( 'run-live', $snapshot['raw'] ) );
-		self::assertNull( $store->transition_state( 'run-live', $newer, $newer->with_action_seq( 3 ) ) );
+		self::assertNull( $store->replace_if_state_matches( 'run-live', $newer, $newer->with_action_seq( 3 ) ) );
 		self::assertNull( $store->get( 'run-live' ) );
 	}
 
@@ -514,7 +514,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/** Terminal transitions and cleanup win only against the exact observed raw snapshots. */
-	public function test_transition_and_exact_delete_are_value_conditioned(): void {
+	public function test_replace_if_raw_matches_and_exact_delete_are_value_conditioned(): void {
 		$clock = new FixedClock( 123 );
 		$store = new RunStore( self::identity( 'fenced' ), $clock, $this->rows );
 		$state = $store->create( 'run-fenced', array(), 'hash', array() );
@@ -529,13 +529,13 @@ final class RunStoreTest extends TestCase {
 		self::assertNotNull( $running['state'] );
 
 		$terminal     = $state->with_status( RunStatus::Completed );
-		$terminal_raw = $store->transition( 'run-fenced', $running['raw'], $terminal );
+		$terminal_raw = $store->replace_if_raw_matches( 'run-fenced', $running['raw'], $terminal );
 		self::assertIsString( $terminal_raw );
 		self::assertSame( RunStatus::Completed, $store->get( 'run-fenced' )?->status );
-		self::assertNull( $store->transition( 'run-fenced', $running['raw'], $terminal ) );
+		self::assertNull( $store->replace_if_raw_matches( 'run-fenced', $running['raw'], $terminal ) );
 		self::assertTrue( $store->delete_exact( 'run-fenced', $terminal_raw ) );
 		self::assertFalse( $store->delete_exact( 'run-fenced', $terminal_raw ) );
-		self::assertNull( $store->transition( 'run-fenced', $terminal_raw, $terminal ) );
+		self::assertNull( $store->replace_if_raw_matches( 'run-fenced', $terminal_raw, $terminal ) );
 		self::assertNull( $store->get( 'run-fenced' ) );
 	}
 

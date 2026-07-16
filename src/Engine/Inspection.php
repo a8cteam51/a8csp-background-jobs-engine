@@ -165,7 +165,7 @@ final readonly class Inspection {
 				continue;
 			}
 
-			$declaration = $this->schedules->get( $registration_key );
+			$declaration = $this->schedules->declaration( $registration_key );
 			$entries[]   = array(
 				'owner'      => $registration_owner,
 				'name'       => $registration_key,

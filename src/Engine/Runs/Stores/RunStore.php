@@ -182,7 +182,7 @@ final readonly class RunStore {
 	 *
 	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
 	 */
-	public function transition( string $run_id, string $expected_raw, RunState $replacement ): ?string {
+	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
 		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->name, $run_id ), $expected_raw, $replacement_raw ) ) {
 			return null;
@@ -208,7 +208,7 @@ final readonly class RunStore {
 	 *
 	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
 	 */
-	public function transition_state( string $run_id, RunState $expected, RunState $replacement ): ?string {
+	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
 		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->name, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
 			return null;
@@ -258,7 +258,7 @@ final readonly class RunStore {
 			$effects         = $state->effects;
 			$effects[]       = $effect;
 			$replacement     = $state->with_effects( $effects );
-			$replacement_raw = $this->transition( $run_id, $raw, $replacement );
+			$replacement_raw = $this->replace_if_raw_matches( $run_id, $raw, $replacement );
 			if ( null !== $replacement_raw ) {
 				return array(
 					'raw'   => $replacement_raw,
@@ -334,8 +334,8 @@ final readonly class RunStore {
 
 		$replacement     = $expected->with_heartbeat_at( $at ?? $this->clock->now()->getTimestamp() )->with_executing( true );
 		$replacement_raw = null === $raw
-			? $this->transition_state( $run_id, $expected, $replacement )
-			: $this->transition( $run_id, $raw, $replacement );
+			? $this->replace_if_state_matches( $run_id, $expected, $replacement )
+			: $this->replace_if_raw_matches( $run_id, $raw, $replacement );
 
 		return null !== $replacement_raw ? $replacement : null;
 	}

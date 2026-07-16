@@ -102,7 +102,7 @@ final readonly class StoreFixtureBuilder {
 
 				$raw = self::same_state( $created, $state )
 					? $this->raw_option( RunIdentity::option_name( $this->identity, $run_id ) )
-					: $store->transition_state( $run_id, $created, $state );
+					: $store->replace_if_state_matches( $run_id, $created, $state );
 				if ( null === $raw ) {
 					throw new \LogicException( 'Production RunStore could not serialize the requested active-run fixture.' );
 				}

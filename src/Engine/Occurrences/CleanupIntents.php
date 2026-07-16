@@ -32,7 +32,7 @@ final readonly class CleanupIntents {
 	 *
 	 * @var     string
 	 */
-	public const string INTENT_PREFIX = 'a8csp_bgte_cleanup_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_cleanup_';
 
 	// endregion
 
@@ -227,7 +227,7 @@ final readonly class CleanupIntents {
 	 */
 	private function intent_keys(): array {
 		$keys  = array();
-		$names = $this->option_rows->option_names( self::INTENT_PREFIX );
+		$names = $this->option_rows->option_names( self::OPTION_PREFIX );
 		if ( $names->is_failure() ) {
 			return $keys;
 		}
@@ -271,7 +271,7 @@ final readonly class CleanupIntents {
 	 * @return  string
 	 */
 	private static function intent_option_name( string $registration_key ): string {
-		return self::INTENT_PREFIX . \hash( 'sha256', $registration_key );
+		return self::OPTION_PREFIX . \hash( 'sha256', $registration_key );
 	}
 
 	/**

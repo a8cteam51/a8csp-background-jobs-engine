@@ -203,7 +203,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
-		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ) );
+		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_seq( 2 ) ) );
 		$expected = $this->option( $this->run_option_name() );
 
 		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
@@ -319,8 +319,8 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
-				self::assertFalse( $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
-				self::assertIsString( $run_store->transition_state( self::RUN_ID, $incumbent, $advanced ) );
+				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
+				self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $incumbent, $advanced ) );
 			}
 		);
 
@@ -336,7 +336,7 @@ final class TerminalTransitionsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_abort_unless_fence_owned_aborts_without_a_terminal_claim_when_heartbeat_is_indeterminate(): void {
+	public function test_enforce_delivery_fence_aborts_without_a_terminal_claim_when_heartbeat_is_indeterminate(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$before    = $run_store->inspect( self::RUN_ID );
@@ -363,7 +363,7 @@ final class TerminalTransitionsTest extends TestCase {
 			}
 		);
 
-		$must_abort = $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		$after = $run_store->inspect( self::RUN_ID );
@@ -735,14 +735,14 @@ final class TerminalTransitionsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_abort_unless_fence_owned_persists_superseded_after_confirmed_foreign_owner(): void {
+	public function test_enforce_delivery_fence_persists_superseded_after_confirmed_foreign_owner(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-		$must_abort = $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -769,7 +769,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
-		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) ) );
+		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) ) );
 
 		$this->logger->records = array();
 
@@ -928,7 +928,7 @@ final class TerminalTransitionsTest extends TestCase {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', self::IDENTITY, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, $run_id, $state, $run_store ) ) {
 			return;
 		}
 

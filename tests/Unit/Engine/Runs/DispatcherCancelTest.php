@@ -433,7 +433,7 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertNotNull( $snapshot );
 		self::assertInstanceOf( RunState::class, $snapshot['state'] );
 		$state = $replacement( $snapshot['state'] );
-		self::assertIsString( $run_store->transition( $run_id, $snapshot['raw'], $state ) );
+		self::assertIsString( $run_store->replace_if_raw_matches( $run_id, $snapshot['raw'], $state ) );
 
 		return $state;
 	}

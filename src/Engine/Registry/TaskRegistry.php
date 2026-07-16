@@ -80,12 +80,12 @@ final class TaskRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified task identity.
+	 * @param   string $identity Complete owner-qualified task identity.
 	 *
 	 * @return  TaskInterface|null
 	 */
-	public function get( string $name ): ?TaskInterface {
-		return $this->tasks[ $name ] ?? null;
+	public function get( string $identity ): ?TaskInterface {
+		return $this->tasks[ $identity ] ?? null;
 	}
 
 	/**
@@ -94,12 +94,12 @@ final class TaskRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified work identity.
+	 * @param   string $identity Complete owner-qualified work identity.
 	 *
 	 * @return  'batch'|'task'|null
 	 */
-	public function kind( string $name ): ?string {
-		return $this->work->kind( $name );
+	public function kind( string $identity ): ?string {
+		return $this->work->kind( $identity );
 	}
 
 	// endregion

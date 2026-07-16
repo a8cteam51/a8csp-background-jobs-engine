@@ -851,7 +851,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  string
 	 */
 	private function intent_option_name(): string {
-		return CleanupIntents::INTENT_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		return CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
 	}
 
 	/**

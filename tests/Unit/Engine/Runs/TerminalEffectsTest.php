@@ -243,7 +243,7 @@ final class TerminalEffectsTest extends TestCase {
 		$running   = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal  = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
-		$claim_raw = $run_store->transition_state( self::RUN_ID, $running, $terminal );
+		$claim_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
 		self::assertIsString( $claim_raw );
 
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store, 'Task' ) );
@@ -365,7 +365,7 @@ final class TerminalEffectsTest extends TestCase {
 	 * @return  string
 	 */
 	private function claim_terminal_state( RunStore $run_store, RunState $running, RunState $terminal ): string {
-		$terminal_raw = $run_store->transition_state( self::RUN_ID, $running, $terminal );
+		$terminal_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
 		if ( null === $terminal_raw ) {
 			throw new \RuntimeException( 'The terminal-effect fixture lost its terminal claim.' );
 		}

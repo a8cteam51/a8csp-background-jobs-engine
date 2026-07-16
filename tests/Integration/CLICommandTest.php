@@ -537,7 +537,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$run_store  = new RunStore( self::CANCEL_NAME, new SystemClock(), $rows );
 		$live_state = $run_store->create( self::CANONICAL_RUN_ID, array(), self::args_hash( array() ), array( array() ) );
 		self::assertNotNull( $live_state );
-		self::assertIsString( $run_store->transition_state( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) ) );
+		self::assertIsString( $run_store->replace_if_state_matches( self::CANONICAL_RUN_ID, $live_state, $live_state->with_executing( true ) ) );
 		$history = new RunHistory( self::CANCEL_NAME, $rows );
 		self::assertTrue( $history->record_started( self::CANONICAL_RUN_ID, self::args_hash( array() ) ) );
 		self::assertTrue( $history->record_terminal( 'integration-cli-history-failed', 'history-hash', RunStatus::Failed ) );
@@ -867,7 +867,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertNotNull( $state, 'The CLI cancel boundary requires one deterministic retained run' );
 
 		if ( $executing ) {
-			self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_executing( true ) ), 'The executing-refusal fixture must persist its admitted-delivery marker' );
+			self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_executing( true ) ), 'The executing-refusal fixture must persist its admitted-delivery marker' );
 		}
 
 		return $run_store;
@@ -883,7 +883,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$run_store = new RunStore( self::CANCEL_BATCH_NAME, new SystemClock(), self::option_rows() );
 		$state     = $run_store->create( self::RUN_ID, $args, self::args_hash( $args ), array() );
 		self::assertNotNull( $state, 'The CLI completeness boundary requires one retained batch run' );
-		self::assertIsString( $run_store->transition_state( self::RUN_ID, $state, $state->with_action_seq( 2 ) ), 'The zero-chunk fixture must advance beyond its unmaterialized state' );
+		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_seq( 2 ) ), 'The zero-chunk fixture must advance beyond its unmaterialized state' );
 
 		return $run_store;
 	}

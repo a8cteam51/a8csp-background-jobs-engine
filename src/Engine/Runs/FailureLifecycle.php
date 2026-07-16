@@ -111,7 +111,7 @@ final readonly class FailureLifecycle {
 	private function handle_failure( TaskInterface|BatchInterface $contract, string $name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
 		$work_type = $contract instanceof BatchInterface ? 'Batch' : 'Task';
 		$reset_at  = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
@@ -132,7 +132,7 @@ final readonly class FailureLifecycle {
 		try {
 			$policy = $this->retry_policy( $name, $contract->get_retry_policy() );
 		} catch ( \Throwable $retry_policy_failure ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
@@ -141,7 +141,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -154,7 +154,7 @@ final readonly class FailureLifecycle {
 		$retry_failure = $this->reschedule_retry( $work_type, $name, $run_id, $state, $run_store, $policy, $attempts_used, $chunk_args );
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
-			if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
 				return;
 			}
 
@@ -259,7 +259,7 @@ final readonly class FailureLifecycle {
 		}
 
 		$fire_at = $now + $delay;
-		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
@@ -275,7 +275,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$transitioned = $run_store->transition_state( $run_id, $state, $replacement );
+			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 		} catch ( \Throwable $throwable ) {
 			$context_name = \strtolower( $work_type ) . '_name';
 			$this->logger->warning(
@@ -305,7 +305,7 @@ final readonly class FailureLifecycle {
 			);
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $fire_at, $state->heartbeat_at ) ) {
 			return null;
 		}
 

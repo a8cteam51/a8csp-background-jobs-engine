@@ -551,7 +551,7 @@ final readonly class Dispatcher {
 			}
 
 			$replacement = $state->with_heartbeat_at( $scheduled_at );
-			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
 				$run_store->delete( $run_id );
 

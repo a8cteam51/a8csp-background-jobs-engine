@@ -125,7 +125,7 @@ final readonly class TerminalTransitions {
 		$at = null !== $liveness_at ? $liveness_at() : $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->abort_unless_fence_owned( $work_type, $name, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
+		if ( $this->enforce_delivery_fence( $work_type, $name, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
@@ -336,7 +336,7 @@ final readonly class TerminalTransitions {
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	public function abort_unless_fence_owned( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
+	public function enforce_delivery_fence( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
 		$outcome = $this->overlap_guard->heartbeat( $name, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
@@ -443,8 +443,8 @@ final readonly class TerminalTransitions {
 	 */
 	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): ?string {
 		return null === $expected_raw
-			? $run_store->transition_state( $run_id, $expected, $replacement )
-			: $run_store->transition( $run_id, $expected_raw, $replacement );
+			? $run_store->replace_if_state_matches( $run_id, $expected, $replacement )
+			: $run_store->replace_if_raw_matches( $run_id, $expected_raw, $replacement );
 	}
 
 	/**

@@ -271,8 +271,8 @@ final class InspectionTest extends TestCase {
 		$stale_state = $store->create( $stale_id, array(), 'hash-stale', array( array() ) );
 		self::assertNotNull( $fresh_state );
 		self::assertNotNull( $stale_state );
-		self::assertIsString( $store->transition_state( $fresh_id, $fresh_state, $fresh_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS )->with_executing( true ) ) );
-		self::assertIsString( $store->transition_state( $stale_id, $stale_state, $stale_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS - 1 ) ) );
+		self::assertIsString( $store->replace_if_state_matches( $fresh_id, $fresh_state, $fresh_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS )->with_executing( true ) ) );
+		self::assertIsString( $store->replace_if_state_matches( $stale_id, $stale_state, $stale_state->with_heartbeat_at( self::NOW - 15 * \MINUTE_IN_SECONDS - 1 ) ) );
 
 		$snapshot = $this->inspection->runs( $identity );
 

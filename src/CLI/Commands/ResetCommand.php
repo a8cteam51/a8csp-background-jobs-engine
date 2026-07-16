@@ -46,7 +46,7 @@ final readonly class ResetCommand {
 		LatestRunPointer::OPTION_PREFIX,
 		OverlapGuard::OPTION_PREFIX,
 		OccurrenceLease::OPTION_PREFIX,
-		CleanupIntents::INTENT_PREFIX,
+		CleanupIntents::OPTION_PREFIX,
 	);
 
 	/**

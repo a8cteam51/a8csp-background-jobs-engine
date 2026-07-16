@@ -160,19 +160,19 @@ final readonly class ActionDeliveries {
 		}
 
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		$replacement = $state->with_queue( $queue )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state = $replacement;
 		try {
 			$this->terminal_effects->fire_started( $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
@@ -181,7 +181,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -221,7 +221,7 @@ final readonly class ActionDeliveries {
 
 		if ( array() === $state->queue ) {
 			$replacement = $state->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
-			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 				return;
 			}
 			$state     = $replacement;
@@ -235,7 +235,7 @@ final readonly class ActionDeliveries {
 
 		$chunk_args  = $state->queue[0];
 		$replacement = $state->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'run', 10 ) );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state     = $replacement;
@@ -286,7 +286,7 @@ final readonly class ActionDeliveries {
 						'run_id'    => $run_id,
 					)
 				);
-				$run_store->transition_state( $run_id, $state, $state->with_executing( false ) );
+				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
 
 				return;
 			}
@@ -305,7 +305,7 @@ final readonly class ActionDeliveries {
 						'run_id'     => $run_id,
 					)
 				);
-				$run_store->transition_state( $run_id, $state, $state->with_executing( false ) );
+				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
 
 				return;
 			}
@@ -404,7 +404,7 @@ final readonly class ActionDeliveries {
 	 */
 	private function fail_batch_start_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
@@ -438,7 +438,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Task', $task_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Task', $task_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -471,14 +471,14 @@ final readonly class ActionDeliveries {
 		}
 
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		try {
 			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
 
@@ -487,7 +487,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->abort_unless_fence_owned( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 			return;
 		}
 
@@ -499,7 +499,7 @@ final readonly class ActionDeliveries {
 		}
 		$fire_at     = $now + $delay;
 		$replacement = $state->with_queue( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state = $replacement;
@@ -531,7 +531,7 @@ final readonly class ActionDeliveries {
 	 */
 	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, string $stage, ApiErrorCode $code ): void {
 		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( null );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 

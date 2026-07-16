@@ -80,12 +80,12 @@ final class BatchRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified batch identity.
+	 * @param   string $identity Complete owner-qualified batch identity.
 	 *
 	 * @return  BatchInterface|null
 	 */
-	public function get( string $name ): ?BatchInterface {
-		return $this->batches[ $name ] ?? null;
+	public function get( string $identity ): ?BatchInterface {
+		return $this->batches[ $identity ] ?? null;
 	}
 
 	// endregion

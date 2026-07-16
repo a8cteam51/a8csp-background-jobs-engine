@@ -111,7 +111,7 @@ final class ResetCommandTest extends TestCase {
 				LatestRunPointer::OPTION_PREFIX,
 				OverlapGuard::OPTION_PREFIX,
 				OccurrenceLease::OPTION_PREFIX,
-				CleanupIntents::INTENT_PREFIX,
+				CleanupIntents::OPTION_PREFIX,
 			),
 			ResetCommand::option_prefixes()
 		);

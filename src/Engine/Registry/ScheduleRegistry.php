@@ -51,7 +51,7 @@ final class ScheduleRegistry {
 	 *
 	 * @var     array<string, array<string, array{schedule: Schedule, task: string}>>
 	 */
-	private array $schedules = array();
+	private array $declarations = array();
 
 	// endregion
 
@@ -257,13 +257,13 @@ final class ScheduleRegistry {
 	 *
 	 * @return  array{schedule: Schedule, task: string}|null
 	 */
-	public function get( string $registration_key ): ?array {
+	public function declaration( string $registration_key ): ?array {
 		$parts = WorkIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return null;
 		}
 
-		return $this->schedules[ $parts[0] ][ $registration_key ] ?? null;
+		return $this->declarations[ $parts[0] ][ $registration_key ] ?? null;
 	}
 
 	/**
@@ -516,11 +516,11 @@ final class ScheduleRegistry {
 	 */
 	private function retain_owner( string $owner, array $schedules ): void {
 		if ( array() === $schedules ) {
-			unset( $this->schedules[ $owner ] );
+			unset( $this->declarations[ $owner ] );
 			return;
 		}
 
-		$this->schedules[ $owner ] = $schedules;
+		$this->declarations[ $owner ] = $schedules;
 	}
 
 	// endregion
