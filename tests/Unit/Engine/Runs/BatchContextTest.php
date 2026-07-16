@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use PHPUnit\Framework\Attributes\CoversClass;

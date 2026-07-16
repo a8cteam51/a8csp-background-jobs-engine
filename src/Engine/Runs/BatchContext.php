@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 

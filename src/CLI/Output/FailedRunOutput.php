@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

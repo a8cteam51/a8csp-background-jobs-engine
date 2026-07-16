@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

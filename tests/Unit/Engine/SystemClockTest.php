@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support\Clock;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;

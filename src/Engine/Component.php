@@ -19,10 +19,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\Randomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Randomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceSchedule;
@@ -30,13 +30,13 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

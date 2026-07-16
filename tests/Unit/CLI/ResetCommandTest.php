@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;

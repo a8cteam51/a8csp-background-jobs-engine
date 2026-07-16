@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 

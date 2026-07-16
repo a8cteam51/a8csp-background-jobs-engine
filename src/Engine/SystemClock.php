@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use Psr\Clock\ClockInterface;
 

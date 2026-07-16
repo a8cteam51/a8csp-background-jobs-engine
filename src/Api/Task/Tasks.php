@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Task;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
 
 \defined( 'ABSPATH' ) || exit;
 

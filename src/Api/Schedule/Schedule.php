@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\AdmissionValidator;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Support\Logging;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Logging;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -26,8 +26,8 @@ final class LogTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 
-		require_once \dirname( __DIR__, 3 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/Backends/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
+		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 
 	/**

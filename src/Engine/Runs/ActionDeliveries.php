@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 

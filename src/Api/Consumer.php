@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

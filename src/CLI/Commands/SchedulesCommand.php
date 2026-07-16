@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

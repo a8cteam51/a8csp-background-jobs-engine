@@ -17,6 +17,7 @@ final class ApiBoundaryTest extends TestCase {
 	private const ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
 
 	private const EXPECTED_API_TYPES = array(
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\AdmissionValidator',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\AbstractBatch',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchContextInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchInterface',
@@ -30,6 +31,7 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailureStage',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\NonRetryableException',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\NonRetryableExceptionInterface',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\PortableArguments',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\AbstractResult',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Failure',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Success',
@@ -43,6 +45,7 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\AbstractTask',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\TaskInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\Tasks',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\WorkIdentity',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\WorkInterface',
 	);
 
@@ -74,7 +77,7 @@ final class ApiBoundaryTest extends TestCase {
 	public function test_api_declarations_do_not_reference_internal_namespaces(): void {
 		$types = self::declared_api_types();
 		self::assertNotEmpty( $types );
-		self::assertCount( 27, $types );
+		self::assertCount( 30, $types );
 		self::assertSame( self::EXPECTED_API_TYPES, $types );
 
 		foreach ( $types as $type ) {

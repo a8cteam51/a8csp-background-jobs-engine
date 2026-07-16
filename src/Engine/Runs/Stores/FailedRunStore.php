@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 

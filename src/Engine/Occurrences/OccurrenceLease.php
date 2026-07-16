@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;

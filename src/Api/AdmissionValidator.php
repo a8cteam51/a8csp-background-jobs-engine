@@ -1,13 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Enforces shared command and schedule admission boundaries.
- *
- * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

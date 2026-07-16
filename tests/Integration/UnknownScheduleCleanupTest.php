@@ -8,10 +8,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBac
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
@@ -19,8 +19,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 

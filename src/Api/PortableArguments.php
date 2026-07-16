@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -9,8 +9,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support;
  *
  * Portable arguments contain only scalars, null, or nested arrays of such values and must survive
  * backend serialization round-trips byte-faithfully.
- *
- * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
