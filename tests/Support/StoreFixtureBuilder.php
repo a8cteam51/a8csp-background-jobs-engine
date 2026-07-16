@@ -5,6 +5,9 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
@@ -191,6 +194,40 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				return $this->row( $wpdb, LatestRunPointer::OPTION_PREFIX . $this->identity );
+			}
+		);
+	}
+
+	/**
+	 * Returns one overlap-lock option name and exact raw value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $args_hash   Stable single-flight identity.
+	 * @param   string $run_id      Lock owner.
+	 * @param   int    $claimed_at  Claim timestamp.
+	 * @param   int    $heartbeat_at Latest liveness timestamp.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function lock( string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at ): array {
+		return $this->isolated(
+			function ( WpdbLockSpy $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
+				$clock = new FixedClock( $claimed_at );
+				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ) );
+				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 ) ) {
+					throw new \LogicException( 'Production OverlapGuard rejected an isolated lock fixture.' );
+				}
+
+				if ( $heartbeat_at !== $claimed_at ) {
+					$clock->timestamp = $heartbeat_at;
+					if ( HeartbeatOutcome::Owned !== $guard->heartbeat( $this->identity, $args_hash, $run_id ) ) {
+						throw new \LogicException( 'Production OverlapGuard could not serialize the requested lock heartbeat.' );
+					}
+				}
+
+				return $this->row( $wpdb, OverlapGuard::OPTION_PREFIX . $this->identity . '_' . $args_hash );
 			}
 		);
 	}

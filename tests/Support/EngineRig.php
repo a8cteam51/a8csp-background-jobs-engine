@@ -47,13 +47,19 @@ final class EngineRig {
 	/** @var array<string, Consumer> */
 	private array $consumers = array();
 
+	/** @var non-empty-list<RecordingBackend> */
+	private array $backends;
+
 	/**
 	 * Retains deterministic boundaries used by one production graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   RecordingBackend    $backend    Scheduler boundary.
+	 * @phpstan-param non-empty-list<RecordingBackend> $backends
+	 *
+	 * @param   RecordingBackend    $backend    Primary scheduler boundary.
+	 * @param   array               $backends   Every scheduler boundary.
 	 * @param   FixedClock          $clock      Clock boundary.
 	 * @param   HookRecorder        $hooks      Lifecycle observer.
 	 * @param   RecordingLogger     $logger     Logger boundary.
@@ -62,12 +68,19 @@ final class EngineRig {
 	 */
 	private function __construct(
 		private RecordingBackend $backend,
+		array $backends,
 		private FixedClock $clock,
 		private HookRecorder $hooks,
 		private RecordingLogger $logger,
 		private RecordingRandomizer $randomizer,
 		private WpdbLockSpy $wpdb,
-	) {}
+	) {
+		if ( array() === $backends ) {
+			throw new \InvalidArgumentException( 'EngineRig requires at least one recording backend.' );
+		}
+
+		$this->backends = \array_values( $backends );
+	}
 
 	// endregion.
 
@@ -100,16 +113,24 @@ final class EngineRig {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $now Current Unix timestamp.
+	 * @param   int $now           Current Unix timestamp.
+	 * @param   int $backend_count Number of ready scheduler boundaries.
 	 *
 	 * @return  self
 	 */
-	public static function set_up( int $now = 1_700_000_000 ): self {
+	public static function set_up( int $now = 1_700_000_000, int $backend_count = 1 ): self {
 		self::bootstrap();
 		self::reset_component();
 		self::reset_wordpress_state();
+		if ( 1 > $backend_count ) {
+			throw new \InvalidArgumentException( 'EngineRig requires at least one recording backend.' );
+		}
 
-		$backend         = new RecordingBackend();
+		$backend  = new RecordingBackend();
+		$backends = array( $backend );
+		for ( $index = 1; $index < $backend_count; ++$index ) {
+			$backends[] = new RecordingBackend();
+		}
 		$clock           = new FixedClock( $now );
 		$hooks           = new HookRecorder();
 		$logger          = new RecordingLogger();
@@ -117,7 +138,7 @@ final class EngineRig {
 		$wpdb            = new WpdbLockSpy();
 		$GLOBALS['wpdb'] = $wpdb;
 
-		$rig = new self( $backend, $clock, $hooks, $logger, $randomizer, $wpdb );
+		$rig = new self( $backend, $backends, $clock, $hooks, $logger, $randomizer, $wpdb );
 		$rig->build_graph();
 
 		return $rig;
@@ -172,6 +193,18 @@ final class EngineRig {
 	 */
 	public function backend(): RecordingBackend {
 		return $this->backend;
+	}
+
+	/**
+	 * Returns every scheduler boundary in facade order.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  non-empty-list<RecordingBackend>
+	 */
+	public function backends(): array {
+		return $this->backends;
 	}
 
 	/**
@@ -309,7 +342,7 @@ final class EngineRig {
 		$lock_windows         = new LockWindows( $this->clock );
 		$terminal_effects     = new TerminalEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$scheduler            = new SchedulerFacade( array( $this->backend ) );
+		$scheduler            = new SchedulerFacade( $this->backends );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
 		$action_deliveries    = new ActionDeliveries( $tasks, $batches, $scheduler, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$dispatcher           = new Dispatcher( $tasks, $batches, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects );
