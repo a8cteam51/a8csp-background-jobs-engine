@@ -309,6 +309,8 @@ final readonly class Inspection {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
+		// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
+		// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
 		try {
 			$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
 		} catch ( \JsonException ) {

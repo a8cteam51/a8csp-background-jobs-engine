@@ -34,6 +34,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgte_test_did_actions']          = array();
 
 		require_once \dirname( __DIR__, 2 ) . '/a8csp-background-tasks-engine.php';
 	}

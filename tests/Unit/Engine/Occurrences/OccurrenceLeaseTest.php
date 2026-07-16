@@ -15,6 +15,12 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins occurrence-decision lease claims, stale recovery, and exact release.
+ *
+ * @load-bearing concurrency
+ * @pin-rationale Lease-token ownership and stale takeover are raw compare-and-swap contracts whose losing-writer states cannot be forced through a public schedule delivery.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( OccurrenceLease::class )]
 #[CoversClass( ClaimedLease::class )]

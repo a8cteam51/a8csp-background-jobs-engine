@@ -39,6 +39,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins active-run fencing and terminal task transitions across storage, hooks, locks, and logs.
  *
+ * @load-bearing concurrency
+ * @pin-rationale Terminal ownership is decided by exact run-state and lock-row races whose losing transitions are not observable or controllable through the public run facade.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
  */
 #[CoversClass( TerminalTransitions::class )]
 #[UsesClass( EngineError::class )]

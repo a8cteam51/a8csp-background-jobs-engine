@@ -29,6 +29,12 @@ final class LockRowWakeupProbe {
 /**
  * Pins execution-overlap ownership, liveness, reclaim, and release behavior.
  *
+ * @load-bearing concurrency
+ * @pin-rationale Exact database interleavings decide lock acquisition, replacement, heartbeat, and release; public consumer operations cannot deterministically create the losing-writer states.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( LockClaimOutcome::class )]

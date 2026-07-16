@@ -53,5 +53,25 @@ final class PortableArguments {
 		return true;
 	}
 
+	/**
+	 * Returns the canonical insertion-ordered argument hash when values are portable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $values Values to encode.
+	 *
+	 * @throws  \JsonException When JSON encoding rejects the argument tree.
+	 *
+	 * @return  string|null
+	 */
+	public static function hash( array $values ): ?string {
+		$encoded = \wp_json_encode( $values, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+
+		return \is_string( $encoded ) && self::is_valid( $values )
+			? \hash( 'sha256', $encoded )
+			: null;
+	}
+
 	// endregion
 }

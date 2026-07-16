@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
+use PHPUnit\Framework\Assert;
 
 /**
  * Call-routing spy with scriptable outcomes.
@@ -16,6 +17,16 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason
  * defaults prove nothing about a real backend.
  */
 final class RecordingBackend implements BackendInterface {
+	/**
+	 * Deliveries accepted by successful scheduling writes.
+	 *
+	 * @var list<array{hook: string, args: list<mixed>, group: string, timestamp: int|null, interval: int|null, priority: int, sequence: int}>
+	 */
+	private array $deliveries = array();
+
+	/** Next stable delivery insertion sequence. */
+	private int $delivery_sequence = 0;
+
 	/**
 	 * Interleavings run after the next matching write is recorded and before its result resolves.
 	 *
@@ -103,7 +114,12 @@ final class RecordingBackend implements BackendInterface {
 		);
 		$this->run_before( 'schedule_recurring' );
 
-		return $this->result_for( 'schedule_recurring' );
+		$result = $this->result_for( 'schedule_recurring' );
+		if ( $result->is_success() ) {
+			$this->record_delivery( $hook, $args, $group, $first_run_timestamp, $interval, $priority );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -135,7 +151,12 @@ final class RecordingBackend implements BackendInterface {
 		);
 		$this->run_before( 'schedule_single' );
 
-		return $this->result_for( 'schedule_single' );
+		$result = $this->result_for( 'schedule_single' );
+		if ( $result->is_success() ) {
+			$this->record_delivery( $hook, $args, $group, $timestamp, null, $priority );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -165,7 +186,12 @@ final class RecordingBackend implements BackendInterface {
 		);
 		$this->run_before( 'enqueue_async' );
 
-		return $this->result_for( 'enqueue_async' );
+		$result = $this->result_for( 'enqueue_async' );
+		if ( $result->is_success() ) {
+			$this->record_delivery( $hook, $args, $group, null, null, $priority );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -193,7 +219,12 @@ final class RecordingBackend implements BackendInterface {
 		);
 		$this->run_before( 'unschedule' );
 
-		return $this->result_for( 'unschedule' );
+		$result = $this->result_for( 'unschedule' );
+		if ( $result->is_success() ) {
+			$this->deliveries = \array_values( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $hook !== $delivery['hook'] || $args !== $delivery['args'] || $group !== $delivery['group'] ) );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -337,6 +368,82 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
+	 * Removes and returns the chronologically next accepted delivery.
+	 *
+	 * Recurring deliveries advance by one interval and remain pending.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array{hook: string, args: list<mixed>, group: string, timestamp: int|null, interval: int|null, priority: int, sequence: int}|null
+	 */
+	public function take_next_delivery(): ?array {
+		if ( array() === $this->deliveries ) {
+			return null;
+		}
+
+		$index = 0;
+		foreach ( $this->deliveries as $candidate_index => $candidate ) {
+			$current      = $this->deliveries[ $index ];
+			$candidate_at = $candidate['timestamp'] ?? \PHP_INT_MIN;
+			$current_at   = $current['timestamp'] ?? \PHP_INT_MIN;
+			if ( $candidate_at < $current_at || ( $candidate_at === $current_at && $candidate['sequence'] < $current['sequence'] ) ) {
+				$index = $candidate_index;
+			}
+		}
+
+		$delivery = $this->deliveries[ $index ];
+		if ( null === $delivery['interval'] ) {
+			\array_splice( $this->deliveries, $index, 1 );
+		} else {
+			$timestamp = $delivery['timestamp'];
+			if ( null === $timestamp || $timestamp > \PHP_INT_MAX - $delivery['interval'] ) {
+				\array_splice( $this->deliveries, $index, 1 );
+			} else {
+				$this->deliveries[ $index ]['timestamp'] = $timestamp + $delivery['interval'];
+			}
+		}
+
+		return $delivery;
+	}
+
+	/**
+	 * Asserts that one work or schedule identity retains an accepted delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete work or schedule identity.
+	 *
+	 * @return  void
+	 */
+	public function assert_scheduled( string $identity ): void {
+		Assert::assertNotEmpty(
+			\array_filter( $this->deliveries, static fn ( array $delivery ): bool => $identity === $delivery['group'] || \str_starts_with( $delivery['group'], $identity . '|' ) ),
+			\sprintf( 'Expected an accepted backend delivery for identity "%s".', $identity )
+		);
+	}
+
+	/**
+	 * Asserts that no exact hook, argument, and group delivery is pending twice.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function assert_no_duplicate(): void {
+		foreach ( $this->deliveries as $index => $delivery ) {
+			foreach ( \array_slice( $this->deliveries, $index + 1 ) as $candidate ) {
+				Assert::assertFalse(
+					$delivery['hook'] === $candidate['hook'] && $delivery['args'] === $candidate['args'] && $delivery['group'] === $candidate['group'],
+					'The backend retained duplicate deliveries for one hook, argument list, and group.'
+				);
+			}
+		}
+	}
+
+	/**
 	 * Returns the scripted result for a write verb.
 	 *
 	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb
@@ -351,6 +458,35 @@ final class RecordingBackend implements BackendInterface {
 		}
 
 		return $this->results[ $verb ] ?? new Success( true );
+	}
+
+	/**
+	 * Retains one successful scheduling write for behavioral delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<mixed> $args
+	 *
+	 * @param   string   $hook      Hook to deliver.
+	 * @param   array    $args      Hook arguments.
+	 * @param   string   $group     Scheduler group.
+	 * @param   int|null $timestamp Scheduled Unix timestamp, or null for async work.
+	 * @param   int|null $interval  Recurrence interval, or null for one-shot work.
+	 * @param   int      $priority  Advisory priority.
+	 *
+	 * @return  void
+	 */
+	private function record_delivery( string $hook, array $args, string $group, ?int $timestamp, ?int $interval, int $priority ): void {
+		$this->deliveries[] = array(
+			'hook'      => $hook,
+			'args'      => \array_values( $args ),
+			'group'     => $group,
+			'timestamp' => $timestamp,
+			'interval'  => $interval,
+			'priority'  => $priority,
+			'sequence'  => $this->delivery_sequence++,
+		);
 	}
 
 	/**

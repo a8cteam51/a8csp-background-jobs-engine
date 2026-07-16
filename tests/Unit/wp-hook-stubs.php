@@ -177,6 +177,18 @@ if ( ! \function_exists( 'do_action' ) ) {
 
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = $actions;
 
+		$observers = $GLOBALS['a8csp_bgte_test_action_observers'] ?? array();
+		if ( ! \is_array( $observers ) ) {
+			throw new \UnexpectedValueException( 'Initialize the action-observer test ledger as an array.' );
+		}
+		foreach ( $observers as $observer ) {
+			if ( ! \is_callable( $observer ) ) {
+				throw new \UnexpectedValueException( 'Action observers must be callable.' );
+			}
+
+			$observer( $hook_name, $args );
+		}
+
 		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
 		if ( \is_array( $lifecycle_events ) ) {
 			$lifecycle_events[] = array(

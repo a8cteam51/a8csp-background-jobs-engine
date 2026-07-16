@@ -696,15 +696,14 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'an argument-hash failure must be handled, not dropped' )]
 	private function args_hash( string $identity, array $args, string $work_type = 'Task' ): string|Failure {
-		$encoded         = false;
 		$exception_class = null;
 		try {
-			$encoded = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+			$hash = PortableArguments::hash( $args );
 		} catch ( \JsonException $exception ) {
 			$exception_class = \get_debug_type( $exception );
+			$hash            = null;
 		}
-
-		if ( ! \is_string( $encoded ) || ! PortableArguments::is_valid( $args ) ) {
+		if ( null === $hash ) {
 			return new Failure(
 				new EngineError(
 					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $work_type, $identity ),
@@ -718,7 +717,7 @@ final readonly class Dispatcher {
 			);
 		}
 
-		return \hash( 'sha256', $encoded );
+		return $hash;
 	}
 
 	// endregion

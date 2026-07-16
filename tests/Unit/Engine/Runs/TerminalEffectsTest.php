@@ -27,6 +27,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins durable terminal effects, replay progress, and exact cleanup.
  *
+ * @load-bearing durability
+ * @pin-rationale Partial effect ledgers and failed exact deletes are crash-recovery states that public lifecycle operations intentionally hide after terminal cleanup.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
  */
 #[CoversClass( TerminalEffects::class )]
 #[UsesClass( EngineError::class )]

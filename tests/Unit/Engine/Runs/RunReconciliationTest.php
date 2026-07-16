@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
@@ -16,6 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
@@ -36,6 +38,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -44,6 +47,12 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins periodic reconciliation of abandoned lock and run state.
+ *
+ * @load-bearing durability
+ * @pin-rationale Maintenance must classify and converge exact retained run/lock combinations, including crashed and corrupt states that supported consumer operations cannot manufacture.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  *
  */
 #[CoversClass( RunReconciliation::class )]
@@ -1828,6 +1837,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_retries_a_failed_terminal_delete_without_repeating_effects(): void {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
 		$options = $this->options();
+		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
 		$options[ 'a8csp_bgte_history_' . self::IDENTITY ] = array(
 			'started'  => array( 'existing-run' ),
 			'terminal' => array(
@@ -1946,25 +1956,18 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0 ): void {
-		$state = array(
-			'status'          => $status,
-			'executing'       => true,
-			'start_args'      => self::ARGS,
-			'args_hash'       => self::ARGS_HASH,
-			'queue'           => array(),
-			'failed_attempts' => $failed_attempts,
-			'action_seq'      => 1,
-			'created_at'      => self::NOW - 7_201,
-			'heartbeat_at'    => self::NOW - 3_601,
-		);
-		if ( null !== $error ) {
-			$state['error'] = $error;
-		}
-		if ( array() !== $effects ) {
-			$state['effects'] = $effects;
-		}
+		$state = new RunState( status: RunStatus::from( $status ), executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
 
-		$this->replace_run_state( $name, $state );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
+
+		$decoded = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $decoded );
+
+		$options = $this->options();
+
+		$options[ $option_name ] = $decoded;
+
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
 	}
 
 	/**
