@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
@@ -18,8 +17,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
@@ -87,9 +84,7 @@ final readonly class Inspection {
 	 * @version 1.0.0
 	 *
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
-	 * @param   TaskRegistry     $tasks        Request-local task registrations.
-	 * @param   BatchRegistry    $batches      Request-local batch registrations.
-	 * @param   WorkRegistry     $work         Shared task-and-batch identity registry.
+	 * @param   WorkRegistry     $work         Request-local work registrations.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
 	 * @param   StoreFactory     $stores       Name-bound run stores.
@@ -99,8 +94,6 @@ final readonly class Inspection {
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
 		private WorkRegistry $work,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
@@ -233,7 +226,7 @@ final readonly class Inspection {
 			);
 		}
 
-		$kind = $this->work_kind( $identity );
+		$kind = $this->work->kind( $identity ) ?? 'unknown';
 		$live = array();
 
 		foreach ( $page['names'] as $option_name ) {
@@ -346,28 +339,6 @@ final readonly class Inspection {
 			'run_id' => $lock['run_id'],
 			'stale'  => self::heartbeat_is_stale( $lock['heartbeat_at'], $observed_at, $staleness ),
 		);
-	}
-
-	/**
-	 * Returns the recorded work kind, or unknown when absent.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Complete owner-qualified background-work identity.
-	 *
-	 * @return  'batch'|'task'|'unknown'
-	 */
-	private function work_kind( string $identity ): string {
-		$kind = $this->work->kind( $identity );
-		if ( 'task' === $kind ) {
-			return null === $this->tasks->get( $identity ) ? 'unknown' : 'task';
-		}
-		if ( 'batch' === $kind ) {
-			return null === $this->batches->get( $identity ) ? 'unknown' : 'batch';
-		}
-
-		return 'unknown';
 	}
 
 	/**

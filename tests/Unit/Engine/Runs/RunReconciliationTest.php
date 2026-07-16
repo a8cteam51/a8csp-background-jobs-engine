@@ -22,9 +22,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
@@ -79,8 +77,7 @@ final class RunReconciliationTest extends TestCase {
 	private const RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
-	private BatchRegistry $batches;
-	private TaskRegistry $tasks;
+	private WorkRegistry $work;
 	private RecordingBackend $backend;
 	private Dispatcher $dispatcher;
 	private ActionDeliveries $lifecycle_deliveries;
@@ -137,13 +134,11 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 
-		$this->clock   = new FixedClock( self::NOW );
-		$work          = new WorkRegistry();
-		$this->batches = new BatchRegistry( $work );
-		$this->logger  = new RecordingLogger();
-		$this->wpdb    = new WpdbLockSpy();
-		$this->tasks   = new TaskRegistry( $work );
-		$this->tasks->register( self::IDENTITY, new RecordingTask( self::NAME ) );
+		$this->clock  = new FixedClock( self::NOW );
+		$this->work   = new WorkRegistry();
+		$this->logger = new RecordingLogger();
+		$this->wpdb   = new WpdbLockSpy();
+		$this->work->register_task( self::IDENTITY, new RecordingTask( self::NAME ) );
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
@@ -153,9 +148,9 @@ final class RunReconciliationTest extends TestCase {
 		$this->terminal_effects     = new TerminalEffects( $guard, $this->stores, $this->logger );
 		$this->terminal_transitions = new TerminalTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
 		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
-		$this->lifecycle_deliveries = new ActionDeliveries( $this->tasks, $this->batches, $work, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
-		$this->dispatcher           = new Dispatcher( $this->tasks, $this->batches, $work, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
-		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->batches, $work, $this->backend );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->work, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
+		$this->dispatcher           = new Dispatcher( $this->work, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
+		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->work, $this->backend );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
@@ -274,7 +269,7 @@ final class RunReconciliationTest extends TestCase {
 		$chunk        = array( 'page' => 1 );
 		$batch        = new RecordingBatch( 'redriven-batch' );
 		$batch->queue = array( $chunk );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
@@ -323,7 +318,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_redrives_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value ): void {
 		$name  = self::identity( 'redriven-start-batch' );
 		$batch = new RecordingBatch( 'redriven-start-batch' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -594,7 +589,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_preserves_a_stale_pending_run_when_redrive_is_rejected(): void {
 		$name  = self::identity( 'redrive-rejection-batch' );
 		$batch = new RecordingBatch( 'redrive-rejection-batch' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -803,7 +798,7 @@ final class RunReconciliationTest extends TestCase {
 		$chunk        = array( 'page' => 1 );
 		$batch        = new RecordingBatch( 'idempotent-batch' );
 		$batch->queue = array( $chunk );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
@@ -844,7 +839,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$healthy_name  = self::identity( 'healthy-batch' );
 		$healthy_batch = new RecordingBatch( 'healthy-batch' );
-		$this->batches->register( $healthy_name, $healthy_batch );
+		$this->work->register_batch( $healthy_name, $healthy_batch );
 		$result = $this->dispatcher->start_batch( $healthy_name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -1193,7 +1188,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_terminalizes_a_running_batch_through_batch_failure_machinery(): void {
 		$name  = self::identity( 'crashed-batch' );
 		$batch = new RecordingBatch( 'crashed-batch' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -1240,7 +1235,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_continues_after_a_batch_on_failed_callback_throws(): void {
 		$throwing_name  = self::identity( 'broken-batch' );
 		$throwing_batch = new RecordingBatch( 'broken-batch' );
-		$this->batches->register( $throwing_name, $throwing_batch );
+		$this->work->register_batch( $throwing_name, $throwing_batch );
 		$result = $this->dispatcher->start_batch( $throwing_name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -1430,7 +1425,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_saturates_batch_failure_attempts_at_php_int_max(): void {
 		$name = self::identity( 'crashed-batch' );
-		$this->batches->register( $name, new RecordingBatch( 'crashed-batch' ) );
+		$this->work->register_batch( $name, new RecordingBatch( 'crashed-batch' ) );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$run_name = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
@@ -1498,7 +1493,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_replays_all_effects_for_an_old_failed_batch(): void {
 		$name  = self::identity( 'failed-batch' );
 		$batch = new RecordingBatch( 'failed-batch' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$this->store_terminal_run(
 			$name,
 			'failed',
@@ -1567,7 +1562,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_classifies_missing_persisted_failure_detail_as_storage_failure(): void {
 		$name  = self::identity( 'failed-without-detail' );
 		$batch = new RecordingBatch( 'failed-without-detail' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$this->store_terminal_run( $name, 'failed', array(), null, 2 );
 
 		$this->maintenance->handle( array() );
@@ -1615,7 +1610,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_replays_only_missing_failed_batch_effects(): void {
 		$name  = self::identity( 'partially-effected-batch' );
 		$batch = new RecordingBatch( 'partially-effected-batch' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted batch failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted batch failure.', failed_chunk: null, ) ) );
 		$failed_option = 'a8csp_bgte_failed_' . $name;
 		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
@@ -1722,7 +1717,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_replays_all_effects_for_an_old_completed_batch(): void {
 		$name  = self::identity( 'completed-batch' );
 		$batch = new RecordingBatch( 'completed-batch' );
-		$this->batches->register( $name, $batch );
+		$this->work->register_batch( $name, $batch );
 		$this->store_terminal_run( $name, 'completed' );
 
 		$this->maintenance->handle( array() );

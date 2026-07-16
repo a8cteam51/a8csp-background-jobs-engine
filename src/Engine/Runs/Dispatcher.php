@@ -5,15 +5,13 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Randomization\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
@@ -61,9 +59,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskRegistry        $tasks                Registered task instances.
-	 * @param   BatchRegistry       $batches              Registered batch instances.
-	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
+	 * @param   WorkRegistry        $work                 Registered task and batch instances.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
 	 * @param   StoreFactory        $stores               Name-bound store factory.
@@ -75,8 +71,6 @@ final readonly class Dispatcher {
 	 * @param   TerminalEffects     $terminal_effects     Consumer lifecycle-effect executor.
 	 */
 	public function __construct(
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
 		private WorkRegistry $work,
 		private BackendInterface $scheduler,
 		private OverlapGuard $overlap_guard,
@@ -171,9 +165,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
 	public function start_batch( string $batch_name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
-		$batch = 'batch' === $this->work->kind( $batch_name )
-			? $this->batches->get( $batch_name )
-			: null;
+		$batch = $this->work->batch( $batch_name );
 
 		if ( null === $batch ) {
 			return new Failure( new EngineError( \sprintf( 'Batch "%s" is not registered; register it before starting it.', $batch_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $batch_name ), ) );
@@ -271,9 +263,8 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $identity, string $run_id ): AbstractResult {
-		$kind  = $this->work->kind( $identity );
-		$task  = 'task' === $kind ? $this->tasks->get( $identity ) : null;
-		$batch = 'batch' === $kind ? $this->batches->get( $identity ) : null;
+		$task  = $this->work->task( $identity );
+		$batch = $this->work->batch( $identity );
 
 		if ( null === $task && null === $batch ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching task or batch before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
@@ -335,9 +326,8 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $identity, string $run_id ): AbstractResult {
-		$kind  = $this->work->kind( $identity );
-		$task  = 'task' === $kind ? $this->tasks->get( $identity ) : null;
-		$batch = 'batch' === $kind ? $this->batches->get( $identity ) : null;
+		$task  = $this->work->task( $identity );
+		$batch = $this->work->batch( $identity );
 
 		if ( null === $task && null === $batch ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching task or batch before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
@@ -476,9 +466,7 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string|SkippedTaskDispatch, EngineError|SchedulingError>
 	 */
 	private function dispatch_task( string $task_name, array $args, int $delay, ?string $dedup_key, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
-		$task = 'task' === $this->work->kind( $task_name )
-			? $this->tasks->get( $task_name )
-			: null;
+		$task = $this->work->task( $task_name );
 
 		if ( null === $task ) {
 			return new Failure( new EngineError( \sprintf( 'Task "%s" is not registered; register it before enqueueing.', $task_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $task_name ), ) );

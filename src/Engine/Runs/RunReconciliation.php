@@ -12,8 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedriveFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
@@ -47,8 +46,7 @@ final readonly class RunReconciliation {
 	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
 	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   TerminalEffects     $terminal_effects     Claimed terminal-effect executor.
-	 * @param   BatchRegistry       $batches              Registered batch instances.
-	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
+	 * @param   WorkRegistry        $work                 Registered task and batch instances.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 */
 	public function __construct(
@@ -59,7 +57,6 @@ final readonly class RunReconciliation {
 		private LockWindows $lock_windows,
 		private TerminalTransitions $terminal_transitions,
 		private TerminalEffects $terminal_effects,
-		private BatchRegistry $batches,
 		private WorkRegistry $work,
 		private BackendInterface $scheduler,
 	) {}
@@ -169,9 +166,8 @@ final readonly class RunReconciliation {
 				? $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness )
 				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
-			$kind      = $this->work->kind( $identity );
-			$batch     = 'batch' === $kind ? $this->batches->get( $identity ) : null;
-			$work_type = 'batch' === $kind ? 'Batch' : 'Task';
+			$batch     = $this->work->batch( $identity );
+			$work_type = null === $batch ? 'Task' : 'Batch';
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the displaced incumbent is still inside its callback; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
@@ -330,7 +326,7 @@ final readonly class RunReconciliation {
 		$resolved_batch = null;
 		if ( 'batch' === $kind ) {
 			$work_type      = 'Batch';
-			$resolved_batch = $this->batches->get( $identity );
+			$resolved_batch = $this->work->batch( $identity );
 		} elseif ( 'task' === $kind ) {
 			$work_type = 'Task';
 		} else {

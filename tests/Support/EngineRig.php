@@ -19,10 +19,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
@@ -33,6 +30,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -381,8 +379,6 @@ final class EngineRig {
 		// This graph mirrors Component::initialize() because initialize() has no injection seam; wiring changes require lockstep updates here.
 		$rows                 = new OptionRows( $this->wpdb );
 		$work                 = new WorkRegistry();
-		$tasks                = new TaskRegistry( $work );
-		$batches              = new BatchRegistry( $work );
 		$schedules            = new ScheduleRegistry( $rows );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
 		$stores               = new StoreFactory( $this->clock, $rows );
@@ -391,17 +387,17 @@ final class EngineRig {
 		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade( $this->backends );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
-		$action_deliveries    = new ActionDeliveries( $tasks, $batches, $work, $scheduler, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$dispatcher           = new Dispatcher( $tasks, $batches, $work, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $batches, $work, $scheduler );
+		$action_deliveries    = new ActionDeliveries( $work, $scheduler, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$dispatcher           = new Dispatcher( $work, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
-		$tasks->register( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
+		$work->register_task( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $tasks, $batches, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
-		$engine               = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedule_api, new Batches( $batches, $dispatcher ), $dispatcher, $inspection );
+		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$engine               = new EngineFacade( new Tasks( $work, $dispatcher ), $schedule_api, new Batches( $work, $dispatcher ), $dispatcher, $inspection );
 
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();

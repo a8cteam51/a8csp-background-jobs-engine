@@ -21,9 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
@@ -65,8 +63,6 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( TerminalEffects::class )]
-#[UsesClass( BatchRegistry::class )]
-#[UsesClass( TaskRegistry::class )]
 #[UsesClass( WorkRegistry::class )]
 final class TerminalTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -91,7 +87,6 @@ final class TerminalTransitionsTest extends TestCase {
 	private OptionRows $rows;
 	private RecordingTask $task;
 	private TerminalTransitions $terminal_transitions;
-	private TaskRegistry $registry;
 	private WpdbLockSpy $wpdb;
 	private Dispatcher $dispatcher;
 
@@ -146,11 +141,9 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->randomizer = new RecordingRandomizer( 42 );
 		$this->task       = new RecordingTask( self::NAME );
 		$work             = new WorkRegistry();
-		$this->registry   = new TaskRegistry( $work );
-		$this->registry->register( self::IDENTITY, $this->task );
+		$work->register_task( self::IDENTITY, $this->task );
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
-		$batches                    = new BatchRegistry( $work );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores                     = new StoreFactory( $this->clock, $this->rows );
 		$lock_windows               = new LockWindows( $this->clock );
@@ -158,7 +151,7 @@ final class TerminalTransitionsTest extends TestCase {
 		$this->terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $batches, $work, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );
+		$this->dispatcher = new Dispatcher( $work, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );
 	}
 
 	// endregion.

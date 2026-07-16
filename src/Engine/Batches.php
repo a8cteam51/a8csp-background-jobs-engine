@@ -6,7 +6,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 
@@ -29,11 +28,11 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchRegistry $registry   Registered batch instances.
-	 * @param   Dispatcher    $dispatcher Background-work admission coordinator.
+	 * @param   WorkRegistry $work       Registered task and batch instances.
+	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
 	 */
 	public function __construct(
-		private BatchRegistry $registry,
+		private WorkRegistry $work,
 		private Dispatcher $dispatcher,
 	) {}
 
@@ -56,7 +55,7 @@ final readonly class Batches {
 	 * @return  void
 	 */
 	public function register( string $identity, BatchInterface $batch ): void {
-		$this->registry->register( $identity, $batch );
+		$this->work->register_batch( $identity, $batch );
 	}
 
 	/**

@@ -25,9 +25,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\Clock\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
@@ -140,8 +137,6 @@ final class Component implements ComponentContract {
 			 */
 			$option_rows          = new OptionRows( $wpdb );
 			$work                 = new WorkRegistry();
-			$tasks                = new TaskRegistry( $work );
-			$batches              = new BatchRegistry( $work );
 			$schedules            = new ScheduleRegistry( $option_rows );
 			$logger               = new HookLogger();
 			$clock                = new SystemClock();
@@ -158,17 +153,17 @@ final class Component implements ComponentContract {
 				)
 			);
 			$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-			$action_deliveries    = new ActionDeliveries( $tasks, $batches, $work, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-			$dispatcher           = new Dispatcher( $tasks, $batches, $work, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );
-			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $batches, $work, $scheduler );
+			$action_deliveries    = new ActionDeliveries( $work, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+			$dispatcher           = new Dispatcher( $work, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );
+			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-			$tasks->register( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
+			$work->register_task( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
 			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-			$inspection           = new Inspection( $schedules, $tasks, $batches, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
-			$engine               = new EngineFacade( new Tasks( $tasks, $dispatcher ), $schedule_api, new Batches( $batches, $dispatcher ), $dispatcher, $inspection );
+			$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
+			$engine               = new EngineFacade( new Tasks( $work, $dispatcher ), $schedule_api, new Batches( $work, $dispatcher ), $dispatcher, $inspection );
 
 			$scheduler->register_hooks();
 			$action_deliveries->register_hooks();

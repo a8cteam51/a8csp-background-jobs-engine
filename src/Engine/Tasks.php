@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 
@@ -28,11 +27,11 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskRegistry $registry   Registered task instances.
+	 * @param   WorkRegistry $work       Registered task and batch instances.
 	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
 	 */
 	public function __construct(
-		private TaskRegistry $registry,
+		private WorkRegistry $work,
 		private Dispatcher $dispatcher,
 	) {}
 
@@ -55,7 +54,7 @@ final readonly class Tasks {
 	 * @return  void
 	 */
 	public function register( string $identity, TaskInterface $task ): void {
-		$this->registry->register( $identity, $task );
+		$this->work->register_task( $identity, $task );
 	}
 
 	/**

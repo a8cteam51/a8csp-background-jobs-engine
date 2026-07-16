@@ -12,9 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Registry\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Support\PortableArguments;
 use Psr\Clock\ClockInterface;
@@ -96,9 +94,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskRegistry        $tasks                Registered task instances.
-	 * @param   BatchRegistry       $batches              Registered batch instances.
-	 * @param   WorkRegistry        $work                 Shared task-and-batch identity registry.
+	 * @param   WorkRegistry        $work                 Registered task and batch instances.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   StoreFactory        $stores               Name-bound store factory.
 	 * @param   LoggerInterface     $logger               Log event sink.
@@ -109,8 +105,6 @@ final readonly class ActionDeliveries {
 	 * @param   FailureLifecycle    $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
 		private WorkRegistry $work,
 		private BackendInterface $scheduler,
 		private StoreFactory $stores,
@@ -139,9 +133,7 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$registered_batch = 'batch' === $this->work->kind( $batch_name )
-			? $this->batches->get( $batch_name )
-			: null;
+		$registered_batch = $this->work->batch( $batch_name );
 		$liveness_at      = null !== $registered_batch
 			? fn (): int => $this->execution_lease_at( $registered_batch )
 			: null;
@@ -378,9 +370,8 @@ final readonly class ActionDeliveries {
 	 */
 	private function handle_run_action( string $identity, string $run_id, ?array $chunk_args, int $action_seq ): void {
 		$work_type   = null === $chunk_args ? 'Task' : 'Batch';
-		$kind        = $this->work->kind( $identity );
-		$task        = 'task' === $kind ? $this->tasks->get( $identity ) : null;
-		$batch       = 'batch' === $kind ? $this->batches->get( $identity ) : null;
+		$task        = $this->work->task( $identity );
+		$batch       = $this->work->batch( $identity );
 		$liveness_at = null;
 		if ( null === $chunk_args && null !== $task ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $task );
@@ -635,9 +626,7 @@ final readonly class ActionDeliveries {
 	 * @return  BatchInterface|null
 	 */
 	private function batch_for_action( string $batch_name, string $run_id, string $stage ): ?BatchInterface {
-		$batch = 'batch' === $this->work->kind( $batch_name )
-			? $this->batches->get( $batch_name )
-			: null;
+		$batch = $this->work->batch( $batch_name );
 
 		if ( null === $batch ) {
 			$this->logger->warning(
