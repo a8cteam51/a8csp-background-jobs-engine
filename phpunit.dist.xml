@@ -26,7 +26,6 @@
 	<source>
 		<include>
 			<directory>src</directory>
-			<directory>includes</directory>
 			<file>functions-bootstrap.php</file>
 		</include>
 	</source>
