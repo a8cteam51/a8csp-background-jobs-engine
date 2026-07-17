@@ -36,22 +36,22 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook isolated to the backend-readiness transition. */
-	private const HOOK = 'a8csp_bgte/integration/backend_failover';
+	private const string HOOK = 'a8csp_bgte/integration/backend_failover';
 
 	/** Action Scheduler group isolated to the dormant occurrence. */
-	private const ACTION_SCHEDULER_GROUP = 'a8csp-bgte-integration-backend-failover-as';
+	private const string ACTION_SCHEDULER_GROUP = 'a8csp-bgte-integration-backend-failover-as';
 
 	/** Advisory group isolated to the WP-Cron fallback occurrence. */
-	private const WP_CRON_GROUP = 'a8csp-bgte-integration-backend-failover-cron';
+	private const string WP_CRON_GROUP = 'a8csp-bgte-integration-backend-failover-cron';
 
 	/** Owner isolated to recurring-chain convergence. */
-	private const CONVERGENCE_OWNER = 'integration-backend-convergence';
+	private const string CONVERGENCE_OWNER = 'integration-backend-convergence';
 
 	/** Owner-qualified schedule identity isolated to recurring-chain convergence. */
-	private const CONVERGENCE_IDENTITY = 'integration-backend-convergence:recurring';
+	private const string CONVERGENCE_IDENTITY = 'integration-backend-convergence:recurring';
 
 	/** Target task isolated to recurring-chain convergence. */
-	private const CONVERGENCE_TASK = 'integration-backend-convergence-task';
+	private const string CONVERGENCE_TASK = 'integration-backend-convergence-task';
 
 	// endregion.
 

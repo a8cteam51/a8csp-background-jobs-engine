@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
 final class LatestRunPointerTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const IDENTITY = 'runs-tests:reports';
+	private const string IDENTITY = 'runs-tests:reports';
 
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;

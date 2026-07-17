@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
 final class ResetCommandTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const UNRELATED_OPTION = 'consumer_plugin_state';
+	private const string UNRELATED_OPTION = 'consumer_plugin_state';
 
 	private EngineRig $rig;
 

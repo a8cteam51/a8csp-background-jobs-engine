@@ -47,10 +47,10 @@ use PHPUnit\Framework\TestCase;
 final class MaintenanceTaskTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS_HASH     = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
-	private const CURSOR_OPTION = 'a8csp_bgte_maintenance_sweep';
-	private const NOW           = 1_700_000_000;
-	private const RUN_ID        = '00000000001700000000-0000000000000000042';
+	private const string ARGS_HASH     = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
+	private const string CURSOR_OPTION = 'a8csp_bgte_maintenance_sweep';
+	private const int NOW              = 1_700_000_000;
+	private const string RUN_ID        = '00000000001700000000-0000000000000000042';
 
 	private MaintenanceTask $maintenance;
 	private WpdbLockSpy $wpdb;

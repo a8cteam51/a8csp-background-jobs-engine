@@ -54,64 +54,64 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	private ?WorkRegistry $deterministic_work = null;
 
 	/** Fixed interval shared by deterministic recurrence probes. */
-	private const INTERVAL = 300;
+	private const int INTERVAL = 300;
 
 	/** Owner isolated to the RunOnce occurrence. */
-	private const RUN_ONCE_OWNER = 'integration-misfire-run-once';
+	private const string RUN_ONCE_OWNER = 'integration-misfire-run-once';
 
 	/** Schedule isolated to the RunOnce occurrence. */
-	private const RUN_ONCE_SCHEDULE = 'late-run-once';
+	private const string RUN_ONCE_SCHEDULE = 'late-run-once';
 
 	/** Owner-qualified RunOnce schedule identity. */
-	private const RUN_ONCE_SCHEDULE_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE;
+	private const string RUN_ONCE_SCHEDULE_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE;
 
 	/** Task isolated to the RunOnce occurrence. */
-	private const RUN_ONCE_TASK = 'integration-misfire-run-once-task';
+	private const string RUN_ONCE_TASK = 'integration-misfire-run-once-task';
 
 	/** Owner-qualified RunOnce target identity. */
-	private const RUN_ONCE_TASK_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_TASK;
+	private const string RUN_ONCE_TASK_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_TASK;
 
 	/** Owner isolated to the Skip occurrence. */
-	private const SKIP_OWNER = 'integration-misfire-skip';
+	private const string SKIP_OWNER = 'integration-misfire-skip';
 
 	/** Schedule isolated to the Skip occurrence. */
-	private const SKIP_SCHEDULE = 'late-skip';
+	private const string SKIP_SCHEDULE = 'late-skip';
 
 	/** Owner-qualified Skip schedule identity. */
-	private const SKIP_SCHEDULE_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE;
+	private const string SKIP_SCHEDULE_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE;
 
 	/** Task isolated to the Skip occurrence. */
-	private const SKIP_TASK = 'integration-misfire-skip-task';
+	private const string SKIP_TASK = 'integration-misfire-skip-task';
 
 	/** Owner-qualified Skip target identity. */
-	private const SKIP_TASK_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_TASK;
+	private const string SKIP_TASK_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_TASK;
 
 	/** Owner isolated to the grace-boundary occurrences. */
-	private const BOUNDARY_OWNER = 'integration-misfire-boundary';
+	private const string BOUNDARY_OWNER = 'integration-misfire-boundary';
 
 	/** Schedule exactly at the grace boundary. */
-	private const EXACT_SCHEDULE = 'exact-grace';
+	private const string EXACT_SCHEDULE = 'exact-grace';
 
 	/** Owner-qualified exact-boundary schedule identity. */
-	private const EXACT_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE;
+	private const string EXACT_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE;
 
 	/** Task exactly at the grace boundary. */
-	private const EXACT_TASK = 'integration-misfire-exact-task';
+	private const string EXACT_TASK = 'integration-misfire-exact-task';
 
 	/** Owner-qualified exact-boundary target identity. */
-	private const EXACT_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_TASK;
+	private const string EXACT_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_TASK;
 
 	/** Schedule one second beyond the grace boundary. */
-	private const BEYOND_SCHEDULE = 'beyond-grace';
+	private const string BEYOND_SCHEDULE = 'beyond-grace';
 
 	/** Owner-qualified beyond-boundary schedule identity. */
-	private const BEYOND_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE;
+	private const string BEYOND_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE;
 
 	/** Task one second beyond the grace boundary. */
-	private const BEYOND_TASK = 'integration-misfire-beyond-task';
+	private const string BEYOND_TASK = 'integration-misfire-beyond-task';
 
 	/** Owner-qualified beyond-boundary target identity. */
-	private const BEYOND_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_TASK;
+	private const string BEYOND_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_TASK;
 
 	// endregion.
 

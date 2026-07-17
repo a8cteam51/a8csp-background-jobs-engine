@@ -68,13 +68,13 @@ use PHPUnit\Framework\TestCase;
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS      = array( 'site_id' => 7 );
-	private const ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
-	private const IDENTITY  = self::OWNER . ':' . self::NAME;
-	private const NAME      = 'crashed-task';
-	private const NOW       = 1_700_000_000;
-	private const OWNER     = 'runs-tests';
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
+	private const array ARGS       = array( 'site_id' => 7 );
+	private const string ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
+	private const string IDENTITY  = self::OWNER . ':' . self::NAME;
+	private const string NAME      = 'crashed-task';
+	private const int NOW          = 1_700_000_000;
+	private const string OWNER     = 'runs-tests';
+	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
 	private WorkRegistry $work;

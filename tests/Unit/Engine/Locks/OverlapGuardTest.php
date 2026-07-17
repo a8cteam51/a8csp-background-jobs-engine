@@ -43,9 +43,9 @@ final class LockRowWakeupProbe {
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
-	private const ARGS_HASH = 'args-123';
-	private const KEY       = 'a8csp_bgte_overlap_lock_email-digest_args-123';
-	private const NAME      = 'email-digest';
+	private const string ARGS_HASH = 'args-123';
+	private const string KEY       = 'a8csp_bgte_overlap_lock_email-digest_args-123';
+	private const string NAME      = 'email-digest';
 
 	private WpdbLockSpy $wpdb;
 

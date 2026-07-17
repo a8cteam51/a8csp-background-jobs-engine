@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
 final class ActionSchedulerBackendTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const HOOK = 'a8csp_bgte_test_hook';
+	private const string HOOK = 'a8csp_bgte_test_hook';
 
 	// endregion.
 

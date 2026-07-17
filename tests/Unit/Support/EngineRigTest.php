@@ -30,10 +30,10 @@ use PHPUnit\Framework\TestCase;
 final class EngineRigTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS     = array( 'site_id' => 7 );
-	private const IDENTITY = 'rig-tests:task';
-	private const NOW      = 1_700_000_000;
-	private const RUN_ID   = '00000000001700000000-0000000000000000042';
+	private const array ARGS      = array( 'site_id' => 7 );
+	private const string IDENTITY = 'rig-tests:task';
+	private const int NOW         = 1_700_000_000;
+	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	// endregion.
 

@@ -67,17 +67,17 @@ use PHPUnit\Framework\TestCase;
 final class RunTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS = array(
+	private const array ARGS = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
 
-	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const IDENTITY  = self::OWNER . ':' . self::NAME;
-	private const NAME      = 'email-digest';
-	private const NOW       = 1_700_000_000;
-	private const OWNER     = 'runs-tests';
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
+	private const string ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const string IDENTITY  = self::OWNER . ':' . self::NAME;
+	private const string NAME      = 'email-digest';
+	private const int NOW          = 1_700_000_000;
+	private const string OWNER     = 'runs-tests';
+	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
 	private RecordingBackend $backend;

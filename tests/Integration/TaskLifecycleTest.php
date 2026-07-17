@@ -21,19 +21,19 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
-	private const OWNER = 'integration-task-lifecycle';
+	private const string OWNER = 'integration-task-lifecycle';
 
 	/** Successful task identity unique within the request-persistent integration registry. */
-	private const SUCCESS_NAME = 'integration-task-lifecycle-success';
+	private const string SUCCESS_NAME = 'integration-task-lifecycle-success';
 
 	/** Owner-qualified successful task identity persisted by the engine. */
-	private const SUCCESS_IDENTITY = self::OWNER . ':' . self::SUCCESS_NAME;
+	private const string SUCCESS_IDENTITY = self::OWNER . ':' . self::SUCCESS_NAME;
 
 	/** Failed task identity unique within the request-persistent integration registry. */
-	private const FAILURE_NAME = 'integration-task-lifecycle-failure';
+	private const string FAILURE_NAME = 'integration-task-lifecycle-failure';
 
 	/** Owner-qualified failed task identity persisted by the engine. */
-	private const FAILURE_IDENTITY = self::OWNER . ':' . self::FAILURE_NAME;
+	private const string FAILURE_IDENTITY = self::OWNER . ':' . self::FAILURE_NAME;
 
 	// endregion.
 

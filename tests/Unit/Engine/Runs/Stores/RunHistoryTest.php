@@ -39,10 +39,10 @@ final class RunHistoryWakeupProbe {
 final class RunHistoryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const IDENTITY = self::OWNER . ':' . self::NAME;
-	private const NAME     = 'reports';
-	private const NOW      = 1_700_000_000;
-	private const OWNER    = 'runs-tests';
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string NAME     = 'reports';
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'runs-tests';
 
 	private RecordingBatch $batch;
 	private Consumer $consumer;

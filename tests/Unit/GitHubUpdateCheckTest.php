@@ -18,11 +18,11 @@ use PHPUnit\Framework\TestCase;
 #[PreserveGlobalState( false )]
 #[CoversFunction( 'a8csp_bgte_check_github_release_update' )]
 final class GitHubUpdateCheckTest extends TestCase {
-	private const API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10';
-	private const API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases/latest';
-	private const PLUGIN_FILE              = 'a8csp-background-tasks-engine/a8csp-background-tasks-engine.php';
-	private const TRANSIENT_KEY_PRERELEASE = 'a8csp_bgte_github_latest_release_prerelease';
-	private const TRANSIENT_KEY_STABLE     = 'a8csp_bgte_github_latest_release_stable';
+	private const string API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10';
+	private const string API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases/latest';
+	private const string PLUGIN_FILE              = 'a8csp-background-tasks-engine/a8csp-background-tasks-engine.php';
+	private const string TRANSIENT_KEY_PRERELEASE = 'a8csp_bgte_github_latest_release_prerelease';
+	private const string TRANSIENT_KEY_STABLE     = 'a8csp_bgte_github_latest_release_stable';
 
 	/**
 	 * Loads the named bootstrap helper with guarded WordPress API stubs and clean transient state.

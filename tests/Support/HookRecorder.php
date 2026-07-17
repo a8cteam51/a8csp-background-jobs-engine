@@ -11,7 +11,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 final class HookRecorder {
 	// region FIELDS AND CONSTANTS.
 
-	private const PREFIX = 'a8csp_background_tasks/';
+	private const string PREFIX = 'a8csp_background_tasks/';
 
 	/**
 	 * Engine actions in fire order.

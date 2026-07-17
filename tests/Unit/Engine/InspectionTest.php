@@ -32,7 +32,7 @@ use PHPUnit\Framework\TestCase;
 final class InspectionTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const NOW = 1_700_000_000;
+	private const int NOW = 1_700_000_000;
 
 	private EngineRig $rig;
 

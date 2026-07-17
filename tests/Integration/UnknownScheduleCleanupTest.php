@@ -34,28 +34,28 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Schedule-delivery hook shared with the live engine. */
-	private const HOOK = 'a8csp_background_tasks/schedule_due';
+	private const string HOOK = 'a8csp_background_tasks/schedule_due';
 
 	/** Unknown registration identity isolated to this integration test. */
-	private const KEY = 'integration-owner:unknown-cleanup';
+	private const string KEY = 'integration-owner:unknown-cleanup';
 
 	/** Owner component of the unknown registration identity. */
-	private const OWNER = 'integration-owner';
+	private const string OWNER = 'integration-owner';
 
 	/** Schedule component of the unknown registration identity. */
-	private const SCHEDULE = 'unknown-cleanup';
+	private const string SCHEDULE = 'unknown-cleanup';
 
 	/** Task invoked by the legitimately re-declared schedule. */
-	private const REDECLARED_TASK = 'integration-unknown-cleanup-redeclared-task';
+	private const string REDECLARED_TASK = 'integration-unknown-cleanup-redeclared-task';
 
 	/** Owner-qualified task identity invoked by the legitimately re-declared schedule. */
-	private const REDECLARED_IDENTITY = self::OWNER . ':' . self::REDECLARED_TASK;
+	private const string REDECLARED_IDENTITY = self::OWNER . ':' . self::REDECLARED_TASK;
 
 	/** Unknown registration identity isolated to the degraded WP-Cron probe. */
-	private const WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
+	private const string WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
 
 	/** Engine-reserved maintenance registration identity. */
-	private const MAINTENANCE_KEY = 'a8csp-bgte:maintenance';
+	private const string MAINTENANCE_KEY = 'a8csp-bgte:maintenance';
 
 	// endregion.
 

@@ -18,13 +18,13 @@ final class SupersededRunTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Consumer owner isolated to supersession coverage. */
-	private const OWNER = 'integration-superseded';
+	private const string OWNER = 'integration-superseded';
 
 	/** Batch identity unique within the request-persistent integration registry. */
-	private const NAME = 'integration-superseded-run';
+	private const string NAME = 'integration-superseded-run';
 
 	/** Owner-qualified batch identity persisted by the engine. */
-	private const IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 

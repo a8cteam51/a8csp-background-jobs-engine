@@ -19,7 +19,7 @@ trait ActionSchedulerIsolationTrait {
 	 *
 	 * @var     list<string>
 	 */
-	private const ACTION_SCHEDULER_TABLE_SUFFIXES = array(
+	private const array ACTION_SCHEDULER_TABLE_SUFFIXES = array(
 		'actionscheduler_logs',
 		'actionscheduler_claims',
 		'actionscheduler_actions',

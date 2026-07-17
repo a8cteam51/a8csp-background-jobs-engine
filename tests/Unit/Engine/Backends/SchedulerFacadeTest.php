@@ -29,10 +29,10 @@ use PHPUnit\Framework\TestCase;
 final class SchedulerFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const IDENTITY  = self::OWNER . ':' . self::TASK_NAME;
-	private const NOW       = 1_700_000_000;
-	private const OWNER     = 'scheduler-tests';
-	private const TASK_NAME = 'refresh-index';
+	private const string IDENTITY  = self::OWNER . ':' . self::TASK_NAME;
+	private const int NOW          = 1_700_000_000;
+	private const string OWNER     = 'scheduler-tests';
+	private const string TASK_NAME = 'refresh-index';
 
 	private Consumer $consumer;
 	private EngineRig $rig;

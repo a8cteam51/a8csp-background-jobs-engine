@@ -20,13 +20,13 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Consumer owner isolated to retry round-trip coverage. */
-	private const OWNER = 'integration-retry';
+	private const string OWNER = 'integration-retry';
 
 	/** Task identity unique within the request-persistent integration registry. */
-	private const NAME = 'integration-retry-round-trip';
+	private const string NAME = 'integration-retry-round-trip';
 
 	/** Owner-qualified task identity persisted by the engine. */
-	private const IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 

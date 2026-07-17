@@ -27,58 +27,58 @@ final class CLICommandTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** WordPress root shared by the wp-env CLI and web containers. */
-	private const WP_PATH = '/var/www/html';
+	private const string WP_PATH = '/var/www/html';
 
 	/** Failed-run identity isolated to list coverage. */
-	private const LIST_STORE_NAME = 'integration-cli-command:integration-cli-command-list-store';
+	private const string LIST_STORE_NAME = 'integration-cli-command:integration-cli-command-list-store';
 
 	/** Failed-run identity isolated to name-scoped purge coverage. */
-	private const PURGE_STORE_NAME = 'integration-cli-command:integration-cli-command-purge-store';
+	private const string PURGE_STORE_NAME = 'integration-cli-command:integration-cli-command-purge-store';
 
 	/** Failed-run identity isolated to prefix-discovered purge coverage. */
-	private const ALL_STORE_NAME = 'integration-cli-command:integration-cli-command-all-store';
+	private const string ALL_STORE_NAME = 'integration-cli-command:integration-cli-command-all-store';
 
 	/** Background-work identity deliberately absent from the child request's registries. */
-	private const UNREGISTERED_NAME = 'integration-cli-command:integration-cli-command-unregistered';
+	private const string UNREGISTERED_NAME = 'integration-cli-command:integration-cli-command-unregistered';
 
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
-	private const CANCEL_NAME = 'a8csp-bgte:maintenance';
+	private const string CANCEL_NAME = 'a8csp-bgte:maintenance';
 
 	/** Batch identity registered by the cancel-completeness WP-CLI bootstrap. */
-	private const CANCEL_BATCH_NAME = 'integration-cli-command:integration-cli-command-cancel-batch';
+	private const string CANCEL_BATCH_NAME = 'integration-cli-command:integration-cli-command-cancel-batch';
 
 	/** Test-only WP-CLI bootstrap that registers the cancel-completeness batch. */
-	private const CANCEL_BATCH_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
+	private const string CANCEL_BATCH_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
 
 	/** Test-only WP-CLI bootstrap that declares the inspection task and schedule. */
-	private const INSPECTION_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
+	private const string INSPECTION_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
 
 	/** Test-only WP-CLI bootstrap that fails the retained-run row read after name discovery. */
-	private const FAILED_READ_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-failed-read.php';
+	private const string FAILED_READ_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-failed-read.php';
 
 	/** Owner declared in every isolated inspection request. */
-	private const INSPECTION_OWNER = 'integration-cli-inspection-owner';
+	private const string INSPECTION_OWNER = 'integration-cli-inspection-owner';
 
 	/** Schedule declared in every isolated inspection request. */
-	private const INSPECTION_SCHEDULE = 'inspection-schedule';
+	private const string INSPECTION_SCHEDULE = 'inspection-schedule';
 
 	/** Task declared in every isolated inspection request. */
-	private const INSPECTION_TASK = 'integration-cli-inspection-task';
+	private const string INSPECTION_TASK = 'integration-cli-inspection-task';
 
 	/** Owner-qualified task identity declared in every isolated inspection request. */
-	private const INSPECTION_TASK_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_TASK;
+	private const string INSPECTION_TASK_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_TASK;
 
 	/** Run identity shared by deterministic retained-failure fixtures. */
-	private const RUN_ID = 'integration-cli-command-run-1';
+	private const string RUN_ID = 'integration-cli-command-run-1';
 
 	/** Canonical-format run identifier for rows the live-run enumeration must parse. */
-	private const CANONICAL_RUN_ID = '00000000001784030000-0000000000000000001';
+	private const string CANONICAL_RUN_ID = '00000000001784030000-0000000000000000001';
 
 	/** Deterministic failure time exposed by JSON output. */
-	private const FAILED_AT = 1_700_000_001;
+	private const int FAILED_AT = 1_700_000_001;
 
 	/** Prefix shared by dynamically named failed-run options. */
-	private const FAILED_OPTION_PREFIX = 'a8csp_bgte_failed_runs_';
+	private const string FAILED_OPTION_PREFIX = 'a8csp_bgte_failed_runs_';
 
 	// endregion.
 

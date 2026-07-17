@@ -28,14 +28,14 @@ final class UninstallTest extends IntegrationTestCase {
 	 * exercises "delete only what's owned" rather than "delete everything".
 	 *
 	 */
-	private const CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
+	private const string CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
 
 	/**
 	 * One sentinel from every option family documented for operators.
 	 *
 	 * @var list<string>
 	 */
-	private const DOCUMENTED_OPTIONS = array(
+	private const array DOCUMENTED_OPTIONS = array(
 		'a8csp_bgte_schedule_registrations_uninstall-test',
 		'a8csp_bgte_run_uninstall-test:task_run-1',
 		'a8csp_bgte_failed_runs_uninstall-test:task',
@@ -47,7 +47,7 @@ final class UninstallTest extends IntegrationTestCase {
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const LIFECYCLE_HOOKS = array(
+	private const array LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start_batch',
 		'a8csp_background_tasks/continue_batch',
 		'a8csp_background_tasks/run_task',
@@ -57,10 +57,10 @@ final class UninstallTest extends IntegrationTestCase {
 	);
 
 	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */
-	private const SCHEDULE_ARGS = array( 'uninstall-test', 'run-1', 1 );
+	private const array SCHEDULE_ARGS = array( 'uninstall-test', 'run-1', 1 );
 
 	/** Runtime groups prove Action Scheduler cleanup reaches work outside its empty group. */
-	private const SCHEDULE_GROUP = 'uninstall-test|run-1';
+	private const string SCHEDULE_GROUP = 'uninstall-test|run-1';
 
 	// endregion.
 

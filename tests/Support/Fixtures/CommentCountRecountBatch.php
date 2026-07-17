@@ -28,7 +28,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @var     string
 	 */
-	public const NAME = 'a8csp-bgte-demo-comment-count-recount';
+	public const string NAME = 'a8csp-bgte-demo-comment-count-recount';
 
 	/**
 	 * Consumer-owned action fired after one post's comment count is refreshed.
@@ -38,7 +38,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @var     string
 	 */
-	public const RECOUNTED_HOOK = 'a8csp_bgte_demo/comment_count_recounted';
+	public const string RECOUNTED_HOOK = 'a8csp_bgte_demo/comment_count_recounted';
 
 	/**
 	 * Consumer-owned action fired after every chunk succeeds.
@@ -48,7 +48,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @var     string
 	 */
-	public const SUCCEEDED_HOOK = 'a8csp_bgte_demo/comment_count_recount_succeeded';
+	public const string SUCCEEDED_HOOK = 'a8csp_bgte_demo/comment_count_recount_succeeded';
 
 	/**
 	 * Consumer-owned action fired after a terminal batch failure.
@@ -58,7 +58,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @var     string
 	 */
-	public const FAILED_HOOK = 'a8csp_bgte_demo/comment_count_recount_failed';
+	public const string FAILED_HOOK = 'a8csp_bgte_demo/comment_count_recount_failed';
 
 	// endregion.
 

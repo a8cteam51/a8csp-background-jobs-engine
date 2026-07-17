@@ -18,10 +18,10 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook isolated to synthetic schedule reconstruction. */
-	private const RESOLUTION_HOOK = 'a8csp_bgte/integration/wp_cron_resolution';
+	private const string RESOLUTION_HOOK = 'a8csp_bgte/integration/wp_cron_resolution';
 
 	/** Hook isolated to recurring occurrence delivery. */
-	private const RECURRING_HOOK = 'a8csp_bgte/integration/wp_cron_recurring';
+	private const string RECURRING_HOOK = 'a8csp_bgte/integration/wp_cron_recurring';
 
 	// endregion.
 

@@ -16,7 +16,7 @@ final class HookNameLiteralsTest extends TestCase {
 	 *
 	 * @var     array<string, string>
 	 */
-	private const HOOK_LITERALS = array(
+	private const array HOOK_LITERALS = array(
 		'started'          => 'a8csp_background_tasks/started',
 		'completed'        => 'a8csp_background_tasks/completed',
 		'failed'           => 'a8csp_background_tasks/failed',

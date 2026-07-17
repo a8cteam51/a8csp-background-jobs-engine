@@ -170,7 +170,7 @@ final class UninstallWpdbSpy {
 final class UninstallTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const DYNAMIC_OPTIONS = array(
+	private const array DYNAMIC_OPTIONS = array(
 		'a8csp_bgte_schedule_registrations_consumer-plugin',
 		'a8csp_bgte_schedule_registrations_a8csp-bgte',
 		'a8csp_bgte_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
@@ -181,7 +181,7 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_cleanup_intent_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgte_failed_runs_consumer-plugin:email-digest',
 	);
-	private const LIFECYCLE_HOOKS = array(
+	private const array LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start_batch',
 		'a8csp_background_tasks/continue_batch',
 		'a8csp_background_tasks/run_task',
@@ -189,7 +189,7 @@ final class UninstallTest extends TestCase {
 		'a8csp_background_tasks/cleanup_batch',
 		'a8csp_background_tasks/schedule_due',
 	);
-	private const NEAR_MISS       = 'a8cspXbgteYforeign';
+	private const string NEAR_MISS      = 'a8cspXbgteYforeign';
 
 	// endregion.
 

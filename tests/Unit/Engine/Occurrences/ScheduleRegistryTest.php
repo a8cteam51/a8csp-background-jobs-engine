@@ -39,7 +39,7 @@ final class ScheduleRegistryWakeupProbe {
 final class ScheduleRegistryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const NOW = 1_700_000_000;
+	private const int NOW = 1_700_000_000;
 
 	private Consumer $consumer_a;
 	private Consumer $consumer_b;

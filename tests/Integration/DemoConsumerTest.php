@@ -21,22 +21,22 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Post type isolated to this consumer's comment-count queue. */
-	private const POST_TYPE = 'a8csp_demo_item';
+	private const string POST_TYPE = 'a8csp_demo_item';
 
 	/** Transient isolated to the directly dispatched task. */
-	private const MANUAL_SNAPSHOT_TRANSIENT = 'a8csp_demo_manual_site_health_snapshot';
+	private const string MANUAL_SNAPSHOT_TRANSIENT = 'a8csp_demo_manual_site_health_snapshot';
 
 	/** Owner-qualified demo task identity. */
-	private const TASK_IDENTITY = DemoConsumer::OWNER . ':' . SiteHealthPingTask::NAME;
+	private const string TASK_IDENTITY = DemoConsumer::OWNER . ':' . SiteHealthPingTask::NAME;
 
 	/** Owner-qualified demo batch identity. */
-	private const BATCH_IDENTITY = DemoConsumer::OWNER . ':' . CommentCountRecountBatch::NAME;
+	private const string BATCH_IDENTITY = DemoConsumer::OWNER . ':' . CommentCountRecountBatch::NAME;
 
 	/** Owner-qualified demo schedule identity. */
-	private const SCHEDULE_IDENTITY = DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME;
+	private const string SCHEDULE_IDENTITY = DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME;
 
 	/** Documented owner-scoped schedule-registration option. */
-	private const SCHEDULE_OPTION = 'a8csp_bgte_schedule_registrations_' . DemoConsumer::OWNER;
+	private const string SCHEDULE_OPTION = 'a8csp_bgte_schedule_registrations_' . DemoConsumer::OWNER;
 
 	/**
 	 * Posts created for the batch proof and removed during teardown.

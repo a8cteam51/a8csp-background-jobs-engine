@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( OptionRows::class )]
 #[UsesClass( RowDeleteOutcome::class )]
 final class OptionRowsTest extends TestCase {
-	private const KEY = 'a8csp_bgte_run_email-digest_run-123';
+	private const string KEY = 'a8csp_bgte_run_email-digest_run-123';
 
 	/** Loads the guarded WordPress cache and site functions. */
 	#[\Override]

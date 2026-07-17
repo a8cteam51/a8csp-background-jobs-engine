@@ -22,37 +22,37 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Internal occurrence hook owned by the engine. */
-	private const SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
+	private const string SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
 
 	/** Foreign WP-Cron hook outside the engine namespace. */
-	private const FOREIGN_CRON_HOOK = 'third_party/integration/declarative_sync/foreign_cron';
+	private const string FOREIGN_CRON_HOOK = 'third_party/integration/declarative_sync/foreign_cron';
 
 	/** Foreign WP-Cron arguments whose exact identity must survive sync. */
-	private const FOREIGN_CRON_ARGS = array( 'declarative-sync-foreign-cron' );
+	private const array FOREIGN_CRON_ARGS = array( 'declarative-sync-foreign-cron' );
 
 	/** Foreign Action Scheduler hook outside the engine namespace. */
-	private const FOREIGN_ACTION_HOOK = 'third_party/integration/declarative_sync/foreign_action';
+	private const string FOREIGN_ACTION_HOOK = 'third_party/integration/declarative_sync/foreign_action';
 
 	/** Foreign Action Scheduler arguments whose exact identity must survive sync. */
-	private const FOREIGN_ACTION_ARGS = array( 'declarative-sync-foreign-action' );
+	private const array FOREIGN_ACTION_ARGS = array( 'declarative-sync-foreign-action' );
 
 	/** Foreign Action Scheduler group outside every engine registration identity. */
-	private const FOREIGN_ACTION_GROUP = 'a8csp-bgte-integration-declarative-sync-foreign';
+	private const string FOREIGN_ACTION_GROUP = 'a8csp-bgte-integration-declarative-sync-foreign';
 
 	/** Owner isolated to orphan pruning. */
-	private const ORPHAN_OWNER = 'integration-declarative-orphan';
+	private const string ORPHAN_OWNER = 'integration-declarative-orphan';
 
 	/** Owner isolated to fingerprint replacement. */
-	private const FINGERPRINT_OWNER = 'integration-decl-fingerprint';
+	private const string FINGERPRINT_OWNER = 'integration-decl-fingerprint';
 
 	/** Owner isolated to identical redeclaration. */
-	private const NOOP_OWNER = 'integration-declarative-noop';
+	private const string NOOP_OWNER = 'integration-declarative-noop';
 
 	/** First owner isolated to owner-scoped pruning. */
-	private const SCOPED_OWNER_A = 'integration-declarative-owner-a';
+	private const string SCOPED_OWNER_A = 'integration-declarative-owner-a';
 
 	/** Second owner isolated to owner-scoped pruning. */
-	private const SCOPED_OWNER_B = 'integration-declarative-owner-b';
+	private const string SCOPED_OWNER_B = 'integration-declarative-owner-b';
 
 	/** Attempted cron-option writes after the foreign fixture is seeded. */
 	private int $cron_option_writes = 0;

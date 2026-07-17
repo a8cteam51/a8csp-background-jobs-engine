@@ -53,14 +53,14 @@ use PHPUnit\Framework\TestCase;
 final class CleanupIntentsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS             = array( 'site_id' => 7 );
-	private const INTERVAL         = 300;
-	private const NAME             = 'nightly';
-	private const NOW              = 1_700_000_000;
-	private const OWNER            = 'owner-a';
-	private const REGISTRATION_KEY = 'owner-a:nightly';
-	private const TASK             = 'refresh-index';
-	private const TASK_IDENTITY    = 'owner-a:refresh-index';
+	private const array ARGS              = array( 'site_id' => 7 );
+	private const int INTERVAL            = 300;
+	private const string NAME             = 'nightly';
+	private const int NOW                 = 1_700_000_000;
+	private const string OWNER            = 'owner-a';
+	private const string REGISTRATION_KEY = 'owner-a:nightly';
+	private const string TASK             = 'refresh-index';
+	private const string TASK_IDENTITY    = 'owner-a:refresh-index';
 
 	private Schedules $api;
 	private RecordingBackend $backend;

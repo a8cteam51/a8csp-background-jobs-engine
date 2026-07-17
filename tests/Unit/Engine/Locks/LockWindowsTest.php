@@ -16,9 +16,9 @@ use PHPUnit\Framework\TestCase;
 final class LockWindowsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const NAME   = 'catalog-sync';
-	private const NOW    = 1_700_000_000;
-	private const RUN_ID = '00000000001700000000-0000000000000000042';
+	private const string NAME   = 'catalog-sync';
+	private const int NOW       = 1_700_000_000;
+	private const string RUN_ID = '00000000001700000000-0000000000000000042';
 
 	private LockWindows $lock_windows;
 

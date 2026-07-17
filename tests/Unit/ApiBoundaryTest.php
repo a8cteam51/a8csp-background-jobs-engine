@@ -13,10 +13,10 @@ use PHPUnit\Framework\TestCase;
 final class ApiBoundaryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const API_NAMESPACE  = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\';
-	private const ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
+	private const string API_NAMESPACE  = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\';
+	private const string ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
 
-	private const EXPECTED_API_TYPES = array(
+	private const array EXPECTED_API_TYPES = array(
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\AdmissionValidator',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\AbstractBatch',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchContextInterface',

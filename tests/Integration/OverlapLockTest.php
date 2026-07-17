@@ -21,19 +21,19 @@ final class OverlapLockTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Consumer owner isolated to overlap integration coverage. */
-	private const OWNER = 'integration-overlap-lock';
+	private const string OWNER = 'integration-overlap-lock';
 
 	/** Batch identity isolated to the held-lock Skip case. */
-	private const SKIP_NAME = 'integration-overlap-skip';
+	private const string SKIP_NAME = 'integration-overlap-skip';
 
 	/** Owner-qualified identity isolated to the held-lock Skip case. */
-	private const SKIP_IDENTITY = self::OWNER . ':' . self::SKIP_NAME;
+	private const string SKIP_IDENTITY = self::OWNER . ':' . self::SKIP_NAME;
 
 	/** Batch identity isolated to the stale crash reclaim case. */
-	private const RECLAIM_NAME = 'integration-overlap-reclaim';
+	private const string RECLAIM_NAME = 'integration-overlap-reclaim';
 
 	/** Owner-qualified identity isolated to the stale crash reclaim case. */
-	private const RECLAIM_IDENTITY = self::OWNER . ':' . self::RECLAIM_NAME;
+	private const string RECLAIM_IDENTITY = self::OWNER . ':' . self::RECLAIM_NAME;
 
 	// endregion.
 

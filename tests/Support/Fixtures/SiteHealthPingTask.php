@@ -26,7 +26,7 @@ final class SiteHealthPingTask implements TaskInterface {
 	 *
 	 * @var     string
 	 */
-	public const NAME = 'a8csp-bgte-demo-site-health-ping';
+	public const string NAME = 'a8csp-bgte-demo-site-health-ping';
 
 	/**
 	 * Default consumer-owned transient key for the scheduled snapshot.
@@ -36,7 +36,7 @@ final class SiteHealthPingTask implements TaskInterface {
 	 *
 	 * @var     string
 	 */
-	public const SNAPSHOT_TRANSIENT = 'a8csp_demo_site_health_snapshot';
+	public const string SNAPSHOT_TRANSIENT = 'a8csp_demo_site_health_snapshot';
 
 	// endregion.
 

@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 final class WPCronBackendTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const HOOK = 'a8csp_bgte_test_hook';
+	private const string HOOK = 'a8csp_bgte_test_hook';
 
 	// endregion.
 

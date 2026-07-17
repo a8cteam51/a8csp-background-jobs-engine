@@ -21,37 +21,37 @@ final class CancellationTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Consumer owner isolated to cancellation coverage. */
-	private const OWNER = 'integration-cancellation';
+	private const string OWNER = 'integration-cancellation';
 
 	/** Task identity isolated to the executing-refusal race. */
-	private const EXECUTING_NAME = 'integration-cancel-executing-refusal';
+	private const string EXECUTING_NAME = 'integration-cancel-executing-refusal';
 
 	/** Owner-qualified task identity isolated to the executing-refusal race. */
-	private const EXECUTING_IDENTITY = self::OWNER . ':' . self::EXECUTING_NAME;
+	private const string EXECUTING_IDENTITY = self::OWNER . ':' . self::EXECUTING_NAME;
 
 	/** Task identity isolated to retry-backoff cancellation. */
-	private const BACKOFF_NAME = 'integration-cancel-backoff';
+	private const string BACKOFF_NAME = 'integration-cancel-backoff';
 
 	/** Owner-qualified task identity isolated to retry-backoff cancellation. */
-	private const BACKOFF_IDENTITY = self::OWNER . ':' . self::BACKOFF_NAME;
+	private const string BACKOFF_IDENTITY = self::OWNER . ':' . self::BACKOFF_NAME;
 
 	/** Batch identity isolated to between-chunks cancellation. */
-	private const BATCH_NAME = 'integration-cancel-between-chunks';
+	private const string BATCH_NAME = 'integration-cancel-between-chunks';
 
 	/** Owner-qualified batch identity isolated to between-chunks cancellation. */
-	private const BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
+	private const string BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
 
 	/** Task identity isolated to sibling-group cancellation. */
-	private const SIBLING_NAME = 'integration-cancel-sibling-isolation';
+	private const string SIBLING_NAME = 'integration-cancel-sibling-isolation';
 
 	/** Owner-qualified task identity isolated to sibling-group cancellation. */
-	private const SIBLING_IDENTITY = self::OWNER . ':' . self::SIBLING_NAME;
+	private const string SIBLING_IDENTITY = self::OWNER . ':' . self::SIBLING_NAME;
 
 	/** Task identity isolated to the degraded WP-Cron survivor. */
-	private const DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
+	private const string DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
 
 	/** Owner-qualified task identity isolated to the degraded WP-Cron survivor. */
-	private const DEGRADED_IDENTITY = self::OWNER . ':' . self::DEGRADED_NAME;
+	private const string DEGRADED_IDENTITY = self::OWNER . ':' . self::DEGRADED_NAME;
 
 	// endregion.
 

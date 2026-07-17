@@ -59,17 +59,17 @@ final class ScheduleExecutionWakeupProbe {
 final class ScheduleExecutionTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS             = array(
+	private const array ARGS              = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const INTERVAL         = 300;
-	private const NAME             = 'nightly';
-	private const NOW              = 1_700_000_000;
-	private const OWNER            = 'owner-a';
-	private const REGISTRATION_KEY = self::OWNER . ':' . self::NAME;
-	private const TASK             = 'refresh-index';
-	private const TASK_IDENTITY    = self::OWNER . ':' . self::TASK;
+	private const int INTERVAL            = 300;
+	private const string NAME             = 'nightly';
+	private const int NOW                 = 1_700_000_000;
+	private const string OWNER            = 'owner-a';
+	private const string REGISTRATION_KEY = self::OWNER . ':' . self::NAME;
+	private const string TASK             = 'refresh-index';
+	private const string TASK_IDENTITY    = self::OWNER . ':' . self::TASK;
 
 	private Consumer $consumer;
 	private StoreFixtureBuilder $fixtures;

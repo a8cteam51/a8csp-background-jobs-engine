@@ -20,13 +20,13 @@ final class NonRetryableTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
-	private const OWNER = 'integration-non-retryable';
+	private const string OWNER = 'integration-non-retryable';
 
 	/** Task identity unique within the request-persistent integration registry. */
-	private const NAME = 'integration-non-retryable';
+	private const string NAME = 'integration-non-retryable';
 
 	/** Owner-qualified task identity persisted by the engine. */
-	private const IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 

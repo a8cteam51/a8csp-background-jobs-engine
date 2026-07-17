@@ -21,7 +21,7 @@ final class MultisiteTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** One sentinel from every option family documented for operators. */
-	private const DOCUMENTED_OPTION_TEMPLATES = array(
+	private const array DOCUMENTED_OPTION_TEMPLATES = array(
 		'a8csp_bgte_schedule_registrations_multisite-%d',
 		'a8csp_bgte_run_multisite-%d:task_run-1',
 		'a8csp_bgte_failed_runs_multisite-%d:task',
@@ -33,7 +33,7 @@ final class MultisiteTest extends IntegrationTestCase {
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const LIFECYCLE_HOOKS = array(
+	private const array LIFECYCLE_HOOKS = array(
 		'a8csp_background_tasks/start_batch',
 		'a8csp_background_tasks/continue_batch',
 		'a8csp_background_tasks/run_task',

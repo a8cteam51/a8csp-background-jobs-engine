@@ -17,13 +17,13 @@ final class BatchChunkingTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
-	private const OWNER = 'integration-batch-chunking';
+	private const string OWNER = 'integration-batch-chunking';
 
 	/** Batch identity unique within the request-persistent integration registry. */
-	private const NAME = 'integration-batch-chunking';
+	private const string NAME = 'integration-batch-chunking';
 
 	/** Owner-qualified batch identity persisted by the engine. */
-	private const IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
 

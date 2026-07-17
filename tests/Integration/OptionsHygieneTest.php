@@ -19,19 +19,19 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
-	private const OWNER = 'integration-options-hygiene';
+	private const string OWNER = 'integration-options-hygiene';
 
 	/** Task identity unique within the request-persistent integration registry. */
-	private const TASK_NAME = 'integration-options-task';
+	private const string TASK_NAME = 'integration-options-task';
 
 	/** Owner-qualified task identity persisted by the engine. */
-	private const TASK_IDENTITY = self::OWNER . ':' . self::TASK_NAME;
+	private const string TASK_IDENTITY = self::OWNER . ':' . self::TASK_NAME;
 
 	/** Batch identity unique within the request-persistent integration registry. */
-	private const BATCH_NAME = 'integration-options-batch';
+	private const string BATCH_NAME = 'integration-options-batch';
 
 	/** Owner-qualified batch identity persisted by the engine. */
-	private const BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
+	private const string BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
 
 	// endregion.
 

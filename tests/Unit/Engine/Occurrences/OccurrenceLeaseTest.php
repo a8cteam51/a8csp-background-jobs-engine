@@ -27,8 +27,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OccurrenceLeaseTest extends TestCase {
-	private const KEY = 'owner-a:email-digest';
-	private const NOW = 1_700_000_000;
+	private const string KEY = 'owner-a:email-digest';
+	private const int NOW    = 1_700_000_000;
 
 	private FixedClock $clock;
 	private OccurrenceLease $lease;

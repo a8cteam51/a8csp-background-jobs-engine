@@ -21,7 +21,7 @@ trait OptionIsolationTrait {
 	 *
 	 * @var     string
 	 */
-	private const ENGINE_OPTION_PREFIX = 'a8csp_bgte_';
+	private const string ENGINE_OPTION_PREFIX = 'a8csp_bgte_';
 
 	/**
 	 * Deliberate non-history leftovers declared by the current test.

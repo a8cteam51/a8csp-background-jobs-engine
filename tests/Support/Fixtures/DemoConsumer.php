@@ -27,7 +27,7 @@ final readonly class DemoConsumer {
 	 *
 	 * @var     string
 	 */
-	public const OWNER = 'a8csp-demo-consumer';
+	public const string OWNER = 'a8csp-demo-consumer';
 
 	/**
 	 * Stable name of the recurring site-health schedule.
@@ -37,7 +37,7 @@ final readonly class DemoConsumer {
 	 *
 	 * @var     string
 	 */
-	public const SCHEDULE_NAME = 'site-health-ping';
+	public const string SCHEDULE_NAME = 'site-health-ping';
 
 	/**
 	 * Consumer-owned observation channel for registration failures.
@@ -47,7 +47,7 @@ final readonly class DemoConsumer {
 	 *
 	 * @var     string
 	 */
-	public const LOG_HOOK = 'a8csp_bgte_demo/log';
+	public const string LOG_HOOK = 'a8csp_bgte_demo/log';
 
 	// endregion.
 

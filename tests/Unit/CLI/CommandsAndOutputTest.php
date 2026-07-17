@@ -43,8 +43,8 @@ use PHPUnit\Framework\TestCase;
 final class CommandsAndOutputTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const NOW    = 86_400;
-	private const RUN_ID = 'run-1';
+	private const int NOW       = 86_400;
+	private const string RUN_ID = 'run-1';
 
 	private EngineRig $rig;
 

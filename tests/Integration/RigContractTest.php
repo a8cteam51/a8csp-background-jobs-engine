@@ -17,16 +17,16 @@ final class RigContractTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook populated by the plugin before the parent fixture captures its snapshot. */
-	private const EXISTING_HOOK = 'plugins_loaded';
+	private const string EXISTING_HOOK = 'plugins_loaded';
 
 	/** Hook introduced after the probe snapshot. */
-	private const NEW_HOOK = 'a8csp_bgte/rig_contract/new';
+	private const string NEW_HOOK = 'a8csp_bgte/rig_contract/new';
 
 	/** Engine option used to exercise the leftover declaration contract. */
-	private const FAILED_PROBE_OPTION = 'a8csp_bgte_failed_runs_probe';
+	private const string FAILED_PROBE_OPTION = 'a8csp_bgte_failed_runs_probe';
 
 	/** Action Scheduler hook used to exercise custom-table cleanup. */
-	private const ACTION_SCHEDULER_HOOK = 'a8csp_bgte/rig_contract/action_scheduler';
+	private const string ACTION_SCHEDULER_HOOK = 'a8csp_bgte/rig_contract/action_scheduler';
 
 	// endregion.
 

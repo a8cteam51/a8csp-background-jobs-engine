@@ -22,8 +22,8 @@ use PHPUnit\Framework\TestCase;
 final class BatchContextTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const NOW   = 1_700_000_000;
-	private const OWNER = 'batch-context-tests';
+	private const int NOW      = 1_700_000_000;
+	private const string OWNER = 'batch-context-tests';
 
 	private Consumer $consumer;
 	private EngineRig $rig;
