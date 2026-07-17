@@ -29,7 +29,7 @@ final class PluginHeaderFloorsTest extends TestCase {
 		$composer_floor = $requirements['php'] ?? null;
 		self::assertIsString( $composer_floor );
 
-		self::assertSame( '^' . $header_floor, $composer_floor );
+		self::assertSame( '>=' . $header_floor, $composer_floor );
 	}
 
 	/**

@@ -10,7 +10,7 @@
   "keywords": [
     "wordpress"
   ],
-  "homepage": "https://wordpress.org/plugins/a8csp-background-tasks-engine",
+  "homepage": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
   "repository": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
   "bugs": "https://github.com/a8cteam51/a8csp-background-tasks-engine/issues",
   "engines": {

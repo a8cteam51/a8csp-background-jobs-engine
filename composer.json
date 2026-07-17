@@ -27,7 +27,7 @@
     }
   ],
   "require": {
-    "php": "^8.5",
+    "php": ">=8.5",
     "ext-json": "*",
     "psr/clock": "^1",
     "psr/log": "^3"
@@ -60,11 +60,11 @@
   },
 
   "scripts": {
-    "generate-autoloader": "@composer dump-autoload --ignore-platform-reqs -o",
-    "packages-install": "@composer install --ignore-platform-reqs --no-interaction",
+    "generate-autoloader": "@composer dump-autoload --ignore-platform-req=php+ -o",
+    "packages-install": "@composer install --ignore-platform-req=php+ --no-interaction",
     "packages-update": [
       "@composer clear-cache",
-      "@composer update --prefer-stable --ignore-platform-reqs --no-interaction"
+      "@composer update --prefer-stable --ignore-platform-req=php+ --no-interaction"
     ],
 
     "format:php": "phpcbf --standard=./.phpcs.xml --basepath=. ./ -v",
@@ -107,7 +107,10 @@
 
     "changelog:add": "@php vendor/bin/changelogger add",
     "changelog:validate": "@php vendor/bin/changelogger validate",
-    "changelog:write": "@php vendor/bin/changelogger write"
+    "changelog:write": "@php bin/changelog-write.php"
+  },
+  "scripts-descriptions": {
+    "changelog:write": "Write the changelog; pass the initial version as an optional argument: composer changelog:write -- 1.0.0-beta.1."
   },
   "config": {
     "platform-check": false,
