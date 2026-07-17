@@ -99,6 +99,10 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 	$a8csp_bgte_claim_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `claim_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
 	$a8csp_bgte_claim_ids     = array();
 	foreach ( $a8csp_bgte_claim_id_rows as $a8csp_bgte_claim_id ) {
+		if ( ! \is_numeric( $a8csp_bgte_claim_id ) ) {
+			continue;
+		}
+
 		$a8csp_bgte_claim_id = (int) $a8csp_bgte_claim_id;
 		if ( 0 < $a8csp_bgte_claim_id ) {
 			$a8csp_bgte_claim_ids[] = $a8csp_bgte_claim_id;
@@ -108,6 +112,10 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 	$a8csp_bgte_group_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
 	$a8csp_bgte_group_ids     = array();
 	foreach ( $a8csp_bgte_group_id_rows as $a8csp_bgte_group_id ) {
+		if ( ! \is_numeric( $a8csp_bgte_group_id ) ) {
+			continue;
+		}
+
 		$a8csp_bgte_group_id = (int) $a8csp_bgte_group_id;
 		if ( 0 < $a8csp_bgte_group_id ) {
 			$a8csp_bgte_group_ids[] = $a8csp_bgte_group_id;
@@ -202,6 +210,7 @@ if ( is_multisite() ) {
 }
 
 // User meta is stored network-globally, so one pass covers every site.
+// @phpstan-ignore foreach.emptyArray (The fixed-key footprint starts empty; each fixed-key write lands its entry here.)
 foreach ( $a8csp_bgte_footprint['user_meta'] as $a8csp_bgte_uninstall_meta_key ) {
 	delete_metadata( 'user', 0, $a8csp_bgte_uninstall_meta_key, '', true );
 }

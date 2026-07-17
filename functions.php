@@ -21,7 +21,13 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
  * @return  Plugin
  */
 function a8csp_bgte_plugin(): Plugin {
-	static $plugin   = null;
+	/**
+	 * Shared composition-root instance.
+	 *
+	 * @var Plugin|null $plugin
+	 */
+	static $plugin = null;
+
 	return $plugin ??= new Plugin();
 }
 
