@@ -472,8 +472,9 @@ final class OverlapGuardTest extends TestCase {
 	public function test_release_deletes_an_owned_lock(): void {
 		$this->store_lock( self::row( 'run-owner', 100, 120 ) );
 
-		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertTrue( $released );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 		self::assertSame( array( 'select', 'delete' ), $this->operations() );
 	}
@@ -483,16 +484,18 @@ final class OverlapGuardTest extends TestCase {
 		$foreign_raw = self::raw( self::row( 'run-rival', 100, 120 ) );
 		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertTrue( $released );
 		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
 	/** Release does not write when no lock exists. */
 	public function test_release_is_a_no_op_when_the_lock_is_absent(): void {
-		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertTrue( $released );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
@@ -509,8 +512,9 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$this->guard_at( 200, $logger )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200, $logger )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertFalse( $released );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 		self::assertSame(
@@ -541,8 +545,9 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
 
+		self::assertFalse( $released );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
@@ -644,8 +649,8 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( MaintenanceFenceOutcome::Abandoned, $guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
 	}
 
-	/** A redrive fence classifies a stale owner without deleting its exact-generation heartbeat. */
-	public function test_redrive_fence_preserves_a_stale_owned_lock(): void {
+	/** A redelivery fence classifies a stale owner without deleting its exact-generation heartbeat. */
+	public function test_redelivery_fence_preserves_a_stale_owned_lock(): void {
 		$raw = self::raw( self::row( 'run-owner', 800, 899 ) );
 		$this->wpdb->put( self::KEY, $raw );
 

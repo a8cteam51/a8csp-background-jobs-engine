@@ -19,7 +19,13 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
  *     failed_at: int,
  *     start_args: array<array-key, mixed>,
  *     attempts: int,
- *     error: array{class: string|null, message: string}
+ *     error: array{
+ *         class: string|null,
+ *         message: string,
+ *         stage: string,
+ *         code: string,
+ *         failed_chunk?: array<array-key, mixed>
+ *     }
  * }
  * @phpstan-type FailedRunRow array{
  *     owner: string,
@@ -27,8 +33,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
  *     run_id: string,
  *     failed_at: string,
  *     attempts: int,
+ *     stage: string,
+ *     code: string,
  *     error_class: string|null,
- *     error_message: string
+ *     error_message: string,
+ *     failed_chunk: array<array-key, mixed>|null
  * }
  */
 final readonly class FailedRunOutput {
@@ -48,8 +57,31 @@ final readonly class FailedRunOutput {
 		'run_id',
 		'failed_at',
 		'attempts',
+		'stage',
+		'code',
 		'error_class',
 		'error_message',
+	);
+
+	/**
+	 * Fields exposed only by structured failed-run formats.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     list<string>
+	 */
+	private const array STRUCTURED_FIELDS = array(
+		'owner',
+		'identity',
+		'run_id',
+		'failed_at',
+		'attempts',
+		'stage',
+		'code',
+		'error_class',
+		'error_message',
+		'failed_chunk',
 	);
 
 	// endregion
@@ -98,8 +130,11 @@ final readonly class FailedRunOutput {
 					'run_id'        => $entry['run_id'],
 					'failed_at'     => \gmdate( \DATE_ATOM, $entry['failed_at'] ),
 					'attempts'      => $entry['attempts'],
+					'stage'         => $entry['error']['stage'],
+					'code'          => $entry['error']['code'],
 					'error_class'   => $entry['error']['class'],
 					'error_message' => $entry['error']['message'],
+					'failed_chunk'  => $entry['error']['failed_chunk'] ?? null,
 				);
 			}
 		}
@@ -128,7 +163,8 @@ final readonly class FailedRunOutput {
 			return;
 		}
 
-		\WP_CLI\Utils\format_items( $format, $rows, self::FIELDS );
+		$fields = \in_array( $format, array( 'json', 'yaml' ), true ) ? self::STRUCTURED_FIELDS : self::FIELDS;
+		\WP_CLI\Utils\format_items( $format, $rows, $fields );
 	}
 
 	// endregion

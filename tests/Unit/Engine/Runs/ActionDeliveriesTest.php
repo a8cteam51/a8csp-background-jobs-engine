@@ -239,6 +239,13 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_run_delivery_defaults_the_lease_when_the_runtime_declaration_throws(): void {
 		$this->task->max_callback_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
 		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['exception_class'] ?? null );
+		self::assertSame( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME, $this->rig->logger()->records[0]['context']['default_runtime'] ?? null );
 	}
 
 	/**

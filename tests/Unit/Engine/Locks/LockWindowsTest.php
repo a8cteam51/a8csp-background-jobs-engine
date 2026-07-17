@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Locks;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -20,6 +21,7 @@ final class LockWindowsTest extends TestCase {
 	private const int NOW       = 1_700_000_000;
 	private const string RUN_ID = '00000000001700000000-0000000000000000042';
 
+	private RecordingLogger $logger;
 	private LockWindows $lock_windows;
 
 	// endregion.
@@ -53,7 +55,8 @@ final class LockWindowsTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
 
-		$this->lock_windows = new LockWindows( new FixedClock( self::NOW ) );
+		$this->logger       = new RecordingLogger();
+		$this->lock_windows = new LockWindows( new FixedClock( self::NOW ), $this->logger );
 	}
 
 	// endregion.
@@ -100,6 +103,23 @@ final class LockWindowsTest extends TestCase {
 			),
 			$filter_call
 		);
+	}
+
+	/**
+	 * An invalid continuation-delay filter result reports the affected run and applied default.
+	 *
+	 * @return  void
+	 */
+	public function test_invalid_continue_delay_filter_result_logs_a_warning(): void {
+		$this->set_filter_value( 'a8csp_background_tasks/continue_delay', '75' );
+
+		self::assertSame( 60, $this->lock_windows->continue_delay( self::NAME, self::RUN_ID ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::NAME, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'string', $this->logger->records[0]['context']['returned_type'] ?? null );
+		self::assertSame( 60, $this->logger->records[0]['context']['default_delay'] ?? null );
 	}
 
 	/**
@@ -153,6 +173,23 @@ final class LockWindowsTest extends TestCase {
 	}
 
 	/**
+	 * An invalid staleness filter result reports the affected run and applied default.
+	 *
+	 * @return  void
+	 */
+	public function test_invalid_lock_staleness_filter_result_logs_a_warning(): void {
+		$this->set_filter_value( 'a8csp_background_tasks/lock_staleness/' . self::NAME, 0 );
+
+		self::assertSame( 15 * \MINUTE_IN_SECONDS, $this->lock_windows->lock_staleness( self::NAME, self::RUN_ID ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::NAME, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'int', $this->logger->records[0]['context']['returned_type'] ?? null );
+		self::assertSame( 15 * \MINUTE_IN_SECONDS, $this->logger->records[0]['context']['default_staleness'] ?? null );
+	}
+
+	/**
 	 * Declared callback ceilings resolve through the shared default and runaway cap.
 	 *
 	 * @return  void
@@ -174,7 +211,7 @@ final class LockWindowsTest extends TestCase {
 		int $staleness,
 		bool $expected_stale
 	): void {
-		$lock_windows = new LockWindows( new FixedClock( $now ) );
+		$lock_windows = new LockWindows( new FixedClock( $now ), $this->logger );
 
 		self::assertSame( $expected_stale, $lock_windows->heartbeat_is_stale( $heartbeat_at, $staleness ) );
 	}

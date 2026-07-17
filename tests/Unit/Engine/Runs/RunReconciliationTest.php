@@ -145,7 +145,7 @@ final class RunReconciliationTest extends TestCase {
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$this->stores               = new StoreFactory( $this->clock, $option_rows, $this->logger );
 		$randomizer                 = new RecordingRandomizer( 42 );
-		$lock_windows               = new LockWindows( $this->clock );
+		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$this->terminal_effects     = new LifecycleEffects( $guard, $this->stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
 		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
@@ -261,14 +261,14 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A stale committed batch continuation is redriven and advances through one chunk without failure.
+	 * A stale committed batch continuation is redelivered and advances through one chunk without failure.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_redrives_a_stale_pending_batch_continue_and_processes_its_chunk(): void {
-		$name         = self::identity( 'redriven-batch' );
+	public function test_sweep_redelivers_a_stale_pending_batch_continue_and_processes_its_chunk(): void {
+		$name         = self::identity( 'redelivered-batch' );
 		$chunk        = array( 'page' => 1 );
-		$batch        = new RecordingBatch( 'redriven-batch' );
+		$batch        = new RecordingBatch( 'redelivered-batch' );
 		$batch->queue = array( $chunk );
 		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
@@ -315,10 +315,10 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'batch_start_redrive_policies' )]
-	public function test_sweep_redrives_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value ): void {
-		$name  = self::identity( 'redriven-start-batch' );
-		$batch = new RecordingBatch( 'redriven-start-batch' );
+	#[DataProvider( 'batch_start_redelivery_policies' )]
+	public function test_sweep_redelivers_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value ): void {
+		$name  = self::identity( 'redelivered-start-batch' );
+		$batch = new RecordingBatch( 'redelivered-start-batch' );
 		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
@@ -360,7 +360,7 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  array<string, array{existing_value: string}>
 	 */
-	public static function batch_start_redrive_policies(): array {
+	public static function batch_start_redelivery_policies(): array {
 		return array(
 			'reject'  => array(
 				'existing_value' => 'reject',
@@ -376,7 +376,7 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_redrives_a_stale_pending_task_action(): void {
+	public function test_sweep_redelivers_a_stale_pending_task_action(): void {
 		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
@@ -403,11 +403,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A missing lock is reconstructed for the retained generation before its task action is redriven.
+	 * A missing lock is reconstructed for the retained generation before its task action is redelivered.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_restores_a_missing_lock_before_redriving_a_stale_pending_task(): void {
+	public function test_sweep_restores_a_missing_lock_before_redelivering_a_stale_pending_task(): void {
 		$this->create_running_run();
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 		$this->backend->calls   = array();
@@ -435,11 +435,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A backend may deliver an accepted redrive before returning without a later state overwrite.
+	 * A backend may deliver an accepted redelivery before returning without a later state overwrite.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_allows_a_redriven_task_to_complete_during_scheduler_acceptance(): void {
+	public function test_sweep_allows_a_redelivered_task_to_complete_during_scheduler_acceptance(): void {
 		$this->create_running_run();
 		$this->clock->timestamp = self::NOW + 901;
 		$this->backend->calls   = array();
@@ -467,11 +467,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A newer same-owner lock credit defers redrive until it can be restored to the retained generation.
+	 * A newer same-owner lock credit defers redelivery until it can be restored to the retained generation.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_repairs_a_stale_same_owner_heartbeat_mismatch_before_redrive(): void {
+	public function test_sweep_repairs_a_stale_same_owner_heartbeat_mismatch_before_redelivery(): void {
 		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 1_200 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->set_run_fields( self::IDENTITY, array( 'heartbeat_at' => self::NOW ) );
@@ -518,15 +518,15 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Single-mode retry redrive clamps a past fire time to now and retains a future fire time.
+	 * Single-mode retry redelivery clamps a past fire time to now and retains a future fire time.
 	 *
 	 * @param   int $fire_at           Persisted retry fire time.
 	 * @param   int $expected_fire_at  Expected scheduler timestamp.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'retry_redrive_fire_times' )]
-	public function test_sweep_redrives_a_stale_pending_retry_at_the_remaining_delay( int $fire_at, int $expected_fire_at ): void {
+	#[DataProvider( 'retry_redelivery_fire_times' )]
+	public function test_sweep_redelivers_a_stale_pending_retry_at_the_remaining_delay( int $fire_at, int $expected_fire_at ): void {
 		$this->create_running_run();
 		$this->set_run_fields(
 			self::IDENTITY,
@@ -569,7 +569,7 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  array<string, array{fire_at: int, expected_fire_at: int}>
 	 */
-	public static function retry_redrive_fire_times(): array {
+	public static function retry_redelivery_fire_times(): array {
 		return array(
 			'future fire retains remaining delay' => array(
 				'fire_at'          => self::NOW + 75,
@@ -583,13 +583,13 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A scheduler rejection preserves the pending run for a later redrive.
+	 * A scheduler rejection preserves the pending run for a later redelivery.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_preserves_a_stale_pending_run_when_redrive_is_rejected(): void {
-		$name  = self::identity( 'redrive-rejection-batch' );
-		$batch = new RecordingBatch( 'redrive-rejection-batch' );
+	public function test_sweep_preserves_a_stale_pending_run_when_redelivery_is_rejected(): void {
+		$name  = self::identity( 'redelivery-rejection-batch' );
+		$batch = new RecordingBatch( 'redelivery-rejection-batch' );
 		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
@@ -602,7 +602,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $pending_before );
 
 		$this->clock->timestamp                   = self::NOW + 901;
-		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redriving.', array( 'consumer_payload' => self::ARGS ) ) );
+		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redelivering.', array( 'consumer_payload' => self::ARGS ) ) );
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
@@ -623,21 +623,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . $name, $options );
 		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Pending-action redrive was rejected by the scheduler; maintenance skipped terminal handling.',
-					'context' => array(
-						'name'         => $name,
-						'run_id'       => self::RUN_ID,
-						'error_class'  => SchedulingError::class,
-						'error_reason' => SchedulingErrorReason::ScheduleFailed->value,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $name, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( SchedulingError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( SchedulingErrorReason::ScheduleFailed->value, $this->logger->records[0]['context']['error_reason'] ?? null );
 
 		unset( $this->backend->results['enqueue_async'] );
 
@@ -652,11 +643,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A transfer completed during a rejected redrive is reconciled by the next sweep.
+	 * A transfer completed during a rejected redelivery is reconciled by the next sweep.
 	 *
 	 * @return  void
 	 */
-	public function test_next_sweep_supersedes_when_ownership_transfers_during_a_rejected_redrive(): void {
+	public function test_next_sweep_supersedes_when_ownership_transfers_during_a_rejected_redelivery(): void {
 		$this->create_running_run();
 		$this->clock->timestamp                  = self::NOW + 901;
 		$replacement_run_id                      = '00000000001700000001-0000000000000000043';
@@ -699,11 +690,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A rejected redrive never enters the terminal lock-claim path.
+	 * A rejected redelivery never enters the terminal lock-claim path.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_does_not_claim_a_terminal_fence_after_redrive_rejection(): void {
+	public function test_sweep_does_not_claim_a_terminal_fence_after_redelivery_rejection(): void {
 		$this->create_running_run();
 		$this->clock->timestamp                  = self::NOW + 901;
 		$replacement_run_id                      = '00000000001700000001-0000000000000000043';
@@ -790,11 +781,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Repeated accepted redrives remain harmless because only one exact action generation advances.
+	 * Repeated accepted redeliveries remain harmless because only one exact action generation advances.
 	 *
 	 * @return  void
 	 */
-	public function test_two_sweeps_redrive_twice_but_duplicate_delivery_processes_once(): void {
+	public function test_two_sweeps_redeliver_twice_but_duplicate_delivery_processes_once(): void {
 		$name         = self::identity( 'idempotent-batch' );
 		$chunk        = array( 'page' => 1 );
 		$batch        = new RecordingBatch( 'idempotent-batch' );
@@ -957,7 +948,13 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
-		self::assertSame( array(), $this->logger->records );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**
@@ -969,6 +966,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$orphan_lock = 'a8csp_bgte_overlap_lock_' . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $orphan_lock, 'orphan-run', self::NOW - 901 );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -982,7 +980,13 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertArrayHasKey( $orphan_lock, $this->wpdb->rows );
 		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
-		self::assertSame( array(), $this->logger->records );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**
@@ -1005,7 +1009,11 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertSame( $lock_raw, $this->wpdb->rows[ $lock_name ] ?? null );
-		self::assertSame( array(), $this->logger->records );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**

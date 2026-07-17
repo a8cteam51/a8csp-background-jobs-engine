@@ -150,6 +150,49 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
+	 * A dormant-backend warning stays on STDERR for every format.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $format Requested output format.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'dormant_schedule_formats' )]
+	public function test_registered_schedule_command_warns_about_dormant_backends_for_every_format( string $format ): void {
+		if ( 'csv' === $format ) {
+			$result = CliHarness::run_csv( 'schedules-dormant' );
+		} else {
+			$this->register_schedules();
+			$this->rig->backend()->ready = false;
+			$result                      = CliHarness::run( 'schedules', array( 'list' ), array( 'format' => $format ) );
+		}
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( 'Warning: a scheduling backend is not ready; dormant occurrences are not visible.' . "\n", $result->stderr );
+		self::assertStringNotContainsString( 'dormant occurrences are not visible', $result->stdout );
+	}
+
+	/**
+	 * An empty table still reports that dormant occurrences may exist.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedule_command_warns_about_dormant_backends_for_an_empty_table(): void {
+		$this->rig->backend()->ready = false;
+
+		$result = CliHarness::run( 'schedules', array( 'list' ), array( 'owner' => 'missing-owner' ) );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( "No schedule registrations are persisted for owner \"missing-owner\".\n", $result->stdout );
+		self::assertSame( 'Warning: a scheduling backend is not ready; dormant occurrences are not visible.' . "\n", $result->stderr );
+	}
+
+	/**
 	 * Every invalid schedule row exits non-zero with its corrective rendered error.
 	 *
 	 * @since   1.0.0
@@ -392,8 +435,30 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( '', $result->stderr );
 		self::assertNotSame( '', $result->stdout );
-		if ( 'csv' === ( $assoc_args['format'] ?? null ) ) {
-			self::assertSame( 'owner,identity,run_id,failed_at,attempts,error_class,error_message', \strtok( $result->stdout, "\n" ) );
+		$format = $assoc_args['format'] ?? 'table';
+		if ( 'csv' === $format ) {
+			self::assertSame( 'owner,identity,run_id,failed_at,attempts,stage,code,error_class,error_message', \strtok( $result->stdout, "\n" ) );
+		} elseif ( 'list' === $action && 'table' === $format ) {
+			self::assertStringContainsString( 'stage', $result->stdout );
+			self::assertStringContainsString( 'code', $result->stdout );
+			self::assertStringNotContainsString( 'failed_chunk', $result->stdout );
+		} elseif ( 'list' === $action && 'json' === $format ) {
+			$rows = \json_decode( $result->stdout, true, 512, \JSON_THROW_ON_ERROR );
+			self::assertIsArray( $rows );
+			$row = $rows[0] ?? null;
+			self::assertIsArray( $row );
+			self::assertSame( array( 'owner', 'identity', 'run_id', 'failed_at', 'attempts', 'stage', 'code', 'error_class', 'error_message', 'failed_chunk' ), \array_keys( $row ) );
+			self::assertSame( 'execution', $row['stage'] );
+			self::assertSame( 'execution_failed', $row['code'] );
+			self::assertNull( $row['failed_chunk'] );
+			$chunk_row = $rows[1] ?? null;
+			self::assertIsArray( $chunk_row );
+			self::assertSame( array( 'post_id' => 42 ), $chunk_row['failed_chunk'] );
+		} elseif ( 'list' === $action && 'yaml' === $format ) {
+			self::assertStringContainsString( 'stage: execution', $result->stdout );
+			self::assertStringContainsString( 'code: execution_failed', $result->stdout );
+			self::assertStringContainsString( 'failed_chunk: null', $result->stdout );
+			self::assertStringContainsString( 'post_id: 42', $result->stdout );
 		}
 		if ( 'retry' === $action ) {
 			self::assertStringContainsString( 'Retried failed run "run-1"', $result->stdout );
@@ -615,7 +680,8 @@ final class CommandsAndOutputTest extends TestCase {
 		$consumer = $this->rig->consumer( 'consumer-plugin' );
 		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
 		foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
-			$failure        = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+			$failed_chunk   = 'consumer-plugin:email_digest-2' === $identity ? array( 'post_id' => 42 ) : null;
+			$failure        = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: $failed_chunk );
 			[ $name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
 			$this->rig->wpdb()->put( $name, $raw );
 		}
@@ -702,6 +768,24 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array( 'format' => 'yaml' ),
 				'format'     => 'yaml',
 			),
+		);
+	}
+
+	/**
+	 * Supplies every schedule-list format for dormant-backend warnings.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{format: string}>
+	 */
+	public static function dormant_schedule_formats(): array {
+		return array(
+			'table' => array( 'format' => 'table' ),
+			'csv'   => array( 'format' => 'csv' ),
+			'json'  => array( 'format' => 'json' ),
+			'count' => array( 'format' => 'count' ),
+			'yaml'  => array( 'format' => 'yaml' ),
 		);
 	}
 

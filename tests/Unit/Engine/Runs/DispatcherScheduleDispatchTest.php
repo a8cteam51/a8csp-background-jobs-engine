@@ -192,6 +192,24 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
+	 * An unconfirmed occurrence-lease write maps to the public storage-failure code.
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_now_reports_occurrence_lease_storage_failure(): void {
+		$this->sync_schedule( OverlapPolicy::Allow );
+		$this->rig->wpdb()->script_result( 'insert', false );
+
+		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+
+		self::assertInstanceOf( Failure::class, $result );
+		$error = $this->api_error( $result );
+		self::assertSame( ApiErrorCode::StorageFailure, $error->code );
+		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->message );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
 	 * Skip returns a benign overlap failure and leaves the incumbent untouched.
 	 *
 	 * @return  void

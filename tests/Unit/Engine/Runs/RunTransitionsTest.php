@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
@@ -147,7 +149,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->rows                 = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
 		$stores                     = new StoreFactory( $this->clock, $this->rows, $this->logger );
-		$lock_windows               = new LockWindows( $this->clock );
+		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
@@ -217,6 +219,7 @@ final class RunTransitionsTest extends TestCase {
 					'level'   => 'info',
 					'message' => 'Stale lifecycle action delivery dropped.',
 					'context' => array(
+						'name'     => self::IDENTITY,
 						'expected' => 2,
 						'received' => 1,
 						'run_id'   => self::RUN_ID,
@@ -513,20 +516,14 @@ final class RunTransitionsTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Superseded task run after its ownership fence failed.',
-					'context' => array(
-						'task_name'     => self::IDENTITY,
-						'run_id'        => self::RUN_ID,
-						'latest_run_id' => 'run-newer',
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'info', $this->logger->records[1]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[1]['context']['run_id'] ?? null );
+		self::assertSame( 'run-newer', $this->logger->records[1]['context']['latest_run_id'] ?? null );
 	}
 
 	/**
@@ -807,11 +804,35 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A missing or corrupt run logs reconciliation guidance without creating another transition.
+	 * Only the winning failed-state compare-and-swap emits the permanent-failure event.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_warns_and_returns_when_run_state_is_missing(): void {
+	public function test_terminal_failure_logs_once_for_the_winning_transition(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $state );
+		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
+
+		$this->terminal_transitions->fail_task( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_task( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+
+		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
+		self::assertCount( 1, $error_records );
+		self::assertSame( self::IDENTITY, $error_records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $error_records[0]['context']['run_id'] ?? null );
+		self::assertSame( 3, $error_records[0]['context']['attempts'] ?? null );
+		self::assertSame( RunFailureStage::Execution->value, $error_records[0]['context']['stage'] ?? null );
+		self::assertSame( \RuntimeException::class, $error_records[0]['context']['error_class'] ?? null );
+	}
+
+	/**
+	 * An absent run is a benign survivor from a finished or cancelled delivery.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_drops_an_absent_run_as_stale(): void {
 		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
 
 		$this->handle_task_run_action( 'missing-run', 1 );
@@ -820,19 +841,59 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		$this->assert_only_authoritative_run_read( 'missing-run' );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Task run state is missing or corrupt; allow the reconciliation sweep to release any remaining lock.',
-					'context' => array(
-						'task_name' => self::IDENTITY,
-						'run_id'    => 'missing-run',
-					),
-				),
-			),
-			$this->logger->records
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( 'missing-run', $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertStringContainsString( 'finished or cancelled', $this->logger->records[0]['message'] ?? '' );
+	}
+
+	/**
+	 * A corrupt run warns without creating another lifecycle transition.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_warns_when_run_state_is_corrupt(): void {
+		$this->wpdb->put( $this->run_option_name(), 'corrupt-run-state' );
+
+		$this->handle_task_run_action( self::RUN_ID, 1 );
+
+		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		$this->assert_only_authoritative_run_read( self::RUN_ID );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertStringContainsString( 'corrupt', $this->logger->records[0]['message'] ?? '' );
+	}
+
+	/**
+	 * An authoritative run read failure warns without claiming delivery ownership.
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_warns_when_run_state_cannot_be_read(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted run-state read failure';
+			}
 		);
+
+		$this->handle_task_run_action( self::RUN_ID, 1 );
+
+		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->fired_actions() );
+		$this->assert_only_authoritative_run_read( self::RUN_ID );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertStringContainsString( 'could not be read', $this->logger->records[0]['message'] ?? '' );
+		$read_error = $this->logger->records[0]['context']['error'] ?? null;
+		self::assertIsString( $read_error );
+		self::assertStringContainsString( 'read failed', $read_error );
 	}
 
 	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag

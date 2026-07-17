@@ -3,7 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ClaimedLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLeaseClaim;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLeaseOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
@@ -23,6 +25,8 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( OccurrenceLease::class )]
+#[CoversClass( OccurrenceLeaseClaim::class )]
+#[CoversClass( OccurrenceLeaseOutcome::class )]
 #[CoversClass( ClaimedLease::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
@@ -57,25 +61,46 @@ final class OccurrenceLeaseTest extends TestCase {
 		$this->lease                            = new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) );
 	}
 
+	/** The claim result has exactly the three ownership classifications. */
+	public function test_outcomes_are_closed_to_claimed_held_and_indeterminate(): void {
+		self::assertSame( array( OccurrenceLeaseOutcome::Claimed, OccurrenceLeaseOutcome::Held, OccurrenceLeaseOutcome::Indeterminate ), OccurrenceLeaseOutcome::cases() );
+		self::assertSame( array( 'claimed', 'held', 'indeterminate' ), \array_column( OccurrenceLeaseOutcome::cases(), 'value' ) );
+	}
+
 	/** An absent lease is exclusively inserted and released by exact raw value. */
 	public function test_absent_lease_is_claimed_and_exact_released(): void {
 		$claim = $this->lease->claim( self::KEY );
 
-		self::assertInstanceOf( ClaimedLease::class, $claim );
+		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
+		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
 		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
-		$claim->release();
+		$claim->lease->release();
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
 	}
 
 	/** A claimed handle performs its exact release CAS at most once. */
 	public function test_claimed_lease_release_is_idempotent(): void {
 		$claim = $this->lease->claim( self::KEY );
-		self::assertInstanceOf( ClaimedLease::class, $claim );
+		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
+		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
 
-		$claim->release();
-		$claim->release();
+		$claim->lease->release();
+		$claim->lease->release();
 
 		self::assertCount( 1, \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'DELETE ' ) && \str_contains( $query, self::option_name() ) ) );
+	}
+
+	/** Exact release cannot delete a newer lease generation. */
+	public function test_claimed_lease_release_preserves_a_newer_generation(): void {
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
+		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
+		$winner = self::raw_lease( 'newer-winner', self::NOW + 1 );
+		$this->wpdb->put( self::option_name(), $winner );
+
+		$claim->lease->release();
+
+		self::assertSame( $winner, $this->wpdb->rows[ self::option_name() ] ?? null );
 	}
 
 	/** An inserted lease remains unclaimed when its authoritative confirmation read fails. */
@@ -89,16 +114,52 @@ final class OccurrenceLeaseTest extends TestCase {
 			}
 		);
 
-		self::assertNull( $this->lease->claim( self::KEY ) );
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Indeterminate, $claim->outcome );
+		self::assertSame( 'read', $claim->storage_operation );
+		self::assertNull( $claim->lease );
 		self::assertSame( 1, $confirmation_failures );
 		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
+	}
+
+	/** A successful insert whose confirmation observes a rival is classified as a lost race. */
+	public function test_insert_confirmation_changed_by_a_rival_is_held(): void {
+		$winner = self::raw_lease( 'confirmation-winner', self::NOW );
+		$this->wpdb->before_next(
+			'select',
+			function ( WpdbLockSpy $wpdb ) use ( $winner ): void {
+				$wpdb->put( self::option_name(), $winner );
+			}
+		);
+
+		$claim = $this->lease->claim( self::KEY );
+
+		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertNull( $claim->storage_operation );
+		self::assertNull( $claim->lease );
+		self::assertSame( $winner, $this->wpdb->rows[ self::option_name() ] ?? null );
+	}
+
+	/** A rejected insert with authoritative absence reports an unconfirmed storage write. */
+	public function test_absent_lease_insert_failure_is_indeterminate(): void {
+		$this->wpdb->script_result( 'insert', false );
+
+		$claim = $this->lease->claim( self::KEY );
+
+		self::assertSame( OccurrenceLeaseOutcome::Indeterminate, $claim->outcome );
+		self::assertSame( 'write', $claim->storage_operation );
+		self::assertNull( $claim->lease );
+		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
 	}
 
 	/** A claim exactly sixty seconds old remains a held lease. */
 	public function test_fresh_lease_is_held_at_the_sixty_second_boundary(): void {
 		$this->put_lease( self::NOW - 60 );
 
-		self::assertNull( $this->lease->claim( self::KEY ) );
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertNull( $claim->storage_operation );
+		self::assertNull( $claim->lease );
 		self::assertSame( self::NOW - 60, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
@@ -106,7 +167,9 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_stale_lease_is_reclaimed_after_sixty_seconds(): void {
 		$this->put_lease( self::NOW - 61 );
 
-		self::assertInstanceOf( ClaimedLease::class, $this->lease->claim( self::KEY ) );
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
+		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
 		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
@@ -123,7 +186,10 @@ final class OccurrenceLeaseTest extends TestCase {
 			}
 		);
 
-		self::assertNull( $this->lease->claim( self::KEY ) );
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Indeterminate, $claim->outcome );
+		self::assertSame( 'read', $claim->storage_operation );
+		self::assertNull( $claim->lease );
 		self::assertSame( 1, $incumbent_read_failures );
 		self::assertSame( $raw, $this->wpdb->rows[ self::option_name() ] );
 		self::assertSame( array(), \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'UPDATE ' ) ) );
@@ -133,7 +199,9 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_malformed_lease_is_value_cas_reclaimed(): void {
 		$this->wpdb->put( self::option_name(), 'malformed' );
 
-		self::assertInstanceOf( ClaimedLease::class, $this->lease->claim( self::KEY ) );
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
+		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
 		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
@@ -148,8 +216,62 @@ final class OccurrenceLeaseTest extends TestCase {
 			}
 		);
 
-		self::assertNull( $this->lease->claim( self::KEY ) );
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertNull( $claim->storage_operation );
+		self::assertNull( $claim->lease );
 		self::assertSame( $winner, $this->wpdb->rows[ self::option_name() ] );
+	}
+
+	/** A stale reclaim that loses to row removal is classified as a lost race. */
+	public function test_lost_reclaim_cas_after_row_removal_is_held(): void {
+		$this->put_lease( self::NOW - 61 );
+		$this->wpdb->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ): void {
+				unset( $wpdb->rows[ self::option_name() ], $wpdb->autoload[ self::option_name() ] );
+			}
+		);
+
+		$claim = $this->lease->claim( self::KEY );
+
+		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertNull( $claim->storage_operation );
+		self::assertNull( $claim->lease );
+		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
+	}
+
+	/** A failed stale reclaim with an unreadable diagnostic snapshot is indeterminate. */
+	public function test_lost_reclaim_cas_diagnostic_read_failure_is_indeterminate(): void {
+		$this->put_lease( self::NOW - 61 );
+		$this->wpdb->script_result( 'update', false );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted diagnostic lease read failure';
+			}
+		);
+
+		$claim = $this->lease->claim( self::KEY );
+
+		self::assertSame( OccurrenceLeaseOutcome::Indeterminate, $claim->outcome );
+		self::assertSame( 'read', $claim->storage_operation );
+		self::assertNull( $claim->lease );
+		self::assertSame( self::NOW - 61, $this->stored_lease()['claimed_at'] ?? null );
+	}
+
+	/** A stale reclaim whose unchanged row rejects the CAS reports a storage write failure. */
+	public function test_unchanged_reclaim_write_failure_is_indeterminate(): void {
+		$this->put_lease( self::NOW - 61 );
+		$this->wpdb->script_result( 'update', false );
+
+		$claim = $this->lease->claim( self::KEY );
+
+		self::assertSame( OccurrenceLeaseOutcome::Indeterminate, $claim->outcome );
+		self::assertSame( 'write', $claim->storage_operation );
+		self::assertNull( $claim->lease );
+		self::assertSame( self::NOW - 61, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
 	/**

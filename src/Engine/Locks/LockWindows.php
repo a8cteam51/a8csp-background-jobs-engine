@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -50,10 +51,12 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ClockInterface $clock Timestamp source.
+	 * @param   ClockInterface  $clock  Timestamp source.
+	 * @param   LoggerInterface $logger Engine diagnostic sink.
 	 */
 	public function __construct(
 		private ClockInterface $clock,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -78,8 +81,21 @@ final readonly class LockWindows {
 	 */
 	public function continue_delay( string $batch_name, string $run_id ): int {
 		$delay = \apply_filters( 'a8csp_background_tasks/continue_delay', self::CONTINUE_DELAY, $batch_name, $run_id );
+		if ( \is_int( $delay ) && 0 <= $delay ) {
+			return $delay;
+		}
 
-		return \is_int( $delay ) && 0 <= $delay ? $delay : self::CONTINUE_DELAY;
+		$this->logger->warning(
+			'Continue-delay filter returned an invalid value; return a non-negative integer to override the default delay.',
+			array(
+				'name'          => $batch_name,
+				'run_id'        => $run_id,
+				'returned_type' => \get_debug_type( $delay ),
+				'default_delay' => self::CONTINUE_DELAY,
+			)
+		);
+
+		return self::CONTINUE_DELAY;
 	}
 
 	/**
@@ -99,6 +115,15 @@ final readonly class LockWindows {
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
 		$staleness         = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $identity, $default_staleness );
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
+			$this->logger->warning(
+				'Lock-staleness filter returned an invalid value; return a positive integer to override the default staleness window.',
+				array(
+					'name'              => $identity,
+					'run_id'            => $run_id,
+					'returned_type'     => \get_debug_type( $staleness ),
+					'default_staleness' => $default_staleness,
+				)
+			);
 			$staleness = $default_staleness;
 		}
 

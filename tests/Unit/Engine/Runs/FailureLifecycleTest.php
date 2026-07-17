@@ -220,6 +220,14 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, 1, 17 ), $this->latest_retry() );
 		$this->rig->assert_retry_scheduled();
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 1, $this->rig->logger()->records[0]['context']['attempt'] ?? null );
+		self::assertSame( 2, $this->rig->logger()->records[0]['context']['max_attempts'] ?? null );
+		self::assertSame( 17, $this->rig->logger()->records[0]['context']['delay'] ?? null );
+		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['error_class'] ?? null );
 	}
 
 	/**

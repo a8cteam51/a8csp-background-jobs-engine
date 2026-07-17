@@ -259,9 +259,9 @@ final readonly class OverlapGuard {
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Owning run identifier.
 	 *
-	 * @return  void
+	 * @return  bool Whether this run confirmed a clean release of, or absence of ownership over, the selected lock generation.
 	 */
-	public function release( string $identity, string $args_hash, string $run_id ): void {
+	public function release( string $identity, string $args_hash, string $run_id ): bool {
 		$key      = $this->option_name( $identity, $args_hash );
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
@@ -275,20 +275,20 @@ final readonly class OverlapGuard {
 				)
 			);
 
-			return;
+			return false;
 		}
 
 		$raw = $selected->value;
 		if ( null === $raw ) {
-			return;
+			return true;
 		}
 
 		$lock = self::parse( $raw );
 		if ( null === $lock || $run_id !== $lock['run_id'] ) {
-			return;
+			return true;
 		}
 
-		$this->rows->delete_if_value_matches( $key, $raw );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $key, $raw );
 	}
 
 	/**
@@ -511,7 +511,7 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Classifies run ownership without deleting a stale lock needed by a redriven delivery.
+	 * Classifies run ownership without deleting a stale lock needed by a redelivered action.
 	 *
 	 * @internal Engine maintenance only.
 	 *
@@ -546,7 +546,7 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Prepares the exact lock generation expected by a redriven delivery.
+	 * Prepares the exact lock generation expected by a redelivered action.
 	 *
 	 * @internal Engine maintenance only.
 	 *
@@ -560,9 +560,9 @@ final readonly class OverlapGuard {
 	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
 	 * @param   int    $staleness    Resolved lock-staleness window.
 	 *
-	 * @return  RedriveFenceOutcome Typed readiness after the preparation attempt.
+	 * @return  RedeliveryFenceOutcome Typed readiness after the preparation attempt.
 	 */
-	public function prepare_run_redrive_fence( string $identity, string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at, int $staleness ): RedriveFenceOutcome {
+	public function prepare_run_redelivery_fence( string $identity, string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
 		$key         = $this->option_name( $identity, $args_hash );
 		$replacement = array(
 			'run_id'       => $run_id,
@@ -571,42 +571,42 @@ final readonly class OverlapGuard {
 		);
 		$inspected   = $this->inspect_persisted_lock( $identity, $args_hash );
 		if ( $inspected->is_failure() ) {
-			return RedriveFenceOutcome::Indeterminate;
+			return RedeliveryFenceOutcome::Indeterminate;
 		}
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
 			if ( $this->rows->insert_if_absent( $key, self::serialize( $replacement ) ) ) {
-				return RedriveFenceOutcome::Ready;
+				return RedeliveryFenceOutcome::Ready;
 			}
 
-			return $this->classify_redrive_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
+			return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
 		}
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
 			if ( $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
-				return RedriveFenceOutcome::Ready;
+				return RedeliveryFenceOutcome::Ready;
 			}
 
-			return $this->classify_redrive_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
+			return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
 		}
 		if ( $run_id !== $lock['run_id'] ) {
-			return RedriveFenceOutcome::Transferred;
+			return RedeliveryFenceOutcome::Transferred;
 		}
 		if ( $heartbeat_at === $lock['heartbeat_at'] ) {
-			return RedriveFenceOutcome::Ready;
+			return RedeliveryFenceOutcome::Ready;
 		}
 		if ( ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness ) ) {
-			return RedriveFenceOutcome::Live;
+			return RedeliveryFenceOutcome::Live;
 		}
 
 		$replacement['claimed_at'] = $lock['claimed_at'];
 		if ( $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
-			return RedriveFenceOutcome::Ready;
+			return RedeliveryFenceOutcome::Ready;
 		}
 
-		return $this->classify_redrive_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
+		return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
 	}
 
 	// endregion
@@ -614,7 +614,7 @@ final readonly class OverlapGuard {
 	// region HELPERS
 
 	/**
-	 * Reclassifies a redrive fence after an exact lock write loses its race.
+	 * Reclassifies a redelivery fence after an exact lock write loses its race.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -625,30 +625,30 @@ final readonly class OverlapGuard {
 	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
 	 * @param   int    $staleness    Resolved lock-staleness window.
 	 *
-	 * @return  RedriveFenceOutcome Typed readiness after the lost write.
+	 * @return  RedeliveryFenceOutcome Typed readiness after the lost write.
 	 */
-	private function classify_redrive_fence( string $identity, string $args_hash, string $run_id, int $heartbeat_at, int $staleness ): RedriveFenceOutcome {
+	private function classify_redelivery_fence( string $identity, string $args_hash, string $run_id, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
 		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
 		if ( $inspected->is_failure() ) {
-			return RedriveFenceOutcome::Indeterminate;
+			return RedeliveryFenceOutcome::Indeterminate;
 		}
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot || null === $snapshot['lock'] ) {
-			return RedriveFenceOutcome::Indeterminate;
+			return RedeliveryFenceOutcome::Indeterminate;
 		}
 
 		$lock = $snapshot['lock'];
 		if ( $run_id !== $lock['run_id'] ) {
-			return RedriveFenceOutcome::Transferred;
+			return RedeliveryFenceOutcome::Transferred;
 		}
 		if ( $heartbeat_at === $lock['heartbeat_at'] ) {
-			return RedriveFenceOutcome::Ready;
+			return RedeliveryFenceOutcome::Ready;
 		}
 
 		return self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness )
-			? RedriveFenceOutcome::Indeterminate
-			: RedriveFenceOutcome::Live;
+			? RedeliveryFenceOutcome::Indeterminate
+			: RedeliveryFenceOutcome::Live;
 	}
 
 	/**

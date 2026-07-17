@@ -235,6 +235,110 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
 		self::assertArrayNotHasKey( CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		$read_error = $this->rig->logger()->records[0]['context']['error'] ?? null;
+		self::assertIsString( $read_error );
+		self::assertStringContainsString( 'read failed', $read_error );
+	}
+
+	/**
+	 * A confirmed concurrent occurrence lease is benign delivery contention.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_held_occurrence_lease_logs_debug_and_drops_delivery(): void {
+		$this->sync_schedule( self::schedule() );
+		$raw = \maybe_serialize(
+			array(
+				'claim_token' => 'incumbent-claim',
+				'claimed_at'  => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $raw );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+	}
+
+	/**
+	 * An unconfirmed occurrence-lease write reports storage degradation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_occurrence_lease_write_failure_logs_warning_and_drops_delivery(): void {
+		$this->sync_schedule( self::schedule() );
+		$this->rig->wpdb()->script_result( 'insert', false );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( 'write', $this->rig->logger()->records[0]['context']['storage_operation'] ?? null );
+	}
+
+	/**
+	 * An unconfirmed occurrence-lease read reports storage degradation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_occurrence_lease_read_failure_logs_warning_and_drops_delivery(): void {
+		$this->sync_schedule( self::schedule() );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted occurrence lease read failure';
+			}
+		);
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( 'read', $this->rig->logger()->records[0]['context']['storage_operation'] ?? null );
+	}
+
+	/**
+	 * An invalid misfire-grace filter falls back and reports the schedule identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_invalid_misfire_grace_filter_logs_warning(): void {
+		$this->sync_schedule( self::schedule() );
+		self::assertIsArray( $GLOBALS['a8csp_bgte_test_filter_values'] ?? null );
+		$GLOBALS['a8csp_bgte_test_filter_values'][ 'a8csp_background_tasks/misfire_grace/' . self::REGISTRATION_KEY ] = '300';
+
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertNotEmpty( $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
+		self::assertSame( self::INTERVAL, $this->rig->logger()->records[0]['context']['default_grace'] ?? null );
 	}
 
 	// endregion.
@@ -333,7 +437,8 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
 		self::assertSame( 1, $this->registration()['overlap_skips'] ?? null );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
-		self::assertSame( 'Schedule occurrence skipped because the target task lock is held.', $this->rig->logger()->records[0]['message'] ?? null );
+		self::assertSame( 'info', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['name'] ?? null );
 	}
 
 	/**

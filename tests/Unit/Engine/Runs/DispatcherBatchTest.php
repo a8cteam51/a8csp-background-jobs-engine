@@ -212,6 +212,47 @@ final class DispatcherBatchTest extends TestCase {
 	}
 
 	/**
+	 * An incomplete scheduling rollback warns that maintenance may redeliver its retained row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $failure Incomplete rollback boundary.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'incomplete_scheduling_rollback_failures' )]
+	public function test_start_batch_warns_when_scheduling_rollback_cannot_be_confirmed( string $failure ): void {
+		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
+		$this->script_scheduling_rollback_failure( $failure );
+
+		$result = $this->consumer->batches()->start( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
+		$record = $this->scheduling_rollback_warning();
+		self::assertSame( 'warning', $record['level'] ?? null );
+		self::assertSame( self::IDENTITY, $record['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $record['context']['run_id'] ?? null );
+		self::assertSame( 'lock_release' !== $failure, $record['context']['lock_release_confirmed'] ?? null );
+		self::assertSame( 'run_delete' !== $failure, $record['context']['run_deleted'] ?? null );
+	}
+
+	/**
+	 * Returns incomplete scheduling-rollback boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function incomplete_scheduling_rollback_failures(): array {
+		return array(
+			'lock release' => array( 'lock_release' ),
+			'run delete'   => array( 'run_delete' ),
+		);
+	}
+
+	/**
 	 * Reject leaves a fixture-built foreign owner in place without admitting work.
 	 *
 	 * @load-bearing concurrency
@@ -543,6 +584,54 @@ final class DispatcherBatchTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Scripts one incomplete scheduling-rollback boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $failure Incomplete rollback boundary.
+	 *
+	 * @return  void
+	 */
+	private function script_scheduling_rollback_failure( string $failure ): void {
+		if ( 'lock_release' === $failure ) {
+			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+			$this->rig->wpdb()->before_next(
+				'select',
+				static function ( WpdbLockSpy $wpdb ): void {
+					$wpdb->last_error = 'scripted rollback lock read failure';
+				}
+			);
+
+			return;
+		}
+
+		if ( 'run_delete' !== $failure ) {
+			throw new \InvalidArgumentException( 'Unknown scheduling rollback failure.' );
+		}
+
+		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array( $this->run_option_name() => false );
+	}
+
+	/**
+	 * Returns the scheduling-rollback diagnostic by its outcome context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array{level: mixed, message: string, context: array<array-key, mixed>}
+	 */
+	private function scheduling_rollback_warning(): array {
+		foreach ( $this->rig->logger()->records as $record ) {
+			if ( \array_key_exists( 'lock_release_confirmed', $record['context'] ) && \array_key_exists( 'run_deleted', $record['context'] ) ) {
+				return $record;
+			}
+		}
+
+		throw new \LogicException( 'Expected a scheduling rollback warning.' );
 	}
 
 	/**

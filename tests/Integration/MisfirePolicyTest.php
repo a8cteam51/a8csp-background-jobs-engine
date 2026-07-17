@@ -199,7 +199,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				'owner'    => self::SKIP_OWNER,
-				'name'     => self::SKIP_SCHEDULE,
+				'name'     => self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE,
 				'next_due' => $expected_due,
 				'fired_at' => $now,
 			),
@@ -305,7 +305,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$locks                = new OptionRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
 		$stores               = new StoreFactory( $clock, $rows, $logger );
-		$lock_windows         = new LockWindows( $clock );
+		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade(

@@ -47,6 +47,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_retry_exhaustion_round_trips_through_the_failed_store(): void {
+		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
 		$args            = array(
 			'account_id' => 91,
 			'operation'  => 'synchronize',

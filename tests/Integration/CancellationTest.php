@@ -137,6 +137,7 @@ final class CancellationTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_cancel_during_backoff_clears_the_retry_and_records_cancelled_history(): void {
+		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
 		$args               = array( 'account_id' => 42 );
 		$task               = new RecordingTask( self::BACKOFF_NAME );
 		$task->throwable    = new \RuntimeException( 'Retry after the upstream recovers.' );
@@ -371,9 +372,9 @@ final class CancellationTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_wp_cron_group_clear_survivor_dies_at_the_run_admission_gate(): void {
 		// A WP-Cron single survives the group-clear no-op only where Action Scheduler is absent;
-		// its delivery for the deleted run then reports the generic missing-state warning.
+		// its delivery for the deleted run is then dropped as a stale delivery for a finished run.
 		if ( ! \function_exists( 'as_schedule_single_action' ) ) {
-			$this->expectOutputRegex( '/Task run state is missing or corrupt; allow the reconciliation sweep/' );
+			$this->expectOutputRegex( '/Stale delivery for a finished or cancelled run was dropped/' );
 		}
 		$args = array( 'account_id' => 46 );
 		$task = new RecordingTask( self::DEGRADED_NAME );

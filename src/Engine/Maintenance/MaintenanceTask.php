@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\AbstractTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
@@ -141,6 +142,12 @@ final class MaintenanceTask extends AbstractTask {
 	public function handle( array $args ): void {
 		$selected_cursor = $this->rows->read( self::SWEEP_CURSOR_OPTION );
 		if ( $selected_cursor->is_failure() ) {
+			$this->log_sweep_abort(
+				'Maintenance sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.',
+				'cursor-read',
+				$selected_cursor->error
+			);
+
 			return;
 		}
 
@@ -170,6 +177,12 @@ final class MaintenanceTask extends AbstractTask {
 		while ( $run_count < self::RUN_SWEEP_BUDGET ) {
 			$run_page = $this->rows->option_names_after( RunIdentity::option_prefix(), $runs_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $run_page->is_failure() ) {
+				$this->log_sweep_abort(
+					'Maintenance run sweep aborted while enumerating run rows; repair WordPress option reads and retry the sweep.',
+					'run-enumeration',
+					$run_page->error
+				);
+
 				return;
 			}
 
@@ -196,6 +209,16 @@ final class MaintenanceTask extends AbstractTask {
 					continue;
 				}
 				if ( $reconciled->is_failure() ) {
+					$this->log_sweep_abort(
+						'Maintenance run sweep aborted while reconciling a run; resolve the reported failure and retry the sweep.',
+						'run-reconciliation',
+						$reconciled->error,
+						array(
+							'name'   => $identity['identity'],
+							'run_id' => $identity['run_id'],
+						)
+					);
+
 					return;
 				}
 
@@ -216,6 +239,12 @@ final class MaintenanceTask extends AbstractTask {
 		while ( $lock_count < self::LOCK_SWEEP_BUDGET ) {
 			$lock_page = $this->rows->option_names_after( OverlapGuard::OPTION_PREFIX, $locks_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $lock_page->is_failure() ) {
+				$this->log_sweep_abort(
+					'Maintenance lock sweep aborted while enumerating overlap-lock rows; repair WordPress option reads and retry the sweep.',
+					'lock-enumeration',
+					$lock_page->error
+				);
+
 				return;
 			}
 
@@ -301,6 +330,37 @@ final class MaintenanceTask extends AbstractTask {
 		}
 
 		$this->cleanup_intents->converge_pending_intents();
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Emits one phase-specific storage-abort diagnostic.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string               $message Log message.
+	 * @param   string               $phase   Aborted sweep phase.
+	 * @param   EngineError          $error   Discarded storage failure.
+	 * @param   array<string, mixed> $context Phase-specific context.
+	 *
+	 * @return  void
+	 */
+	private function log_sweep_abort( string $message, string $phase, EngineError $error, array $context = array() ): void {
+		$this->logger->warning(
+			$message,
+			\array_merge(
+				$context,
+				array(
+					'phase'        => $phase,
+					'error_class'  => $error::class,
+					'error_reason' => $error->reason?->value,
+				)
+			)
+		);
 	}
 
 	// endregion

@@ -197,7 +197,7 @@ final readonly class StoreFixtureBuilder {
 	public function history( array $started = array(), array $terminal = array() ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $started, $terminal ): array {
-				$store = new RunHistory( $this->identity, new OptionRows( $wpdb ) );
+				$store = new RunHistory( $this->identity, new OptionRows( $wpdb ), new NullLogger() );
 				foreach ( $started as $entry ) {
 					if ( ! $store->record_started( $entry['run_id'], $entry['args_hash'] ) ) {
 						throw new \LogicException( 'Production RunHistory rejected an isolated started fixture.' );

@@ -96,12 +96,29 @@ final readonly class OccurrenceDelivery {
 	 * @return  void
 	 */
 	public function handle_schedule_due( string $registration_key ): void {
-		$lease_handle = $this->lease->claim( $registration_key );
-		if ( null === $lease_handle ) {
+		$lease_claim = $this->lease->claim( $registration_key );
+		if ( OccurrenceLeaseOutcome::Held === $lease_claim->outcome ) {
 			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'registration_key' => $registration_key ) );
 
 			return;
 		}
+		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
+			$operation = $lease_claim->storage_operation ?? 'storage';
+			$message   = 'read' === $operation
+				? 'Schedule occurrence could not claim its decision lease because the authoritative read failed; repair WordPress option reads, then retry delivery.'
+				: 'Schedule occurrence could not claim its decision lease because the authoritative write failed; repair WordPress option writes, then retry delivery.';
+			$this->logger->warning(
+				$message,
+				array(
+					'registration_key'  => $registration_key,
+					'storage_operation' => $operation,
+				)
+			);
+
+			return;
+		}
+
+		$lease_handle = $lease_claim->claimed_lease();
 
 		try {
 			$this->handle_occurrence( $registration_key, $lease_handle );
@@ -130,8 +147,8 @@ final readonly class OccurrenceDelivery {
 		}
 
 		[ $owner, $name ] = $parts;
-		$lease_handle     = $this->lease->claim( $registration_key );
-		if ( null === $lease_handle ) {
+		$lease_claim      = $this->lease->claim( $registration_key );
+		if ( OccurrenceLeaseOutcome::Held === $lease_claim->outcome ) {
 			return new Failure(
 				new EngineError(
 					\sprintf( 'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $owner ),
@@ -143,6 +160,21 @@ final readonly class OccurrenceDelivery {
 				)
 			);
 		}
+		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" could not establish its occurrence lease because storage could not be read or written; repair WordPress option reads and writes, then retry.', $name, $owner ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'owner'             => $owner,
+						'schedule'          => $name,
+						'storage_operation' => $lease_claim->storage_operation,
+					),
+				)
+			);
+		}
+
+		$lease_handle = $lease_claim->claimed_lease();
 
 		try {
 			return $this->dispatch_now( $registration_key, $owner, $name, $lease_handle );
@@ -165,6 +197,14 @@ final readonly class OccurrenceDelivery {
 	private function handle_occurrence( string $registration_key, ClaimedLease $lease_handle ): void {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
+			$this->logger->warning(
+				'Schedule occurrence registration could not be read: {error}',
+				array(
+					'registration_key' => $registration_key,
+					'error'            => $registration_read->error->message,
+				)
+			);
+
 			return;
 		}
 
@@ -209,7 +249,7 @@ final readonly class OccurrenceDelivery {
 				'Stale schedule occurrence redelivery dropped after its next-due token advanced.',
 				array(
 					'owner'    => $owner,
-					'name'     => $name,
+					'name'     => $registration_key,
 					'next_due' => $registration['next_due'],
 					'fired_at' => $now,
 				)
@@ -235,6 +275,15 @@ final readonly class OccurrenceDelivery {
 		 */
 		$grace = \apply_filters( 'a8csp_background_tasks/misfire_grace/' . $registration_key, $interval, $owner, $registration_key );
 		if ( ! \is_int( $grace ) || 0 > $grace ) {
+			$this->logger->warning(
+				'Misfire grace filter returned an invalid value; return a non-negative integer to override the recurrence interval.',
+				array(
+					'owner'         => $owner,
+					'name'          => $registration_key,
+					'returned_type' => \get_debug_type( $grace ),
+					'default_grace' => $interval,
+				)
+			);
 			$grace = $interval;
 		}
 
@@ -246,7 +295,7 @@ final readonly class OccurrenceDelivery {
 				'Schedule recurrence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
 				array(
 					'owner'    => $owner,
-					'name'     => $name,
+					'name'     => $registration_key,
 					'next_due' => $registration['next_due'],
 					'fired_at' => $now,
 				)
@@ -295,7 +344,7 @@ final readonly class OccurrenceDelivery {
 					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
 					array(
 						'owner'     => $owner,
-						'name'      => $name,
+						'name'      => $registration_key,
 						'exception' => $throwable,
 					)
 				);
@@ -304,7 +353,7 @@ final readonly class OccurrenceDelivery {
 				'Misfired schedule occurrence skipped and realigned to its recurrence.',
 				array(
 					'owner'    => $owner,
-					'name'     => $name,
+					'name'     => $registration_key,
 					'next_due' => $next_due,
 					'fired_at' => $now,
 				)
@@ -334,7 +383,7 @@ final readonly class OccurrenceDelivery {
 				'Schedule occurrence could not enqueue its target task: {error}',
 				array(
 					'owner' => $owner,
-					'name'  => $name,
+					'name'  => $registration_key,
 					'error' => $dispatched->error->message,
 				)
 			);
@@ -351,7 +400,7 @@ final readonly class OccurrenceDelivery {
 				'Schedule occurrence skipped because the target task lock is held.',
 				array(
 					'owner'          => $owner,
-					'name'           => $name,
+					'name'           => $registration_key,
 					'running_run_id' => $dispatched->value->running_run_id,
 				)
 			);

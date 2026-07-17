@@ -68,16 +68,16 @@ final readonly class OccurrenceLease {
 	// region METHODS
 
 	/**
-	 * Claims one occurrence identity or reports that ownership cannot be established.
+	 * Claims one occurrence identity and classifies contention separately from storage uncertainty.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  ClaimedLease|null Claimed lease handle, or null when another holder wins or the claim cannot be verified against storage.
+	 * @return  OccurrenceLeaseClaim Classified claim with a handle only after confirmed ownership.
 	 */
-	public function claim( string $registration_key ): ?ClaimedLease {
+	public function claim( string $registration_key ): OccurrenceLeaseClaim {
 		$key = self::option_name( $registration_key );
 		$now = $this->clock->now()->getTimestamp();
 		$row = array(
@@ -89,28 +89,41 @@ final readonly class OccurrenceLease {
 		if ( $this->rows->insert_if_absent( $key, $raw ) ) {
 			$selected = $this->rows->read( $key );
 			if ( $selected->is_failure() ) {
-				return null;
+				return OccurrenceLeaseClaim::indeterminate_read();
 			}
 
-			return $raw === $selected->value ? new ClaimedLease( $this->rows, $key, $raw ) : null;
+			return $raw === $selected->value
+				? OccurrenceLeaseClaim::claimed( new ClaimedLease( $this->rows, $key, $raw ) )
+				: OccurrenceLeaseClaim::held();
 		}
 
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			return null;
+			return OccurrenceLeaseClaim::indeterminate_read();
 		}
 
 		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
-			return null;
+			return OccurrenceLeaseClaim::indeterminate_write();
 		}
 
 		$incumbent = self::parse( $expected_raw );
 		if ( null !== $incumbent && ! self::is_stale( $incumbent['claimed_at'], $now ) ) {
-			return null;
+			return OccurrenceLeaseClaim::held();
 		}
 
-		return $this->rows->compare_and_swap( $key, $expected_raw, $raw ) ? new ClaimedLease( $this->rows, $key, $raw ) : null;
+		if ( $this->rows->compare_and_swap( $key, $expected_raw, $raw ) ) {
+			return OccurrenceLeaseClaim::claimed( new ClaimedLease( $this->rows, $key, $raw ) );
+		}
+
+		$current = $this->rows->read( $key );
+		if ( $current->is_failure() ) {
+			return OccurrenceLeaseClaim::indeterminate_read();
+		}
+
+		return $expected_raw === $current->value
+			? OccurrenceLeaseClaim::indeterminate_write()
+			: OccurrenceLeaseClaim::held();
 	}
 
 	// endregion

@@ -185,7 +185,7 @@ final class Component extends AbstractComponent {
 			$randomizer           = new Randomizer();
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
 			$stores               = new StoreFactory( $clock, $option_rows, $logger );
-			$lock_windows         = new LockWindows( $clock );
+			$lock_windows         = new LockWindows( $clock, $logger );
 			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 			$scheduler            = new SchedulerFacade(

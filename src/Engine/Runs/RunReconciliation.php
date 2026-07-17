@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedriveFenceOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedeliveryFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
@@ -225,7 +225,7 @@ final readonly class RunReconciliation {
 	}
 
 	/**
-	 * Reconciles a running row between deliveries or redrives its pending action.
+	 * Reconciles a running row between deliveries or redelivers its pending action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -267,23 +267,23 @@ final readonly class RunReconciliation {
 				)
 			);
 		} else {
-			$redrive_fence = $this->overlap_guard->prepare_run_redrive_fence( $identity, $state->args_hash, $run_id, $state->created_at, $state->heartbeat_at, $staleness );
+			$redelivery_fence = $this->overlap_guard->prepare_run_redelivery_fence( $identity, $state->args_hash, $run_id, $state->created_at, $state->heartbeat_at, $staleness );
 			if (
-				RedriveFenceOutcome::Live === $redrive_fence
-				|| RedriveFenceOutcome::Indeterminate === $redrive_fence
+				RedeliveryFenceOutcome::Live === $redelivery_fence
+				|| RedeliveryFenceOutcome::Indeterminate === $redelivery_fence
 			) {
 				return new Success( null );
 			}
-			if ( RedriveFenceOutcome::Transferred === $redrive_fence ) {
+			if ( RedeliveryFenceOutcome::Transferred === $redelivery_fence ) {
 				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $work_type, $expected_raw );
 			}
 
-			$scheduled = $this->redrive_pending_action( $identity, $run_id, $state, $work_type );
+			$scheduled = $this->redeliver_pending_action( $identity, $run_id, $state, $work_type );
 			if ( ! $scheduled->is_failure() ) {
 				return new Success( null );
 			}
 			$this->logger->warning(
-				'Pending-action redrive was rejected by the scheduler; maintenance skipped terminal handling.',
+				'Pending-action redelivery was rejected by the scheduler; restore scheduler availability so maintenance can retry the pending action.',
 				array(
 					'name'         => $identity,
 					'run_id'       => $run_id,
@@ -406,7 +406,7 @@ final readonly class RunReconciliation {
 	/**
 	 * Re-enqueues the exact pending lifecycle action represented by a running row.
 	 *
-	 * Maintenance skips terminal handling after a redrive rejection because a previously accepted delivery may still be queued.
+	 * Maintenance skips terminal handling after a redelivery rejection because a previously accepted delivery may still be queued.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -420,17 +420,17 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function redrive_pending_action( string $identity, string $run_id, RunState $state, string $work_type ): AbstractResult {
+	private function redeliver_pending_action( string $identity, string $run_id, RunState $state, string $work_type ): AbstractResult {
 		$pending = $state->pending;
 		if ( null === $pending ) {
-			throw new \LogicException( 'Pending-action redrive requires a durable descriptor.' );
+			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
 		}
 
 		$args = array( $identity, $run_id );
 		if ( 'run' === $pending->stage && 'Batch' === $work_type ) {
 			$chunk_args = $state->queue[0] ?? null;
 			if ( ! \is_array( $chunk_args ) ) {
-				throw new \LogicException( 'Pending batch run redrive requires a retained queue head.' );
+				throw new \LogicException( 'Pending batch run redelivery requires a retained queue head.' );
 			}
 
 			$args[] = $chunk_args;
@@ -449,7 +449,7 @@ final readonly class RunReconciliation {
 
 		$fire_at = $pending->fire_at;
 		if ( ! \is_int( $fire_at ) ) {
-			throw new \LogicException( 'Pending single-action redrive requires an integer fire time.' );
+			throw new \LogicException( 'Pending single-action redelivery requires an integer fire time.' );
 		}
 
 		return $this->scheduler->schedule_single( $hook, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );

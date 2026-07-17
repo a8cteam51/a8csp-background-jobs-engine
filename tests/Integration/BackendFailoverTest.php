@@ -186,7 +186,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		$randomizer           = new Randomizer();
 		$guard                = new OverlapGuard( $clock, $logger, $rows );
 		$stores               = new StoreFactory( $clock, $rows, $logger );
-		$lock_windows         = new LockWindows( $clock );
+		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$dispatcher           = new Dispatcher( $work, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );

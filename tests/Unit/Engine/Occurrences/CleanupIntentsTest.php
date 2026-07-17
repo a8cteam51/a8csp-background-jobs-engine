@@ -165,6 +165,8 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertSame( array( 'is_ready', 'is_absent' ), \array_column( $dormant->calls, 'verb' ) );
 		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
 		self::assertFalse( $this->logger->records[1]['context']['converged'] ?? null );
 		self::assertTrue( $dormant->is_ready() );
 
@@ -203,7 +205,7 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
-	 * A failed maintenance convergence retains its intent and emits a debug diagnostic.
+	 * A failed maintenance convergence retains its intent and emits a warning diagnostic.
 	 *
 	 * @return  void
 	 */
@@ -218,7 +220,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'Unknown schedule cleanup intent remains pending because verified clearance failed.', $this->logger->records[0]['message'] ?? null );
 	}
 
@@ -268,7 +270,7 @@ final class CleanupIntentsTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'level'   => 'debug',
+				'level'   => 'warning',
 				'message' => 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
 				'context' => array( 'exception' => $throwable ),
 			),
@@ -303,7 +305,7 @@ final class CleanupIntentsTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'level'   => 'debug',
+				'level'   => 'warning',
 				'message' => 'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
 				'context' => array(
 					'registration_key' => self::REGISTRATION_KEY,
@@ -437,13 +439,25 @@ final class CleanupIntentsTest extends TestCase {
 		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the valid intent pending.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
-		$poisoned_name = 'a8csp_bgte_cleanup_intent_' . \str_repeat( '0', 64 );
-		$this->wpdb->put( $poisoned_name, 'O:8:"stdClass":0:{}' );
+		$this->logger->records = array();
+		$poisoned_names        = array(
+			'a8csp_bgte_cleanup_intent_' . \str_repeat( '0', 64 ),
+			'a8csp_bgte_cleanup_intent_' . \str_repeat( '1', 64 ),
+		);
+		foreach ( $poisoned_names as $poisoned_name ) {
+			$this->wpdb->put( $poisoned_name, 'O:8:"stdClass":0:{}' );
+		}
 
 		$this->cleanup_intents->converge_pending_intents();
 
-		self::assertArrayHasKey( $poisoned_name, $this->wpdb->rows );
+		foreach ( $poisoned_names as $poisoned_name ) {
+			self::assertArrayHasKey( $poisoned_name, $this->wpdb->rows );
+		}
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 2, $this->logger->records[0]['context']['count'] ?? null );
+		self::assertSame( CleanupIntents::OPTION_PREFIX, $this->logger->records[0]['context']['option_prefix'] ?? null );
 	}
 
 	// endregion.
@@ -516,7 +530,7 @@ final class CleanupIntentsTest extends TestCase {
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer           = new RecordingRandomizer( 42 );
-		$lock_windows         = new LockWindows( $this->clock );
+		$lock_windows         = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$dispatcher           = new Dispatcher( $work, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );

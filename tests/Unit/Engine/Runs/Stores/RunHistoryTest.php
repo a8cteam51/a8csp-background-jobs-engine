@@ -173,6 +173,25 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
+	 * An invalid history-size filter result reports the affected identity and applied default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_invalid_history_size_filter_result_logs_a_warning(): void {
+		$this->set_history_size( '30' );
+
+		self::assertTrue( $this->store()->record_started( 'run-invalid-filter', 'hash-a' ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
+		self::assertSame( 30, $this->rig->logger()->records[0]['context']['default_size'] ?? null );
+	}
+
+	/**
 	 * Distinct argument-history buckets retain a twenty-identity LRU footprint.
 	 *
 	 * @since   1.0.0
@@ -459,11 +478,11 @@ final class RunHistoryTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $size Positive history size.
+	 * @param   mixed $size Scripted history size.
 	 *
 	 * @return  void
 	 */
-	private function set_history_size( int $size ): void {
+	private function set_history_size( mixed $size ): void {
 		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
 		$filters['a8csp_background_tasks/history_size'] = $size;
@@ -479,7 +498,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  RunHistory
 	 */
 	private function store(): RunHistory {
-		return new RunHistory( self::IDENTITY, $this->rows );
+		return new RunHistory( self::IDENTITY, $this->rows, $this->rig->logger() );
 	}
 
 	/**

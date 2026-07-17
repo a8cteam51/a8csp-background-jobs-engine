@@ -58,7 +58,7 @@ final readonly class ScheduleOutput {
 	 *
 	 * @var     string
 	 */
-	private const string DORMANT_BACKEND_NOTE = 'note: a scheduling backend is not ready; dormant occurrences are not visible.';
+	private const string DORMANT_BACKEND_NOTE = 'a scheduling backend is not ready; dormant occurrences are not visible.';
 
 	// endregion
 
@@ -111,7 +111,7 @@ final readonly class ScheduleOutput {
 	}
 
 	/**
-	 * Returns the dormant-backend footer only when union reads exclude a present candidate.
+	 * Returns the dormant-backend warning only when union reads exclude a present candidate.
 	 *
 	 * @internal Command honesty seam.
 	 *
@@ -200,17 +200,13 @@ final readonly class ScheduleOutput {
 		$rows = self::rows_from_entries( $snapshot['entries'], $snapshot['observed_at'] );
 		if ( array() === $rows && 'table' === $format ) {
 			\WP_CLI::line( null === $owner ? 'No schedule registrations are persisted.' : \sprintf( 'No schedule registrations are persisted for owner "%s".', $owner ) );
-			return;
-		}
-
-		\WP_CLI\Utils\format_items( $format, $rows, self::FIELDS );
-		if ( 'table' !== $format ) {
-			return;
+		} else {
+			\WP_CLI\Utils\format_items( $format, $rows, self::FIELDS );
 		}
 
 		$note = self::dormant_backend_note( $snapshot['dormant_candidate'] );
 		if ( null !== $note ) {
-			\WP_CLI::line( $note );
+			\WP_CLI::warning( $note );
 		}
 	}
 

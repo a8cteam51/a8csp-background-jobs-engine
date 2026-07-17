@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -134,7 +135,7 @@ final readonly class CleanupIntents {
 		}
 
 		if ( ! $clearance->authoritative ) {
-			$this->log_pending_intent( 'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.', array( 'registration_key' => $registration_key ) );
+			$this->log_pending_intent( 'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.', array( 'registration_key' => $registration_key ), LogLevel::DEBUG );
 
 			return false;
 		}
@@ -227,8 +228,9 @@ final readonly class CleanupIntents {
 	 * @return  list<string>
 	 */
 	private function intent_keys(): array {
-		$keys  = array();
-		$names = $this->option_rows->option_names( self::OPTION_PREFIX );
+		$keys            = array();
+		$malformed_count = 0;
+		$names           = $this->option_rows->option_names( self::OPTION_PREFIX );
 		if ( $names->is_failure() ) {
 			return $keys;
 		}
@@ -252,10 +254,20 @@ final readonly class CleanupIntents {
 				|| ! \is_int( $value['created_at'] ?? null )
 				|| self::intent_option_name( $value['key'] ) !== $option_name
 			) {
+				++$malformed_count;
 				continue;
 			}
 
 			$keys[] = $value['key'];
+		}
+		if ( 0 < $malformed_count ) {
+			$this->log_pending_intent(
+				'Malformed unknown-schedule cleanup intent rows were skipped during maintenance; repair or remove them before the next sweep.',
+				array(
+					'count'         => $malformed_count,
+					'option_prefix' => self::OPTION_PREFIX,
+				)
+			);
 		}
 
 		return $keys;
@@ -283,12 +295,13 @@ final readonly class CleanupIntents {
 	 *
 	 * @param   string               $message Log message.
 	 * @param   array<string, mixed> $context Log context.
+	 * @param   'debug'|'warning'    $level   Diagnostic severity.
 	 *
 	 * @return  void
 	 */
-	private function log_pending_intent( string $message, array $context ): void {
+	private function log_pending_intent( string $message, array $context, string $level = LogLevel::WARNING ): void {
 		try {
-			$this->logger->debug( $message, $context );
+			$this->logger->log( $level, $message, $context );
 		} catch ( \Throwable ) {
 			// Maintenance convergence remains retryable even when diagnostics are unavailable.
 			return;

@@ -226,8 +226,7 @@ final readonly class Dispatcher {
 		}
 		$scheduled = $this->scheduler->enqueue_async( 'a8csp_background_tasks/start_batch', array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, $priority );
 		if ( $scheduled->is_failure() ) {
-			$this->overlap_guard->release( $batch_name, $args_hash, $run_id );
-			$run_store->delete( $run_id );
+			$this->roll_back_admitted_run( $batch_name, $args_hash, $run_id, $run_store );
 
 			return $scheduled;
 		}
@@ -547,16 +546,14 @@ final readonly class Dispatcher {
 				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( 'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ),
 			};
 			if ( null !== $heartbeat_error ) {
-				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
-				$run_store->delete( $run_id );
+				$this->roll_back_admitted_run( $task_name, $args_hash, $run_id, $run_store );
 
 				return new Failure( $heartbeat_error );
 			}
 
 			$replacement = $state->with_heartbeat_at( $scheduled_at );
 			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
-				$this->overlap_guard->release( $task_name, $args_hash, $run_id );
-				$run_store->delete( $run_id );
+				$this->roll_back_admitted_run( $task_name, $args_hash, $run_id, $run_store );
 
 				return new Failure(
 					new EngineError(
@@ -588,8 +585,7 @@ final readonly class Dispatcher {
 			: $this->scheduler->schedule_single( 'a8csp_background_tasks/run_task', $scheduled_at, $action_args, $group, $priority );
 
 		if ( $scheduled->is_failure() ) {
-			$this->overlap_guard->release( $task_name, $args_hash, $run_id );
-			$run_store->delete( $run_id );
+			$this->roll_back_admitted_run( $task_name, $args_hash, $run_id, $run_store );
 
 			return $scheduled;
 		}
@@ -683,6 +679,35 @@ final readonly class Dispatcher {
 				),
 			)
 		);
+	}
+
+	/**
+	 * Rolls back an admitted run's lock and row, warning when cleanup cannot be confirmed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $name      Composed work identity.
+	 * @param   string   $args_hash Argument identity hash owning the overlap lock.
+	 * @param   string   $run_id    Admitted run identifier.
+	 * @param   RunStore $run_store Store holding the admitted run row.
+	 *
+	 * @return  void
+	 */
+	private function roll_back_admitted_run( string $name, string $args_hash, string $run_id, RunStore $run_store ): void {
+		$lock_release_confirmed = $this->overlap_guard->release( $name, $args_hash, $run_id );
+		$run_deleted            = $run_store->delete( $run_id );
+		if ( ! $lock_release_confirmed || ! $run_deleted ) {
+			$this->logger->warning(
+				'Scheduling rollback could not confirm complete cleanup; the run row may be redelivered by maintenance. Repair storage reads and writes before retrying.',
+				array(
+					'name'                   => $name,
+					'run_id'                 => $run_id,
+					'lock_release_confirmed' => $lock_release_confirmed,
+					'run_deleted'            => $run_deleted,
+				)
+			);
+		}
 	}
 
 	/**

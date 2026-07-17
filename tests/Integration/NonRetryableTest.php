@@ -44,6 +44,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_non_retryable_exception_is_terminal_on_attempt_one(): void {
+		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$args            = array(
 			'record_id' => 404,
 			'operation' => 'delete',

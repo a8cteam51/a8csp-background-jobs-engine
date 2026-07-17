@@ -82,7 +82,7 @@ interface BatchInterface extends WorkInterface {
 	 * durable admission and the queue-advancement CAS after this method returns terminally fails the
 	 * run as a `CrashReclaim` failure, with the in-flight chunk preserved in the failure record;
 	 * `retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers
-	 * only non-executing states (pending, scheduled retry, and continue), which maintenance redrives.
+	 * only non-executing states (pending, scheduled retry, and continue), which maintenance redelivers.
 	 *
 	 * After persisting a retry disposition, the engine dispatches
 	 * `a8csp_background_tasks/retry_scheduled/{identity}` with the exact signature `(string $run_id,

@@ -295,8 +295,8 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame(
 			'[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store",' .
 			'"run_id":"integration-cli-command-run-1",' .
-			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"error_class":"RuntimeException",' .
-			'"error_message":"CLI boundary failure."}]',
+			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed",' .
+			'"error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]',
 			$result['stdout']
 		);
 		self::assertSame( '', $result['stderr'] );
@@ -786,6 +786,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
+		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
 		$consumer        = \a8csp_bgte( self::INSPECTION_OWNER );
 		$task            = new RecordingTask( self::INSPECTION_TASK );
 		$task->throwable = new \RuntimeException( 'Retry the inspection fixture.' );

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -71,12 +72,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $identity Complete owner-qualified task or batch identity.
-	 * @param   OptionRows $rows     Authoritative raw option-row I/O.
+	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
+	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
 		private string $identity,
 		private OptionRows $rows,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -273,8 +276,20 @@ final readonly class RunHistory {
 	 */
 	private function history_size(): int {
 		$size = \apply_filters( 'a8csp_background_tasks/history_size', self::DEFAULT_SIZE );
+		if ( \is_int( $size ) && 0 < $size ) {
+			return $size;
+		}
 
-		return \is_int( $size ) && 0 < $size ? $size : self::DEFAULT_SIZE;
+		$this->logger->warning(
+			'Run-history-size filter returned an invalid value; return a positive integer to override the default retention size.',
+			array(
+				'name'          => $this->identity,
+				'returned_type' => \get_debug_type( $size ),
+				'default_size'  => self::DEFAULT_SIZE,
+			)
+		);
+
+		return self::DEFAULT_SIZE;
 	}
 
 	/**

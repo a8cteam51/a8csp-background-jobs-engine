@@ -3,6 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Maintenance;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
@@ -52,6 +54,7 @@ final class MaintenanceTaskTest extends TestCase {
 	private const int NOW              = 1_700_000_000;
 	private const string RUN_ID        = '00000000001700000000-0000000000000000042';
 
+	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
 	private WpdbLockSpy $wpdb;
 
@@ -109,19 +112,19 @@ final class MaintenanceTaskTest extends TestCase {
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 
 		$clock                = new FixedClock( self::NOW );
-		$logger               = new RecordingLogger();
+		$this->logger         = new RecordingLogger();
 		$this->wpdb           = new WpdbLockSpy();
 		$backend              = new RecordingBackend();
 		$work                 = new WorkRegistry();
 		$rows                 = new OptionRows( $this->wpdb );
-		$guard                = new OverlapGuard( $clock, $logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $clock, $rows, $logger );
-		$lock_windows         = new LockWindows( $clock );
-		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
-		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $backend );
-		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
-		$this->maintenance    = new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $logger );
+		$guard                = new OverlapGuard( $clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$stores               = new StoreFactory( $clock, $rows, $this->logger );
+		$lock_windows         = new LockWindows( $clock, $this->logger );
+		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $this->logger, $terminal_effects );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $backend );
+		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $this->logger );
+		$this->maintenance    = new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
 	// endregion.
@@ -271,6 +274,32 @@ final class MaintenanceTaskTest extends TestCase {
 	}
 
 	/**
+	 * A failed cursor read aborts before either sweep phase and reports the storage cause.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cursor_read_failure_logs_the_aborted_phase(): void {
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted cursor read failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'cursor-read', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+	}
+
+	/**
 	 * Enumeration failure leaves the previously persisted cursor bytes unchanged.
 	 *
 	 * @since   1.0.0
@@ -291,6 +320,11 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertSame( $cursor_raw, $this->wpdb->rows[ self::CURSOR_OPTION ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**
@@ -320,6 +354,39 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertSame( $cursor_raw, $this->wpdb->rows[ self::CURSOR_OPTION ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( 'sweep-tests:read-failure', $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
+	}
+
+	/**
+	 * A failed lock-page read aborts the lock phase and reports the storage cause.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_lock_enumeration_failure_logs_the_aborted_phase(): void {
+		$this->wpdb->before_next( 'scan', static function (): void {} );
+		$this->wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted lock enumeration failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'lock-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	// endregion.

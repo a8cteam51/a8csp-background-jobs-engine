@@ -123,32 +123,29 @@ final class FailedRunStoreTest extends TestCase {
 		}
 		$this->rig->logger()->records = array();
 
-		$this->fail_task( array( 'index' => 20 ), 21 );
+		$terminal_run_id = $this->fail_task( array( 'index' => 20 ), 21 );
 
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.',
-					'context' => array(
-						'identity'        => self::IDENTITY,
-						'evicted_run_ids' => $run_ids[0],
-					),
-				),
-			),
-			$this->rig->logger()->records
-		);
+		self::assertCount( 2, $this->rig->logger()->records );
+		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( $terminal_run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'warning', $this->rig->logger()->records[1]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[1]['context']['identity'] ?? null );
+		self::assertSame( $run_ids[0], $this->rig->logger()->records[1]['context']['evicted_run_ids'] ?? null );
 	}
 
 	/**
-	 * A failed-run persist below the retention limit emits no eviction warning.
+	 * A failed-run persist below the retention limit emits only its terminal-failure event.
 	 *
 	 * @return  void
 	 */
-	public function test_non_evicting_failed_run_persist_logs_nothing(): void {
-		$this->fail_task( array( 'index' => 0 ), 1 );
+	public function test_non_evicting_failed_run_persist_logs_only_the_terminal_failure(): void {
+		$run_id = $this->fail_task( array( 'index' => 0 ), 1 );
 
-		self::assertSame( array(), $this->rig->logger()->records );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( $run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
 	}
 
 	/**

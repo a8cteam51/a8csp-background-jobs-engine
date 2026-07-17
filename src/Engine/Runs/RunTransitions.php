@@ -73,11 +73,38 @@ final readonly class RunTransitions {
 	 * @return  RunState|null
 	 */
 	public function claim_delivery_ownership( string $work_type, string $identity, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
-		$state        = $run_store->get( $run_id );
+		$inspection   = $run_store->inspect( $run_id );
 		$context_name = \strtolower( $work_type ) . '_name';
+		if ( $inspection->is_failure() ) {
+			$this->logger->warning(
+				$work_type . ' run state could not be read; repair WordPress option reads and retry the delivery.',
+				array(
+					$context_name => $identity,
+					'run_id'      => $run_id,
+					'error'       => $inspection->error->message,
+				)
+			);
+
+			return null;
+		}
+
+		$snapshot = $inspection->value;
+		if ( null === $snapshot ) {
+			$this->logger->debug(
+				'Stale delivery for a finished or cancelled run was dropped.',
+				array(
+					$context_name => $identity,
+					'run_id'      => $run_id,
+				)
+			);
+
+			return null;
+		}
+
+		$state = $snapshot['state'];
 		if ( null === $state ) {
 			$this->logger->warning(
-				$work_type . ' run state is missing or corrupt; allow the reconciliation sweep to release any remaining lock.',
+				$work_type . ' run state is corrupt; repair or remove the row so the reconciliation sweep can release any remaining lock.',
 				array(
 					$context_name => $identity,
 					'run_id'      => $run_id,
@@ -91,6 +118,7 @@ final readonly class RunTransitions {
 			$this->logger->info(
 				'Stale lifecycle action delivery dropped.',
 				array(
+					'name'     => $identity,
 					'expected' => $state->action_seq,
 					'received' => $action_seq,
 					'run_id'   => $run_id,
@@ -431,6 +459,18 @@ final readonly class RunTransitions {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return false;
+		}
+		if ( RunStatus::Failed === $replacement->status ) {
+			$this->logger->error(
+				'Run failed permanently; correct the cause, then use failed-runs retry to start a fresh run.',
+				array(
+					'name'        => $identity,
+					'run_id'      => $run_id,
+					'attempts'    => $replacement->failed_attempts,
+					'stage'       => $replacement->error['stage'] ?? null,
+					'error_class' => $replacement->error['class'] ?? null,
+				)
+			);
 		}
 
 		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $work_type, $batch );

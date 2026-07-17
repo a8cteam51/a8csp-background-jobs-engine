@@ -152,7 +152,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $chunk_args );
+		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $error, $chunk_args );
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
 			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
@@ -234,12 +234,13 @@ final readonly class FailureLifecycle {
 	 * @param   RunStore                     $run_store  Active-run store.
 	 * @param   RetryPolicy                  $policy     Resolved retry policy.
 	 * @param   int                          $attempt    Consumed-attempt count.
+	 * @param   EngineError                  $error      Failed-attempt detail.
 	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
 	 *
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ApiErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
-	private function reschedule_retry( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, ?array $chunk_args = null ): ?array {
+	private function reschedule_retry( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, ?array $chunk_args = null ): ?array {
 		try {
 			$delay = $this->randomizer->int( 0, $policy->delay_ceiling_for_attempt( $attempt ) );
 			$now   = $this->clock->now()->getTimestamp();
@@ -327,6 +328,18 @@ final readonly class FailureLifecycle {
 					'code'  => EngineError::api_code_for_scheduling( $scheduled->error ),
 				);
 			}
+
+			$this->logger->warning(
+				'Run attempt failed and was scheduled for retry; correct recurring failures before the retry policy is exhausted.',
+				array(
+					'name'         => $identity,
+					'run_id'       => $run_id,
+					'attempt'      => $attempt,
+					'max_attempts' => $policy->max_attempts,
+					'delay'        => $delay,
+					'error_class'  => $error->exception_class,
+				)
+			);
 
 			return null;
 		} catch ( \Throwable $throwable ) {

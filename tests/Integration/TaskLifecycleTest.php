@@ -125,6 +125,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_non_retryable_task_failure_is_terminal_on_attempt_one(): void {
+		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$args            = array(
 			'account_id' => 84,
 			'mode'       => 'delete',

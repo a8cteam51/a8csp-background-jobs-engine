@@ -30,6 +30,7 @@ CliHarness::set_up();
 try {
 	switch ( $scenario ) {
 		case 'schedules':
+		case 'schedules-dormant':
 			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
 				$consumer = $rig->consumer( $owner );
 				$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
@@ -37,6 +38,9 @@ try {
 				if ( ! $result instanceof Success ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
 				}
+			}
+			if ( 'schedules-dormant' === $scenario ) {
+				$rig->backend()->ready = false;
 			}
 			$result = CliHarness::run( 'schedules', array( 'list' ), array( 'format' => 'csv' ) );
 			break;

@@ -5,14 +5,14 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Readiness classification for one pending-action redrive fence.
+ * Readiness classification for one pending-action redelivery fence.
  *
  * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-enum RedriveFenceOutcome: string {
+enum RedeliveryFenceOutcome: string {
 	case Ready         = 'ready';
 	case Live          = 'live';
 	case Transferred   = 'transferred';

@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
@@ -158,7 +159,7 @@ final readonly class ActionDeliveries {
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$registered_batch = $this->work->batch( $batch_name );
 		$liveness_at      = null !== $registered_batch
-			? fn (): int => $this->execution_lease_at( $registered_batch )
+			? fn (): int => $this->execution_lease_at( $registered_batch, $batch_name, $run_id )
 			: null;
 		$run_store        = $this->stores->run_store( $batch_name );
 		$state            = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store, $liveness_at );
@@ -397,9 +398,9 @@ final readonly class ActionDeliveries {
 		$batch       = $this->work->batch( $identity );
 		$liveness_at = null;
 		if ( null === $chunk_args && null !== $task ) {
-			$liveness_at = fn (): int => $this->execution_lease_at( $task );
+			$liveness_at = fn (): int => $this->execution_lease_at( $task, $identity, $run_id );
 		} elseif ( null !== $chunk_args && null !== $batch ) {
-			$liveness_at = fn (): int => $this->execution_lease_at( $batch );
+			$liveness_at = fn (): int => $this->execution_lease_at( $batch, $identity, $run_id );
 		}
 		$run_store = $this->stores->run_store( $identity );
 		$state     = $this->terminal_transitions->claim_delivery_ownership( $work_type, $identity, $run_id, $action_seq, $run_store, $liveness_at );
@@ -616,14 +617,25 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   TaskInterface|BatchInterface $contract Registered work contract.
+	 * @param   string                       $identity Complete owner-qualified task or batch identity.
+	 * @param   string                       $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	private function execution_lease_at( TaskInterface|BatchInterface $contract ): int {
+	private function execution_lease_at( TaskInterface|BatchInterface $contract, string $identity, string $run_id ): int {
 		try {
 			$declared = $contract->max_callback_runtime();
-		} catch ( \Throwable ) {
+		} catch ( \Throwable $throwable ) {
 			// An unusable declaration falls back to the default lease instead of escaping the delivery unfenced.
+			$this->logger->warning(
+				'The work contract threw while declaring its maximum callback runtime; the default runtime was applied. Fix max_callback_runtime() before the next delivery.',
+				array(
+					'name'            => $identity,
+					'run_id'          => $run_id,
+					'exception_class' => \get_debug_type( $throwable ),
+					'default_runtime' => WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME,
+				)
+			);
 			$declared = null;
 		}
 
