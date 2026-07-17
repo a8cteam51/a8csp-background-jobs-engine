@@ -112,7 +112,7 @@ final class EngineComponentTest extends TestCase {
 	public function test_initialize_publishes_the_complete_composition_root(): void {
 		$component = new Component();
 
-		self::assertTrue( $component->is_needed() );
+		self::assertTrue( Component::should_load() );
 		$component->initialize();
 
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
@@ -132,7 +132,9 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_boot_registers_the_sink_before_every_engine_hook(): void {
-		( new Component() )->initialize();
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 
 		$hooks = $GLOBALS['a8csp_bgte_test_hooks'] ?? null;
 		self::assertIsArray( $hooks );
@@ -151,13 +153,17 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_reboot_is_idempotent_across_component_instances(): void {
-		( new Component() )->initialize();
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 		$engine     = Component::get_engine();
 		$inspection = Component::get_inspection();
 		$actions    = $this->action_registrations();
 		$filters    = $this->filter_registrations();
 
-		( new Component() )->initialize();
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 
 		self::assertSame( $engine, Component::get_engine() );
 		self::assertSame( $inspection, Component::get_inspection() );
@@ -166,17 +172,17 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Re-entry while the scheduler filter is registering cannot build a competing graph.
+	 * Re-entry into an in-flight initialize() cannot build a competing graph.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Scheduler-filter registration re-enters initialize() before publication; one graph and one registration set prove the in-flight latch rejects the competing boot.
+	 * @pin-rationale The two-phase boot publishes the graph before any hook registration, so an organic re-entry before publication is architecturally unreachable; the booting latch remains the defense for the construction window itself (any future collaborator that fires a filter while wiring). No public seam can stage an in-flight boot, so this pin forces the window by reflection and proves the latch rejects the competing boot.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_scheduler_filter_reentry_during_initialize_has_one_effect(): void {
+	public function test_scheduler_filter_reentry_during_hook_registration_has_one_effect(): void {
 		$reentered = false;
 		$callbacks = $GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
@@ -188,7 +194,25 @@ final class EngineComponentTest extends TestCase {
 
 		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = $callbacks;
 
-		( new Component() )->initialize();
+		$component = new Component();
+		$component->initialize();
+
+		$engine = Component::get_engine();
+		self::assertInstanceOf( EngineFacade::class, $engine );
+
+		// Hook registration follows publication, so this pin stages the otherwise inaccessible
+		// in-flight window directly and proves re-entry cannot publish a competing graph.
+		$engine_property  = new \ReflectionProperty( Component::class, 'engine' );
+		$booting_property = new \ReflectionProperty( Component::class, 'booting' );
+		$engine_property->setValue( null, null );
+		$booting_property->setValue( null, true );
+		try {
+			$component->register_hooks();
+			self::assertNull( Component::get_engine() );
+		} finally {
+			$booting_property->setValue( null, false );
+			$engine_property->setValue( null, $engine );
+		}
 
 		self::assertTrue( $reentered );
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
@@ -231,7 +255,9 @@ final class EngineComponentTest extends TestCase {
 		);
 		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 
-		( new Component() )->initialize();
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 
 		$hook_names = \array_column( $this->action_registrations(), 'hook_name' );
 		self::assertContains( 'wp_loaded', $hook_names );
@@ -253,7 +279,9 @@ final class EngineComponentTest extends TestCase {
 			'init'           => 1,
 		);
 
-		( new Component() )->initialize();
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 
 		// Deferral outside a running init registers on 'init' ('wp_loaded' is chosen only while doing init), so both lifecycle hooks must be absent.
 		$hook_names = \array_column( $this->action_registrations(), 'hook_name' );
@@ -279,7 +307,10 @@ final class EngineComponentTest extends TestCase {
 		);
 		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
 		$GLOBALS['a8csp_bgte_test_is_multisite']  = true;
-		( new Component() )->initialize();
+
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 		$registrations = \array_values( \array_filter( $this->action_registrations(), static fn ( array $registration ): bool => 'wp_loaded' === $registration['hook_name'] ) );
 		self::assertCount( 1, $registrations );
 
@@ -304,7 +335,10 @@ final class EngineComponentTest extends TestCase {
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
-		( new Component() )->initialize();
+
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 		$consumer = \a8csp_bgte( 'consumer-plugin' );
 		self::assertInstanceOf( Consumer::class, $consumer );
 		$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
@@ -334,7 +368,10 @@ final class EngineComponentTest extends TestCase {
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
 		);
-		( new Component() )->initialize();
+
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
 		$consumer = \a8csp_bgte( 'consumer-plugin' );
 		$consumer->tasks()->register( new RecordingTask( 'preferred' ) );
 		$GLOBALS['a8csp_bgte_test_as_calls']   = array();

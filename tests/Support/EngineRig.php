@@ -374,7 +374,7 @@ final class EngineRig {
 	 * @return  void
 	 */
 	private function build_graph(): void {
-		// This graph mirrors Component::initialize() because initialize() has no injection seam; wiring changes require lockstep updates here.
+		// This graph mirrors Component's two phases because the component has no injection seam; wiring changes require lockstep updates here.
 		$rows                 = new OptionRows( $this->wpdb );
 		$work                 = new WorkRegistry();
 		$schedules            = new ScheduleRegistry( $rows );
@@ -397,10 +397,10 @@ final class EngineRig {
 		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
+		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
-		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );
 		$maintenance_schedule->register_hooks();
 		$this->activate_registered_hooks();
 	}

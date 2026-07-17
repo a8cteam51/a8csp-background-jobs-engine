@@ -8,9 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * The plugin's composition root: `COMPONENTS` is the top-level component list and `boot()` runs it.
- *
- * The `plugins_loaded` boot initializes each needed `COMPONENTS` entry at most once.
+ * The plugin's composition root: assembles the top-level components and runs the boot pipeline.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -19,7 +17,8 @@ final class Plugin {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Add the plugin's top-level components here; they boot in registration order.
+	 * Add the plugin's top-level components here; they run through each phase in registration
+	 * order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -32,48 +31,60 @@ final class Plugin {
 	);
 
 	/**
-	 * Whether `boot()` has already run.
+	 * Tri-state boot flag: null until `boot()` is first entered, false from entry until the hook
+	 * phase completes — which also latches reentrant calls and post-failure retries into no-ops,
+	 * since a half-attached boot must never be replayed — and true only on success.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     bool
+	 * @var     bool|null
 	 */
-	private bool $booted = false;
+	private ?bool $booted = null;
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Whether the boot pipeline completed successfully for this request.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public function is_booted(): bool {
+		return true === $this->booted;
+	}
 
 	// endregion
 
 	// region HOOKS
 
 	/**
-	 * Boots every registered component whose gate is open; idempotent — only the first eligible call
-	 * has any effect.
+	 * Runs the plugin's boot pipeline.
+	 *
+	 * A boot failure propagates uncaught — fail loud; the entry latch already guarantees it cannot
+	 * be retried into duplicate hook registrations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \Throwable When component initialization fails.
-	 *
 	 * @return  void
 	 */
 	public function boot(): void {
-		if ( $this->booted ) {
+		if ( null !== $this->booted ) {
 			return;
 		}
 
-		$this->booted = true;
+		$this->booted = false;
 
-		try {
-			foreach ( self::COMPONENTS as $component_class ) {
-				$component = new $component_class();
-				if ( $component->is_needed() ) {
-					$component->initialize();
-				}
-			}
-		} catch ( \Throwable $throwable ) {
-			$this->booted = false;
-			throw $throwable;
-		}
+		$components = ComponentCollection::assemble( self::COMPONENTS );
+		$components->initialize();
+		$components->register_hooks();
+
+		$this->booted = true;
 	}
 
 	// endregion

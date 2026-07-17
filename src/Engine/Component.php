@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\ComponentInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
@@ -44,7 +44,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class Component implements ComponentInterface {
+final class Component extends AbstractComponent {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -117,25 +117,42 @@ final class Component implements ComponentInterface {
 	 */
 	private static ?SchedulerFacade $scheduler = null;
 
+	/**
+	 * Action-delivery hooks retained between readiness and attachment.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     ActionDeliveries|null
+	 */
+	private ?ActionDeliveries $action_deliveries = null;
+
+	/**
+	 * Occurrence-delivery hooks retained between readiness and attachment.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     OccurrenceDelivery|null
+	 */
+	private ?OccurrenceDelivery $occurrence_delivery = null;
+
+	/**
+	 * Maintenance-schedule hooks retained between readiness and attachment.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     MaintenanceSchedule|null
+	 */
+	private ?MaintenanceSchedule $maintenance_schedule = null;
+
 	// endregion
 
 	// region INHERITED METHODS
 
 	/**
-	 * Keeps the engine available on every supported site.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function is_needed(): bool {
-		return true;
-	}
-
-	/**
-	 * Builds the engine graph and registers its runtime hooks once.
+	 * Builds the engine graph and publishes its supported facades once.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -152,8 +169,6 @@ final class Component implements ComponentInterface {
 		self::$booting = true;
 
 		try {
-			ErrorLogSink::register();
-
 			global $wpdb;
 
 			/**
@@ -191,9 +206,9 @@ final class Component implements ComponentInterface {
 			$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
-			$scheduler->register_hooks();
-			$action_deliveries->register_hooks();
-			$occurrence_delivery->register_hooks();
+			$this->action_deliveries    = $action_deliveries;
+			$this->occurrence_delivery  = $occurrence_delivery;
+			$this->maintenance_schedule = $maintenance_schedule;
 
 			self::$engine     = $engine;
 			self::$inspection = $inspection;
@@ -204,6 +219,30 @@ final class Component implements ComponentInterface {
 		} finally {
 			self::$booting = false;
 		}
+	}
+
+	/**
+	 * Registers the engine's runtime hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function register_hooks(): void {
+		$scheduler            = self::$scheduler;
+		$action_deliveries    = $this->action_deliveries;
+		$occurrence_delivery  = $this->occurrence_delivery;
+		$maintenance_schedule = $this->maintenance_schedule;
+		if ( null === $scheduler || null === $action_deliveries || null === $occurrence_delivery || null === $maintenance_schedule ) {
+			return;
+		}
+
+		ErrorLogSink::register();
+		$scheduler->register_hooks();
+		$action_deliveries->register_hooks();
+		$occurrence_delivery->register_hooks();
 
 		// Late maintenance synchronization invokes scheduler filters; publication keeps a consumer
 		// resolving from one of those filters on this same graph instead of rebuilding it recursively.

@@ -148,7 +148,9 @@ final class CliHarness {
 	 */
 	public static function set_up(): void {
 		if ( null === self::root_command() ) {
-			new Component()->initialize();
+			$component = new Component();
+			$component->initialize();
+			$component->register_hooks();
 		}
 	}
 

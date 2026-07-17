@@ -2,7 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\ComponentCollection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
@@ -18,6 +20,8 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Plugin::class )]
+#[UsesClass( AbstractComponent::class )]
+#[UsesClass( ComponentCollection::class )]
 #[UsesClass( Component::class )]
 #[UsesClass( ErrorLogSink::class )]
 #[RunTestsInSeparateProcesses]
@@ -79,7 +83,11 @@ final class PluginBootGateTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_boot_publishes_the_public_consumer_facade(): void {
-		( new Plugin() )->boot();
+		$plugin = new Plugin();
+		self::assertFalse( $plugin->is_booted() );
+
+		$plugin->boot();
+		self::assertTrue( $plugin->is_booted() );
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
 		self::assertInstanceOf( Consumer::class, \a8csp_bgte( 'plugin-boot-gate' ) );
@@ -93,14 +101,18 @@ final class PluginBootGateTest extends TestCase {
 	public function test_failed_accessor_boot_leaves_the_public_consumer_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
+		$plugin          = \a8csp_bgte_plugin();
 		try {
-			\a8csp_bgte_plugin()->boot();
+			$plugin->boot();
 		} catch ( \TypeError $caught ) {
 			$throwable = $caught;
 		}
 
 		self::assertInstanceOf( \TypeError::class, $throwable );
+		self::assertFalse( $plugin->is_booted() );
 		$GLOBALS['wpdb'] = new WpdbLockSpy();
+		$plugin->boot();
+		self::assertFalse( $plugin->is_booted() );
 
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
