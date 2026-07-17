@@ -281,9 +281,10 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_owner_replace_and_final_remove_use_binary_exact_row_comparisons(): void {
-		$schedule = self::schedule( 'nightly', 300 );
-		$initial  = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
-		$owner_a  = self::owner_fixture( 'owner-a', $schedule, self::NOW + 600 );
+		$schedule    = self::schedule( 'nightly', 300 );
+		$replacement = self::schedule( 'nightly', 600 );
+		$initial     = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+		$owner_a     = self::owner_fixture( 'owner-a', $replacement, self::NOW + 600 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $initial ) );
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
@@ -311,12 +312,14 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_interleaved_owner_writers_update_independent_rows_without_retry(): void {
-		$schedule_a = self::schedule( 'nightly', 300 );
-		$schedule_b = self::schedule( 'hourly', 3_600 );
-		$initial_a  = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 300 );
-		$initial_b  = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 );
-		$next_a     = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 600 );
-		$next_b     = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 7_200, self::NOW + 3_600 );
+		$schedule_a    = self::schedule( 'nightly', 300 );
+		$schedule_b    = self::schedule( 'hourly', 3_600 );
+		$replacement_a = self::schedule( 'nightly', 600 );
+		$replacement_b = self::schedule( 'hourly', 7_200 );
+		$initial_a     = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 300 );
+		$initial_b     = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 );
+		$next_a        = self::owner_fixture( 'owner-a', $replacement_a, self::NOW + 600 );
+		$next_b        = self::owner_fixture( 'owner-b', $replacement_b, self::NOW + 7_200, self::NOW + 3_600 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $initial_a ) );
 		$this->put_fixture( $this->fixtures->schedule_registration( $initial_b ) );
 		$this->rig->wpdb()->recorded_queries = array();
@@ -335,6 +338,112 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
+	 * Owner replacement preserves a delivery advance for an unchanged schedule definition.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The sync-vs-delivery rewind race occurs at the owner-row update boundary, where only a staged storage interleave proves the fresh delivery fence survives the replacement retry.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_owner_replacement_preserves_concurrently_advanced_unchanged_registration(): void {
+		$nightly     = self::schedule( 'nightly', 300 );
+		$hourly      = self::schedule( 'hourly', 3_600 );
+		$stored      = self::owner_fixture( 'owner-a', $nightly, self::NOW + 300 );
+		$replacement = self::owner_fixture_many( 'owner-a', array( $nightly, $hourly ), array( self::NOW + 300, self::NOW + 3_600 ) );
+		$advanced    = $stored['registrations']['owner-a:nightly'];
+
+		$advanced['next_due']      = self::NOW + 600;
+		$advanced['last_fired']    = self::NOW + 300;
+		$advanced['misfire_skips'] = 2;
+		$advanced['overlap_skips'] = 3;
+		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
+		$this->rig->wpdb()->before_next(
+			'update',
+			function () use ( $advanced ): void {
+				self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( 'owner-a:nightly', $advanced['fingerprint'], $advanced ) );
+			}
+		);
+		$registry = $this->registry();
+
+		self::assertTrue( $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
+
+		$expected                                     = $replacement;
+		$expected['registrations']['owner-a:nightly'] = $advanced;
+		self::assertSame( $this->fixtures->schedule_registration( $expected )[1], $this->raw_row() );
+		$registrations = $registry->registrations_for( 'owner-a' );
+		self::assertInstanceOf( Success::class, $registrations );
+		self::assertIsArray( $registrations->value );
+		self::assertArrayHasKey( 'owner-a:nightly', $registrations->value );
+		$persisted = $registrations->value['owner-a:nightly'];
+		self::assertIsArray( $persisted );
+		self::assertSame( self::NOW + 600, $persisted['next_due'] ?? null );
+		self::assertSame( self::NOW + 300, $persisted['last_fired'] ?? null );
+		self::assertSame( 2, $persisted['misfire_skips'] ?? null );
+		self::assertSame( 3, $persisted['overlap_skips'] ?? null );
+	}
+
+	/**
+	 * Owner replacement performs no write when only an unchanged schedule's timing state advanced.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The sync-vs-delivery rewind race cannot be excluded through public state alone; a zero-write assertion proves a stale sync snapshot merges to the freshly advanced delivery fence before equality comparison.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_owner_replacement_merges_advanced_unchanged_registration_without_writing(): void {
+		$schedule              = self::schedule( 'nightly', 300 );
+		$stale                 = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+		$advanced_registration = self::registration( $schedule, self::NOW + 600, self::NOW + 300 );
+
+		$advanced_registration['misfire_skips'] = 2;
+		$advanced_registration['overlap_skips'] = 3;
+
+		$advanced = $stale;
+
+		$advanced['registrations']['owner-a:nightly'] = $advanced_registration;
+
+		$fixture = $this->fixtures->schedule_registration( $advanced );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+		$registry                            = $this->registry();
+
+		self::assertTrue( $registry->replace_owner( 'owner-a', $stale['declarations'], $stale['registrations'] ) );
+
+		self::assertSame( array(), $this->write_queries() );
+		self::assertSame( $fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * Owner replacement resets timing state when a schedule definition fingerprint changes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_owner_replacement_keeps_fresh_timing_for_changed_fingerprint(): void {
+		$stored      = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 600, self::NOW + 300 );
+		$replacement = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 600 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
+		$registry = $this->registry();
+
+		self::assertTrue( $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
+
+		$registrations = $registry->registrations_for( 'owner-a' );
+		self::assertInstanceOf( Success::class, $registrations );
+		self::assertIsArray( $registrations->value );
+		self::assertSame( $replacement['registrations']['owner-a:nightly'], $registrations->value['owner-a:nightly'] ?? null );
+	}
+
+	/**
 	 * A row deleted during owner replacement is reinserted from the caller's authoritative state.
 	 *
 	 * @load-bearing concurrency
@@ -348,7 +457,7 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_concurrent_row_deletion_reinserts_only_the_callers_slice(): void {
 		$owner_a = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
 		$owner_b = self::owner_fixture( 'owner-b', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
-		$next_a  = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 600 );
+		$next_a  = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 600 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $owner_a ) );
 		$this->put_fixture( $this->fixtures->schedule_registration( $owner_b ) );
 		$owner_b_raw = $this->raw_row( 'owner-b' );

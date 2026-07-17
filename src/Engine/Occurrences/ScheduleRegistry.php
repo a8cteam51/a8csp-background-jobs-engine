@@ -200,7 +200,17 @@ final class ScheduleRegistry {
 				return false;
 			}
 
-			if ( $owner_registrations === $stored ) {
+			$replacement_registrations = $owner_registrations;
+			$stored_registrations      = self::registrations_from_rows( $owner, $stored );
+			foreach ( $replacement_registrations as $registration_key => $registration ) {
+				$stored_registration = $stored_registrations[ $registration_key ] ?? null;
+				if ( null !== $stored_registration && $registration['fingerprint'] === $stored_registration['fingerprint'] ) {
+					// An unchanged definition retains the freshest delivery fence from the selected generation.
+					$replacement_registrations[ $registration_key ] = $stored_registration;
+				}
+			}
+
+			if ( $replacement_registrations === $stored ) {
 				$this->retain_owner( $owner, $schedules );
 
 				return true;
@@ -232,7 +242,7 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$replacement_raw = self::serialize_registrations( $owner_registrations );
+			$replacement_raw = self::serialize_registrations( $replacement_registrations );
 			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
 				$this->retain_owner( $owner, $schedules );
 
