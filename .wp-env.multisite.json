@@ -8,9 +8,7 @@
     "wp-content/plugins/action-scheduler": "./vendor/wp-plugin/action-scheduler"
   },
   "config": {
-    "WP_DEBUG": true,
     "WP_DEBUG_DISPLAY": false,
-    "WP_DEBUG_LOG": true,
-    "SCRIPT_DEBUG": true
+    "WP_DEBUG_LOG": true
   }
 }
