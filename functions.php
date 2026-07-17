@@ -38,9 +38,10 @@ function a8csp_bgte_plugin(): Plugin {
  * Returns the owner-bound background-work consumer.
  *
  * Available from `init` or later. By `init`, the engine's `plugins_loaded` priority-zero boot has
- * always run in every standard load path. Use the calling plugin's lowercase slug as the owner;
- * owner exclusivity is a consumer convention, while the `a8csp-bgte` prefix is enforced as the
- * engine's reserved namespace.
+ * run in every standard load path; the request that activates the engine is the one exception —
+ * it stays dormant there until the next request. Use the calling plugin's lowercase slug as the
+ * owner; owner exclusivity is a consumer convention, while the `a8csp-bgte` prefix is enforced as
+ * the engine's reserved namespace.
  *
  * @since   1.0.0
  * @version 1.0.0
