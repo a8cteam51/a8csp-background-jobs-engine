@@ -14,6 +14,7 @@ jobs:
   build:
     name: Build the release artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -110,6 +111,7 @@ jobs:
     name: Publish the release
     needs: smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:

@@ -13,10 +13,9 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Start at `site-domain.com/blog`.
-        2. Click on any blog post.
-        3. Click on the 'Like' button.
-        4. ...
+        1. Activate the plugin alongside Action Scheduler.
+        2. Register a recurring task from a consumer plugin.
+        3. ...
 
         Attach any media by drag and dropping or selecting upload.
 
@@ -25,11 +24,25 @@ body:
     attributes:
       label: What you expected to happen
       placeholder: |
-        e.g. The post should be liked.
+        e.g. The task runs on its schedule and shows up in wp background-tasks runs list.
 
   - type: textarea
     id: actual
     attributes:
       label: What actually happened
       placeholder: |
-        e.g. Clicking the button does nothing visibly.
+        e.g. The run never starts and the schedules table shows a growing misfire count.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The versions the bug occurred on, plus anything unusual about the setup (multisite, other plugins involved).
+      placeholder: |
+        - WordPress version:
+        - PHP version:
+        - Action Scheduler version:
+        - Plugin version:
+        - Multisite: yes/no
+    validations:
+      required: true
