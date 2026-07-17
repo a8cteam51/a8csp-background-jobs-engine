@@ -41,16 +41,24 @@ function a8csp_bgte_get_plugin_metadata( $property = null ) {
 	$can_translate = 0 < did_action( 'init' );
 	$cache_key     = $can_translate ? 'translated' : 'raw';
 
-	if ( ! isset( $plugin_data[ $cache_key ] ) ) {
+	if ( isset( $plugin_data[ $cache_key ] ) ) {
+		$metadata = $plugin_data[ $cache_key ];
+	} else {
 		if ( ! \function_exists( 'get_plugin_data' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		$plugin_file               = trailingslashit( WP_PLUGIN_DIR ) . A8CSP_BGTE_BASENAME;
-		$plugin_data[ $cache_key ] = get_plugin_data( $plugin_file, false, $can_translate );
+		$plugin_file = trailingslashit( WP_PLUGIN_DIR ) . A8CSP_BGTE_BASENAME;
+		$metadata    = get_plugin_data( $plugin_file, false, $can_translate );
+
+		// Extra plugin headers registered by other plugins exist only once those plugins have
+		// loaded, and this plugin can load first. A read is therefore cached only from
+		// `plugins_loaded` onward, so an include-time read cannot poison later header reads.
+		if ( 0 < did_action( 'plugins_loaded' ) ) {
+			$plugin_data[ $cache_key ] = $metadata;
+		}
 	}
 
-	$metadata = $plugin_data[ $cache_key ];
 	if ( null === $property ) {
 		return $metadata;
 	}
