@@ -26,7 +26,8 @@ use PHPUnit\Framework\TestCase;
 final class ResetCommandTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string UNRELATED_OPTION = 'consumer_plugin_state';
+	private const string MAINTENANCE_CURSOR_OPTION = 'a8csp_bgte_maintenance_sweep';
+	private const string UNRELATED_OPTION          = 'consumer_plugin_state';
 
 	private EngineRig $rig;
 
@@ -95,6 +96,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
+		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-bgte:maintenance' );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
 		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_TASK_HOOK ]  = 2;
 		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_CHUNK_HOOK ] = 3;

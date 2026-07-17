@@ -50,7 +50,7 @@ final readonly class Runs {
 	 *
 	 * @param   string $name Owner-local task or batch name.
 	 *
-	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
 	 *
 	 * @return  AbstractResult<string|null, ApiError>
 	 */
@@ -72,7 +72,7 @@ final readonly class Runs {
 	 * @param   string $name   Owner-local task or batch name.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
-	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
@@ -90,7 +90,7 @@ final readonly class Runs {
 	 * @param   string $name   Owner-local task or batch name.
 	 * @param   string $run_id Retained run identifier.
 	 *
-	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */

@@ -519,7 +519,7 @@ final readonly class Dispatcher {
 		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Skip === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $task_name, $args_hash );
 			if ( $owner->is_failure() ) {
-				return new Failure( new EngineError( \sprintf( 'Task "%s" could not confirm the owner of a contended overlap lock; repair database writes and retry the dispatch.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ) );
+				return new Failure( new EngineError( \sprintf( 'Task "%s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ) );
 			}
 
 			$running_run_id = $owner->value;

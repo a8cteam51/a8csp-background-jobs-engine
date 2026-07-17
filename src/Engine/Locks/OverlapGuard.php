@@ -38,14 +38,14 @@ final readonly class OverlapGuard {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum malformed lock bytes included in diagnostic context.
+	 * Number of SHA-256 characters retained for malformed-row correlation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	private const int MALFORMED_RAW_BYTES = 200;
+	private const int MALFORMED_RAW_HASH_LENGTH = 16;
 
 	/**
 	 * Prefix for execution-overlap lock option names.
@@ -679,11 +679,12 @@ final readonly class OverlapGuard {
 			$this->logger->warning(
 				'Reclaimed malformed execution-overlap lock.',
 				array(
-					'name'      => $identity,
-					'args_hash' => $args_hash,
-					'malformed' => true,
-					'raw_row'   => \substr( $raw, 0, self::MALFORMED_RAW_BYTES ),
-					'run_id'    => $run_id,
+					'name'       => $identity,
+					'args_hash'  => $args_hash,
+					'malformed'  => true,
+					'raw_length' => \strlen( $raw ),
+					'raw_sha256' => \substr( \hash( 'sha256', $raw ), 0, self::MALFORMED_RAW_HASH_LENGTH ),
+					'run_id'     => $run_id,
 				)
 			);
 		} else {

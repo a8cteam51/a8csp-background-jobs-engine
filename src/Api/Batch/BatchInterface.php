@@ -77,11 +77,13 @@ interface BatchInterface extends WorkInterface {
 	/**
 	 * Processes one queued chunk.
 	 *
-	 * A normal return marks the chunk successful, while throwing marks the attempt failed. Chunk
-	 * execution is at-least-once: queue advancement persists only after this method returns, so a
-	 * process that stops between the chunk's side effects and that persistence redelivers the same
-	 * chunk. Implementations MUST be idempotent per chunk and carry the stable business identifiers
-	 * that let a replayed chunk converge inside the chunk arguments.
+	 * A normal return marks the chunk successful, while throwing marks the attempt failed; process
+	 * death does not automatically redeliver an executing chunk. A process death anywhere between
+	 * durable admission and the queue-advancement CAS after this method returns terminally fails the
+	 * run as a `CrashReclaim` failure, with the in-flight chunk preserved in the failure record;
+	 * `retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers
+	 * only non-executing states (pending, scheduled retry, and continue), which maintenance redrives.
+	 *
 	 * After persisting a retry disposition, the engine dispatches
 	 * `a8csp_background_tasks/retry_scheduled/{identity}` with the exact signature `(string $run_id,
 	 * array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed by

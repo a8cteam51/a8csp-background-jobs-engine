@@ -33,11 +33,11 @@ every surviving component is initialized before any hook can fire.
   ≤97 bytes), `PortableArguments`, the policy enums, and the Task/Batch/Run/Schedule contracts.
   Everything outside `src/Api/` is `@internal`.
 - `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the
-  request-local object graph; `EngineFacade.php`, `Inspection.php`, `Schedules.php`, and
-  `WorkRegistry.php` are the root collaborators; `Backends/` (Action Scheduler preferred,
-  WP-Cron fallback), `Occurrences/` (occurrence delivery and leases), `Locks/`, `Runs/`,
-  `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps on an hourly
-  recurrence), `Logging/`, and `Error/` each own one sub-capability.
+  request-local object graph; `EngineFacade.php`, `Inspection.php`, and `WorkRegistry.php` are the
+  root collaborators; `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Occurrences/`
+  (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
+  `Locks/`, `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
+  on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.
 - `src/CLI/` registers the `wp background-tasks` command surface, gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow
   regenerates it so archives always ship current strings.

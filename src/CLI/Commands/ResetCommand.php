@@ -31,7 +31,8 @@ final readonly class ResetCommand {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Canonical persisted-state prefixes owned by their storage implementations.
+	 * Canonical persisted-state prefixes owned by their storage implementations, plus the
+	 * maintenance sweep's fixed cursor key.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -47,6 +48,7 @@ final readonly class ResetCommand {
 		OverlapGuard::OPTION_PREFIX,
 		OccurrenceLease::OPTION_PREFIX,
 		CleanupIntents::OPTION_PREFIX,
+		'a8csp_bgte_maintenance_sweep',
 	);
 
 	/**

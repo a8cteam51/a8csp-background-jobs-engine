@@ -87,7 +87,7 @@ final readonly class Tasks {
 	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the local name, delay, deduplication key, or priority is invalid, or arguments are not portable.
+	 * @throws  \InvalidArgumentException When the owner/name identity, delay, deduplication key, or priority is invalid, or arguments are not portable.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */

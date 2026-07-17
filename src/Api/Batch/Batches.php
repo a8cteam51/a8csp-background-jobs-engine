@@ -70,7 +70,7 @@ final readonly class Batches {
 	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the local name or priority is invalid, or arguments are not portable.
+	 * @throws  \InvalidArgumentException When the owner/name identity or priority is invalid, or arguments are not portable.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */

@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\InvalidBatchChunkException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -586,6 +587,31 @@ final class FailureLifecycleTest extends TestCase {
 		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
 
 		$this->assert_terminal_task_failure( new InvalidBatchChunkException() );
+	}
+
+	/**
+	 * A batch validation failure retains its engine-authored byte-limit diagnostic.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_batch_validation_exception_retains_its_engine_authored_diagnostic(): void {
+		$batch                    = new RecordingBatch( 'bounded-batch' );
+		$batch->queue             = array( array( 'chunk' => 'current' ) );
+		$batch->retry_policy      = new RetryPolicy( max_attempts: 1 );
+		$batch->process_throwable = new InvalidBatchChunkException( 'Batch chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.' );
+		$this->consumer->batches()->register( $batch );
+		$result = $this->consumer->batches()->start( 'bounded-batch', self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+
+		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		self::assertSame( 'Batch chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
 	}
 
 	// endregion.

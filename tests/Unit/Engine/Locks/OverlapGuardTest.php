@@ -278,8 +278,8 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select', 'update' ), $this->operations() );
 	}
 
-	/** A malformed raw row is not held and is reclaimable with bounded diagnostic context. */
-	public function test_malformed_row_is_consistently_reclaimable_and_logs_a_bounded_snippet(): void {
+	/** A malformed raw row is not held and is reclaimable with redacted correlation facts. */
+	public function test_malformed_row_is_consistently_reclaimable_and_logs_redacted_facts(): void {
 		$logger = new RecordingLogger();
 		$raw    = \str_repeat( 'malformed-', 30 );
 		$this->wpdb->put( self::KEY, $raw );
@@ -296,17 +296,19 @@ final class OverlapGuardTest extends TestCase {
 					'level'   => 'warning',
 					'message' => 'Reclaimed malformed execution-overlap lock.',
 					'context' => array(
-						'name'      => self::NAME,
-						'args_hash' => self::ARGS_HASH,
-						'malformed' => true,
-						'raw_row'   => \substr( $raw, 0, 200 ),
-						'run_id'    => 'run-new',
+						'name'       => self::NAME,
+						'args_hash'  => self::ARGS_HASH,
+						'malformed'  => true,
+						'raw_length' => \strlen( $raw ),
+						'raw_sha256' => \substr( \hash( 'sha256', $raw ), 0, 16 ),
+						'run_id'     => 'run-new',
 					),
 				),
 			),
 			$logger->records
 		);
 		self::assertArrayNotHasKey( 'dead_run_id', $logger->records[0]['context'] );
+		self::assertArrayNotHasKey( 'raw_row', $logger->records[0]['context'] );
 	}
 
 	/** A serialized object is malformed without constructing its class during reclaim. */

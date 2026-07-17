@@ -202,3 +202,35 @@ if ( ! \function_exists( 'delete_option' ) ) {
 		return true;
 	}
 }
+
+if ( ! \function_exists( 'delete_transient' ) ) {
+	/**
+	 * Deletes one option-backed transient and records its name.
+	 *
+	 * @param   string $transient Transient name.
+	 *
+	 * @return  bool
+	 *
+	 * @phpstan-impure
+	 */
+	function delete_transient( $transient ) {
+		/** @var list<string> $calls */
+		$calls   = $GLOBALS['a8csp_bgte_test_delete_transient_calls'] ?? array();
+		$calls[] = $transient;
+
+		/** @var array<string, mixed> $options */
+		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$deleted = false;
+		foreach ( array( '_transient_' . $transient, '_transient_timeout_' . $transient ) as $option_name ) {
+			if ( \array_key_exists( $option_name, $options ) ) {
+				unset( $options[ $option_name ] );
+				$deleted = true;
+			}
+		}
+
+		$GLOBALS['a8csp_bgte_test_delete_transient_calls'] = $calls;
+		$GLOBALS['a8csp_bgte_test_options']                = $options;
+
+		return $deleted;
+	}
+}

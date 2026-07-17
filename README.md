@@ -46,6 +46,8 @@ Network activation is supported, and each site operates its own isolated engine 
 
 Per-site pattern: enter each site through a fresh request or execution context, then resolve its consumer and operate there; do not call engine APIs after switching blogs inside an existing context. Network uninstall sweeps the engine's options and pending backend work from every site.
 
+Action Scheduler cleanup requires its complete four-table schema; incomplete or migrated stores are left untouched.
+
 ## Quick start
 
 In a consumer plugin under its own namespace, register the Task and Batch implementations and synchronize the owner's complete schedule declaration from `init`:
@@ -221,7 +223,7 @@ interface TaskInterface extends WorkInterface {
 
 ### Batch and batch context
 
-`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives a terminal callback after the run completes or fails, and supplies the retry policy used independently for each failed chunk. Chunk execution is at-least-once: queue advancement persists only after `process_chunk()` returns, so a crash in between redelivers the same chunk, and implementations converge replays through stable business identifiers carried in the chunk arguments. Terminal callbacks are likewise at-least-once across crash recovery — durable under Action Scheduler, best-effort under the WP-Cron fallback, whose sweeps only run while site traffic triggers them: a process can stop after the callback returns but before its completion marker persists, so implementations use the run ID to converge a replay. Cancellation and supersession invoke neither callback.
+`BatchInterface` declares a per-invocation runtime ceiling, generates initial chunks, processes one chunk at a time, receives a terminal callback after the run completes or fails, and supplies the retry policy used independently for each failed chunk. Chunk execution is not automatically redelivered after an executing-state crash. A process death anywhere between durable admission and the queue-advancement CAS after `process_chunk()` returns terminally fails the run as a `CrashReclaim` failure, with the in-flight chunk preserved in the failure record; `retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers only non-executing states (pending, scheduled retry, and continue), which maintenance redrives. Terminal callbacks are likewise at-least-once across crash recovery while the Batch remains registered — durable under Action Scheduler, best-effort under the WP-Cron fallback, whose sweeps only run while site traffic triggers them: a process can stop after the callback returns but before its completion marker persists, so implementations use the run ID to converge a replay. Cancellation and supersession invoke neither callback.
 
 ```php
 interface BatchInterface extends WorkInterface {
@@ -327,6 +329,8 @@ For each lifecycle pair, the identity-specific hook fires first and the generic 
 
 Run IDs, identities, owners, and log fields are strings; attempt, delay, and misfire timestamps are integers; argument and log-context payloads are arrays. `RunFailure` is the persisted terminal failure value. Misfire-skipped hooks fire only when `CatchUpPolicy::Skip` drops a beyond-grace occurrence.
 
+A `started` or `retry_scheduled` listener that throws terminally fails the admitted run with `ExecutionFailed`; the run remains retained for `retry_failed()`.
+
 Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start_batch`, `a8csp_background_tasks/continue_batch`, `a8csp_background_tasks/run_task`, `a8csp_background_tasks/run_chunk`, `a8csp_background_tasks/cleanup_batch`, or `a8csp_background_tasks/schedule_due`.
 
 | Filter | Input and required return |
@@ -369,7 +373,9 @@ Priority is an integer from 0 through 255 and defaults to 10. Action Scheduler r
 
 `$consumer->schedules()->sync( $schedules )` converges the bound owner's complete declaration. No public Schedule method accepts an owner, so a consumer cannot synchronize another consumer's or the engine's schedules. Synchronization targets only engine-owned `a8csp_background_tasks/schedule_due` occurrences identified by the composed schedule identity, so it does not mutate foreign WP-Cron events or Action Scheduler actions.
 
-Use a stable owner slug and pass every schedule owned by that consumer on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration and self-removes when that backend delivers it.
+Use a stable owner slug and pass every schedule owned by that consumer on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration, and its removal is eventual: a durable cleanup intent converges it at delivery or through hourly maintenance.
+
+On consumer deactivation, call `$consumer->schedules()->sync( array() )`. Otherwise its registrations persist and their occurrences keep firing.
 
 Action Scheduler becomes writable after `action_scheduler_init`, normally during `init` at priority 1. Synchronizing before that action fires routes occurrences to WP-Cron for that request; schedule the consumer callback after Action Scheduler's priority-1 initialization when that backend is required.
 
@@ -389,9 +395,9 @@ Each history buffer retains at most the positive `a8csp_background_tasks/history
 
 A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total, including the first, a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw `NonRetryableException`, or another exception implementing `NonRetryableExceptionInterface`, to bypass the remaining attempts for a permanent failure.
 
-After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch `on_failed()` callback where applicable, followed by the failed hooks. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
+After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch `on_failed()` callback where applicable, followed by the failed hooks. The documented terminal-effect order holds per attempt. When an effect throws, maintenance replay retries it and continues past it, so later effects can land before the replayed effect succeeds. The failed store retains at most the 20 most recent terminal failures per identity for manual retry; older entries are evicted oldest-first, and the eviction is logged. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
 
-Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks runs cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. Cancellation is refused while an admitted lifecycle action is executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
+Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks runs cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. A Batch persists its non-executing state before `started` and `retry_scheduled` listeners run, so cancellation can succeed during those listeners; the run then stops at its next fence. Cancellation is refused while the persisted state marks the run as executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
 
 Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking consumer work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_completed()` nor `on_failed()`.
 

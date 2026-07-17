@@ -122,7 +122,7 @@ final readonly class FailureLifecycle {
 
 		$attempts_used = $state->failed_attempts + 1;
 		$error         = 'Batch' === $work_type && $throwable instanceof InvalidBatchChunkException
-			? new EngineError( InvalidBatchChunkException::MESSAGE, \InvalidArgumentException::class )
+			? new EngineError( $throwable->getMessage(), \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
 			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );

@@ -45,11 +45,10 @@ jobs:
           coverage: none
           tools: none
 
-      # Only the entry file and functions-bootstrap.php must parse below the plugin's PHP
-      # floor; functions.php, uninstall.php, and index.php load after the requirements gate
-      # and are excluded. Discover the entry by its WordPress "Plugin Name:" header because its
-      # filename is repository-specific. functions-bootstrap.php shares the below-floor constraint
-      # but lacks the plugin header, so lint it explicitly to keep it inside this matrix.
+      # Lint the files that can parse on a below-floor host: the entry file,
+      # functions-bootstrap.php, and uninstall.php. functions.php and index.php load only after
+      # the requirements gate. Discover the entry by its WordPress "Plugin Name:" header because
+      # its filename is repository-specific.
       - name: Check the below-floor files for syntax errors
         run: |
           set -euo pipefail
@@ -62,6 +61,7 @@ jobs:
           fi
           php -l "${entry_files[0]}"
           php -l "$GITHUB_WORKSPACE/functions-bootstrap.php"
+          php -l "$GITHUB_WORKSPACE/uninstall.php"
 
   changelog:
     name: Changelog

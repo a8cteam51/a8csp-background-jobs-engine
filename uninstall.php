@@ -13,9 +13,9 @@
 \defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 /*
- * The plugin's persisted footprint. Every fixed option and user-meta key any component writes
- * is listed here, in the same change that introduces the write. Runtime-suffixed option families
- * use the prefix sweep below.
+ * The plugin's persisted footprint. Fixed option and user-meta keys outside the reserved-prefix
+ * option sweep are listed here. Options within the a8csp_bgte_ ownership boundary use the sweep
+ * below.
  */
 $a8csp_bgte_footprint = array(
 	'options'   => array(),
@@ -52,6 +52,9 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 	 *
 	 * @var wpdb $wpdb
 	 */
+	delete_transient( 'a8csp_bgte_github_latest_release_stable' );
+	delete_transient( 'a8csp_bgte_github_latest_release_prerelease' );
+
 	$a8csp_bgte_option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
 
 	foreach ( $a8csp_bgte_option_names as $a8csp_bgte_option_name ) {
@@ -137,11 +140,15 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 		)
 	);
 	if ( false === $wpdb->query( $a8csp_bgte_log_delete_query ) ) { // @phpstan-ignore argument.type
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
+		\error_log( 'a8csp-background-tasks-engine: uninstall left Action Scheduler actions and logs behind; actionscheduler_logs table delete failed.' );
 		return;
 	}
 
 	$a8csp_bgte_action_delete_query = $wpdb->prepare( 'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) );
 	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) ) { // @phpstan-ignore argument.type
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
+		\error_log( 'a8csp-background-tasks-engine: uninstall left Action Scheduler actions behind; actionscheduler_actions table delete failed.' );
 		return;
 	}
 
@@ -156,6 +163,8 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 			)
 		);
 		if ( false === $wpdb->query( $a8csp_bgte_claim_delete_query ) ) { // @phpstan-ignore argument.type
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
+			\error_log( 'a8csp-background-tasks-engine: uninstall left orphaned Action Scheduler claims behind; actionscheduler_claims table delete failed.' );
 			return;
 		}
 	}

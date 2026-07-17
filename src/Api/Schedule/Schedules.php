@@ -43,7 +43,7 @@ final readonly class Schedules {
 	 *
 	 * @param   array<Schedule> $schedules Complete schedule declaration for the bound owner.
 	 *
-	 * @throws  \InvalidArgumentException When an entry, name, target, or declaration uniqueness is invalid.
+	 * @throws  \InvalidArgumentException When an entry, owner/name identity, owner/target identity, or declaration uniqueness is invalid.
 	 *
 	 * @return  AbstractResult<true, ApiError>
 	 */
@@ -77,7 +77,7 @@ final readonly class Schedules {
 	 *
 	 * @param   string $name Owner-local schedule name.
 	 *
-	 * @throws  \InvalidArgumentException When the local name violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
