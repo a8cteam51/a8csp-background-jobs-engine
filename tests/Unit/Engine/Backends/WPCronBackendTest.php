@@ -67,6 +67,7 @@ final class WPCronBackendTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = false;
 		$GLOBALS['a8csp_bgte_test_hooks']                       = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations']        = array();
+		$GLOBALS['a8csp_bgte_test_get_option']                  = null;
 	}
 
 	// endregion.
@@ -162,6 +163,50 @@ final class WPCronBackendTest extends TestCase {
 		self::assertSame( ApiErrorCode::BackendRejected, $public->error->code );
 		self::assertArrayNotHasKey( 'wp_error', $public->error->context );
 		self::assertStringNotContainsString( $secret, $public->error->message );
+	}
+
+	/**
+	 * Synthetic interval discovery reads persisted cron once until a new request interval invalidates it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_synthetic_interval_discovery_is_cached_and_invalidated_by_registration(): void {
+		$cron_reads = 0;
+		$stored     = array(
+			1_700_000_000 => array(
+				'persisted_hook' => array(
+					array(
+						'schedule' => 'a8csp_bgte_every_300s',
+						'args'     => array(),
+					),
+				),
+			),
+		);
+
+		$GLOBALS['a8csp_bgte_test_get_option'] = static function ( string $option, mixed $default_value ) use ( &$cron_reads, $stored ): mixed {
+			if ( 'cron' !== $option ) {
+				return $default_value;
+			}
+
+			++$cron_reads;
+
+			return $stored;
+		};
+
+		$backend = new WPCronBackend();
+		self::assertArrayHasKey( 'a8csp_bgte_every_300s', $backend->register_synthetic_schedules( array() ) );
+		self::assertArrayHasKey( 'a8csp_bgte_every_300s', $backend->register_synthetic_schedules( array() ) );
+		self::assertSame( 1, $cron_reads, 'Repeated cron_schedules evaluations must reuse the request snapshot' );
+
+		self::assertInstanceOf( Success::class, $backend->schedule_recurring( self::HOOK, 600, array(), 1_700_000_600 ) );
+		$schedules = $backend->register_synthetic_schedules( array() );
+
+		self::assertArrayHasKey( 'a8csp_bgte_every_300s', $schedules );
+		self::assertArrayHasKey( 'a8csp_bgte_every_600s', $schedules );
+		self::assertSame( 2, $cron_reads, 'Registering a new interval must invalidate and rebuild the request snapshot once' );
 	}
 
 	// endregion.

@@ -72,6 +72,16 @@ final class WPCronBackend implements BackendInterface {
 	private array $registered_intervals = array();
 
 	/**
+	 * Request-local active interval snapshot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     list<int>|null
+	 */
+	private ?array $active_intervals_cache = null;
+
+	/**
 	 * Whether this instance has registered its schedule filter.
 	 *
 	 * @since   1.0.0
@@ -333,7 +343,10 @@ final class WPCronBackend implements BackendInterface {
 	 * @return  string
 	 */
 	private function ensure_schedule( int $interval ): string {
-		$this->registered_intervals[ $interval ] = true;
+		if ( ! isset( $this->registered_intervals[ $interval ] ) ) {
+			$this->registered_intervals[ $interval ] = true;
+			$this->active_intervals_cache            = null;
+		}
 		$this->register_hooks();
 
 		return $this->schedule_name( $interval );
@@ -362,6 +375,10 @@ final class WPCronBackend implements BackendInterface {
 	 * @return  list<int>
 	 */
 	private function active_intervals(): array {
+		if ( null !== $this->active_intervals_cache ) {
+			return $this->active_intervals_cache;
+		}
+
 		$intervals = $this->registered_intervals;
 
 		foreach ( $this->cron_array() as $hooks ) {
@@ -392,7 +409,9 @@ final class WPCronBackend implements BackendInterface {
 		$active = \array_keys( $intervals );
 		\sort( $active, SORT_NUMERIC );
 
-		return $active;
+		$this->active_intervals_cache = $active;
+
+		return $this->active_intervals_cache;
 	}
 
 	/**

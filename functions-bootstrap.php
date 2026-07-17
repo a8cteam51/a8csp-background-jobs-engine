@@ -100,6 +100,95 @@ function a8csp_bgte_get_plugin_version() {
 }
 
 /**
+ * Filters the update-check result for this plugin against its GitHub releases.
+ *
+ * A prerelease installation follows every published release; a stable installation follows only
+ * the stable channel, which the latest-release endpoint provides by definition.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   array<string, mixed>|false                 $update      The pending update data, or false when none is known yet.
+ * @param   array{Version: string, TextDomain: string} $plugin_data The plugin's header data.
+ * @param   string                                     $plugin_file The plugin file being checked.
+ *
+ * @return  array<string, mixed>|false
+ */
+function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_file ) {
+	if ( \constant( 'A8CSP_BGTE_BASENAME' ) !== $plugin_file || false !== $update ) {
+		return $update;
+	}
+
+	$prerelease_channel  = \str_contains( (string) ( $plugin_data['Version'] ?? '' ), '-' );
+	$transient_key       = 'a8csp_bgte_github_latest_release_' . ( $prerelease_channel ? 'prerelease' : 'stable' );
+	$latest_release_info = get_transient( $transient_key );
+	if ( false === $latest_release_info ) {
+		$release_url_path    = $prerelease_channel ? 'releases?per_page=10' : 'releases/latest';
+		$response            = wp_remote_get( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/' . $release_url_path );
+		$latest_release_info = is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ? array() : \json_decode( wp_remote_retrieve_body( $response ), true );
+	}
+
+	if ( ! \is_array( $latest_release_info ) ) {
+		$latest_release_info = array();
+	}
+
+	if ( array() !== $latest_release_info && \array_is_list( $latest_release_info ) ) {
+		// The release list arrives newest first; the first non-draft entry is the channel's latest.
+		$channel_latest = null;
+		foreach ( $latest_release_info as $release_candidate ) {
+			if ( \is_array( $release_candidate ) && true !== ( $release_candidate['draft'] ?? null ) ) {
+				$channel_latest = $release_candidate;
+				break;
+			}
+		}
+
+		$latest_release_info = \is_array( $channel_latest ) ? $channel_latest : array();
+	}
+
+	$release_tag    = $latest_release_info['tag_name'] ?? null;
+	$release_url    = $latest_release_info['html_url'] ?? null;
+	$release_assets = $latest_release_info['assets'] ?? null;
+
+	$release_asset = null;
+	foreach ( \is_array( $release_assets ) ? $release_assets : array() as $asset ) {
+		if ( ! \is_array( $asset ) ) {
+			continue;
+		}
+
+		$asset_name = $asset['name'] ?? null;
+		if ( 'a8csp-background-tasks-engine.zip' !== $asset_name ) {
+			continue;
+		}
+
+		$release_asset = $asset['browser_download_url'] ?? null;
+		break;
+	}
+
+	$release_is_usable = \is_string( $release_tag ) && \is_string( $release_url ) && \is_string( $release_asset );
+	if ( isset( $response ) ) {
+		set_transient( $transient_key, $release_is_usable ? $latest_release_info : array(), $release_is_usable ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS );
+	}
+
+	if ( ! $release_is_usable ) {
+		return false;
+	}
+
+	$latest_release_version = \ltrim( $release_tag, 'v' );
+	if ( \version_compare( $plugin_data['Version'], $latest_release_version, '<' ) ) {
+		$update = array(
+			'slug'    => $plugin_data['TextDomain'],
+			'version' => $latest_release_version,
+			'url'     => $release_url,
+			'package' => $release_asset,
+		);
+	} else {
+		$update = false;
+	}
+
+	return $update;
+}
+
+/**
  * Checks compatibility with the current WordPress version.
  *
  * @param   string $min_wp_version The minimum WP version required to run.
@@ -166,7 +255,7 @@ function a8csp_bgte_validate_requirements() {
  */
 function a8csp_bgte_output_requirements_error( $error ) {
 	add_action(
-		'admin_notices',
+		'all_admin_notices',
 		static function () use ( $error ) {
 			if ( ! current_user_can( 'activate_plugins' ) ) {
 				return;

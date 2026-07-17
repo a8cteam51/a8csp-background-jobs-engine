@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
@@ -15,38 +16,16 @@ use PHPUnit\Framework\TestCase;
  */
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
+#[CoversFunction( 'a8csp_bgte_check_github_release_update' )]
 final class GitHubUpdateCheckTest extends TestCase {
-	private const API_URL       = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases/latest';
-	private const PLUGIN_FILE   = 'a8csp-background-tasks-engine/a8csp-background-tasks-engine.php';
-	private const TRANSIENT_KEY = 'a8csp_bgte_github_latest_release';
+	private const API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10';
+	private const API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases/latest';
+	private const PLUGIN_FILE              = 'a8csp-background-tasks-engine/a8csp-background-tasks-engine.php';
+	private const TRANSIENT_KEY_PRERELEASE = 'a8csp_bgte_github_latest_release_prerelease';
+	private const TRANSIENT_KEY_STABLE     = 'a8csp_bgte_github_latest_release_stable';
 
 	/**
-	 * Loads the plugin entry file with guarded WordPress API stubs.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once __DIR__ . '/wp-time-constant-stubs.php';
-		require_once __DIR__ . '/wp-update-stubs.php';
-
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']          = array();
-
-		require_once \dirname( __DIR__, 2 ) . '/a8csp-background-tasks-engine.php';
-	}
-
-	/**
-	 * Resets HTTP scripts, request records, and the transient store.
+	 * Loads the named bootstrap helper with guarded WordPress API stubs and clean transient state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -57,9 +36,21 @@ final class GitHubUpdateCheckTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
+		if ( ! \defined( 'ABSPATH' ) ) {
+			\define( 'ABSPATH', __DIR__ . '/' );
+		}
+		if ( ! \defined( 'A8CSP_BGTE_BASENAME' ) ) {
+			\define( 'A8CSP_BGTE_BASENAME', self::PLUGIN_FILE );
+		}
+
+		require_once __DIR__ . '/wp-time-constant-stubs.php';
+		require_once __DIR__ . '/wp-update-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/functions-bootstrap.php';
+
 		$GLOBALS['a8csp_bgte_test_remote_requests']     = array();
 		$GLOBALS['a8csp_bgte_test_set_transient_calls'] = array();
 		$GLOBALS['a8csp_bgte_test_transients']          = array();
+		unset( $GLOBALS['a8csp_bgte_test_remote_response'] );
 	}
 
 	/**
@@ -83,11 +74,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 			),
 			$this->apply_update_filter( '1.0.0' )
 		);
-		self::assertSame( array( self::API_URL ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
 		self::assertSame(
 			array(
 				array(
-					'transient'  => self::TRANSIENT_KEY,
+					'transient'  => self::TRANSIENT_KEY_STABLE,
 					'value'      => $release,
 					'expiration' => \HOUR_IN_SECONDS,
 				),
@@ -154,11 +145,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 			),
 			$this->apply_update_filter( '1.0.0-beta.1' )
 		);
-		self::assertSame( array( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10' ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_PRERELEASE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
 		self::assertSame(
 			array(
 				array(
-					'transient'  => self::TRANSIENT_KEY,
+					'transient'  => self::TRANSIENT_KEY_PRERELEASE,
 					'value'      => $beta,
 					'expiration' => \HOUR_IN_SECONDS,
 				),
@@ -180,7 +171,34 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 		$this->apply_update_filter( '1.0.0' );
 
-		self::assertSame( array( self::API_URL ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+	}
+
+	/**
+	 * Stable and prerelease checks cannot reuse each other's cached channel response.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_stable_and_prerelease_channels_use_separate_caches(): void {
+		$stable = $this->release( 'v1.1.0' );
+		$beta   = $this->release( 'v1.2.0-beta.1' );
+
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $stable );
+		$this->apply_update_filter( '1.0.0' );
+
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $beta ) );
+		$this->apply_update_filter( '1.1.0-beta.1' );
+
+		$transient_calls = $GLOBALS['a8csp_bgte_test_set_transient_calls'] ?? null;
+		self::assertIsArray( $transient_calls );
+		self::assertSame( array( self::API_URL_STABLE, self::API_URL_PRERELEASE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame(
+			array( self::TRANSIENT_KEY_STABLE, self::TRANSIENT_KEY_PRERELEASE ),
+			\array_column( $transient_calls, 'transient' )
+		);
 	}
 
 	/**
@@ -280,7 +298,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
-	 * Applies the production callback through WordPress's registered filter path.
+	 * Applies the production updater helper.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -290,7 +308,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 * @return  false|array<string, mixed>
 	 */
 	private function apply_update_filter( string $installed_version ): false|array {
-		$result = \apply_filters( 'update_plugins_github.com', false, $this->plugin_data( $installed_version ), self::PLUGIN_FILE );
+		$result = \a8csp_bgte_check_github_release_update( false, $this->plugin_data( $installed_version ), self::PLUGIN_FILE );
 		if ( false === $result ) {
 			return false;
 		}
@@ -392,7 +410,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'transient'  => self::TRANSIENT_KEY,
+					'transient'  => self::TRANSIENT_KEY_STABLE,
 					'value'      => array(),
 					'expiration' => 5 * \MINUTE_IN_SECONDS,
 				),

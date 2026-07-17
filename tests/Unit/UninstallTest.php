@@ -137,6 +137,13 @@ final class UninstallWpdbSpy {
 	public function get_col( string $query ): array {
 		$this->column_queries[] = $query;
 
+		if ( \str_contains( $query, 'claim_id' ) ) {
+			/** @var list<mixed> $claim_ids */
+			$claim_ids = $GLOBALS['a8csp_bgte_test_uninstall_claim_ids'] ?? array();
+
+			return $claim_ids;
+		}
+
 		if ( \str_contains( $query, 'group_id' ) ) {
 			/** @var list<mixed> $group_ids */
 			$group_ids = $GLOBALS['a8csp_bgte_test_uninstall_group_ids'] ?? array();
@@ -214,6 +221,7 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
 		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
 		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
+		$GLOBALS['a8csp_bgte_test_uninstall_claim_ids'] = array( '11' );
 		$GLOBALS['a8csp_bgte_test_uninstall_group_ids'] = array( '7' );
 		$GLOBALS['wpdb']                                = new UninstallWpdbSpy();
 
@@ -249,10 +257,11 @@ final class UninstallTest extends TestCase {
 			self::prepared_matching( $wpdb, 'option_name' )
 		);
 
-		self::assertCount( 3, $wpdb->write_queries, 'Cold cleanup must delete logs, actions, and orphaned groups' );
+		self::assertCount( 4, $wpdb->write_queries, 'Cold cleanup must delete logs, actions, orphaned claims, and orphaned groups' );
 		self::assertStringContainsString( '`action_id` IN', $wpdb->write_queries[0] );
 		self::assertStringContainsString( '`hook` IN', $wpdb->write_queries[1] );
-		self::assertStringContainsString( '`group_id` IN', $wpdb->write_queries[2] );
+		self::assertStringContainsString( '`claim_id` IN', $wpdb->write_queries[2] );
+		self::assertStringContainsString( '`group_id` IN', $wpdb->write_queries[3] );
 		self::assertSame(
 			array(
 				array(
@@ -263,7 +272,17 @@ final class UninstallTest extends TestCase {
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
 			'The action delete must be scoped to exactly the six engine hooks'
 		);
-		self::assertStringContainsString( 'NOT IN (SELECT `group_id` FROM %i)', $wpdb->write_queries[2], 'Group deletion must keep any group still referenced by surviving actions' );
+		self::assertSame(
+			array(
+				array(
+					'query' => 'DELETE FROM %i WHERE `claim_id` IN (%d) AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
+					'args'  => array( array( 'wp_actionscheduler_claims', 11, 'wp_actionscheduler_actions' ) ),
+				),
+			),
+			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `claim_id` IN' ),
+			'Claim deletion must stay scoped to engine claim IDs and preserve claims referenced by surviving actions'
+		);
+		self::assertStringContainsString( 'NOT IN (SELECT `group_id` FROM %i)', $wpdb->write_queries[3], 'Group deletion must keep any group still referenced by surviving actions' );
 	}
 
 	/**
@@ -288,6 +307,7 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_array']               = array();
 		$GLOBALS['a8csp_bgte_test_cron_calls']               = array();
 		$GLOBALS['a8csp_bgte_test_cron_event_sequence']      = 0;
+		$GLOBALS['a8csp_bgte_test_uninstall_claim_ids']      = array( '11' );
 		$GLOBALS['a8csp_bgte_test_uninstall_group_ids']      = array( '7' );
 		$GLOBALS['a8csp_bgte_test_uninstall_missing_tables'] = array( 'actionscheduler_groups' );
 		$GLOBALS['wpdb']                                     = new UninstallWpdbSpy();
@@ -328,6 +348,7 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
 		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
 		$GLOBALS['a8csp_bgte_test_cron_site_calls']     = array();
+		$GLOBALS['a8csp_bgte_test_uninstall_claim_ids'] = array( '11' );
 		$GLOBALS['a8csp_bgte_test_uninstall_group_ids'] = array( '7' );
 		$GLOBALS['wpdb']                                = new UninstallWpdbSpy();
 
@@ -384,7 +405,21 @@ final class UninstallTest extends TestCase {
 			self::prepared_matching( $wpdb, 'option_name' )
 		);
 
-		self::assertCount( 6, $wpdb->write_queries, 'Cold cleanup must run its three deletes on every network site' );
+		self::assertCount( 8, $wpdb->write_queries, 'Cold cleanup must run its four deletes on every network site' );
+		self::assertSame(
+			array(
+				array(
+					'query' => 'DELETE FROM %i WHERE `claim_id` IN (%d) AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
+					'args'  => array( array( 'wp_actionscheduler_claims', 11, 'wp_actionscheduler_actions' ) ),
+				),
+				array(
+					'query' => 'DELETE FROM %i WHERE `claim_id` IN (%d) AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
+					'args'  => array( array( 'wp_2_actionscheduler_claims', 11, 'wp_2_actionscheduler_actions' ) ),
+				),
+			),
+			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `claim_id` IN' ),
+			'Each site must delete only orphaned engine claims from its own site-prefixed store'
+		);
 		self::assertSame(
 			array(
 				array(

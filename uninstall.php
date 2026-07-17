@@ -93,9 +93,18 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 	// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- IN-list placeholders are array_fill()-built literals; every value still binds through prepare().
 
 	/*
-	 * Candidate group IDs must be captured before their matching actions disappear. The final
-	 * unreferenced check keeps groups shared with surviving foreign actions structurally out of scope.
+	 * Candidate claim and group IDs must be captured before their matching actions disappear. The
+	 * final unreferenced checks keep rows shared with surviving foreign actions out of scope.
 	 */
+	$a8csp_bgte_claim_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `claim_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
+	$a8csp_bgte_claim_ids     = array();
+	foreach ( $a8csp_bgte_claim_id_rows as $a8csp_bgte_claim_id ) {
+		$a8csp_bgte_claim_id = (int) $a8csp_bgte_claim_id;
+		if ( 0 < $a8csp_bgte_claim_id ) {
+			$a8csp_bgte_claim_ids[] = $a8csp_bgte_claim_id;
+		}
+	}
+
 	$a8csp_bgte_group_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
 	$a8csp_bgte_group_ids     = array();
 	foreach ( $a8csp_bgte_group_id_rows as $a8csp_bgte_group_id ) {
@@ -124,7 +133,26 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 	}
 
 	$a8csp_bgte_action_delete_query = $wpdb->prepare( 'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) );
-	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) || array() === $a8csp_bgte_group_ids ) { // @phpstan-ignore argument.type
+	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) ) { // @phpstan-ignore argument.type
+		return;
+	}
+
+	if ( array() !== $a8csp_bgte_claim_ids ) {
+		$a8csp_bgte_claim_placeholders = \implode( ', ', \array_fill( 0, \count( $a8csp_bgte_claim_ids ), '%d' ) );
+		$a8csp_bgte_claim_delete_query = $wpdb->prepare(
+			'DELETE FROM %i WHERE `claim_id` IN (' . $a8csp_bgte_claim_placeholders . ') AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
+			\array_merge(
+				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_claims'] ),
+				$a8csp_bgte_claim_ids,
+				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] )
+			)
+		);
+		if ( false === $wpdb->query( $a8csp_bgte_claim_delete_query ) ) { // @phpstan-ignore argument.type
+			return;
+		}
+	}
+
+	if ( array() === $a8csp_bgte_group_ids ) {
 		return;
 	}
 
