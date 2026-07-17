@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
@@ -49,7 +49,7 @@ final class RunStoreTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -84,10 +84,10 @@ final class RunStoreTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->task     = new RecordingTask( self::NAME );
-		$this->consumer->tasks()->register( $this->task );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->client->tasks()->register( $this->task );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -126,7 +126,7 @@ final class RunStoreTest extends TestCase {
 		$this->task->on_handle = function () use ( &$during_callback ): void {
 			$during_callback = $this->single_live_run();
 		};
-		$result                = $this->consumer->tasks()->enqueue( self::NAME, self::ARGS );
+		$result                = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$queued = $this->single_live_run();
@@ -158,7 +158,7 @@ final class RunStoreTest extends TestCase {
 		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
 		$this->task->throwable          = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
-		$result                         = $this->consumer->tasks()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->rig->run_due();

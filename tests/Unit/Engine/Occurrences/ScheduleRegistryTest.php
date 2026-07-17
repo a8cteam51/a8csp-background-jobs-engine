@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
@@ -41,8 +41,8 @@ final class ScheduleRegistryTest extends TestCase {
 
 	private const int NOW = 1_700_000_000;
 
-	private Consumer $consumer_a;
-	private Consumer $consumer_b;
+	private Client $client_a;
+	private Client $client_b;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -76,11 +76,11 @@ final class ScheduleRegistryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig        = EngineRig::set_up( self::NOW );
-		$this->consumer_a = $this->rig->consumer( 'owner-a' );
-		$this->consumer_b = $this->rig->consumer( 'owner-b' );
-		$this->consumer_a->tasks()->register( new RecordingTask( 'refresh-index' ) );
-		$this->consumer_b->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->client_a = $this->rig->client( 'owner-a' );
+		$this->client_b = $this->rig->client( 'owner-b' );
+		$this->client_a->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$this->client_b->tasks()->register( new RecordingTask( 'refresh-index' ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -117,8 +117,8 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_owner_sync_and_removal_are_visible_through_schedule_inspection(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
-		self::assertInstanceOf( Success::class, $this->consumer_b->schedules()->sync( array( $hourly ) ) );
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $nightly ) ) );
+		self::assertInstanceOf( Success::class, $this->client_b->schedules()->sync( array( $hourly ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $nightly ) ) );
 
 		$owner_a = $this->owner_entries( 'owner-a' );
 		$owner_b = $this->owner_entries( 'owner-b' );
@@ -129,12 +129,12 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( 3_600, $owner_b[0]['recurrence'] );
 
 		$replacement = self::schedule( 'nightly', 600 );
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $replacement ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $replacement ) ) );
 		$owner_a = $this->owner_entries( 'owner-a' );
 		self::assertSame( 600, $owner_a[0]['recurrence'] );
 		self::assertSame( self::NOW + 600, $owner_a[0]['next_due'] );
 
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array() ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array() ) );
 		self::assertSame( array(), $this->owner_entries( 'owner-a' ) );
 		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'name' ) );
 	}
@@ -150,8 +150,8 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_owner_sync_persists_one_registration_row_per_owner(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
-		self::assertInstanceOf( Success::class, $this->consumer_b->schedules()->sync( array( $hourly ) ) );
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $nightly ) ) );
+		self::assertInstanceOf( Success::class, $this->client_b->schedules()->sync( array( $hourly ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $nightly ) ) );
 
 		$owner_a = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgte_schedule_registrations_owner-a'] ?? null );
 		$owner_b = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgte_schedule_registrations_owner-b'] ?? null );
@@ -174,7 +174,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_occurrence_delivery_advances_registration_effects_behaviorally(): void {
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
 
 		$this->rig->run_due();
 
@@ -195,9 +195,9 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_numeric_owner_and_schedule_components_remain_canonical_strings(): void {
-		$consumer = $this->rig->consumer( '123' );
-		$consumer->tasks()->register( new RecordingTask( 'refresh-index' ) );
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( self::schedule( '456', 300 ) ) ) );
+		$client = $this->rig->client( '123' );
+		$client->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( self::schedule( '456', 300 ) ) ) );
 
 		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'name' ) );
 	}
@@ -215,7 +215,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_malformed_registry_rows_are_tolerated_without_constructing_classes(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( $schedule ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $schedule ) ) );
 		$raw = \maybe_serialize(
 			array(
 				'owner-a:nightly' => self::registration( $schedule, self::NOW + 300 ),
@@ -242,7 +242,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sync_reports_authoritative_read_failure_without_changing_registry_bytes(): void {
-		self::assertInstanceOf( Success::class, $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) ) );
 		$option_name = ScheduleRegistry::option_name( 'owner-a' );
 		$before      = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 		self::assertIsString( $before );
@@ -255,7 +255,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->backend()->calls         = array();
 
-		$result = $this->consumer_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
+		$result = $this->client_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );

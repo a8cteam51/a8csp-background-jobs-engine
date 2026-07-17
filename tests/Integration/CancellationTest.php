@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\Group;
 final class CancellationTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Consumer owner isolated to cancellation coverage. */
+	/** Client owner isolated to cancellation coverage. */
 	private const string OWNER = 'integration-cancellation';
 
 	/** Task identity isolated to the executing-refusal race. */
@@ -72,11 +72,11 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 41 );
 		$task = new RecordingTask( self::EXECUTING_NAME );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::EXECUTING_IDENTITY );
 
-		$enqueued = $consumer->tasks()->enqueue( self::EXECUTING_NAME, $args );
+		$enqueued = $client->tasks()->enqueue( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id    = $enqueued->value;
@@ -87,10 +87,10 @@ final class CancellationTest extends IntegrationTestCase {
 		$observed_status = null;
 		$observed_state  = null;
 		$cancel_result   = null;
-		$task->on_handle = static function ( array $received_args ) use ( $action_id, $consumer, $run_id, $store, &$cancel_result, &$observed_state, &$observed_status ): void {
+		$task->on_handle = static function ( array $received_args ) use ( $action_id, $client, $run_id, $store, &$cancel_result, &$observed_state, &$observed_status ): void {
 			$observed_status = $store->get_status( $action_id );
 			$observed_state  = \get_option( 'a8csp_bgte_run_' . self::EXECUTING_IDENTITY . '_' . $run_id, null );
-			$cancel_result   = $consumer->runs()->cancel( self::EXECUTING_NAME, $run_id );
+			$cancel_result   = $client->runs()->cancel( self::EXECUTING_NAME, $run_id );
 		};
 
 		$completed_action_ids = array();
@@ -143,11 +143,11 @@ final class CancellationTest extends IntegrationTestCase {
 		$task->throwable    = new \RuntimeException( 'Retry after the upstream recovers.' );
 		$task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BACKOFF_IDENTITY );
 
-		$enqueued = $consumer->tasks()->enqueue( self::BACKOFF_NAME, $args );
+		$enqueued = $client->tasks()->enqueue( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id            = $enqueued->value;
@@ -166,7 +166,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( 2, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The persisted backoff window must be cancellable' );
 
-		$cancelled = $consumer->runs()->cancel( self::BACKOFF_NAME, $run_id );
+		$cancelled = $client->runs()->cancel( self::BACKOFF_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -213,11 +213,11 @@ final class CancellationTest extends IntegrationTestCase {
 		$batch        = new RecordingBatch( self::BATCH_NAME );
 		$batch->queue = array( $first_chunk, $next_chunk );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->batches()->register( $batch );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->batches()->register( $batch );
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BATCH_IDENTITY );
 
-		$started = $consumer->batches()->start( self::BATCH_NAME, $start_args );
+		$started = $client->batches()->start( self::BATCH_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
 		self::assertIsString( $started->value );
 		$run_id = $started->value;
@@ -242,7 +242,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
 		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/continue_batch', $group, array( self::BATCH_IDENTITY, $run_id, 4 ) );
 
-		$cancelled = $consumer->runs()->cancel( self::BATCH_NAME, $run_id );
+		$cancelled = $client->runs()->cancel( self::BATCH_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -289,12 +289,12 @@ final class CancellationTest extends IntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$task   = new RecordingTask( self::SIBLING_NAME );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SIBLING_IDENTITY );
 
-		$enqueued_a = $consumer->tasks()->enqueue( self::SIBLING_NAME, $args_a );
-		$enqueued_b = $consumer->tasks()->enqueue( self::SIBLING_NAME, $args_b );
+		$enqueued_a = $client->tasks()->enqueue( self::SIBLING_NAME, $args_a );
+		$enqueued_b = $client->tasks()->enqueue( self::SIBLING_NAME, $args_b );
 		self::assertInstanceOf( Success::class, $enqueued_a );
 		self::assertInstanceOf( Success::class, $enqueued_b );
 		self::assertIsString( $enqueued_a->value );
@@ -306,7 +306,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$action_a = $this->assert_pending_task_action( self::SIBLING_IDENTITY, $run_a, $group_a );
 		$action_b = $this->assert_pending_task_action( self::SIBLING_IDENTITY, $run_b, $group_b );
 
-		$cancelled = $consumer->runs()->cancel( self::SIBLING_NAME, $run_a );
+		$cancelled = $client->runs()->cancel( self::SIBLING_NAME, $run_a );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_a, $cancelled->value );
@@ -379,8 +379,8 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 46 );
 		$task = new RecordingTask( self::DEGRADED_NAME );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::DEGRADED_IDENTITY );
 
 		$raw_deliveries = array();
@@ -395,7 +395,7 @@ final class CancellationTest extends IntegrationTestCase {
 			3
 		);
 
-		$enqueued = $consumer->tasks()->enqueue( self::DEGRADED_NAME, $args );
+		$enqueued = $client->tasks()->enqueue( self::DEGRADED_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id      = $enqueued->value;
@@ -411,7 +411,7 @@ final class CancellationTest extends IntegrationTestCase {
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
 
-		$cancelled = $consumer->runs()->cancel( self::DEGRADED_NAME, $run_id );
+		$cancelled = $client->runs()->cancel( self::DEGRADED_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 

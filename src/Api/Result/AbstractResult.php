@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 /**
  * Sealed-type base for an operation outcome: either a {@see Success} or a {@see Failure}.
  *
- * Consumers branch with {@see self::is_success()} or {@see self::is_failure()}, then read the
+ * Clients branch with {@see self::is_success()} or {@see self::is_failure()}, then read the
  * narrowed variant's public payload. Expected failures remain data in a result; unexpected
  * infrastructure failures and programmer errors remain exceptions.
  *

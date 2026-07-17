@@ -180,8 +180,8 @@ final class ResetCommandTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'delete',
 			function (): void {
-				$consumer = $this->rig->consumer( 'reset-tests' );
-				self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
+				$client = $this->rig->client( 'reset-tests' );
+				self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
 			}
 		);
 
@@ -247,10 +247,10 @@ final class ResetCommandTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_engine_state(): void {
-		$consumer = $this->rig->consumer( 'reset-tests' );
-		$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
-		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$client = $this->rig->client( 'reset-tests' );
+		$client->tasks()->register( new RecordingTask( 'refresh' ) );
+		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
 	/**

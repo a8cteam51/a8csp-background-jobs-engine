@@ -23,7 +23,7 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                   $owner  Consumer plugin owner.
+	 * @param   string                   $owner  Client plugin owner.
 	 * @param   SchedulesEngineInterface $engine Schedule engine operations.
 	 */
 	public function __construct(

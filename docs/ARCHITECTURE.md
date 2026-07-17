@@ -21,14 +21,14 @@ every surviving component is initialized before any hook can fire.
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
   PHP versions.
-- `functions.php` provides the construction-only composition-root accessor and the consumer
-  front door `a8csp_bgte( string $owner ): Consumer`, available from `init` or later.
+- `functions.php` provides the construction-only composition-root accessor and the client
+  front door `a8csp_bgte( string $owner ): Client`, available from `init` or later.
 - `src/` root holds only the bootstrapping mechanism: `src/ComponentInterface.php` is the one
   contract, `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php`
   the optional defaults-only base, and `src/Plugin.php` the composition root — the one file to
   edit when wiring a top-level component into `COMPONENTS`; they boot in registration order
   behind a non-retryable latch.
-- `src/Api/` is the entire public consumer surface (SemVer-bound): the owner-scoped `Consumer`
+- `src/Api/` is the entire public client surface (SemVer-bound): the owner-scoped `Client`
   facades, the `Result` monad and error values, `WorkIdentity` (owner ≤32, name ≤64, composed
   ≤97 bytes), `PortableArguments`, the policy enums, and the Task/Batch/Run/Schedule contracts.
   Everything outside `src/Api/` is `@internal`.

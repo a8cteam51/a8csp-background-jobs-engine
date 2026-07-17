@@ -5,9 +5,9 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Stable machine-readable classification for consumer-visible engine failures.
+ * Stable machine-readable classification for client-visible engine failures.
  *
- * Minor releases may add cases. Consumers treat unknown backing values as generic failures.
+ * Minor releases may add cases. Clients treat unknown backing values as generic failures.
  *
  * @since   1.0.0
  * @version 1.0.0

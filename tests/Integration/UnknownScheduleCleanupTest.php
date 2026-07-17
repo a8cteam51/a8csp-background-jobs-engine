@@ -153,11 +153,11 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$task     = new RecordingTask( self::REDECLARED_TASK );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$task   = new RecordingTask( self::REDECLARED_TASK );
+		$client->tasks()->register( $task );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_TASK, array( 'generation' => 'redeclared' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
-		$synced   = $consumer->schedules()->sync( array( $schedule ) );
+		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $unknown_successor_id ), 'Redeclaration must cancel the stale unknown-chain successor before creating its live chain' );

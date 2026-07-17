@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
@@ -28,17 +28,17 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the supported owner-bound consumer facade contract.
+ * Pins the supported owner-bound client facade contract.
  *
  */
-#[CoversClass( Consumer::class )]
+#[CoversClass( Client::class )]
 #[CoversClass( Tasks::class )]
 #[CoversClass( Batches::class )]
 #[CoversClass( Schedules::class )]
 #[CoversClass( Runs::class )]
 #[UsesClass( AdmissionValidator::class )]
 #[UsesClass( WorkIdentity::class )]
-final class ConsumerTest extends TestCase {
+final class ClientTest extends TestCase {
 	/**
 	 * Loads the WordPress seams required by API value objects.
 	 *
@@ -55,7 +55,7 @@ final class ConsumerTest extends TestCase {
 	}
 
 	/**
-	 * Consumer accessors retain the owner-bound facades supplied at resolution.
+	 * Client accessors retain the owner-bound facades supplied at resolution.
 	 *
 	 * @return  void
 	 */
@@ -64,12 +64,12 @@ final class ConsumerTest extends TestCase {
 		$batches   = new Batches( 'consumer-plugin', new FakeBatchesEngine( new Success( 'batch-run' ) ) );
 		$schedules = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
 		$runs      = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
-		$consumer  = new Consumer( 'consumer-plugin', $tasks, $batches, $schedules, $runs );
+		$client    = new Client( 'consumer-plugin', $tasks, $batches, $schedules, $runs );
 
-		self::assertSame( $tasks, $consumer->tasks() );
-		self::assertSame( $batches, $consumer->batches() );
-		self::assertSame( $schedules, $consumer->schedules() );
-		self::assertSame( $runs, $consumer->runs() );
+		self::assertSame( $tasks, $client->tasks() );
+		self::assertSame( $batches, $client->batches() );
+		self::assertSame( $schedules, $client->schedules() );
+		self::assertSame( $runs, $client->runs() );
 	}
 
 	/**
@@ -344,7 +344,7 @@ final class ConsumerTest extends TestCase {
 	/**
 	 * Task deduplication keys accept opaque bounded bytes and reject invalid lengths.
 	 *
-	 * @param   string $dedup_key Consumer deduplication key.
+	 * @param   string $dedup_key Client deduplication key.
 	 * @param   bool   $accepted  Whether the key reaches the admission delegate.
 	 *
 	 * @return  void

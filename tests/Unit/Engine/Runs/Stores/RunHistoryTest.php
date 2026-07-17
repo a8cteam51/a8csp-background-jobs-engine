@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
@@ -45,7 +45,7 @@ final class RunHistoryTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 
 	private RecordingBatch $batch;
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -80,12 +80,12 @@ final class RunHistoryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->task     = new RecordingTask( self::NAME );
-		$this->batch    = new RecordingBatch( self::NAME . '-batch' );
-		$this->consumer->tasks()->register( $this->task );
-		$this->consumer->batches()->register( $this->batch );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->batch  = new RecordingBatch( self::NAME . '-batch' );
+		$this->client->tasks()->register( $this->task );
+		$this->client->batches()->register( $this->batch );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -404,11 +404,11 @@ final class RunHistoryTest extends TestCase {
 		if ( 'superseded' === $status ) {
 			$name     = self::NAME . '-batch';
 			$identity = self::OWNER . ':' . $name;
-			$first    = $this->consumer->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			$first    = $this->client->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
 			self::assertInstanceOf( Success::class, $first );
 			self::assertIsString( $first->value );
 			$this->rig->randomizer()->value = 8;
-			$second                         = $this->consumer->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			$second                         = $this->client->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 
@@ -419,11 +419,11 @@ final class RunHistoryTest extends TestCase {
 			$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
 			$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
 		}
-		$result = $this->consumer->tasks()->enqueue( self::NAME, array( 'scope' => $status ) );
+		$result = $this->client->tasks()->enqueue( self::NAME, array( 'scope' => $status ) );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		if ( 'cancelled' === $status ) {
-			$cancelled = $this->consumer->runs()->cancel( self::NAME, $result->value );
+			$cancelled = $this->client->runs()->cancel( self::NAME, $result->value );
 			self::assertInstanceOf( Success::class, $cancelled );
 		} else {
 			$this->rig->run_due();
@@ -447,7 +447,7 @@ final class RunHistoryTest extends TestCase {
 		$run_ids = array();
 		foreach ( \range( 1, $count ) as $index ) {
 			$this->rig->randomizer()->value = $offset + $index;
-			$result                         = $this->consumer->tasks()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
+			$result                         = $this->client->tasks()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			self::assertIsString( $result->value );
 			$run_ids[] = $result->value;

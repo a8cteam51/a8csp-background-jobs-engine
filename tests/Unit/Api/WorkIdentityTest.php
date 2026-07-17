@@ -91,11 +91,11 @@ final class WorkIdentityTest extends TestCase {
 		$owner         = \str_repeat( 'o', 32 );
 		$task_name     = \str_repeat( 't', 64 );
 		$schedule_name = \str_repeat( 's', 64 );
-		$consumer      = $this->rig->consumer( $owner );
-		$consumer->tasks()->register( new RecordingTask( $task_name ) );
+		$client        = $this->rig->client( $owner );
+		$client->tasks()->register( new RecordingTask( $task_name ) );
 
-		$enqueued = $consumer->tasks()->enqueue( $task_name, array( 'site_id' => 7 ) );
-		$synced   = $consumer->schedules()->sync( array( new Schedule( $schedule_name, Recurrence::every( 300 ), $task_name ) ) );
+		$enqueued = $client->tasks()->enqueue( $task_name, array( 'site_id' => 7 ) );
+		$synced   = $client->schedules()->sync( array( new Schedule( $schedule_name, Recurrence::every( 300 ), $task_name ) ) );
 
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertInstanceOf( Success::class, $synced );

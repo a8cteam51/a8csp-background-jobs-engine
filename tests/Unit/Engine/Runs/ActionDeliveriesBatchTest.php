@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
@@ -45,7 +45,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private RecordingBatch $batch;
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 
@@ -78,10 +78,10 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->batch    = new RecordingBatch( self::NAME );
-		$this->consumer->batches()->register( $this->batch );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->batch  = new RecordingBatch( self::NAME );
+		$this->client->batches()->register( $this->batch );
 		$this->fixtures              = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls = array();
 	}
@@ -1327,7 +1327,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->prepare_cleanup_delivery();
 		$replacement               = null;
 		$this->batch->on_completed = function () use ( &$replacement ): void {
-			$replacement = $this->consumer->batches()->start( self::NAME, self::ARGS );
+			$replacement = $this->client->batches()->start( self::NAME, self::ARGS );
 		};
 
 		$this->rig->run_due();
@@ -1482,7 +1482,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  string
 	 */
 	private function start_batch(): string {
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

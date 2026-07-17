@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
@@ -42,7 +42,7 @@ final class DispatcherBatchTest extends TestCase {
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private RecordingBatch $batch;
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 
@@ -75,10 +75,10 @@ final class DispatcherBatchTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->batch    = new RecordingBatch( self::NAME );
-		$this->consumer->batches()->register( $this->batch );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->batch  = new RecordingBatch( self::NAME );
+		$this->client->batches()->register( $this->batch );
 		$this->fixtures              = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls = array();
 	}
@@ -113,7 +113,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_batch_creates_a_run_and_schedules_the_internal_start_action(): void {
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject, 23 );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject, 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -141,7 +141,7 @@ final class DispatcherBatchTest extends TestCase {
 		$before = $this->boundary_snapshot();
 
 		try {
-			(void) $this->consumer->batches()->start( self::NAME, self::ARGS, priority: $priority );
+			(void) $this->client->batches()->start( self::NAME, self::ARGS, priority: $priority );
 			self::fail( 'Invalid priority must throw before batch admission.' );
 		} catch ( \InvalidArgumentException ) {
 			self::assertSame( $before, $this->boundary_snapshot() );
@@ -176,13 +176,41 @@ final class DispatcherBatchTest extends TestCase {
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$result = $this->consumer->runs()->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
-		$consumed = $this->consumer->runs()->retry_failed( self::NAME, 'failed-run' );
+		$consumed = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
 		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
+	}
+
+	/**
+	 * Manual retry refuses to replace a live matching batch and retains the failed entry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_refuses_to_replace_a_live_batch(): void {
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: 'failed-run', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
+		$incumbent = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
+		self::assertInstanceOf( Success::class, $incumbent );
+		self::assertIsString( $incumbent->value );
+		$this->rig->clock()->timestamp = self::NOW + 1;
+
+		$refused = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+
+		$error = $this->assert_failure_code( $refused, ApiErrorCode::OverlapHeld );
+		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
+		$cancelled = $this->client->runs()->cancel( self::NAME, $incumbent->value );
+		self::assertInstanceOf( Success::class, $cancelled );
+		$this->rig->clock()->timestamp = self::NOW + 2;
+
+		$retried = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		self::assertInstanceOf( Success::class, $retried );
 	}
 
 	/**
@@ -199,13 +227,13 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_surfaces_scheduling_failure_and_removes_active_state(): void {
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
-		$failed = $this->consumer->batches()->start( self::NAME, self::ARGS );
+		$failed = $this->client->batches()->start( self::NAME, self::ARGS );
 		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$readmitted = $this->consumer->batches()->start( self::NAME, self::ARGS );
+		$readmitted = $this->client->batches()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $readmitted );
 		self::assertSame( array(), $this->batch->generate_calls );
 		self::assertSame( array(), $this->batch->failed_calls );
@@ -226,7 +254,7 @@ final class DispatcherBatchTest extends TestCase {
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->script_scheduling_rollback_failure( $failure );
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
 		$record = $this->scheduling_rollback_warning();
@@ -266,7 +294,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_rejects_a_held_overlap_without_stopping_the_previous_run(): void {
 		$this->seed_running_lock();
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
 
 		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
@@ -296,7 +324,7 @@ final class DispatcherBatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
 
 		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -317,7 +345,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_rejects_when_the_held_lock_no_longer_names_an_owner(): void {
 		$this->rig->wpdb()->script_result( 'insert', false );
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
 
 		$this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
 		self::assertSame( array(), $this->start_calls() );
@@ -337,7 +365,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_names_the_lock_owner_when_a_rejected_held_overlap_has_no_latest_pointer(): void {
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', self::NOW, self::NOW ) );
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
 
 		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
@@ -368,7 +396,7 @@ final class DispatcherBatchTest extends TestCase {
 			)
 		);
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
 
 		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
@@ -389,7 +417,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_replaces_a_held_incumbent(): void {
 		$this->seed_running_lock();
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -412,7 +440,7 @@ final class DispatcherBatchTest extends TestCase {
 	public function test_start_batch_replaces_a_held_incumbent_after_its_latest_pointer_is_evicted(): void {
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', self::NOW, self::NOW ) );
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $this->lock()['run_id'] ?? null );
@@ -434,7 +462,7 @@ final class DispatcherBatchTest extends TestCase {
 		$this->seed_running_lock();
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 
 		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
 		self::assertNull( $this->lock() );
@@ -459,7 +487,7 @@ final class DispatcherBatchTest extends TestCase {
 		$options[ $this->run_option_name() ] = array( 'collision' => true );
 		$GLOBALS['a8csp_bgte_test_options']  = $options;
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 
 		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
@@ -487,7 +515,7 @@ final class DispatcherBatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
+		$result = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 
 		$this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );

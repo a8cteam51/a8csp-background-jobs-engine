@@ -21,7 +21,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Consumer {
+final readonly class Client {
 	// region MAGIC METHODS
 
 	/**
@@ -30,13 +30,13 @@ final readonly class Consumer {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string    $owner     Consumer plugin owner.
+	 * @param   string    $owner     Client plugin owner.
 	 * @param   Tasks     $tasks     Owner-bound task facade.
 	 * @param   Batches   $batches   Owner-bound batch facade.
 	 * @param   Schedules $schedules Owner-bound schedule facade.
 	 * @param   Runs      $runs      Owner-bound run facade.
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the consumer-owner contract.
+	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
 	 */
 	public function __construct(
 		private string $owner,

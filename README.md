@@ -13,13 +13,13 @@ A background-work engine for WordPress sites: Tasks, Schedules, and Batches usin
 
 ## What it is
 
-A Task is one named unit of background work. A consumer registers a `TaskInterface` instance and dispatches it through the owner-bound consumer API.
+A Task is one named unit of background work. A client registers a `TaskInterface` instance and dispatches it through the owner-bound client API.
 
 A Schedule is an owner-scoped declaration that dispatches a registered Task on a fixed recurrence. The declaration includes the task arguments, overlap policy, catch-up policy, and advisory priority.
 
-A Batch is named work split into independently processed chunks. A consumer registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after the run completes or fails. Cancelled and superseded Batches invoke neither terminal callback. Tasks and Batches share one site-global `{owner}:{name}` identity namespace, so one owner cannot register the same local name as both kinds.
+A Batch is named work split into independently processed chunks. A client registers a `BatchInterface`; the engine persists the queue, retries each failed chunk independently, and invokes one terminal callback after the run completes or fails. Cancelled and superseded Batches invoke neither terminal callback. Tasks and Batches share one site-global `{owner}:{name}` identity namespace, so one owner cannot register the same local name as both kinds.
 
-Consumers use the same API with either scheduling backend. An occurrence on a temporarily unavailable backend is dormant, not lost; writes can use another ready backend, and the dormant occurrence becomes visible when its backend recovers.
+Clients use the same API with either scheduling backend. An occurrence on a temporarily unavailable backend is dormant, not lost; writes can use another ready backend, and the dormant occurrence becomes visible when its backend recovers.
 
 The engine's own state persists in `wp_options` rows under the reserved `a8csp_bgte_` prefix, and no engine row is ever autoloaded, so engine storage adds no weight to ordinary page loads. The dynamic families are `a8csp_bgte_schedule_registrations_{owner}`, `a8csp_bgte_run_{identity}_{run_id}`, `a8csp_bgte_failed_runs_{identity}`, `a8csp_bgte_latest_run_{identity}`, `a8csp_bgte_run_history_{identity}`, `a8csp_bgte_overlap_lock_{identity}_{args_hash}`, `a8csp_bgte_occurrence_lease_{registration_hash}`, and `a8csp_bgte_cleanup_intent_{registration_hash}`.
 
@@ -44,13 +44,13 @@ Action Scheduler is optional and preferred when it is ready; when it is absent, 
 
 Network activation is supported, and each site operates its own isolated engine state. Engine storage is bound to the request site when the engine graph is built, so a storage operation after `switch_to_blog()` throws a `LogicException` instead of writing through a graph created for another site.
 
-Per-site pattern: enter each site through a fresh request or execution context, then resolve its consumer and operate there; do not call engine APIs after switching blogs inside an existing context. Network uninstall sweeps the engine's options and pending backend work from every site.
+Per-site pattern: enter each site through a fresh request or execution context, then resolve its client and operate there; do not call engine APIs after switching blogs inside an existing context. Network uninstall sweeps the engine's options and pending backend work from every site.
 
 Action Scheduler cleanup requires its complete four-table schema; incomplete or migrated stores are left untouched.
 
 ## Quick start
 
-In a consumer plugin under its own namespace, register the Task and Batch implementations and synchronize the owner's complete schedule declaration from `init`:
+In a client plugin under its own namespace, register the Task and Batch implementations and synchronize the owner's complete schedule declaration from `init`:
 
 ```php
 namespace Acme\BackgroundTasks;
@@ -68,11 +68,11 @@ final class BackgroundTasksRegistration {
 	private const SCHEDULE_NAME = 'site-health-ping';
 
 	public static function register(): void {
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( new SiteHealthPingTask() );
-		$consumer->batches()->register( new CommentCountRecountBatch() );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( new SiteHealthPingTask() );
+		$client->batches()->register( new CommentCountRecountBatch() );
 
-		$synced = $consumer->schedules()->sync(
+		$synced = $client->schedules()->sync(
 			array(
 				new Schedule(
 					name: self::SCHEDULE_NAME,
@@ -94,20 +94,20 @@ final class BackgroundTasksRegistration {
 \add_action( 'init', array( BackgroundTasksRegistration::class, 'register' ) );
 ```
 
-`SiteHealthPingTask` and `CommentCountRecountBatch` are consumer-owned implementations of the contracts below. See the tested version of this example in [`DemoConsumer`](tests/Support/Fixtures/DemoConsumer.php), [`SiteHealthPingTask`](tests/Support/Fixtures/SiteHealthPingTask.php), and [`CommentCountRecountBatch`](tests/Support/Fixtures/CommentCountRecountBatch.php).
+`SiteHealthPingTask` and `CommentCountRecountBatch` are client-owned implementations of the contracts below. See the tested version of this example in [`DemoClient`](tests/Support/Fixtures/DemoClient.php), [`SiteHealthPingTask`](tests/Support/Fixtures/SiteHealthPingTask.php), and [`CommentCountRecountBatch`](tests/Support/Fixtures/CommentCountRecountBatch.php).
 
-`a8csp_bgte()` is available from inside `init` at any priority, and later. Calling it before `init` throws a `LogicException` directing the caller to an `init` callback or later. Action Scheduler's stores initialize at `init:1`; allowing earlier enqueues would silently divert them to WP-Cron. By `init`, the engine's eager `plugins_loaded:0` boot has run in every standard load path; the request that activates the engine is the one exception — it stays dormant there until the next request. Pass the consumer plugin slug once; owners match `[a-z0-9][a-z0-9-]*`, are at most 32 bytes, and cannot start with the engine-reserved `a8csp-bgte` prefix. Owner exclusivity is a convention, so plugins use their own slug.
+`a8csp_bgte()` is available from inside `init` at any priority, and later. Calling it before `init` throws a `LogicException` directing the caller to an `init` callback or later. Action Scheduler's stores initialize at `init:1`; allowing earlier enqueues would silently divert them to WP-Cron. By `init`, the engine's eager `plugins_loaded:0` boot has run in every standard load path; the request that activates the engine is the one exception — it stays dormant there until the next request. Pass the client plugin slug once; owners match `[a-z0-9][a-z0-9-]*`, are at most 32 bytes, and cannot start with the engine-reserved `a8csp-bgte` prefix. Owner exclusivity is a convention, so plugins use their own slug.
 
 Task, Batch, and Schedule local names match `[a-z0-9_-]+` and are at most 64 bytes. The API composes the owner and local name once at the facade boundary. The complete identity is therefore at most 97 bytes and remains inside WordPress's 191-character `option_name` boundary for every derived store key.
 
 Schedule synchronization treats the passed array as the bound owner's complete declaration, so call it on every `init`. Register every Task and Batch from an `init` callback on every request. Run delivery through WP-Cron, Action Scheduler, and WP-CLI begins only after `init` completes, so an `init`-time registration at any priority is always in place before its runs deliver. A run delivered for a name with no registration in that request fails terminally with `UnknownWork`; after registering, retry it with `runs()->retry_failed()`.
 
-After registration, enqueue the Task or start the Batch through an owner-bound consumer:
+After registration, enqueue the Task or start the Batch through an owner-bound client:
 
 ```php
-$consumer = \a8csp_bgte( 'acme-background-work' );
+$client = \a8csp_bgte( 'acme-background-work' );
 
-$task_result = $consumer->tasks()->enqueue(
+$task_result = $client->tasks()->enqueue(
 	SiteHealthPingTask::NAME,
 	array( 'transient' => 'acme_site_health_snapshot' ),
 	dedup_key: 'site-health-snapshot'
@@ -122,7 +122,7 @@ if ( $task_result->is_failure() ) {
 	}
 }
 
-$batch_result = $consumer->batches()->start(
+$batch_result = $client->batches()->start(
 	CommentCountRecountBatch::NAME,
 	array( 'post_type' => 'post' ),
 	existing: ExistingRunPolicy::Reject
@@ -143,7 +143,7 @@ The supported facade methods are:
 
 | Facade | Methods |
 | --- | --- |
-| `Consumer` | `tasks()`, `batches()`, `schedules()`, `runs()` |
+| `Client` | `tasks()`, `batches()`, `schedules()`, `runs()` |
 | `Api\Task\Tasks` | `register(TaskInterface)`, `enqueue(string $name, array $args = [], int $delay = 0, ?string $dedup_key = null, int $priority = 10)` |
 | `Api\Batch\Batches` | `register(BatchInterface)`, `start(string $name, array $start_args = [], ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10)` |
 | `Api\Schedule\Schedules` | `sync(array $schedules)`, `dispatch_now(string $name)` |
@@ -151,23 +151,23 @@ The supported facade methods are:
 
 ## Migrating from Action Scheduler
 
-Register a Task for each former action hook, then resolve the owner-bound consumer from `init` or later. The examples below assume `$consumer = \a8csp_bgte( 'my-plugin' )`, with `Schedule` and `Recurrence` imported from `Api\Schedule`.
+Register a Task for each former action hook, then resolve the owner-bound client from `init` or later. The examples below assume `$client = \a8csp_bgte( 'my-plugin' )`, with `Schedule` and `Recurrence` imported from `Api\Schedule`.
 
 | Action Scheduler call | Engine equivalent |
 | --- | --- |
 | `as_enqueue_async_action( $hook, $args, $group )` | `\a8csp_bgte( 'my-plugin' )->tasks()->enqueue( 'name', $args )` |
-| `as_schedule_single_action( $timestamp, $hook, $args, $group )` | `$consumer->tasks()->enqueue( 'name', $args, delay: \max( 0, $timestamp - \time() ) )`; `enqueue()` accepts a non-negative delay in seconds, not an absolute timestamp. |
-| `as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args, $group )` | Include `new Schedule( name: 'hourly-refresh', recurrence: Recurrence::every( $interval_in_seconds ), task: 'refresh', args: $args )` in the owner's complete array passed to `$consumer->schedules()->sync( ... )`. `Schedule` has no first-run timestamp field. |
-| `as_unschedule_action( $hook, $args, $group )` | Omit the named `Schedule` from the next complete `sync()` declaration. To stop an already admitted run, retain its run ID and call `$consumer->runs()->cancel( 'name', $run_id )`. |
-| `as_unschedule_all_actions( $hook, $args, $group )` | Use the same declarative removal for recurring work; `$consumer->schedules()->sync( array() )` removes every Schedule owned by this consumer. Directly enqueued runs require individual `cancel()` calls with known run IDs. |
-| `as_next_scheduled_action( $hook, $args, $group )` | There is no public next-due inspection method. `$consumer->runs()->last_completed_run_id( 'name' )` reports only the latest retained completed run and is not a next-scheduled replacement. |
+| `as_schedule_single_action( $timestamp, $hook, $args, $group )` | `$client->tasks()->enqueue( 'name', $args, delay: \max( 0, $timestamp - \time() ) )`; `enqueue()` accepts a non-negative delay in seconds, not an absolute timestamp. |
+| `as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args, $group )` | Include `new Schedule( name: 'hourly-refresh', recurrence: Recurrence::every( $interval_in_seconds ), task: 'refresh', args: $args )` in the owner's complete array passed to `$client->schedules()->sync( ... )`. `Schedule` has no first-run timestamp field. |
+| `as_unschedule_action( $hook, $args, $group )` | Omit the named `Schedule` from the next complete `sync()` declaration. To stop an already admitted run, retain its run ID and call `$client->runs()->cancel( 'name', $run_id )`. |
+| `as_unschedule_all_actions( $hook, $args, $group )` | Use the same declarative removal for recurring work; `$client->schedules()->sync( array() )` removes every Schedule owned by this client. Directly enqueued runs require individual `cancel()` calls with known run IDs. |
+| `as_next_scheduled_action( $hook, $args, $group )` | There is no public next-due inspection method. `$client->runs()->last_completed_run_id( 'name' )` reports only the latest retained completed run and is not a next-scheduled replacement. |
 | `as_has_scheduled_action( $hook, $args, $group )` | There is no public pending-or-running boolean query. Treat the complete declaration supplied to a successful `sync()` as the source of truth for recurring schedules. |
 
-Action Scheduler's optional `$group` defaults to `''`, leaving ownership implicit. The engine requires the consumer owner at the front door and composes it into every identity; it refuses the ownerless ambiguity that makes cross-plugin actions easy to query or cancel accidentally.
+Action Scheduler's optional `$group` defaults to `''`, leaving ownership implicit. The engine requires the client owner at the front door and composes it into every identity; it refuses the ownerless ambiguity that makes cross-plugin actions easy to query or cancel accidentally.
 
-## Testing your consumer
+## Testing your client
 
-The public facade constructors accept an owner string and their small engine port: `TasksEngineInterface`, `BatchesEngineInterface`, `SchedulesEngineInterface`, or `RunsEngineInterface`. A consumer test implements the required port, or uses a partial fake, and constructs `Tasks`, `Batches`, `Schedules`, or `Runs` directly without booting a scheduling backend. A complete `Consumer` can be assembled from those four owner-bound facades.
+The public facade constructors accept an owner string and their small engine port: `TasksEngineInterface`, `BatchesEngineInterface`, `SchedulesEngineInterface`, or `RunsEngineInterface`. A client test implements the required port, or uses a partial fake, and constructs `Tasks`, `Batches`, `Schedules`, or `Runs` directly without booting a scheduling backend. A complete `Client` can be assembled from those four owner-bound facades.
 
 This compact example records a Task enqueue through the real public facade:
 
@@ -199,7 +199,7 @@ $result = $tasks->enqueue( 'refresh', array( 'site_id' => 7 ), delay: 30 );
 \assert( array( array( 'my-plugin:refresh', array( 'site_id' => 7 ), 30, null, 10 ) ) === $engine->calls );
 ```
 
-Do not stub `a8csp_bgte()`. The engine's `functions.php` declares it unconditionally, so a test-defined function fatals with a redeclaration error when the engine loads. Code that resolves its consumer internally instead accepts a `Consumer`, or a `fn ( string $owner ): Consumer` resolver that defaults to `a8csp_bgte()`, and tests inject the fake facade set through that seam.
+Do not stub `a8csp_bgte()`. The engine's `functions.php` declares it unconditionally, so a test-defined function fatals with a redeclaration error when the engine loads. Code that resolves its client internally instead accepts a `Client`, or a `fn ( string $owner ): Client` resolver that defaults to `a8csp_bgte()`, and tests inject the fake facade set through that seam.
 
 ## The three contracts
 
@@ -252,7 +252,7 @@ interface BatchInterface extends WorkInterface {
 
 The batch ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to the whole run. `WorkInterface` owns the shared 300-second default, which `AbstractBatch` supplies automatically. Direct implementations must declare it; invalid or non-positive declarations use that default, and the engine caps the credited window at six hours.
 
-`RunFailure::$identity` is the complete `{owner}:{name}` work identity. The value also carries the run ID, consumed attempt count, typed `RunFailureStage`, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw consumer exception message.
+`RunFailure::$identity` is the complete `{owner}:{name}` work identity. The value also carries the run ID, consumed attempt count, typed `RunFailureStage`, stable `ApiErrorCode`, engine-authored redacted summary, and the failing batch chunk when one exists. Its summary never contains a raw client exception message.
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
 
@@ -292,7 +292,7 @@ Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization.
 
 ## Idempotency invariant
 
-Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and terminal lifecycle hooks (`completed`, `failed`, `cancelled`, and `superseded`) have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. The `started` hook is an inline, non-durable notification on the admission or start path, so a crash between durable admission and hook delivery can lose it. A throwing `on_failed()` callback or terminal lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
+Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and terminal lifecycle hooks (`completed`, `failed`, `cancelled`, and `superseded`) have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. The `started` hook is an inline, non-durable notification on the admission or start path, so a crash between durable admission and hook delivery can lose it. A throwing `on_failed()` callback or terminal lifecycle hook remains pending for a later maintenance attempt, so a persistently failing client also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable client transient instead of appending a record or repeating an external command.
 
 ## Admission overlap and catch-up policies
 
@@ -331,7 +331,7 @@ Run IDs, identities, owners, and log fields are strings; attempt, delay, and mis
 
 A `started` or `retry_scheduled` listener that throws terminally fails the admitted run with `ExecutionFailed`; the run remains retained for `retry_failed()`.
 
-Consumers do not hook the engine's internal delivery actions: `a8csp_background_tasks/start_batch`, `a8csp_background_tasks/continue_batch`, `a8csp_background_tasks/run_task`, `a8csp_background_tasks/run_chunk`, `a8csp_background_tasks/cleanup_batch`, or `a8csp_background_tasks/schedule_due`.
+Clients do not hook the engine's internal delivery actions: `a8csp_background_tasks/start_batch`, `a8csp_background_tasks/continue_batch`, `a8csp_background_tasks/run_task`, `a8csp_background_tasks/run_chunk`, `a8csp_background_tasks/cleanup_batch`, or `a8csp_background_tasks/schedule_due`.
 
 | Filter | Input and required return |
 | --- | --- |
@@ -371,13 +371,13 @@ Priority is an integer from 0 through 255 and defaults to 10. Action Scheduler r
 
 ## Owner-bound schedule synchronization
 
-`$consumer->schedules()->sync( $schedules )` converges the bound owner's complete declaration. No public Schedule method accepts an owner, so a consumer cannot synchronize another consumer's or the engine's schedules. Synchronization targets only engine-owned `a8csp_background_tasks/schedule_due` occurrences identified by the composed schedule identity, so it does not mutate foreign WP-Cron events or Action Scheduler actions.
+`$client->schedules()->sync( $schedules )` converges the bound owner's complete declaration. No public Schedule method accepts an owner, so a client cannot synchronize another client's or the engine's schedules. Synchronization targets only engine-owned `a8csp_background_tasks/schedule_due` occurrences identified by the composed schedule identity, so it does not mutate foreign WP-Cron events or Action Scheduler actions.
 
-Use a stable owner slug and pass every schedule owned by that consumer on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration, and its removal is eventual: a durable cleanup intent converges it at delivery or through hourly maintenance.
+Use a stable owner slug and pass every schedule owned by that client on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration, and its removal is eventual: a durable cleanup intent converges it at delivery or through hourly maintenance.
 
-On consumer deactivation, call `$consumer->schedules()->sync( array() )`. Otherwise its registrations persist and their occurrences keep firing.
+On client deactivation, call `$client->schedules()->sync( array() )`. Otherwise its registrations persist and their occurrences keep firing.
 
-Action Scheduler becomes writable after `action_scheduler_init`, normally during `init` at priority 1. Synchronizing before that action fires routes occurrences to WP-Cron for that request; schedule the consumer callback after Action Scheduler's priority-1 initialization when that backend is required.
+Action Scheduler becomes writable after `action_scheduler_init`, normally during `init` at priority 1. Synchronizing before that action fires routes occurrences to WP-Cron for that request; schedule the client callback after Action Scheduler's priority-1 initialization when that backend is required.
 
 ## Keep action arguments small
 
@@ -389,17 +389,17 @@ Bulk data belongs in storage that the Task or Batch reads by key. Pass identifyi
 
 ## Run inspection, failure, retry, and cancellation
 
-`$consumer->runs()->last_completed_run_id( $name )` returns the most recently recorded `Completed` run ID for the owner-local Task or Batch name. A successful lookup carries the run ID or `null` when no completed run remains in the retained history window; a failed, cancelled, or superseded run recorded later does not displace a retained completion. The lookup follows terminal recording order and does not re-sort the timestamp-prefixed run IDs.
+`$client->runs()->last_completed_run_id( $name )` returns the most recently recorded `Completed` run ID for the owner-local Task or Batch name. A successful lookup carries the run ID or `null` when no completed run remains in the retained history window; a failed, cancelled, or superseded run recorded later does not displace a retained completion. The lookup follows terminal recording order and does not re-sort the timestamp-prefixed run IDs.
 
-Each history buffer retains at most the positive `a8csp_background_tasks/history_size` filter value, 30 by default. Once later terminal outcomes evict a completion, the lookup returns `Success(null)` as if that completion were absent. Consumers needing an indefinite checkpoint persist their own pointer from a Batch's `on_completed()` callback or the completed lifecycle hook. Terminal history is recorded after those notifications, so a lookup from either intentionally returns the previous retained completion.
+Each history buffer retains at most the positive `a8csp_background_tasks/history_size` filter value, 30 by default. Once later terminal outcomes evict a completion, the lookup returns `Success(null)` as if that completion were absent. Clients needing an indefinite checkpoint persist their own pointer from a Batch's `on_completed()` callback or the completed lifecycle hook. Terminal history is recorded after those notifications, so a lookup from either intentionally returns the previous retained completion.
 
 A failed Task invocation or Batch chunk retries under its `RetryPolicy`, using bounded exponential delays with full jitter. The defaults are 3 attempts in total, including the first, a 60-second base delay, a multiplier of 2, and a 3,600-second delay cap. Batch retry counts reset for each chunk. Throw `NonRetryableException`, or another exception implementing `NonRetryableExceptionInterface`, to bypass the remaining attempts for a permanent failure.
 
-After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch `on_failed()` callback where applicable, followed by the failed hooks. The documented terminal-effect order holds per attempt. When an effect throws, maintenance replay retries it and continues past it, so later effects can land before the replayed effect succeeds. The failed store retains at most the 20 most recent terminal failures per identity for manual retry; older entries are evicted oldest-first, and the eviction is logged. Start a fresh run from the original arguments with `$consumer->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome.
+After the final attempt, the engine writes the terminal failure to the per-identity failed store. It invokes the Batch `on_failed()` callback where applicable, followed by the failed hooks. The documented terminal-effect order holds per attempt. When an effect throws, maintenance replay retries it and continues past it, so later effects can land before the replayed effect succeeds. The failed store retains at most the 20 most recent terminal failures per identity for manual retry; older entries are evicted oldest-first, and the eviction is logged. Start a fresh run from the original arguments with `$client->runs()->retry_failed( $name, $run_id )` or `wp background-tasks failed-runs retry <owner>:<name> <run_id>`. A successful result carries the fresh run ID and means the work was scheduled; lifecycle hooks report its eventual outcome. Task and Batch manual retries both refuse to replace a live matching run; use the Batch start API with `ExistingRunPolicy::Replace` when takeover is intentional.
 
-Cancel a retained run with `$consumer->runs()->cancel( $name, $run_id )` or `wp background-tasks runs cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. A Batch persists its non-executing state before `started` and `retry_scheduled` listeners run, so cancellation can succeed during those listeners; the run then stops at its next fence. Cancellation is refused while the persisted state marks the run as executing, whether it is in engine orchestration or a consumer callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
+Cancel a retained run with `$client->runs()->cancel( $name, $run_id )` or `wp background-tasks runs cancel <owner>:<name> <run_id>`. Pending work, retry backoff, and a Batch waiting between chunks are cancellable. A Batch persists its non-executing state before `started` and `retry_scheduled` listeners run, so cancellation can succeed during those listeners; the run then stops at its next fence. Cancellation is refused while the persisted state marks the run as executing, whether it is in engine orchestration or a client callback. A Batch with no chunks left and cleanup pending is materially complete and is also refused. Cancelling a run does not remove its originating recurring Schedule.
 
-Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking consumer work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_completed()` nor `on_failed()`.
+Cancellation records the terminal outcome before it attempts to clear pending backend deliveries, so delivery cleanup is best effort. A ready Action Scheduler backend can clear the per-run group. WP-Cron cannot identify a group-only clear, so one pending event may survive, reach the engine admission hook, and be discarded without invoking client work. Cancelled hooks fire, and a cancelled Batch invokes neither `on_completed()` nor `on_failed()`.
 
 ## WP-CLI
 
@@ -438,7 +438,7 @@ wp background-tasks reset --yes
 
 `schedules list` reports `owner`, `identity`, `recurrence`, `next_due`, `last_fired`, `misfire_skips`, `overlap_skips`, `occurrence_visible`, and `lock`. The `occurrence_visible` value reflects state visible through ready backends. If a present backend is not ready and may hold dormant occurrences, the command emits a warning on STDERR for every format, including an empty table result, so machine-readable STDOUT remains parseable.
 
-`runs list` table output separates live runs from bounded recent history. History rows expose `run_id`, `outcome`, and `failed_store`; the `failed_store` cell renders as `failed store` when the failure is available to `failed-runs retry`, or `—` otherwise. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim.
+`runs list` table output separates live runs from bounded recent history. History rows expose `run_id`, `outcome`, and `failed_store`; the `failed_store` cell renders as `failed store` when the failure is available to `failed-runs retry`, or `—` otherwise. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a client callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim.
 
 ## Releasing
 

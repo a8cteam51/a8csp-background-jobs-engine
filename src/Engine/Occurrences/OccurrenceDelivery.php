@@ -130,7 +130,7 @@ final readonly class OccurrenceDelivery {
 	/**
 	 * Dispatches one manual schedule run while retaining occurrence-lease custody.
 	 *
-	 * @internal Schedule consumer API only.
+	 * @internal Schedule client API only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -270,7 +270,7 @@ final readonly class OccurrenceDelivery {
 		 * @version 1.0.0
 		 *
 		 * @param   int    $interval         Default grace window in seconds.
-		 * @param   string $owner            Stable consumer identifier.
+		 * @param   string $owner            Stable client identifier.
 		 * @param   string $identity         Complete owner-qualified schedule identity.
 		 */
 		$grace = \apply_filters( 'a8csp_background_tasks/misfire_grace/' . $registration_key, $interval, $owner, $registration_key );
@@ -320,7 +320,7 @@ final readonly class OccurrenceDelivery {
 					 * @since   1.0.0
 					 * @version 1.0.0
 					 *
-					 * @param   string $owner        Stable consumer identifier.
+					 * @param   string $owner        Stable client identifier.
 					 * @param   int    $misfired_due Dropped occurrence due timestamp.
 					 * @param   int    $now          Occurrence observation timestamp.
 					 */
@@ -333,7 +333,7 @@ final readonly class OccurrenceDelivery {
 					 * @version 1.0.0
 					 *
 					 * @param   string $identity         Complete owner-qualified schedule identity.
-					 * @param   string $owner            Stable consumer identifier.
+					 * @param   string $owner            Stable client identifier.
 					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
 					 * @param   int    $now              Occurrence observation timestamp.
 					 */
@@ -416,7 +416,7 @@ final readonly class OccurrenceDelivery {
 	 * @version 1.0.0
 	 *
 	 * @param   string       $registration_key Complete owner-qualified schedule identity.
-	 * @param   string       $owner            Stable consumer identifier.
+	 * @param   string       $owner            Stable client identifier.
 	 * @param   string       $name             Stable schedule name.
 	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
 	 *
@@ -510,7 +510,7 @@ final readonly class OccurrenceDelivery {
 	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int} $registration
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   string $owner            Stable consumer identifier.
+	 * @param   string $owner            Stable client identifier.
 	 * @param   array  $registration     Complete registration timing state.
 	 *
 	 * @return  void

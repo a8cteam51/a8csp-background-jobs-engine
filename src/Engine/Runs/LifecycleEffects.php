@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Executes consumer lifecycle effects and durable claimed-transition effects.
+ * Executes client lifecycle effects and durable claimed-transition effects.
  *
  * @internal
  *
@@ -26,7 +26,7 @@ final readonly class LifecycleEffects {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Literal consumer lifecycle hooks keep their names greppable.
+	 * Literal client lifecycle hooks keep their names greppable.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -42,7 +42,7 @@ final readonly class LifecycleEffects {
 	);
 
 	/**
-	 * Required durable effects in their consumer-observable execution order.
+	 * Required durable effects in their client-observable execution order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -313,7 +313,7 @@ final readonly class LifecycleEffects {
 	 * @param   RunState            $state          Current terminal state.
 	 * @param   'Task'|'Batch'      $work_type      Work contract type.
 	 * @param   BatchInterface|null $batch          Batch callback target, or null for a task or unresolved batch.
-	 * @param   array|null          $failure_detail Reconstructed internal and consumer failure detail.
+	 * @param   array|null          $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When the effect table contains an unsupported key.
 	 * @throws  \Throwable      When an effect cannot complete.
@@ -342,7 +342,7 @@ final readonly class LifecycleEffects {
 	 * @param   string         $run_id         Run identifier.
 	 * @param   RunState       $state          Failed terminal state.
 	 * @param   'Task'|'Batch' $work_type      Work contract type.
-	 * @param   array|null     $failure_detail Reconstructed internal and consumer failure detail.
+	 * @param   array|null     $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When failure detail is absent.
 	 *
@@ -380,7 +380,7 @@ final readonly class LifecycleEffects {
 	 * @param   string              $run_id   Run identifier.
 	 * @param   RunState            $state    Terminal batch state.
 	 * @param   BatchInterface|null $batch    Registered batch, or null when the callback must be skipped.
-	 * @param   RunFailure|null     $failure  Reconstructed consumer failure value.
+	 * @param   RunFailure|null     $failure  Reconstructed client failure value.
 	 *
 	 * @throws  \LogicException When the state cannot support a batch callback.
 	 * @throws  \Throwable      When a failed callback fails.
@@ -436,7 +436,7 @@ final readonly class LifecycleEffects {
 	 * @param   string          $identity Complete owner-qualified task or batch identity.
 	 * @param   string          $run_id   Run identifier.
 	 * @param   RunState        $state    Terminal run state.
-	 * @param   RunFailure|null $failure  Reconstructed consumer failure value.
+	 * @param   RunFailure|null $failure  Reconstructed client failure value.
 	 *
 	 * @throws  \LogicException When the state is not terminal.
 	 * @throws  \Throwable      When a lifecycle hook fails.
@@ -485,7 +485,7 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Reconstructs persisted internal and consumer terminal failure detail.
+	 * Reconstructs persisted internal and client terminal failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

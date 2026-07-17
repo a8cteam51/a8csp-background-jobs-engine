@@ -32,9 +32,9 @@ try {
 		case 'schedules':
 		case 'schedules-dormant':
 			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-				$consumer = $rig->consumer( $owner );
-				$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
-				$result = $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
+				$client = $rig->client( $owner );
+				$client->tasks()->register( new RecordingTask( 'refresh' ) );
+				$result = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 				if ( ! $result instanceof Success ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
 				}
@@ -46,9 +46,9 @@ try {
 			break;
 
 		case 'runs':
-			$consumer = $rig->consumer( 'consumer-plugin' );
-			$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
-			$enqueued = $consumer->tasks()->enqueue( 'email-digest' );
+			$client = $rig->client( 'consumer-plugin' );
+			$client->tasks()->register( new RecordingTask( 'email-digest' ) );
+			$enqueued = $client->tasks()->enqueue( 'email-digest' );
 			if ( ! $enqueued instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
 			}
@@ -56,8 +56,8 @@ try {
 			break;
 
 		case 'failed-runs':
-			$consumer = $rig->consumer( 'consumer-plugin' );
-			$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
+			$client = $rig->client( 'consumer-plugin' );
+			$client->tasks()->register( new RecordingTask( 'email-digest' ) );
 			foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
 				$failure        = new RunFailure( identity: $identity, run_id: 'run-1', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 				[ $name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( $now - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
@@ -67,10 +67,10 @@ try {
 			break;
 
 		case 'reset-declined':
-			$consumer = $rig->consumer( 'reset-tests' );
-			$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
-			$enqueued = $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) );
-			$synced   = $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
+			$client = $rig->client( 'reset-tests' );
+			$client->tasks()->register( new RecordingTask( 'refresh' ) );
+			$enqueued = $client->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) );
+			$synced   = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}

@@ -2,41 +2,41 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\CommentCountRecountBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\DemoConsumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\DemoClient;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures\SiteHealthPingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Proves the demo consumer registers and executes through only the public engine surface.
+ * Proves the demo client registers and executes through only the public engine surface.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
 #[Group( 'degraded' )]
-final class DemoConsumerTest extends IntegrationTestCase {
+final class DemoClientTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Post type isolated to this consumer's comment-count queue. */
+	/** Post type isolated to this client's comment-count queue. */
 	private const string POST_TYPE = 'a8csp_demo_item';
 
 	/** Transient isolated to the directly dispatched task. */
 	private const string MANUAL_SNAPSHOT_TRANSIENT = 'a8csp_demo_manual_site_health_snapshot';
 
 	/** Owner-qualified demo task identity. */
-	private const string TASK_IDENTITY = DemoConsumer::OWNER . ':' . SiteHealthPingTask::NAME;
+	private const string TASK_IDENTITY = DemoClient::OWNER . ':' . SiteHealthPingTask::NAME;
 
 	/** Owner-qualified demo batch identity. */
-	private const string BATCH_IDENTITY = DemoConsumer::OWNER . ':' . CommentCountRecountBatch::NAME;
+	private const string BATCH_IDENTITY = DemoClient::OWNER . ':' . CommentCountRecountBatch::NAME;
 
 	/** Owner-qualified demo schedule identity. */
-	private const string SCHEDULE_IDENTITY = DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME;
+	private const string SCHEDULE_IDENTITY = DemoClient::OWNER . ':' . DemoClient::SCHEDULE_NAME;
 
 	/** Documented owner-scoped schedule-registration option. */
-	private const string SCHEDULE_OPTION = 'a8csp_bgte_schedule_registrations_' . DemoConsumer::OWNER;
+	private const string SCHEDULE_OPTION = 'a8csp_bgte_schedule_registrations_' . DemoClient::OWNER;
 
 	/**
 	 * Posts created for the batch proof and removed during teardown.
@@ -113,7 +113,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_demo_consumer_runs_task_schedule_and_batch_end_to_end(): void {
+	public function test_demo_client_runs_task_schedule_and_batch_end_to_end(): void {
 		$first_post_id    = $this->create_commented_post( 'Demo recount one' );
 		$second_post_id   = $this->create_commented_post( 'Demo recount two' );
 		$scheduled_args   = array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT );
@@ -208,19 +208,19 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 		// WordPress booted before PHPUnit, so isolate this callback instead of rerunning every init subscriber.
 		\remove_all_actions( 'init' );
-		$consumer = new DemoConsumer( 1 );
-		$consumer->boot();
-		self::assertNotFalse( \has_action( 'init', array( $consumer, 'register_background_work' ) ), 'The demo entry point must register its declarations from init' );
+		$client = new DemoClient( 1 );
+		$client->boot();
+		self::assertNotFalse( \has_action( 'init', array( $client, 'register_background_work' ) ), 'The demo entry point must register its declarations from init' );
 		$api = null;
 		\add_action(
 			'init',
 			static function () use ( &$api ): void {
-				$api = \a8csp_bgte( DemoConsumer::OWNER );
+				$api = \a8csp_bgte( DemoClient::OWNER );
 			},
 			\PHP_INT_MAX
 		);
 		\do_action( 'init' );
-		self::assertInstanceOf( Consumer::class, $api );
+		self::assertInstanceOf( Client::class, $api );
 
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
 		$manual      = $api->tasks()->enqueue( SiteHealthPingTask::NAME, $manual_args );
@@ -245,7 +245,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 
 		$this->make_demo_schedule_due();
 		$schedule_due_before = \did_action( 'a8csp_background_tasks/schedule_due' );
-		self::assertSame( 1, \class_exists( \ActionScheduler::class ) ? $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ) : $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ), 'The scheduler must execute the demo consumer recurring occurrence' );
+		self::assertSame( 1, \class_exists( \ActionScheduler::class ) ? $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ) : $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ), 'The scheduler must execute the demo client recurring occurrence' );
 		self::assertSame( $schedule_due_before + 1, \did_action( 'a8csp_background_tasks/schedule_due' ), 'The registered recurring occurrence must fire the engine schedule-due action' );
 		self::assertCount( 2, $task_started_named, 'Schedule delivery must enqueue one additional task run' );
 		self::assertCount( 2, $task_started_generic, 'Schedule delivery must publish the generic started hook' );
@@ -416,7 +416,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $transient Consumer-owned transient key.
+	 * @param   string $transient Client-owned transient key.
 	 *
 	 * @return  void
 	 */

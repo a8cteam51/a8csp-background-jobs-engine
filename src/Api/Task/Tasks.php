@@ -20,7 +20,7 @@ final readonly class Tasks {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Longest consumer deduplication key accepted by the public command contract.
+	 * Longest client deduplication key accepted by the public command contract.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -39,7 +39,7 @@ final readonly class Tasks {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $owner  Consumer plugin owner.
+	 * @param   string               $owner  Client plugin owner.
 	 * @param   TasksEngineInterface $engine Task engine operations.
 	 */
 	public function __construct(
@@ -84,7 +84,7 @@ final readonly class Tasks {
 	 * @param   string                  $name      Owner-local task name.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity, delay, deduplication key, or priority is invalid, or arguments are not portable.

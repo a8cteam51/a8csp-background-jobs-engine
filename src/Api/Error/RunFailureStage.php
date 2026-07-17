@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Stable terminalization stage exposed by a consumer-visible run failure.
+ * Stable terminalization stage exposed by a client-visible run failure.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -13,7 +13,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
 enum RunFailureStage: string {
 	// region FIELDS AND CONSTANTS
 
-	/** Consumer work or a lifecycle effect failed during execution. */
+	/** Client work or a lifecycle effect failed during execution. */
 	case Execution = 'execution';
 
 	/** A batch queue could not be generated or admitted. */

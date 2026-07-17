@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
@@ -45,7 +45,7 @@ final class DispatcherCancelTest extends TestCase {
 	private const string TASK_NAME      = 'email-digest';
 
 	private RecordingBatch $batch;
-	private Consumer $consumer;
+	private Client $client;
 	private EngineRig $rig;
 	private RecordingTask $task;
 	private StoreFixtureBuilder $task_fixtures;
@@ -79,12 +79,12 @@ final class DispatcherCancelTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW, 2 );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->task     = new RecordingTask( self::TASK_NAME );
-		$this->batch    = new RecordingBatch( self::BATCH_NAME );
-		$this->consumer->tasks()->register( $this->task );
-		$this->consumer->batches()->register( $this->batch );
+		$this->rig    = EngineRig::set_up( self::NOW, 2 );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::TASK_NAME );
+		$this->batch  = new RecordingBatch( self::BATCH_NAME );
+		$this->client->tasks()->register( $this->task );
+		$this->client->batches()->register( $this->batch );
 		$this->task_fixtures = StoreFixtureBuilder::for_identity( self::TASK_IDENTITY );
 		$this->reset_backend_observations();
 	}
@@ -122,7 +122,7 @@ final class DispatcherCancelTest extends TestCase {
 		$run_id = $this->enqueue_task();
 		$this->reset_backend_observations();
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::TASK_IDENTITY, $run_id );
 	}
@@ -140,7 +140,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->reset_backend_observations();
 		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair scheduling.' ) );
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::TASK_IDENTITY, $run_id );
 	}
@@ -156,7 +156,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_a_missing_run(): void {
 		$before = $this->cancellation_effects();
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, 'missing-run' );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, 'missing-run' );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -174,7 +174,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->wpdb()->put( $this->run_option_name( self::TASK_IDENTITY, 'corrupt-run' ), 'corrupt' );
 		$before = $this->cancellation_effects();
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, 'corrupt-run' );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, 'corrupt-run' );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -193,7 +193,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->put_task_state( RunStatus::Completed, false, 0, 1, self::NOW, null );
 		$before = $this->cancellation_effects();
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$error = $this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
 		self::assertSame( 'completed', $error->context['status'] ?? null );
@@ -216,7 +216,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->put_task_state( RunStatus::Running, true, 0, 1, self::NOW + 300, null );
 		$before = $this->rig->wpdb()->rows;
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -244,7 +244,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
 		self::assertSame( self::NOW + 1, $this->decoded_task_state()['heartbeat_at'] ?? null );
@@ -271,7 +271,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
 		self::assertTrue( $this->decoded_task_state()['executing'] ?? false );
@@ -296,7 +296,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( &$cancel_result, $run_id ): void {
-				$cancel_result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+				$cancel_result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 			}
 		);
 
@@ -318,7 +318,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_an_unregistered_name(): void {
 		$before = $this->cancellation_effects();
 
-		$result = $this->consumer->runs()->cancel( 'unknown', 'run-1' );
+		$result = $this->client->runs()->cancel( 'unknown', 'run-1' );
 
 		$this->assert_failure_code( $result, ApiErrorCode::UnknownWork );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -336,7 +336,7 @@ final class DispatcherCancelTest extends TestCase {
 		$run_id = $this->start_batch();
 		$this->reset_backend_observations();
 
-		$result = $this->consumer->runs()->cancel( self::BATCH_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::BATCH_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::BATCH_IDENTITY, $run_id );
 	}
@@ -354,7 +354,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
-		$result = $this->consumer->runs()->cancel( self::BATCH_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::BATCH_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
 		$this->rig->backend()->assert_scheduled( self::BATCH_IDENTITY );
@@ -375,7 +375,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
-		$result = $this->consumer->runs()->cancel( self::BATCH_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::BATCH_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::BATCH_IDENTITY, $run_id );
 	}
@@ -395,7 +395,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->assert_retry_scheduled();
 		$this->reset_backend_observations();
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::TASK_IDENTITY, $run_id );
 	}
@@ -410,11 +410,11 @@ final class DispatcherCancelTest extends TestCase {
 	 */
 	public function test_second_cancel_reports_that_the_run_is_not_retained(): void {
 		$run_id = $this->enqueue_task();
-		$first  = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$first  = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $first );
 		$this->reset_backend_observations();
 
-		$second = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$second = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_failure_code( $second, ApiErrorCode::RunNotRetained );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
@@ -442,7 +442,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer->runs()->cancel( self::TASK_NAME, $run_id );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -476,7 +476,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_task(): string {
-		$result = $this->consumer->tasks()->enqueue( self::TASK_NAME, self::ARGS );
+		$result = $this->client->tasks()->enqueue( self::TASK_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -492,7 +492,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function start_batch(): string {
-		$result = $this->consumer->batches()->start( self::BATCH_NAME, self::ARGS );
+		$result = $this->client->batches()->start( self::BATCH_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

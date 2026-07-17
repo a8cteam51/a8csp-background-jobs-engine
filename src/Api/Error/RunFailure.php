@@ -5,10 +5,10 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Persisted terminal-failure value delivered to consumer callbacks and lifecycle hooks.
+ * Persisted terminal-failure value delivered to client callbacks and lifecycle hooks.
  *
  * The terminalization stage is a `RunFailureStage` case. The summary is engine-authored and
- * redacted; it never contains a raw consumer exception message.
+ * redacted; it never contains a raw client exception message.
  *
  * @since   1.0.0
  * @version 1.0.0

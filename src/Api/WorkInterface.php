@@ -14,7 +14,7 @@ interface WorkInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Default ceiling for one consumer callback invocation.
+	 * Default ceiling for one client callback invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -28,7 +28,7 @@ interface WorkInterface {
 	// region METHODS
 
 	/**
-	 * Returns the declared ceiling in seconds for one consumer callback invocation.
+	 * Returns the declared ceiling in seconds for one client callback invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

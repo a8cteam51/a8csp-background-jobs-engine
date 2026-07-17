@@ -14,7 +14,7 @@ body:
       label: Steps to reproduce
       placeholder: |
         1. Activate the plugin alongside Action Scheduler.
-        2. Register a recurring task from a consumer plugin.
+        2. Register a recurring task from a client plugin.
         3. ...
 
         Attach any media by drag and dropping or selecting upload.

@@ -20,7 +20,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 final class OverlapLockTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Consumer owner isolated to overlap integration coverage. */
+	/** Client owner isolated to overlap integration coverage. */
 	private const string OWNER = 'integration-overlap-lock';
 
 	/** Batch identity isolated to the held-lock Skip case. */

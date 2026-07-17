@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -40,8 +40,8 @@ use PHPUnit\Framework\Assert;
 final class EngineRig {
 	// region FIELDS AND CONSTANTS.
 
-	/** @var array<string, Consumer> */
-	private array $consumers = array();
+	/** @var array<string, Client> */
+	private array $clients = array();
 
 	/** @var non-empty-list<RecordingBackend> */
 	private array $backends;
@@ -159,20 +159,20 @@ final class EngineRig {
 	// region GETTERS.
 
 	/**
-	 * Returns an owner-bound consumer through the guarded public front door.
+	 * Returns an owner-bound client through the guarded public front door.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Consumer owner.
+	 * @param   string $owner Client owner.
 	 *
-	 * @return  Consumer
+	 * @return  Client
 	 */
-	public function consumer( string $owner ): Consumer {
-		$consumer                  = \a8csp_bgte( $owner );
-		$this->consumers[ $owner ] = $consumer;
+	public function client( string $owner ): Client {
+		$client                  = \a8csp_bgte( $owner );
+		$this->clients[ $owner ] = $client;
 
-		return $consumer;
+		return $client;
 	}
 
 	/**
@@ -288,15 +288,15 @@ final class EngineRig {
 		[ $identity, $run_id ] = $this->identity_and_run_id( $args );
 		$parts                 = WorkIdentity::parts( $identity );
 		Assert::assertNotNull( $parts );
-		$consumer = $this->consumers[ $parts[0] ] ?? null;
-		Assert::assertInstanceOf( Consumer::class, $consumer );
-		$result = $consumer->runs()->last_completed_run_id( $parts[1] );
+		$client = $this->clients[ $parts[0] ] ?? null;
+		Assert::assertInstanceOf( Client::class, $client );
+		$result = $client->runs()->last_completed_run_id( $parts[1] );
 		Assert::assertInstanceOf( Success::class, $result );
 		Assert::assertSame( $run_id, $result->value );
 	}
 
 	/**
-	 * Asserts the latest failed event exposes the requested consumer failure code.
+	 * Asserts the latest failed event exposes the requested client failure code.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

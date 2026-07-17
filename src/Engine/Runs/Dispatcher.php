@@ -68,7 +68,7 @@ final readonly class Dispatcher {
 	 * @param   LoggerInterface     $logger               Log event sink.
 	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
 	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   LifecycleEffects    $terminal_effects     Consumer lifecycle-effect executor.
+	 * @param   LifecycleEffects    $terminal_effects     Client lifecycle-effect executor.
 	 */
 	public function __construct(
 		private WorkRegistry $work,
@@ -100,7 +100,7 @@ final readonly class Dispatcher {
 	 * @param   string                  $task_name Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
@@ -120,7 +120,7 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Dispatches a task under the schedule overlap policy without expanding the consumer task API.
+	 * Dispatches a task under the schedule overlap policy without expanding the client task API.
 	 *
 	 * Allow uses a per-run fencing identity, Skip returns a typed held outcome, and Replace transfers
 	 * the shared-identity lock through the same takeover helper as batch start. Task callbacks always
@@ -247,9 +247,9 @@ final readonly class Dispatcher {
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
-	 * A retried run does not re-acquire its original deduplication key or existing-run policy: it is
-	 * re-admitted under its argument identity, so it does not collapse against a concurrent enqueue
-	 * carrying the failed run's key.
+	 * A retried run does not re-acquire its original deduplication key or existing-run policy. Task
+	 * and Batch retries are re-admitted under their argument identity and refuse a matching live run,
+	 * so a retry does not collapse against a concurrent enqueue carrying the failed run's key.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -298,7 +298,7 @@ final readonly class Dispatcher {
 
 		$result = null !== $task
 			? $this->enqueue( $identity, $entry['start_args'] )
-			: $this->start_batch( $identity, $entry['start_args'] );
+			: $this->start_batch( $identity, $entry['start_args'], ExistingRunPolicy::Reject );
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
@@ -457,7 +457,7 @@ final readonly class Dispatcher {
 	 * @param   string                  $task_name     Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args          Task arguments.
 	 * @param   int                     $delay         Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key     Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   string|null             $dedup_key     Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority      Advisory priority from 0 through 255.
 	 * @param   OverlapPolicy           $overlap       Execution-overlap policy.
 	 * @param   \Closure|null           $on_accepted   Internal callback after backend acceptance and before started hooks.
@@ -489,7 +489,8 @@ final readonly class Dispatcher {
 			return $args_hash;
 		}
 		if ( null !== $dedup_key ) {
-			$args_hash = \hash( 'sha256', $dedup_key );
+			// The dedup tag separates opaque keys from canonical JSON argument identities, whose encodings never start with "d".
+			$args_hash = \hash( 'sha256', 'dedup:' . $dedup_key );
 		}
 
 		$now = $this->clock->now()->getTimestamp();

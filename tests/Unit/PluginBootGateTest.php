@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\ComponentCollection;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
@@ -78,11 +78,11 @@ final class PluginBootGateTest extends TestCase {
 	}
 
 	/**
-	 * Plugin boot publishes the consumer facade through the public front door.
+	 * Plugin boot publishes the client facade through the public front door.
 	 *
 	 * @return  void
 	 */
-	public function test_boot_publishes_the_public_consumer_facade(): void {
+	public function test_boot_publishes_the_public_client_facade(): void {
 		$plugin = new Plugin();
 		self::assertFalse( $plugin->is_booted() );
 
@@ -90,15 +90,15 @@ final class PluginBootGateTest extends TestCase {
 		self::assertTrue( $plugin->is_booted() );
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
-		self::assertInstanceOf( Consumer::class, \a8csp_bgte( 'plugin-boot-gate' ) );
+		self::assertInstanceOf( Client::class, \a8csp_bgte( 'plugin-boot-gate' ) );
 	}
 
 	/**
-	 * A boot throw poisons the stored plugin entry and the public consumer seam fails loudly.
+	 * A boot throw poisons the stored plugin entry and the public client seam fails loudly.
 	 *
 	 * @return  void
 	 */
-	public function test_failed_accessor_boot_leaves_the_public_consumer_unavailable(): void {
+	public function test_failed_accessor_boot_leaves_the_public_client_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
 		$plugin          = \a8csp_bgte_plugin();

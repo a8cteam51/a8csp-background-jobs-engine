@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -71,7 +71,7 @@ final class ScheduleExecutionTest extends TestCase {
 	private const string TASK             = 'refresh-index';
 	private const string TASK_IDENTITY    = self::OWNER . ':' . self::TASK;
 
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingTask $task;
@@ -105,10 +105,10 @@ final class ScheduleExecutionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->task     = new RecordingTask( self::TASK );
-		$this->consumer->tasks()->register( $this->task );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::TASK );
+		$this->client->tasks()->register( $this->task );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::TASK_IDENTITY );
 		$this->reset_observations();
 	}
@@ -363,7 +363,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
-				self::assertInstanceOf( Success::class, $this->consumer->schedules()->sync( array( $replacement ) ) );
+				self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $replacement ) ) );
 				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null;
 				self::assertIsString( $replacement_raw );
 			}
@@ -499,7 +499,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	private function sync_schedule( Schedule $schedule ): void {
-		self::assertInstanceOf( Success::class, $this->consumer->schedules()->sync( array( $schedule ) ) );
+		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
 		$this->reset_observations();
 	}
 

@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
@@ -45,7 +45,7 @@ final class FailureLifecycleTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingTask $task;
@@ -79,10 +79,10 @@ final class FailureLifecycleTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->task     = new RecordingTask( self::NAME );
-		$this->consumer->tasks()->register( $this->task );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->client->tasks()->register( $this->task );
 		$this->fixtures                 = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls    = array();
 		$this->rig->randomizer()->calls = array();
@@ -248,9 +248,9 @@ final class FailureLifecycleTest extends TestCase {
 		$on_batch_failure = static function () use ( &$batch_failures ): void {
 			++$batch_failures;
 		};
-		$this->consumer->tasks()->register( $this->dual_kind_task( $name, $on_batch_failure ) );
+		$this->client->tasks()->register( $this->dual_kind_task( $name, $on_batch_failure ) );
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->consumer->tasks()->enqueue( $name, self::ARGS );
+		$result                         = $this->client->tasks()->enqueue( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->randomizer()->value = 7;
 		$this->rig->backend()->calls    = array();
@@ -610,8 +610,8 @@ final class FailureLifecycleTest extends TestCase {
 		$batch->queue             = array( array( 'chunk' => 'current' ) );
 		$batch->retry_policy      = new RetryPolicy( max_attempts: 1 );
 		$batch->process_throwable = new InvalidBatchChunkException( 'Batch chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.' );
-		$this->consumer->batches()->register( $batch );
-		$result = $this->consumer->batches()->start( 'bounded-batch', self::ARGS );
+		$this->client->batches()->register( $batch );
+		$result = $this->client->batches()->start( 'bounded-batch', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
@@ -637,7 +637,7 @@ final class FailureLifecycleTest extends TestCase {
 	private function enqueue_task(): string {
 		$retry_value                    = $this->rig->randomizer()->value;
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->consumer->tasks()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->rig->randomizer()->value = $retry_value;

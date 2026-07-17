@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 final class SupersededRunTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Consumer owner isolated to supersession coverage. */
+	/** Client owner isolated to supersession coverage. */
 	private const string OWNER = 'integration-superseded';
 
 	/** Batch identity unique within the request-persistent integration registry. */
@@ -52,8 +52,8 @@ final class SupersededRunTest extends IntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->batches()->register( $batch );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->batches()->register( $batch );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
 		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
@@ -110,7 +110,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a_result = $consumer->batches()->start( self::NAME, $start_args );
+		$run_a_result = $client->batches()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent batch must start through the public API' );
 		self::assertIsString( $run_a_result->value );
 		$run_a      = $run_a_result->value;
@@ -126,7 +126,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array(), $batch->process_calls, 'The incumbent continue action must not process its exposed chunk inline' );
 		$run_a_action_id = $this->assert_pending_chunk_action( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
-		$run_b_result = $consumer->batches()->start( self::NAME, $start_args );
+		$run_b_result = $client->batches()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal batch start must replace the same-arguments incumbent' );
 		self::assertIsString( $run_b_result->value );
 		$run_b      = $run_b_result->value;

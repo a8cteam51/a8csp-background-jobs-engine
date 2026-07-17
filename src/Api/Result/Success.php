@@ -7,7 +7,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Result;
 /**
  * Successful variant of {@see AbstractResult}, carrying the operation's return value.
  *
- * After a successful predicate branch, consumers read {@see self::$value} directly without an
+ * After a successful predicate branch, clients read {@see self::$value} directly without an
  * additional type check. Expected failure outcomes use {@see Failure}; unexpected failures remain
  * exceptions.
  *

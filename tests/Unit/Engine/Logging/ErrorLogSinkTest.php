@@ -187,7 +187,7 @@ final class ErrorLogSinkTest extends TestCase {
 	public function test_log_replaces_an_object_context_value_with_its_debug_type(): void {
 		$unencodable_value = new class() implements \JsonSerializable {
 			/**
-			 * Rejects execution of consumer-controlled serialization code.
+			 * Rejects execution of client-controlled serialization code.
 			 *
 			 * @return  mixed
 			 */

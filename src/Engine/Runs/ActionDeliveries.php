@@ -125,7 +125,7 @@ final readonly class ActionDeliveries {
 	 * @param   ClockInterface   $clock                Timestamp source.
 	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
 	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   LifecycleEffects $terminal_effects     Consumer lifecycle-effect executor.
+	 * @param   LifecycleEffects $terminal_effects     Client lifecycle-effect executor.
 	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(

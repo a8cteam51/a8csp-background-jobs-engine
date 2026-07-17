@@ -46,7 +46,7 @@ final readonly class SchedulingError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
+	 * @param   string $owner Stable client identifier.
 	 *
 	 * @return  self
 	 */
@@ -60,7 +60,7 @@ final readonly class SchedulingError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
+	 * @param   string $owner Stable client identifier.
 	 *
 	 * @return  self
 	 */

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
@@ -42,7 +42,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingTask $task;
@@ -76,10 +76,10 @@ final class ActionDeliveriesTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->task     = new RecordingTask( self::NAME );
-		$this->consumer->tasks()->register( $this->task );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->client->tasks()->register( $this->task );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -115,8 +115,8 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_registered_delivery_hooks_drive_every_batch_stage(): void {
 		$batch        = new RecordingBatch( 'hook-registration-probe' );
 		$batch->queue = array( array( 'chunk' => 'only' ) );
-		$this->consumer->batches()->register( $batch );
-		$result = $this->consumer->batches()->start( $batch->get_name(), self::ARGS );
+		$this->client->batches()->register( $batch );
+		$result = $this->client->batches()->start( $batch->get_name(), self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 5; ++$delivery ) {
@@ -144,18 +144,18 @@ final class ActionDeliveriesTest extends TestCase {
 			'site_id' => 8,
 			'mode'    => 'delta',
 		);
-		$first          = $this->consumer->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
+		$first          = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
 		self::assertInstanceOf( Success::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$duplicate                     = $this->consumer->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$duplicate                     = $this->client->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
 		$this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
-		$reused                        = $this->consumer->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$reused                        = $this->client->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
 		self::assertInstanceOf( Success::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->task->calls );
@@ -434,14 +434,14 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_unregistered_task_delivery_terminalizes_the_live_run(): void {
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
+		$this->client   = $this->rig->client( self::OWNER );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
 		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
 
 		$this->rig->assert_failed( ApiErrorCode::UnknownWork );
-		$retry = $this->consumer->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $retry, ApiErrorCode::UnknownWork );
 	}
 
@@ -477,7 +477,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		$last_completed = $this->consumer->runs()->last_completed_run_id( self::NAME );
+		$last_completed = $this->client->runs()->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertNull( $last_completed->value );
 	}
@@ -520,7 +520,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_task(): string {
-		$result = $this->consumer->tasks()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

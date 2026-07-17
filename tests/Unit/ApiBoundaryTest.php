@@ -24,7 +24,7 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\Batches',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchesEngineInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\ExistingRunPolicy',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Consumer',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Client',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ApiError',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ApiErrorCode',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ErrorInterface',

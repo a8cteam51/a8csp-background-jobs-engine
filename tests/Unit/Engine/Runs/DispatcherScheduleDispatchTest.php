@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
@@ -38,7 +38,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 	private const string SCHEDULE = 'email-digest-schedule';
 
-	private Consumer $consumer;
+	private Client $client;
 	private EngineRig $rig;
 	private StoreFixtureBuilder $fixtures;
 
@@ -57,9 +57,9 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
-		$this->consumer->tasks()->register( new RecordingTask( self::NAME ) );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->client->tasks()->register( new RecordingTask( self::NAME ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -88,7 +88,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_policy_dispatch_enqueues_against_an_open_lock( string $policy_value ): void {
 		$this->sync_schedule( OverlapPolicy::from( $policy_value ), 23 );
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -130,7 +130,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			}
 		);
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $observed );
@@ -152,7 +152,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$this->seed_held_lock();
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -174,7 +174,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 */
 	public function test_allow_dispatch_reports_a_forced_run_id_collision(): void {
 		$this->sync_schedule( OverlapPolicy::Allow );
-		$first = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$first = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 		self::assertInstanceOf( Success::class, $first );
 		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
@@ -182,7 +182,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertIsString( $salted_hash );
 		$this->put_lock( $salted_hash, 'collision-rival' );
 
-		$collision = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$collision = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $collision );
 		$error = $this->api_error( $collision );
@@ -200,7 +200,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$this->rig->wpdb()->script_result( 'insert', false );
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
@@ -220,7 +220,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$latest_pointer = 'a8csp_bgte_latest_run_' . self::IDENTITY;
 		unset( $this->rig->wpdb()->rows[ $latest_pointer ], $this->rig->wpdb()->autoload[ $latest_pointer ] );
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
@@ -247,7 +247,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		// Two insert interceptions are required because the overlap-lock claim follows the provisional run-row insert.
 		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
@@ -266,7 +266,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->sync_schedule( OverlapPolicy::Replace );
 		$this->seed_held_lock();
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -284,7 +284,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->seed_held_lock();
 		$this->rig->wpdb()->before_next( 'update', fn ( WpdbLockSpy $wpdb ) => $this->put_lock( $this->args_hash(), 'run-rival' ) );
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertSame( 'run-rival', $this->lock_owner( $this->args_hash() ) );
@@ -302,7 +302,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->seed_held_lock();
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before dispatching the replacement.' ) );
 
-		$result = $this->consumer->schedules()->dispatch_now( self::SCHEDULE );
+		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
@@ -322,7 +322,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @param   int           $priority Delivery priority.
 	 */
 	private function sync_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
-		$result = $this->consumer->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, $policy, priority: $priority ) ) );
+		$result = $this->client->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, $policy, priority: $priority ) ) );
 		self::assertInstanceOf( Success::class, $result );
 	}
 

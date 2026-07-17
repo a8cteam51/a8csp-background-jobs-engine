@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
@@ -25,7 +25,7 @@ final class BatchContextTest extends TestCase {
 	private const int NOW      = 1_700_000_000;
 	private const string OWNER = 'batch-context-tests';
 
-	private Consumer $consumer;
+	private Client $client;
 	private EngineRig $rig;
 
 	// endregion.
@@ -51,8 +51,8 @@ final class BatchContextTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->consumer = $this->rig->consumer( self::OWNER );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
 	}
 
 	/**
@@ -177,8 +177,8 @@ final class BatchContextTest extends TestCase {
 	 * @return  string
 	 */
 	private function start_and_deliver_first_chunk( RecordingBatch $batch, array $start_args ): string {
-		$this->consumer->batches()->register( $batch );
-		$result = $this->consumer->batches()->start( $batch->get_name(), $start_args );
+		$this->client->batches()->register( $batch );
+		$result = $this->client->batches()->start( $batch->get_name(), $start_args );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );

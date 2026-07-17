@@ -602,7 +602,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $pending_before );
 
 		$this->clock->timestamp                   = self::NOW + 901;
-		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redelivering.', array( 'consumer_payload' => self::ARGS ) ) );
+		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redelivering.', array( 'client_payload' => self::ARGS ) ) );
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
@@ -815,7 +815,7 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A throwing run timing filter leaves its row unchanged without starving a later consumer.
+	 * A throwing run timing filter leaves its row unchanged without starving a later client.
 	 *
 	 * @return  void
 	 */
@@ -1237,7 +1237,7 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A throwing batch `on_failed()` callback cannot starve a later consumer's crash reconciliation.
+	 * A throwing batch `on_failed()` callback cannot starve a later client's crash reconciliation.
 	 *
 	 * @return  void
 	 */
@@ -1776,12 +1776,12 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A deactivated consumer cannot leave its terminal row permanently unfinished.
+	 * A deactivated client cannot leave its terminal row permanently unfinished.
 	 *
 	 * @return  void
 	 */
 	public function test_sweep_skips_an_unregistered_batch_callback_and_finishes_the_row(): void {
-		$name = self::identity( 'deactivated-consumer' );
+		$name = self::identity( 'deactivated-client' );
 		$this->store_terminal_run( $name, 'completed' );
 
 		$this->maintenance->handle( array() );

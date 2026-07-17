@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\SchedulesEngineInterface;
 
-/** Records calls made through the typed schedule-engine consumer-testing seam. */
+/** Records calls made through the typed schedule-engine client-testing seam. */
 final class FakeSchedulesEngine implements SchedulesEngineInterface {
 	// region FIELDS AND CONSTANTS.
 

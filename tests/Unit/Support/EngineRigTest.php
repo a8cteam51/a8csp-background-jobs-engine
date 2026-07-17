@@ -53,10 +53,10 @@ final class EngineRigTest extends TestCase {
 	public function test_task_completion_round_trips_through_the_real_graph(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$consumer = $rig->consumer( 'rig-tests' );
-			$task     = new RecordingTask( 'task' );
-			$consumer->tasks()->register( $task );
-			$result = $consumer->tasks()->enqueue( 'task', self::ARGS );
+			$client = $rig->client( 'rig-tests' );
+			$task   = new RecordingTask( 'task' );
+			$client->tasks()->register( $task );
+			$result = $client->tasks()->enqueue( 'task', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -74,12 +74,12 @@ final class EngineRigTest extends TestCase {
 	public function test_terminal_failure_helpers_observe_real_failure_lifecycle(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$consumer = $rig->consumer( 'rig-tests' );
-			$task     = new RecordingTask( 'task' );
+			$client = $rig->client( 'rig-tests' );
+			$task   = new RecordingTask( 'task' );
 
 			$task->throwable = new NonRetryableException( 'Permanent failure.' );
-			$consumer->tasks()->register( $task );
-			$result = $consumer->tasks()->enqueue( 'task', self::ARGS );
+			$client->tasks()->register( $task );
+			$result = $client->tasks()->enqueue( 'task', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -95,12 +95,12 @@ final class EngineRigTest extends TestCase {
 	public function test_retry_helper_observes_real_failure_redelivery(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$consumer = $rig->consumer( 'rig-tests' );
-			$task     = new RecordingTask( 'task' );
+			$client = $rig->client( 'rig-tests' );
+			$task   = new RecordingTask( 'task' );
 
 			$task->throwable = new \RuntimeException( 'Transient failure.' );
-			$consumer->tasks()->register( $task );
-			$result = $consumer->tasks()->enqueue( 'task', self::ARGS );
+			$client->tasks()->register( $task );
+			$result = $client->tasks()->enqueue( 'task', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -115,13 +115,13 @@ final class EngineRigTest extends TestCase {
 	public function test_cancelled_helper_observes_real_runs_facade_cancellation(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$consumer = $rig->consumer( 'rig-tests' );
-			$consumer->tasks()->register( new RecordingTask( 'task' ) );
-			$enqueued = $consumer->tasks()->enqueue( 'task', self::ARGS );
+			$client = $rig->client( 'rig-tests' );
+			$client->tasks()->register( new RecordingTask( 'task' ) );
+			$enqueued = $client->tasks()->enqueue( 'task', self::ARGS );
 			self::assertInstanceOf( Success::class, $enqueued );
 			self::assertIsString( $enqueued->value );
 
-			$cancelled = $consumer->runs()->cancel( 'task', $enqueued->value );
+			$cancelled = $client->runs()->cancel( 'task', $enqueued->value );
 			self::assertInstanceOf( Success::class, $cancelled );
 			$rig->assert_cancelled();
 		} finally {
@@ -133,13 +133,13 @@ final class EngineRigTest extends TestCase {
 	public function test_superseded_helper_observes_real_batch_replacement(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$consumer = $rig->consumer( 'rig-tests' );
-			$consumer->batches()->register( new RecordingBatch( 'batch' ) );
-			$first = $consumer->batches()->start( 'batch', self::ARGS );
+			$client = $rig->client( 'rig-tests' );
+			$client->batches()->register( new RecordingBatch( 'batch' ) );
+			$first = $client->batches()->start( 'batch', self::ARGS );
 			self::assertInstanceOf( Success::class, $first );
 			++$rig->clock()->timestamp;
 
-			$replacement = $consumer->batches()->start( 'batch', self::ARGS, ExistingRunPolicy::Replace );
+			$replacement = $client->batches()->start( 'batch', self::ARGS, ExistingRunPolicy::Replace );
 			self::assertInstanceOf( Success::class, $replacement );
 			$rig->run_due();
 			$rig->assert_superseded();

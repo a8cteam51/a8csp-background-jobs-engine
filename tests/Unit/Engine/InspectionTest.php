@@ -98,10 +98,10 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedules_join_live_declarations_with_persisted_orphans_and_locks(): void {
-		$consumer = $this->rig->consumer( 'owner-a' );
-		$consumer->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$client = $this->rig->client( 'owner-a' );
+		$client->tasks()->register( new RecordingTask( 'refresh-index' ) );
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( $schedule ) ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( $schedule ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -173,7 +173,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_locks_preserve_every_discriminated_honesty_state(): void {
-		$consumer      = $this->rig->consumer( 'owner' );
+		$client        = $this->rig->client( 'owner' );
 		$schedules     = array(
 			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-task', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-task', array( 'case' => 'failed' ) ),
@@ -191,7 +191,7 @@ final class InspectionTest extends TestCase {
 			),
 		);
 		foreach ( $schedules as $name => $schedule ) {
-			$consumer->tasks()->register( new RecordingTask( $schedule->task ) );
+			$client->tasks()->register( new RecordingTask( $schedule->task ) );
 			$declarations[ 'owner:' . $name ]  = array(
 				'schedule' => $schedule,
 				'task'     => 'owner:' . $schedule->task,
@@ -204,7 +204,7 @@ final class InspectionTest extends TestCase {
 				'overlap_skips' => 0,
 			);
 		}
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-task' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -269,14 +269,14 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_public_task_lifecycle_is_visible_with_strict_staleness(): void {
 		$identity        = 'owner:email-digest';
-		$consumer        = $this->rig->consumer( 'owner' );
+		$client          = $this->rig->client( 'owner' );
 		$task            = new RecordingTask( 'email-digest' );
 		$during          = null;
 		$task->on_handle = function () use ( $identity, &$during ): void {
 			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
 		};
-		$consumer->tasks()->register( $task );
-		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'email-digest' ) );
+		$client->tasks()->register( $task );
+		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'email-digest' ) );
 
 		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
 		self::assertFalse( $waiting['executing'] );
@@ -304,7 +304,7 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_runs_merge_valid_live_history_and_failed_store_rows(): void {
 		$identity = 'owner:catalog-sync';
-		$this->rig->consumer( 'owner' )->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+		$this->rig->client( 'owner' )->batches()->register( new RecordingBatch( 'catalog-sync' ) );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
 		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) ) );
@@ -359,8 +359,8 @@ final class InspectionTest extends TestCase {
 		$orphaned_identity = 'owner:orphaned';
 		$task_identity     = 'owner-a:shared';
 		$batch_identity    = 'owner-b:shared';
-		$this->rig->consumer( 'owner-a' )->tasks()->register( new RecordingTask( 'shared' ) );
-		$this->rig->consumer( 'owner-b' )->batches()->register( new RecordingBatch( 'shared' ) );
+		$this->rig->client( 'owner-a' )->tasks()->register( new RecordingTask( 'shared' ) );
+		$this->rig->client( 'owner-b' )->batches()->register( new RecordingBatch( 'shared' ) );
 		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $task_identity )->run( self::run_id( 2 ), self::state( 'task-hash', array( array( 'page' => 1 ) ) ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $batch_identity )->run( self::run_id( 3 ), self::state( 'batch-hash', array( array( 'page' => 1 ) ) ) ) );

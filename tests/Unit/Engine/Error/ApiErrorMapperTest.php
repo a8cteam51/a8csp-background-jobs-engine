@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises consumer-visible API outcomes and the context-redaction boundary.
+ * Exercises client-visible API outcomes and the context-redaction boundary.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -60,7 +60,7 @@ final class ApiErrorMapperTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $reason        Internal engine-reason backing value.
-	 * @param   string $expected_code Consumer-visible classification.
+	 * @param   string $expected_code Client-visible classification.
 	 *
 	 * @return  void
 	 */
@@ -85,7 +85,7 @@ final class ApiErrorMapperTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Consumer-visible classification.
+	 * @param   string $expected_code Client-visible classification.
 	 *
 	 * @return  void
 	 */
@@ -144,7 +144,7 @@ final class ApiErrorMapperTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_database_detail_does_not_reach_consumer_error_context(): void {
+	public function test_database_detail_does_not_reach_client_error_context(): void {
 		$secret = 'password=hunter2';
 		$result = ApiErrorMapper::map(
 			new Failure(

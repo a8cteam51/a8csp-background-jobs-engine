@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
@@ -339,14 +339,14 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$consumer = \a8csp_bgte( 'consumer-plugin' );
-		self::assertInstanceOf( Consumer::class, $consumer );
-		$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
-		$consumer->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+		$client = \a8csp_bgte( 'consumer-plugin' );
+		self::assertInstanceOf( Client::class, $client );
+		$client->tasks()->register( new RecordingTask( 'refresh' ) );
+		$client->batches()->register( new RecordingBatch( 'catalog-sync' ) );
 
-		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $consumer->batches()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->batches()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 
 		$cron = \get_option( 'cron', array() );
 		self::assertIsArray( $cron );
@@ -372,12 +372,12 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$consumer = \a8csp_bgte( 'consumer-plugin' );
-		$consumer->tasks()->register( new RecordingTask( 'preferred' ) );
+		$client = \a8csp_bgte( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'preferred' ) );
 		$GLOBALS['a8csp_bgte_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
 
-		$result = $consumer->tasks()->enqueue( 'preferred' );
+		$result = $client->tasks()->enqueue( 'preferred' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgte_test_as_calls'], 'function' ) );

@@ -14,10 +14,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason
 /**
  * Scheduling backend over Action Scheduler.
  *
- * Action Scheduler is commonly bundled by a consumer rather than activated as a standalone
+ * Action Scheduler is commonly bundled by a client rather than activated as a standalone
  * plugin. Readiness derives from its complete procedural table and the lifecycle state reported by
  * the action_scheduler_init and init actions. Every procedural call remains guarded because load
- * order can change between requests and consumers can supply partial or competing copies of the
+ * order can change between requests and clients can supply partial or competing copies of the
  * library.
  *
  * @internal

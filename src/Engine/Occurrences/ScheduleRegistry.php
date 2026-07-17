@@ -80,7 +80,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
+	 * @param   string $owner Stable client identifier.
 	 *
 	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError>
 	 */
@@ -157,7 +157,7 @@ final class ScheduleRegistry {
 	 * @phpstan-param array<string, array{schedule: Schedule, task: string}>                                          $schedules
 	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}> $registrations
 	 *
-	 * @param   string $owner         Stable consumer identifier.
+	 * @param   string $owner         Stable client identifier.
 	 * @param   array  $schedules     Declared schedules keyed by complete identity.
 	 * @param   array  $registrations Persisted owner state keyed by complete identity.
 	 *
@@ -457,7 +457,7 @@ final class ScheduleRegistry {
 	 *
 	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}> $registrations
 	 *
-	 * @param   string $owner         Stable consumer or engine identifier.
+	 * @param   string $owner         Stable client or engine identifier.
 	 * @param   array  $registrations Persisted owner state keyed by complete identity.
 	 *
 	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>|null
@@ -486,7 +486,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer or engine identifier.
+	 * @param   string $owner Stable client or engine identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the owner fails identity validation.
 	 *
@@ -546,7 +546,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                 $owner     Stable consumer identifier.
+	 * @param   string                                                 $owner     Stable client identifier.
 	 * @param   array<string, array{schedule: Schedule, task: string}> $schedules Declared schedules keyed by complete identity.
 	 *
 	 * @return  void

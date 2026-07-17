@@ -55,8 +55,8 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		);
 		$task = new RecordingTask( self::SUCCESS_NAME );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SUCCESS_IDENTITY );
 
@@ -79,7 +79,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = $consumer->tasks()->enqueue( self::SUCCESS_NAME, $args );
+		$result = $client->tasks()->enqueue( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered task must enqueue through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
@@ -96,7 +96,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		self::assertSame( array( $args ), $task->calls, 'The task must receive its original argument array exactly once' );
 		self::assertSame( array( array( $run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive run ID and start arguments' );
 		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the task name to the same payload' );
-		$last_completed = $consumer->runs()->last_completed_run_id( self::SUCCESS_NAME );
+		$last_completed = $client->runs()->last_completed_run_id( self::SUCCESS_NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::SUCCESS_IDENTITY );
@@ -133,8 +133,8 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		$task            = new RecordingTask( self::FAILURE_NAME );
 		$task->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::FAILURE_IDENTITY );
 		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::FAILURE_IDENTITY );
@@ -158,7 +158,7 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $consumer->tasks()->enqueue( self::FAILURE_NAME, $args );
+		$result = $client->tasks()->enqueue( self::FAILURE_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The failing task must enqueue before its handler executes' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

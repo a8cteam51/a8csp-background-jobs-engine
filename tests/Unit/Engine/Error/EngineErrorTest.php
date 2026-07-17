@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises consumer-visible terminal failure detail and its throwable redaction boundary.
+ * Exercises client-visible terminal failure detail and its throwable redaction boundary.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -45,7 +45,7 @@ final class EngineErrorTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Consumer-visible terminal detail retains its stable summary and classification.
+	 * Client-visible terminal detail retains its stable summary and classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -118,7 +118,7 @@ final class EngineErrorTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Consumer-visible terminal classification.
+	 * @param   string $expected_code Client-visible terminal classification.
 	 *
 	 * @return  void
 	 */
@@ -175,7 +175,7 @@ final class EngineErrorTest extends TestCase {
 	}
 
 	/**
-	 * Supplies every scheduling reason and its consumer-visible classification.
+	 * Supplies every scheduling reason and its client-visible classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -221,7 +221,7 @@ final class EngineErrorTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode $code    Consumer-visible classification.
+	 * @param   ApiErrorCode $code    Client-visible classification.
 	 * @param   string       $summary Engine-authored redacted summary.
 	 *
 	 * @return  RunFailure

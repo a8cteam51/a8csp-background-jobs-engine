@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
 /**
  * Failed variant of {@see AbstractResult}, carrying an expected error as data.
  *
- * After a failed predicate branch, consumers read {@see self::$error} directly without an
+ * After a failed predicate branch, clients read {@see self::$error} directly without an
  * additional type check. Exceptions remain reserved for unexpected infrastructure failures and
  * programmer errors rather than expected domain outcomes.
  *

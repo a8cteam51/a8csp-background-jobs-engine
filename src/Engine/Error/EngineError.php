@@ -76,7 +76,7 @@ final readonly class EngineError implements ErrorInterface {
 	}
 
 	/**
-	 * Maps a scheduling failure to its consumer-visible availability classification.
+	 * Maps a scheduling failure to its client-visible availability classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -25,7 +25,7 @@ final readonly class Batches {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                 $owner  Consumer plugin owner.
+	 * @param   string                 $owner  Client plugin owner.
 	 * @param   BatchesEngineInterface $engine Batch engine operations.
 	 */
 	public function __construct(

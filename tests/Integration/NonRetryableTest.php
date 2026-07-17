@@ -52,8 +52,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$task            = new RecordingTask( self::NAME );
 		$task->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY );
@@ -95,7 +95,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $consumer->tasks()->enqueue( self::NAME, $args );
+		$result = $client->tasks()->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable task must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

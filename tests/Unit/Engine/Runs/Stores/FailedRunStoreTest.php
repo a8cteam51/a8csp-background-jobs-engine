@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
@@ -45,7 +45,7 @@ final class FailedRunStoreTest extends TestCase {
 	private const int NOW         = 1_700_000_000;
 	private const string OWNER    = 'runs-tests';
 
-	private Consumer $consumer;
+	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -81,11 +81,11 @@ final class FailedRunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig                = EngineRig::set_up( self::NOW );
-		$this->consumer           = $this->rig->consumer( self::OWNER );
+		$this->client             = $this->rig->client( self::OWNER );
 		$this->task               = new RecordingTask( self::NAME );
 		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
 		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->consumer->tasks()->register( $this->task );
+		$this->client->tasks()->register( $this->task );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -169,16 +169,16 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertTrue( $retained[ $run_ids[1] ] );
 		self::assertCount( 20, \array_filter( $retained ) );
 
-		$evicted = $this->consumer->runs()->retry_failed( self::NAME, $run_ids[0] );
+		$evicted = $this->client->runs()->retry_failed( self::NAME, $run_ids[0] );
 		self::assertInstanceOf( Failure::class, $evicted );
 		self::assertInstanceOf( ApiError::class, $evicted->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $evicted->error->code );
 
 		$this->task->throwable          = null;
 		$this->rig->randomizer()->value = 99;
-		$retried                        = $this->consumer->runs()->retry_failed( self::NAME, $run_ids[1] );
+		$retried                        = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Success::class, $retried );
-		$consumed = $this->consumer->runs()->retry_failed( self::NAME, $run_ids[1] );
+		$consumed = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Failure::class, $consumed );
 		self::assertInstanceOf( ApiError::class, $consumed->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $consumed->error->code );
@@ -203,7 +203,7 @@ final class FailedRunStoreTest extends TestCase {
 		$this->task->throwable          = null;
 		$this->rig->randomizer()->value = 8;
 
-		$retried = $this->consumer->runs()->retry_failed( self::NAME, $failed );
+		$retried = $this->client->runs()->retry_failed( self::NAME, $failed );
 		self::assertInstanceOf( Success::class, $retried );
 		self::assertNotSame( $failed, $retried->value );
 		$this->rig->run_due();
@@ -230,7 +230,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
 		self::assertSame( array(), $snapshot['history'] );
-		$result = $this->consumer->runs()->retry_failed( self::NAME, 'legacy-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, 'legacy-run' );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
@@ -259,7 +259,7 @@ final class FailedRunStoreTest extends TestCase {
 		$this->rig->wpdb()->put( $fixture[0], $raw );
 
 		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
-		$result = $this->consumer->runs()->retry_failed( self::NAME, 'run-unknown-stage' );
+		$result = $this->client->runs()->retry_failed( self::NAME, 'run-unknown-stage' );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
@@ -470,7 +470,7 @@ final class FailedRunStoreTest extends TestCase {
 	 */
 	private function fail_task( array $args, int $randomness ): string {
 		$this->rig->randomizer()->value = $randomness;
-		$result                         = $this->consumer->tasks()->enqueue( self::NAME, $args );
+		$result                         = $this->client->tasks()->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$this->rig->run_due();

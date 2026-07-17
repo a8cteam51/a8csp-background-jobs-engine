@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchesEngineInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 
-/** Records calls made through the typed batch-engine consumer-testing seam. */
+/** Records calls made through the typed batch-engine client-testing seam. */
 final class FakeBatchesEngine implements BatchesEngineInterface {
 	// region FIELDS AND CONSTANTS.
 

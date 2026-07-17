@@ -95,7 +95,7 @@ final readonly class Schedule {
 	/**
 	 * Returns the stable SHA-256 definition identity.
 	 *
-	 * @internal Engine change-detection seam; the hash construction is not consumer contract.
+	 * @internal Engine change-detection seam; the hash construction is not client contract.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

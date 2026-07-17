@@ -127,7 +127,7 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @param   int                     $failed_at  Failure timestamp.
 	 * @param   array<array-key, mixed> $start_args Original run arguments.
-	 * @param   RunFailure              $failure    Consumer failure payload.
+	 * @param   RunFailure              $failure    Client failure payload.
 	 * @param   EngineError|null        $error      Internal failure detail.
 	 *
 	 * @return  array{string, string}

@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the consumer-visible terminal failure value.
+ * Pins the client-visible terminal failure value.
  *
  */
 #[CoversClass( RunFailure::class )]

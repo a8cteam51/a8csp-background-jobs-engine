@@ -19,7 +19,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 final class RetryRoundTripTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Consumer owner isolated to retry round-trip coverage. */
+	/** Client owner isolated to retry round-trip coverage. */
 	private const string OWNER = 'integration-retry';
 
 	/** Task identity unique within the request-persistent integration registry. */
@@ -55,8 +55,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$task            = new RecordingTask( self::NAME );
 		$task->throwable = new \RuntimeException( 'The upstream service remains unavailable.' );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY );
@@ -139,7 +139,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = $consumer->tasks()->enqueue( self::NAME, $args );
+		$result = $client->tasks()->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The retryable task must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$failed_run_id     = $result->value;
@@ -259,7 +259,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			$failed_entry['error'] ?? null
 		);
 
-		$manual_result = $consumer->runs()->retry_failed( self::NAME, $failed_run_id );
+		$manual_result = $client->runs()->retry_failed( self::NAME, $failed_run_id );
 		self::assertInstanceOf( Success::class, $manual_result, 'Manual retry must enqueue a fresh run through the public API' );
 		self::assertIsString( $manual_result->value );
 		$successful_run_id = $manual_result->value;

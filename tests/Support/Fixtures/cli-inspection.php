@@ -13,9 +13,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		$consumer = \a8csp_bgte( 'integration-cli-inspection-owner' );
-		$consumer->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
-		$result = $consumer->schedules()->sync(
+		$client = \a8csp_bgte( 'integration-cli-inspection-owner' );
+		$client->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
+		$result = $client->schedules()->sync(
 			array(
 				new Schedule( 'inspection-schedule', Recurrence::every( 300 ), 'integration-cli-inspection-task', array( 'source' => 'schedule' ) ),
 			)

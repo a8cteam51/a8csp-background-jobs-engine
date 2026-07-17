@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises consumer-visible scheduling failures through the API boundary.
+ * Exercises client-visible scheduling failures through the API boundary.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -132,7 +132,7 @@ final class SchedulingErrorTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Consumer-visible scheduling classification.
+	 * @param   string $expected_code Client-visible scheduling classification.
 	 *
 	 * @return  void
 	 */

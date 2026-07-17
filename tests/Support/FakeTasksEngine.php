@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TasksEngineInterface;
 
-/** Records calls made through the typed task-engine consumer-testing seam. */
+/** Records calls made through the typed task-engine client-testing seam. */
 final class FakeTasksEngine implements TasksEngineInterface {
 	// region FIELDS AND CONSTANTS.
 
@@ -49,7 +49,7 @@ final class FakeTasksEngine implements TasksEngineInterface {
 	 * @param   string                  $identity  Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Consumer deduplication key.
+	 * @param   string|null             $dedup_key Client deduplication key.
 	 * @param   int                     $priority  Advisory priority.
 	 *
 	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>

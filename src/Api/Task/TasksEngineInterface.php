@@ -41,7 +41,7 @@ interface TasksEngineInterface {
 	 * @param   string                  $identity  Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, ApiError>

@@ -4,7 +4,7 @@
  * Scriptable Action Scheduler functions for unit tests outside WordPress.
  *
  * Each guarded stub records its positional arguments and shifts a scripted return value. The
- * guards keep this file inert when a consumer loads the real Action Scheduler API.
+ * guards keep this file inert when a client loads the real Action Scheduler API.
  *
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */

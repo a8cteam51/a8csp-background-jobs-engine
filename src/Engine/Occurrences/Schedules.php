@@ -20,7 +20,7 @@ use Psr\Clock\ClockInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Consumer API for declarative recurring task schedules.
+ * Client API for declarative recurring task schedules.
  *
  * @internal
  *
@@ -66,7 +66,7 @@ final readonly class Schedules {
 	 * @phpstan-param  array<string, array{schedule: Schedule, task: string}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
-	 * @param   string $owner        Stable consumer identifier captured by the owner-bound facade.
+	 * @param   string $owner        Stable client identifier captured by the owner-bound facade.
 	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *
 	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
@@ -91,7 +91,7 @@ final readonly class Schedules {
 	 * @phpstan-param  array<string, array{schedule: Schedule, task: string}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
-	 * @param   string $owner        Stable consumer or engine identifier.
+	 * @param   string $owner        Stable client or engine identifier.
 	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *
 	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
@@ -297,7 +297,7 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
+	 * @param   string $owner Stable client identifier.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
@@ -311,7 +311,7 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable consumer identifier.
+	 * @param   string $owner Stable client identifier.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */

@@ -20,7 +20,7 @@ use Psr\Log\LoggerInterface;
  * Persists the bounded failed-run data required by manual retry.
  *
  * The nested error class preserves `EngineError::$exception_class` exactly; null records that the
- * failure carries no throwable class. Consumer failure metadata is stored with every entry, and a
+ * failure carries no throwable class. Client failure metadata is stored with every entry, and a
  * null failed chunk remains absent from serialized entries.
  *
  * @internal
@@ -106,7 +106,7 @@ final readonly class FailedRunStore {
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempts   Attempts consumed before failure.
 	 * @param   EngineError             $error      Persisted failure detail.
-	 * @param   RunFailure              $failure    Consumer terminal-failure value.
+	 * @param   RunFailure              $failure    Client terminal-failure value.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the entries to a string.

@@ -204,12 +204,12 @@ final class MultisiteTest extends IntegrationTestCase {
 
 		\switch_to_blog( $other_site_id );
 		try {
-			$consumer = \a8csp_bgte( 'multisite-contract' );
-			$consumer->tasks()->register( new RecordingTask( 'site-bound-task' ) );
+			$client = \a8csp_bgte( 'multisite-contract' );
+			$client->tasks()->register( new RecordingTask( 'site-bound-task' ) );
 
 			$this->expectException( \LogicException::class );
 
-			$result = $consumer->tasks()->enqueue( 'site-bound-task' );
+			$result = $client->tasks()->enqueue( 'site-bound-task' );
 			self::fail( \sprintf( 'Expected storage access to fail after switch_to_blog(); got %s.', \get_debug_type( $result ) ) );
 		} finally {
 			\restore_current_blog();

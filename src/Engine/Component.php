@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches as ApiBatches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
@@ -245,7 +245,7 @@ final class Component extends AbstractComponent {
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
 
-		// Late maintenance synchronization invokes scheduler filters; publication keeps a consumer
+		// Late maintenance synchronization invokes scheduler filters; publication keeps a client
 		// resolving from one of those filters on this same graph instead of rebuilding it recursively.
 		$maintenance_schedule->register_hooks();
 	}
@@ -255,19 +255,19 @@ final class Component extends AbstractComponent {
 	// region METHODS
 
 	/**
-	 * Returns a supported facade set bound to one validated consumer owner.
+	 * Returns a supported facade set bound to one validated client owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Validated consumer owner.
+	 * @param   string $owner Validated client owner.
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the consumer-owner contract.
+	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
 	 * @throws  \LogicException           When the internal graph is unavailable.
 	 *
-	 * @return  Consumer
+	 * @return  Client
 	 */
-	public static function consumer( string $owner ): Consumer {
+	public static function client( string $owner ): Client {
 		WorkIdentity::validate_owner( $owner );
 		$work       = self::$work;
 		$schedules  = self::$schedules;
@@ -279,7 +279,7 @@ final class Component extends AbstractComponent {
 
 		$adapter = new ApiAdapter( $owner, $work, $schedules, $dispatcher, $inspection );
 
-		return new Consumer(
+		return new Client(
 			$owner,
 			new ApiTasks( $owner, $adapter ),
 			new ApiBatches( $owner, $adapter ),

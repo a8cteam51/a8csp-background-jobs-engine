@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 /**
  * Demonstrates a small task that stores one idempotent site-health snapshot.
  *
- * Repeated delivery overwrites the same consumer-owned transient key with the same current-site
+ * Repeated delivery overwrites the same client-owned transient key with the same current-site
  * fields, so it cannot append duplicate records or repeat an external command.
  *
  * @since   1.0.0
@@ -29,7 +29,7 @@ final class SiteHealthPingTask implements TaskInterface {
 	public const string NAME = 'a8csp-bgte-demo-site-health-ping';
 
 	/**
-	 * Default consumer-owned transient key for the scheduled snapshot.
+	 * Default client-owned transient key for the scheduled snapshot.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -69,7 +69,7 @@ final class SiteHealthPingTask implements TaskInterface {
 	}
 
 	/**
-	 * Overwrites one consumer-owned transient with the current site-health snapshot.
+	 * Overwrites one client-owned transient with the current site-health snapshot.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -87,7 +87,7 @@ final class SiteHealthPingTask implements TaskInterface {
 		// WordPress caps transient names at 172 characters; a longer name is a permanent input
 		// defect, so it escapes the retry ladder instead of burning attempts.
 		if ( ! \is_string( $transient ) || 1 !== \preg_match( '/\A[a-z0-9_]{1,172}\z/', $transient ) ) {
-			throw new NonRetryableException( 'Site-health ping arguments require a lowercase transient key of at most 172 characters; pass the consumer storage key when dispatching the task.' );
+			throw new NonRetryableException( 'Site-health ping arguments require a lowercase transient key of at most 172 characters; pass the client storage key when dispatching the task.' );
 		}
 
 		$snapshot = array(

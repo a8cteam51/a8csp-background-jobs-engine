@@ -83,7 +83,7 @@ final class HookLoggerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_log_passes_throwable_context_without_interpolating_it(): void {
-		$throwable = new \RuntimeException( 'Consumer token secret.' );
+		$throwable = new \RuntimeException( 'Client token secret.' );
 		$context   = array(
 			'exception' => $throwable,
 			'task'      => 'email-digest',

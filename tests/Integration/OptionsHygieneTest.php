@@ -52,21 +52,21 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		$batch        = new RecordingBatch( self::BATCH_NAME );
 		$batch->queue = array( array( 'chunk' => 'only' ) );
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->tasks()->register( $task );
-		$consumer->batches()->register( $batch );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
+		$client->batches()->register( $batch );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::TASK_IDENTITY );
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BATCH_IDENTITY );
 		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
-		$task_result = $consumer->tasks()->enqueue( self::TASK_NAME, $task_args );
+		$task_result = $client->tasks()->enqueue( self::TASK_NAME, $task_args );
 		self::assertInstanceOf( Success::class, $task_result, 'The census task must enqueue through the public API' );
 		self::assertIsString( $task_result->value );
 		$task_run_id = $task_result->value;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete the census task' );
 
-		$batch_result = $consumer->batches()->start( self::BATCH_NAME, $batch_args );
+		$batch_result = $client->batches()->start( self::BATCH_NAME, $batch_args );
 		self::assertInstanceOf( Success::class, $batch_result, 'The census batch must start through the public API' );
 		self::assertIsString( $batch_result->value );
 		$batch_run_id = $batch_result->value;
@@ -99,10 +99,10 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
-		$task_latest = $consumer->runs()->last_completed_run_id( self::TASK_NAME );
+		$task_latest = $client->runs()->last_completed_run_id( self::TASK_NAME );
 		self::assertInstanceOf( Success::class, $task_latest );
 		self::assertSame( $task_run_id, $task_latest->value );
-		$batch_latest = $consumer->runs()->last_completed_run_id( self::BATCH_NAME );
+		$batch_latest = $client->runs()->last_completed_run_id( self::BATCH_NAME );
 		self::assertInstanceOf( Success::class, $batch_latest );
 		self::assertSame( $batch_run_id, $batch_latest->value );
 	}

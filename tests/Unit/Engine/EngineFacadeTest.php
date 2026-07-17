@@ -98,11 +98,11 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_task_facade_round_trips_one_public_run(): void {
-		$consumer = $this->rig->consumer( 'facade-tests' );
-		$task     = new RecordingTask( 'email-digest' );
-		$consumer->tasks()->register( $task );
+		$client = $this->rig->client( 'facade-tests' );
+		$task   = new RecordingTask( 'email-digest' );
+		$client->tasks()->register( $task );
 
-		$result = $consumer->tasks()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, dedup_key: 'site-7', priority: 5 );
+		$result = $client->tasks()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, dedup_key: 'site-7', priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
@@ -120,11 +120,11 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_batch_facade_round_trips_one_public_run(): void {
-		$consumer = $this->rig->consumer( 'facade-tests' );
-		$batch    = new RecordingBatch( 'catalog-sync' );
-		$consumer->batches()->register( $batch );
+		$client = $this->rig->client( 'facade-tests' );
+		$batch  = new RecordingBatch( 'catalog-sync' );
+		$client->batches()->register( $batch );
 
-		$result = $consumer->batches()->start( 'catalog-sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 23 );
+		$result = $client->batches()->start( 'catalog-sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
@@ -144,9 +144,9 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_facade_rejects_unknown_and_ambiguous_work_before_scheduling(): void {
-		$consumer                    = $this->rig->consumer( 'facade-tests' );
+		$client                      = $this->rig->client( 'facade-tests' );
 		$this->rig->backend()->calls = array();
-		$unknown                     = $consumer->tasks()->enqueue( 'missing' );
+		$unknown                     = $client->tasks()->enqueue( 'missing' );
 		self::assertInstanceOf( Failure::class, $unknown );
 		if ( ! $unknown->error instanceof ApiError ) {
 			throw new \LogicException( 'Unknown work must produce a public API error.' );
@@ -154,10 +154,10 @@ final class EngineFacadeTest extends TestCase {
 		self::assertSame( ApiErrorCode::UnknownWork, $unknown->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
-		$consumer->tasks()->register( new RecordingTask( 'shared' ) );
+		$client->tasks()->register( new RecordingTask( 'shared' ) );
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a task; it cannot also be registered as a batch.' );
-		$consumer->batches()->register( new RecordingBatch( 'shared' ) );
+		$client->batches()->register( new RecordingBatch( 'shared' ) );
 	}
 
 	/**
@@ -173,14 +173,14 @@ final class EngineFacadeTest extends TestCase {
 	 */
 	public function test_retry_failed_consumes_authoritative_storage_without_option_function_writes(): void {
 		$identity = 'facade-tests:email-digest';
-		$consumer = $this->rig->consumer( 'facade-tests' );
-		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$client   = $this->rig->client( 'facade-tests' );
+		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
 		$failure               = new RunFailure( identity: $identity, run_id: 'failed-run', attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
 		$GLOBALS['a8csp_bgte_test_option_calls'] = array();
 
-		$result = $consumer->runs()->retry_failed( 'email-digest', 'failed-run' );
+		$result = $client->runs()->retry_failed( 'email-digest', 'failed-run' );
 
 		self::assertInstanceOf( Success::class, $result );
 		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
@@ -199,15 +199,15 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_terminalizes_a_waiting_public_run(): void {
-		$consumer = $this->rig->consumer( 'facade-tests' );
-		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$enqueued = $consumer->tasks()->enqueue( 'email-digest' );
+		$client = $this->rig->client( 'facade-tests' );
+		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$enqueued = $client->tasks()->enqueue( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
 		}
 
-		$cancelled = $consumer->runs()->cancel( 'email-digest', $enqueued->value );
+		$cancelled = $client->runs()->cancel( 'email-digest', $enqueued->value );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'facade-tests:email-digest' )['history'][0]['outcome'] ?? null );

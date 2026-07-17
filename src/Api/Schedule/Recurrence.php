@@ -68,7 +68,7 @@ final readonly class Recurrence {
 	/**
 	 * Returns the stable recurrence representation included in schedule fingerprints.
 	 *
-	 * @internal Engine change-detection seam; the representation is not consumer contract.
+	 * @internal Engine change-detection seam; the representation is not client contract.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

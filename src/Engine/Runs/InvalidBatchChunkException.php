@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Identifies engine-authored validation failures at the consumer batch-context boundary.
+ * Identifies engine-authored validation failures at the client batch-context boundary.
  *
  * @internal
  *

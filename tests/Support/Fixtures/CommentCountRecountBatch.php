@@ -31,7 +31,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	public const string NAME = 'a8csp-bgte-demo-comment-count-recount';
 
 	/**
-	 * Consumer-owned action fired after one post's comment count is refreshed.
+	 * Client-owned action fired after one post's comment count is refreshed.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -41,7 +41,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	public const string RECOUNTED_HOOK = 'a8csp_bgte_demo/comment_count_recounted';
 
 	/**
-	 * Consumer-owned action fired after every chunk succeeds.
+	 * Client-owned action fired after every chunk succeeds.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -51,7 +51,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	public const string SUCCEEDED_HOOK = 'a8csp_bgte_demo/comment_count_recount_succeeded';
 
 	/**
-	 * Consumer-owned action fired after a terminal batch failure.
+	 * Client-owned action fired after a terminal batch failure.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -131,7 +131,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
-	 * Recounts one post and publishes a consumer-owned observation action.
+	 * Recounts one post and publishes a client-owned observation action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -210,7 +210,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
-	 * Publishes terminal failure detail for the consumer's alerting code.
+	 * Publishes terminal failure detail for the client's alerting code.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

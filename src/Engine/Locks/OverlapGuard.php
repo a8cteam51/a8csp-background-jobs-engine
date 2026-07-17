@@ -22,7 +22,7 @@ use Psr\Log\LoggerInterface;
  * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire when
  * a crashed process revives after its lock has been reclaimed. Replace takeover has the same residual
  * while an incumbent is inside a callback: PHP cannot abort it, so it finishes that callback and then
- * fences. Consumers' idempotency contract covers both windows. A leaked lock carrying a pre-credited
+ * fences. Clients' idempotency contract covers both windows. A leaked lock carrying a pre-credited
  * execution lease reclaims only after the credited runtime plus the staleness window elapses.
  * Malformed rows are not held and follow the same value-conditioned reclaim path.
  *

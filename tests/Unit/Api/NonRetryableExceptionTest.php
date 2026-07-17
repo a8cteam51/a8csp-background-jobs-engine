@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the consumer-ready non-retryable exception hierarchy.
+ * Pins the client-ready non-retryable exception hierarchy.
  *
  */
 #[CoversClass( NonRetryableException::class )]

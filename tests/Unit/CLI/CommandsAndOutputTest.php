@@ -231,9 +231,9 @@ final class CommandsAndOutputTest extends TestCase {
 		if ( 'csv' === $format ) {
 			$result = CliHarness::run_csv( 'runs' );
 		} else {
-			$consumer = $this->rig->consumer( 'consumer-plugin' );
-			$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
-			self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'email-digest' ) );
+			$client = $this->rig->client( 'consumer-plugin' );
+			$client->tasks()->register( new RecordingTask( 'email-digest' ) );
+			self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'email-digest' ) );
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), $assoc_args );
 		}
 
@@ -271,7 +271,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_lock_labels_are_discriminated(): void {
-		$consumer      = $this->rig->consumer( 'lock-tests' );
+		$client        = $this->rig->client( 'lock-tests' );
 		$schedules     = array(
 			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-task', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-task', array( 'case' => 'failed' ) ),
@@ -289,7 +289,7 @@ final class CommandsAndOutputTest extends TestCase {
 			),
 		);
 		foreach ( $schedules as $name => $schedule ) {
-			$consumer->tasks()->register( new RecordingTask( $schedule->task ) );
+			$client->tasks()->register( new RecordingTask( $schedule->task ) );
 			$declarations[ 'lock-tests:' . $name ]  = array(
 				'schedule' => $schedule,
 				'task'     => 'lock-tests:' . $schedule->task,
@@ -302,7 +302,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'overlap_skips' => 0,
 			);
 		}
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'lock-tests:invalid-task' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -363,9 +363,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_runs_cancel_action_terminalizes_a_real_run(): void {
-		$consumer = $this->rig->consumer( 'consumer-plugin' );
-		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$enqueued = $consumer->tasks()->enqueue( 'email-digest' );
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$enqueued = $client->tasks()->enqueue( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
@@ -504,9 +504,9 @@ final class CommandsAndOutputTest extends TestCase {
 	#[DataProvider( 'heartbeat_boundaries' )]
 	public function test_registered_runs_command_renders_every_heartbeat_boundary( int $heartbeat_at, string $expected ): void {
 		$this->rig->clock()->timestamp = $heartbeat_at;
-		$consumer                      = $this->rig->consumer( 'clock-tests' );
-		$consumer->tasks()->register( new RecordingTask( 'heartbeat' ) );
-		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'heartbeat' ) );
+		$client                        = $this->rig->client( 'clock-tests' );
+		$client->tasks()->register( new RecordingTask( 'heartbeat' ) );
+		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'heartbeat' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$result = CliHarness::run( 'runs', array( 'list', 'clock-tests:heartbeat' ) );
@@ -525,9 +525,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_registered_runs_command_handles_clock_skew_and_integer_extremes(): void {
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$consumer                      = $this->rig->consumer( 'clock-skew' );
-		$consumer->tasks()->register( new RecordingTask( 'future' ) );
-		self::assertInstanceOf( Success::class, $consumer->tasks()->enqueue( 'future' ) );
+		$client                        = $this->rig->client( 'clock-skew' );
+		$client->tasks()->register( new RecordingTask( 'future' ) );
+		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'future' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$future = CliHarness::run( 'runs', array( 'list', 'clock-skew:future' ) );
@@ -552,14 +552,14 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_schedule_command_renders_due_boundaries_in_utc(): void {
-		$consumer = $this->rig->consumer( 'due-tests' );
-		$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
+		$client = $this->rig->client( 'due-tests' );
+		$client->tasks()->register( new RecordingTask( 'refresh' ) );
 		$schedules = array(
 			'future'  => new Schedule( 'future', Recurrence::every( 300 ), 'refresh' ),
 			'now'     => new Schedule( 'now', Recurrence::every( 300 ), 'refresh' ),
 			'overdue' => new Schedule( 'overdue', Recurrence::every( 300 ), 'refresh' ),
 		);
-		self::assertInstanceOf( Success::class, $consumer->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
 		$declarations = array();
 		foreach ( $schedules as $name => $schedule ) {
 			$declarations[ 'due-tests:' . $name ] = array(
@@ -662,9 +662,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	private function register_schedules(): void {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$consumer = $this->rig->consumer( $owner );
-			$consumer->tasks()->register( new RecordingTask( 'refresh' ) );
-			self::assertInstanceOf( Success::class, $consumer->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			$client = $this->rig->client( $owner );
+			$client->tasks()->register( new RecordingTask( 'refresh' ) );
+			self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 	}
 
@@ -677,8 +677,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_runs(): void {
-		$consumer = $this->rig->consumer( 'consumer-plugin' );
-		$consumer->tasks()->register( new RecordingTask( 'email-digest' ) );
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
 		foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
 			$failed_chunk   = 'consumer-plugin:email_digest-2' === $identity ? array( 'post_id' => 42 ) : null;
 			$failure        = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: $failed_chunk );

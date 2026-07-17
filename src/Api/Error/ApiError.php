@@ -5,10 +5,10 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Consumer-visible failure returned when a background-work operation cannot complete.
+ * Client-visible failure returned when a background-work operation cannot complete.
  *
- * The message is engine-authored and excludes raw consumer exception text. Context contains only
- * structured detail safe for consumer diagnostics.
+ * The message is engine-authored and excludes raw client exception text. Context contains only
+ * structured detail safe for client diagnostics.
  *
  * @since   1.0.0
  * @version 1.0.0

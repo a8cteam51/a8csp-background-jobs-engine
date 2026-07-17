@@ -29,7 +29,7 @@ final readonly class MaintenanceSchedule {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedules       $schedules Consumer schedule API with the reserved-owner service entry.
+	 * @param   Schedules       $schedules Client schedule API with the reserved-owner service entry.
 	 * @param   LoggerInterface $logger    Log event sink.
 	 */
 	public function __construct(

@@ -246,7 +246,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	// region HELPERS.
 
 	/**
-	 * Synchronizes one owner through the public consumer facade.
+	 * Synchronizes one owner through the public client facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

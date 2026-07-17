@@ -787,17 +787,17 @@ final class CLICommandTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$consumer        = \a8csp_bgte( self::INSPECTION_OWNER );
+		$client          = \a8csp_bgte( self::INSPECTION_OWNER );
 		$task            = new RecordingTask( self::INSPECTION_TASK );
 		$task->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$consumer->tasks()->register( $task );
+		$client->tasks()->register( $task );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_TASK, array( 'source' => 'schedule' ) );
-		$synced   = $consumer->schedules()->sync( array( $schedule ) );
+		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter( 'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
-		$enqueued = $consumer->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
+		$enqueued = $client->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id = $enqueued->value;
@@ -848,7 +848,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertSame( $run_id, $history_rows[0]['run_id'] ?? null );
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
-			$cancelled = $consumer->runs()->cancel( self::INSPECTION_TASK, $run_id );
+			$cancelled = $client->runs()->cancel( self::INSPECTION_TASK, $run_id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		}
 	}

@@ -135,7 +135,7 @@ final readonly class LockWindows {
 	}
 
 	/**
-	 * Resolves the bounded liveness credit for one consumer callback invocation.
+	 * Resolves the bounded liveness credit for one client callback invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

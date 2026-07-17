@@ -57,8 +57,8 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			$context->prepend( array( 'chunk' => 'front' ) );
 		};
 
-		$consumer = \a8csp_bgte( self::OWNER );
-		$consumer->batches()->register( $batch );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->batches()->register( $batch );
 
 		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
 		$continue_delay_calls = array();
@@ -99,7 +99,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = $consumer->batches()->start( self::NAME, $start_args );
+		$result = $client->batches()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The registered batch must start through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
@@ -166,7 +166,7 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			'Completed hooks must follow on_completed() and preserve identity-specific then generic payload order'
 		);
 
-		$last_completed = $consumer->runs()->last_completed_run_id( self::NAME );
+		$last_completed = $client->runs()->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::IDENTITY );

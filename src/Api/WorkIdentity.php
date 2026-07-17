@@ -14,7 +14,7 @@ final class WorkIdentity {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Consumer-owner ceiling chosen with the name ceiling so the longest composed identity leaves
+	 * Client-owner ceiling chosen with the name ceiling so the longest composed identity leaves
 	 * the 24-byte overlap-lock prefix, separator, and 64-byte single-flight hash inside WordPress's 191-character
 	 * `option_name` boundary.
 	 *
@@ -67,7 +67,7 @@ final class WorkIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                Consumer or engine owner.
+	 * @param   string $owner                Client or engine owner.
 	 * @param   string $name                 Owner-local work name.
 	 * @param   bool   $allow_engine_reserved Whether the engine-reserved namespace is accepted.
 	 *
@@ -88,12 +88,12 @@ final class WorkIdentity {
 	}
 
 	/**
-	 * Validates one consumer or engine owner.
+	 * Validates one client or engine owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                Consumer or engine owner.
+	 * @param   string $owner                Client or engine owner.
 	 * @param   bool   $allow_engine_reserved Whether the engine-reserved namespace is accepted.
 	 *
 	 * @throws  \InvalidArgumentException When the owner violates the canonical grammar.
@@ -109,7 +109,7 @@ final class WorkIdentity {
 		}
 
 		if ( ! $allow_engine_reserved && \str_starts_with( $owner, self::ENGINE_OWNER ) ) {
-			throw new \InvalidArgumentException( 'Background-work owner uses the engine-reserved "a8csp-bgte" prefix; use the consumer plugin slug.' );
+			throw new \InvalidArgumentException( 'Background-work owner uses the engine-reserved "a8csp-bgte" prefix; use the client plugin slug.' );
 		}
 	}
 
@@ -141,7 +141,7 @@ final class WorkIdentity {
 	/**
 	 * Returns the validated owner and local name from one complete identity.
 	 *
-	 * Reserved engine identities are valid persisted identities even though consumers cannot claim
+	 * Reserved engine identities are valid persisted identities even though clients cannot claim
 	 * their owner prefix.
 	 *
 	 * @since   1.0.0

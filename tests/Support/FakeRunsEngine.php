@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunsEngineInterface;
 
-/** Records calls made through the typed run-engine consumer-testing seam. */
+/** Records calls made through the typed run-engine client-testing seam. */
 final class FakeRunsEngine implements RunsEngineInterface {
 	// region FIELDS AND CONSTANTS.
 

@@ -13,7 +13,7 @@ use Psr\Clock\ClockInterface;
  * Serializes one schedule occurrence's read-decide-persist critical section.
  *
  * The sixty-second stale window bounds crash recovery around scheduler acceptance and the registry
- * CAS; accepted dispatches release before consumer hooks, and asynchronous task execution is never leased.
+ * CAS; accepted dispatches release before client hooks, and asynchronous task execution is never leased.
  *
  * @internal
  *

@@ -33,7 +33,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string       $owner      Consumer plugin owner.
+	 * @param   string       $owner      Client plugin owner.
 	 * @param   WorkRegistry $work       Registered task and batch instances.
 	 * @param   Schedules    $schedules  Schedule engine operations.
 	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
@@ -98,7 +98,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 * @param   string                  $identity  Complete owner-qualified task identity.
 	 * @param   array<array-key, mixed> $args      Task arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Consumer deduplication key whose hash replaces the argument hash.
+	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
