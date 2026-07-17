@@ -433,3 +433,15 @@ wp background-tasks reset --yes
 `schedules list` reports `owner`, `identity`, `recurrence`, `next_due`, `last_fired`, `misfire_skips`, `overlap_skips`, `occurrence_visible`, and `lock`. The `occurrence_visible` value reflects state visible through ready backends. When registrations are listed in table format, the command adds a note if a present backend is not ready and may hold dormant occurrences.
 
 `runs list` table output separates live runs from bounded recent history. History rows expose `run_id`, `outcome`, and `failed_store`; the `failed_store` cell renders as `failed store` when the failure is available to `failed-runs retry`, or `—` otherwise. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a consumer callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim.
+
+## Releasing
+
+Releases are cut by pushing a version tag. The release workflow fails closed unless the plugin header, `package.json`, and the newest `CHANGELOG.md` entry all agree with the tag, then builds and smoke-tests the distribution ZIP; prereleases publish outside the stable update channel.
+
+`CHANGELOG.md` is generated from the fragments in `changelog/` by `composer changelog:write`, which derives the next version from the newest existing changelog entry and the fragments' significance. The first release starts from an empty changelog, so it must pass its version explicitly:
+
+```sh
+composer changelog:write -- --use-version=1.0.0-beta.1
+```
+
+Later entries in a prerelease chain also take an explicit version (`--use-version`, or the `--prerelease` suffix option); from the first stable entry onward, a bare `composer changelog:write` suffices.
