@@ -106,7 +106,8 @@ final class ErrorLogSink {
 		}
 
 		try {
-			\call_user_func( 'error_log', $line );
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The bare-install fallback writes engine events to PHP's configured error log.
+			\error_log( $line );
 		} catch ( \Throwable ) {
 			// The channel of last resort has no further fallback, so a failing error_log ends the attempt silently.
 			return;

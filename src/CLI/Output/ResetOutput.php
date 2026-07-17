@@ -13,54 +13,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
  * @version 1.0.0
  */
 final readonly class ResetOutput {
-	// region MAGIC METHODS
-
-	/**
-	 * Constructor.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   \Closure(string, array<string, mixed>): void $confirm Confirmation sink.
-	 * @param   \Closure(string): void                       $line    Plain-line sink.
-	 * @param   \Closure(string): void                       $success Success sink.
-	 * @param   \Closure(string): void                       $error   Fatal-error sink.
-	 */
-	public function __construct(
-		private \Closure $confirm,
-		private \Closure $line,
-		private \Closure $success,
-		private \Closure $error,
-	) {}
-
-	// endregion
-
 	// region METHODS
-
-	/**
-	 * Builds the WP-CLI-backed output boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  self
-	 */
-	public static function runtime(): self {
-		return new self(
-			static function ( string $question, array $assoc_args ): void {
-				\WP_CLI::confirm( $question, $assoc_args );
-			},
-			static function ( string $message ): void {
-				\WP_CLI::line( $message );
-			},
-			static function ( string $message ): void {
-				\WP_CLI::success( $message );
-			},
-			static function ( string $message ): void {
-				\WP_CLI::error( $message );
-			}
-		);
-	}
 
 	/**
 	 * Requires acknowledgement of the reset's irreversible scope.
@@ -72,8 +25,8 @@ final readonly class ResetOutput {
 	 *
 	 * @return  void
 	 */
-	public function confirm( array $assoc_args ): void {
-		( $this->confirm )( 'This development reset permanently deletes every engine option row and pending backend action. In-flight work cannot be recovered. Continue?', $assoc_args );
+	public static function confirm( array $assoc_args ): void {
+		\WP_CLI::confirm( 'This development reset permanently deletes every engine option row and pending backend action. In-flight work cannot be recovered. Continue?', $assoc_args );
 	}
 
 	/**
@@ -87,10 +40,10 @@ final readonly class ResetOutput {
 	 *
 	 * @return  void
 	 */
-	public function report( int $option_rows, int $pending_actions ): void {
-		( $this->line )( \sprintf( 'Option rows deleted: %d', $option_rows ) );
-		( $this->line )( \sprintf( 'Pending backend actions unscheduled: %d', $pending_actions ) );
-		( $this->success )( 'Background tasks development state reset.' );
+	public static function report( int $option_rows, int $pending_actions ): void {
+		\WP_CLI::line( \sprintf( 'Option rows deleted: %d', $option_rows ) );
+		\WP_CLI::line( \sprintf( 'Pending backend actions unscheduled: %d', $pending_actions ) );
+		\WP_CLI::success( 'Background tasks development state reset.' );
 	}
 
 	/**
@@ -103,8 +56,8 @@ final readonly class ResetOutput {
 	 *
 	 * @return  void
 	 */
-	public function error( string $message ): void {
-		( $this->error )( $message );
+	public static function error( string $message ): void {
+		\WP_CLI::error( $message );
 	}
 
 	// endregion

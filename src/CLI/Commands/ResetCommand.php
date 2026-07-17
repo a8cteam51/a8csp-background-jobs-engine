@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
@@ -69,26 +68,6 @@ final readonly class ResetCommand {
 
 	// endregion
 
-	// region MAGIC METHODS
-
-	/**
-	 * Constructor.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   OptionRows|null      $option_rows Site-bound option rows, or null for the runtime database.
-	 * @param   SchedulerFacade|null $scheduler   Scheduling facade, or null for the initialized engine graph.
-	 * @param   ResetOutput|null     $output      Command output boundary, or null for WP-CLI.
-	 */
-	public function __construct(
-		private ?OptionRows $option_rows = null,
-		private ?SchedulerFacade $scheduler = null,
-		private ?ResetOutput $output = null,
-	) {}
-
-	// endregion
-
 	// region METHODS
 
 	/**
@@ -117,31 +96,30 @@ final readonly class ResetCommand {
 	 * @return  void
 	 */
 	public function reset( array $args, array $assoc_args ): void {
-		$output  = $this->output ?? ResetOutput::runtime();
 		$request = self::request_from_args( $args, $assoc_args );
 		if ( 'error' === $request['action'] ) {
-			$output->error( $request['message'] );
+			ResetOutput::error( $request['message'] );
 			return;
 		}
 
-		$output->confirm( $assoc_args );
+		ResetOutput::confirm( $assoc_args );
 
-		$option_rows = $this->option_rows ?? self::runtime_option_rows();
-		$scheduler   = $this->scheduler ?? Component::get_scheduler();
+		$option_rows = self::runtime_option_rows();
+		$scheduler   = Component::get_scheduler();
 		if ( null === $scheduler ) {
-			$output->error( 'The background tasks scheduler is unavailable; run the command after plugins_loaded.' );
+			ResetOutput::error( 'The background tasks scheduler is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
 		$persisted_rows = self::persisted_rows( $option_rows );
 		if ( \is_string( $persisted_rows ) ) {
-			$output->error( $persisted_rows );
+			ResetOutput::error( $persisted_rows );
 			return;
 		}
 
 		$clearance = $scheduler->unschedule_hooks( self::ACTION_HOOKS );
 		if ( $clearance->is_failure() ) {
-			$output->error( $clearance->error->message );
+			ResetOutput::error( $clearance->error->message );
 			return;
 		}
 
@@ -154,14 +132,14 @@ final readonly class ResetCommand {
 				RowDeleteOutcome::DeleteFailed  => \sprintf( 'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.', $deleted ),
 			};
 			if ( null !== $message ) {
-				$output->error( $message );
+				ResetOutput::error( $message );
 				return;
 			}
 
 			++$deleted;
 		}
 
-		$output->report( $deleted, $clearance->value );
+		ResetOutput::report( $deleted, $clearance->value );
 	}
 
 	/**
