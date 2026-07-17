@@ -3,18 +3,20 @@ includes:
 
 parameters:
     level: max
+    # The entry file's define()s are invisible to cross-file analysis (symbol discovery does not
+    # read define() calls), so level max needs the constants valued here; the template's bare
+    # \constant() style only survives at the shared config's lower level.
     bootstrapFiles:
         - %currentWorkingDirectory%/.phpstan-bootstrap.php
     scanDirectories:
         - vendor/wp-plugin/action-scheduler
     scanFiles:
         - %currentWorkingDirectory%/vendor/wp-cli/wp-cli/php/utils.php
-    # The included config autodetects only the fixed-name root files (functions-bootstrap.php,
-    # functions.php); the entry file's name is per-repo, so both gate files are pinned here
-    # explicitly and WPCompat.pluginFile below names the entry for the same reason.
+    # The included config autodetects the fixed-name root files (functions-bootstrap.php,
+    # functions.php, uninstall.php); the entry file's name is per-repo, so it is pinned here
+    # explicitly and WPCompat.pluginFile below names it for the same reason.
     paths:
         - %currentWorkingDirectory%/a8csp-background-tasks-engine.php
-        - %currentWorkingDirectory%/functions-bootstrap.php
         - %currentWorkingDirectory%/tests
     WPCompat:
         # wp-compat's own fallback guesses "{cwd}/{basename(cwd)}.php", which only holds
