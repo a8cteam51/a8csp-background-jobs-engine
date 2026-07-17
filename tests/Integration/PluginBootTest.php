@@ -27,7 +27,7 @@ final class PluginBootTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_plugin_boots_on_supported_runtime(): void {
-		self::assertTrue( \constant( 'A8CSP_BGTE_REQUIREMENTS' ) );
+		self::assertTrue( \constant( 'A8CSP_BGTE_REQUIREMENTS_RESULT' ) );
 		self::assertTrue( \function_exists( 'a8csp_bgte_plugin' ) );
 		self::assertSame( 0, has_action( 'plugins_loaded', 'a8csp_bgte_plugin' ) );
 		self::assertInstanceOf( Plugin::class, a8csp_bgte_plugin() );

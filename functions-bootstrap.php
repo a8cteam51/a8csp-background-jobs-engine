@@ -2,8 +2,8 @@
 /**
  * BELOW-FLOOR BOOTSTRAP: LEGACY PHP PARSABILITY IS REQUIRED.
  *
- * These are the bootstrap gate's helper functions: plugin metadata, version compatibility
- * checks, the requirements gate, and its admin-notice reporter.
+ * These are the bootstrap's helper functions: the GitHub release updater, plugin metadata,
+ * version compatibility checks, the requirements gate, and its admin-notice reporter.
  *
  * This file loads before the requirements check can run, so it MUST remain parsable on PHP
  * versions below the plugin's declared floor. No modern syntax beyond what it already carries
@@ -119,8 +119,9 @@ function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_
 		return $update;
 	}
 
-	$prerelease_channel  = \str_contains( (string) ( $plugin_data['Version'] ?? '' ), '-' );
-	$transient_key       = 'a8csp_bgte_github_latest_release_' . ( $prerelease_channel ? 'prerelease' : 'stable' );
+	$prerelease_channel = \str_contains( (string) ( $plugin_data['Version'] ?? '' ), '-' );
+	$transient_key      = 'a8csp_bgte_github_latest_release_' . ( $prerelease_channel ? 'prerelease' : 'stable' );
+
 	$latest_release_info = get_transient( $transient_key );
 	if ( false === $latest_release_info ) {
 		$release_url_path    = $prerelease_channel ? 'releases?per_page=10' : 'releases/latest';
@@ -257,6 +258,10 @@ function a8csp_bgte_validate_requirements() {
 
 /**
  * Outputs an error that the system requirements weren't met.
+ *
+ * The notice hangs on `all_admin_notices`, which fires on site, network, and user admin screens
+ * alike — so a network activation that fails the gate is explained on the network admin screen
+ * where it happened, not just on per-site dashboards.
  *
  * @since   1.0.0
  * @version 1.0.0

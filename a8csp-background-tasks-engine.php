@@ -2,6 +2,10 @@
 /**
  * The A8CSP Background Tasks Engine bootstrap file.
  *
+ * This file must remain parsable on PHP versions below the plugin's declared floor, since it
+ * runs before the requirements check can report a friendly error; a dedicated CI job lints it
+ * directly against the older PHP versions.
+ *
  * @since       1.0.0
  * @version     1.0.0
  * @package     A8C\SpecialProjects\BackgroundTasksEngine
@@ -32,25 +36,32 @@
 \define( 'A8CSP_BGTE_BASENAME', plugin_basename( __FILE__ ) );
 \define( 'A8CSP_BGTE_DIR_PATH', plugin_dir_path( __FILE__ ) );
 
-require_once A8CSP_BGTE_DIR_PATH . '/functions-bootstrap.php';
+// The bootstrap's helper functions live in functions-bootstrap.php, which shares this file's
+// below-floor parse constraint; they must exist before the updater registration and the
+// requirements gate below can reference them.
+require_once A8CSP_BGTE_DIR_PATH . 'functions-bootstrap.php';
 
+// The self-updater registers before the requirements gates below: an incompatible install is
+// the one that most needs to be offered the corrective update.
 add_filter( 'update_plugins_github.com', 'a8csp_bgte_check_github_release_update', 10, 3 );
 
-// Core registers header Domain Paths for site-active plugins only, so a network-activated copy
-// registers its own translations path; loading stays just-in-time either way.
+// Registration-only since WP 6.7, so include time is safe — and required: core registers the
+// header path only for site-active plugins (wp-settings.php skips it in the network-activated
+// loop), so network-activated copies lose their bundled translations without this line.
+// Gettext calls still wait for `init` (JIT).
 load_plugin_textdomain( 'a8csp-background-tasks-engine', false, dirname( A8CSP_BGTE_BASENAME ) . '/languages' );
 
-if ( ! \is_file( A8CSP_BGTE_DIR_PATH . '/vendor/autoload.php' ) ) {
+if ( ! \is_file( A8CSP_BGTE_DIR_PATH . 'vendor/autoload.php' ) ) {
 	a8csp_bgte_output_requirements_error( new WP_Error( 'missing_autoloader' ) );
 	return;
 }
-require_once A8CSP_BGTE_DIR_PATH . '/vendor/autoload.php';
+require_once A8CSP_BGTE_DIR_PATH . 'vendor/autoload.php';
 
-\define( 'A8CSP_BGTE_REQUIREMENTS', a8csp_bgte_validate_requirements() );
-if ( is_wp_error( A8CSP_BGTE_REQUIREMENTS ) ) {
-	a8csp_bgte_output_requirements_error( A8CSP_BGTE_REQUIREMENTS );
+\define( 'A8CSP_BGTE_REQUIREMENTS_RESULT', a8csp_bgte_validate_requirements() );
+if ( is_wp_error( A8CSP_BGTE_REQUIREMENTS_RESULT ) ) {
+	a8csp_bgte_output_requirements_error( A8CSP_BGTE_REQUIREMENTS_RESULT );
 } else {
-	require_once A8CSP_BGTE_DIR_PATH . '/functions.php';
+	require_once A8CSP_BGTE_DIR_PATH . 'functions.php';
 	// Activation includes this file after plugins_loaded has fired, so boot immediately on that request.
 	if ( 0 < did_action( 'plugins_loaded' ) ) {
 		a8csp_bgte_plugin();

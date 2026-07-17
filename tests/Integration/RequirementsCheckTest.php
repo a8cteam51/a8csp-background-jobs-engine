@@ -25,7 +25,7 @@ final class RequirementsCheckTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_requirements_gate_matches_runtime(): void {
-		$requirements = \constant( 'A8CSP_BGTE_REQUIREMENTS' );
+		$requirements = \constant( 'A8CSP_BGTE_REQUIREMENTS_RESULT' );
 		$wp_version   = \get_bloginfo( 'version' );
 
 		if ( \version_compare( $wp_version, '7.0', '<' ) ) {
