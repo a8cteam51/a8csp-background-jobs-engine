@@ -26,7 +26,7 @@ final class Plugin {
 	 *
 	 * @var     array<int, class-string<ComponentInterface>>
 	 */
-	private const COMPONENTS = array(
+	private const array COMPONENTS = array(
 		Engine\Component::class,
 		CLI\Component::class,
 	);

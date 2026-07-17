@@ -60,7 +60,7 @@
   },
 
   "scripts": {
-    "generate-autoloader": "@composer dump-autoload --ignore-platform-req=php+ -o",
+    "generate-autoloader": "@composer dump-autoload -o",
     "packages-install": "@composer install --ignore-platform-req=php+ --no-interaction",
     "packages-update": [
       "@composer clear-cache",
@@ -111,13 +111,13 @@
     "changelog:write": "@php vendor/bin/changelogger write"
   },
   "config": {
-    "platform-check": false,
     "allow-plugins": {
       "composer/*": true,
       "dealerdirect/phpcodesniffer-composer-installer": true,
       "phpstan/extension-installer": true,
       "infection/extension-installer": true
-    }
+    },
+    "platform-check": false
   },
 
   "extra": {

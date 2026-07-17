@@ -25,6 +25,7 @@ vendor/bin
 .phpstan-bootstrap.php
 infection.json
 .editorconfig
+.DS_Store
 package*.json
 composer.json
 composer.lock
