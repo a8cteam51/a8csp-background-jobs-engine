@@ -42,7 +42,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     int
 	 */
-	private const MAX_CHUNK_BYTES = 8_192;
+	private const int MAX_CHUNK_BYTES = 8_192;
 
 	/**
 	 * Maximum persisted serialization bytes accepted for one materialized batch queue.
@@ -55,7 +55,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     int
 	 */
-	private const MAX_QUEUE_BYTES = 1_048_576;
+	private const int MAX_QUEUE_BYTES = 1_048_576;
 
 	/**
 	 * Internal hook that resumes a batch after its inter-chunk delay.

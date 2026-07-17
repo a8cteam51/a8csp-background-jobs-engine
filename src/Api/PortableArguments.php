@@ -34,21 +34,7 @@ final class PortableArguments {
 			return false;
 		}
 
-		foreach ( $values as $value ) {
-			if ( \is_array( $value ) ) {
-				if ( ! self::is_valid( $value, $remaining_depth - 1 ) ) {
-					return false;
-				}
-
-				continue;
-			}
-
-			if ( null !== $value && ! \is_scalar( $value ) ) {
-				return false;
-			}
-		}
-
-		return true;
+		return \array_all( $values, static fn ( mixed $value ): bool => \is_array( $value ) ? self::is_valid( $value, $remaining_depth - 1 ) : ( null === $value || \is_scalar( $value ) ) );
 	}
 
 	/**

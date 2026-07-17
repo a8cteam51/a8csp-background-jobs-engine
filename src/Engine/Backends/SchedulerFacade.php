@@ -39,7 +39,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @var     int
 	 */
-	private const MAX_ARGUMENTS_JSON_LENGTH = 8_000;
+	private const int MAX_ARGUMENTS_JSON_LENGTH = 8_000;
 
 	/**
 	 * Matching the JSON encoder's depth keeps recursive shape validation finite.
@@ -49,7 +49,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @var     int
 	 */
-	private const MAX_ARGUMENTS_JSON_DEPTH = 512;
+	private const int MAX_ARGUMENTS_JSON_DEPTH = 512;
 
 	/**
 	 * Backends in declaration order for write preference, consultation, and failure precedence.
@@ -400,14 +400,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @return  list<BackendInterface>
 	 */
 	private function ready_backends(): array {
-		$ready = array();
-		foreach ( $this->backends as $backend ) {
-			if ( $backend->is_ready() ) {
-				$ready[] = $backend;
-			}
-		}
-
-		return $ready;
+		return \array_values( \array_filter( $this->backends, static fn ( BackendInterface $backend ): bool => $backend->is_ready() ) );
 	}
 
 	/**

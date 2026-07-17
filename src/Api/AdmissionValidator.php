@@ -24,7 +24,7 @@ final class AdmissionValidator {
 	 *
 	 * @var     int
 	 */
-	private const MAX_ARGUMENTS_BYTES = 8_192;
+	private const int MAX_ARGUMENTS_BYTES = 8_192;
 
 	/**
 	 * Highest scheduler priority accepted by admission contracts.
@@ -34,7 +34,7 @@ final class AdmissionValidator {
 	 *
 	 * @var     int
 	 */
-	private const MAX_PRIORITY = 255;
+	private const int MAX_PRIORITY = 255;
 
 	// endregion
 

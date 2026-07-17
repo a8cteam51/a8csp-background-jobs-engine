@@ -82,7 +82,7 @@ final class MaintenanceTask extends AbstractTask {
 	 *
 	 * @var     int
 	 */
-	private const TERMINAL_GRACE = 3_600;
+	private const int TERMINAL_GRACE = 3_600;
 
 	// endregion
 

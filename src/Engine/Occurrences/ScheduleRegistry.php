@@ -42,7 +42,7 @@ final class ScheduleRegistry {
 	 *
 	 * @var     int
 	 */
-	private const UPDATE_ATTEMPTS = 5;
+	private const int UPDATE_ATTEMPTS = 5;
 
 	/**
 	 * Current-request declarations keyed by complete schedule identity inside each owner.

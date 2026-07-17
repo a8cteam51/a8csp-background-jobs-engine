@@ -39,7 +39,7 @@ final class WPCronBackend implements BackendInterface {
 	 *
 	 * @var     string
 	 */
-	private const SCHEDULE_PREFIX = 'a8csp_bgte_every_';
+	private const string SCHEDULE_PREFIX = 'a8csp_bgte_every_';
 
 	/**
 	 * Pattern matching valid synthetic recurrence schedule names.
@@ -49,7 +49,7 @@ final class WPCronBackend implements BackendInterface {
 	 *
 	 * @var     string
 	 */
-	private const SCHEDULE_PATTERN = '/^a8csp_bgte_every_([1-9]\d*)s$/';
+	private const string SCHEDULE_PATTERN = '/^a8csp_bgte_every_([1-9]\d*)s$/';
 
 	/**
 	 * WordPress filter that supplies registered recurrence schedules.
@@ -59,7 +59,7 @@ final class WPCronBackend implements BackendInterface {
 	 *
 	 * @var     string
 	 */
-	private const SCHEDULES_FILTER = 'cron_schedules';
+	private const string SCHEDULES_FILTER = 'cron_schedules';
 
 	/**
 	 * Intervals registered during this request, used as a set.

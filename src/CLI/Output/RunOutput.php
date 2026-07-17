@@ -41,7 +41,7 @@ final readonly class RunOutput {
 	 *
 	 * @var     list<string>
 	 */
-	private const LIVE_FIELDS = array(
+	private const array LIVE_FIELDS = array(
 		'run_id',
 		'status',
 		'phase',
@@ -58,7 +58,7 @@ final readonly class RunOutput {
 	 *
 	 * @var     list<string>
 	 */
-	private const HISTORY_FIELDS = array(
+	private const array HISTORY_FIELDS = array(
 		'run_id',
 		'outcome',
 		'failed_store',

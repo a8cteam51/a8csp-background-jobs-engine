@@ -71,7 +71,7 @@ final readonly class Inspection {
 	 *
 	 * @var     int
 	 */
-	private const LIVE_RUN_LIMIT = 20;
+	private const int LIVE_RUN_LIMIT = 20;
 
 	// endregion
 

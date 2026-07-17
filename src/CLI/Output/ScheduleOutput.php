@@ -38,7 +38,7 @@ final readonly class ScheduleOutput {
 	 *
 	 * @var     list<string>
 	 */
-	private const FIELDS = array(
+	private const array FIELDS = array(
 		'owner',
 		'identity',
 		'recurrence',
@@ -58,7 +58,7 @@ final readonly class ScheduleOutput {
 	 *
 	 * @var     string
 	 */
-	private const DORMANT_BACKEND_NOTE = 'note: a scheduling backend is not ready; dormant occurrences are not visible.';
+	private const string DORMANT_BACKEND_NOTE = 'note: a scheduling backend is not ready; dormant occurrences are not visible.';
 
 	// endregion
 

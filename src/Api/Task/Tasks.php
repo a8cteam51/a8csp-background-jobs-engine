@@ -27,7 +27,7 @@ final readonly class Tasks {
 	 *
 	 * @var     int
 	 */
-	private const MAX_DEDUP_KEY_BYTES = 64;
+	private const int MAX_DEDUP_KEY_BYTES = 64;
 
 	// endregion
 

@@ -35,7 +35,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 *
 	 * @var     list<non-empty-string>
 	 */
-	private const REQUIRED_FUNCTIONS = array(
+	private const array REQUIRED_FUNCTIONS = array(
 		'as_enqueue_async_action',
 		'as_get_scheduled_actions',
 		'as_schedule_recurring_action',

@@ -39,7 +39,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @var     int
 	 */
-	private const ENTRY_LIMIT = 20;
+	private const int ENTRY_LIMIT = 20;
 
 	/**
 	 * Prefix for failed-run option names.
@@ -59,7 +59,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @var     int
 	 */
-	private const UPDATE_ATTEMPTS = 5;
+	private const int UPDATE_ATTEMPTS = 5;
 
 	/**
 	 * Maximum exact-delete attempts after concurrent writes change the selected row.
@@ -69,7 +69,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @var     int
 	 */
-	private const PURGE_ATTEMPTS = 3;
+	private const int PURGE_ATTEMPTS = 3;
 
 	// endregion
 

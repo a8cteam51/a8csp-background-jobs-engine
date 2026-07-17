@@ -28,7 +28,7 @@ final class ApiErrorMapper {
 	 *
 	 * @var     array<string, true>
 	 */
-	private const SAFE_CONTEXT_KEYS = array(
+	private const array SAFE_CONTEXT_KEYS = array(
 		'action_scheduler_function'        => true,
 		'action_scheduler_functions_exist' => true,
 		'action_scheduler_init_fired'      => true,

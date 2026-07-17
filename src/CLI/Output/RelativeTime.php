@@ -23,9 +23,9 @@ final readonly class RelativeTime {
 	 *
 	 * @var     int
 	 */
-	private const SECONDS_PER_MINUTE = 60;
-	private const SECONDS_PER_HOUR   = 3_600;
-	private const SECONDS_PER_DAY    = 86_400;
+	private const int SECONDS_PER_MINUTE = 60;
+	private const int SECONDS_PER_HOUR   = 3_600;
+	private const int SECONDS_PER_DAY    = 86_400;
 
 	// endregion
 

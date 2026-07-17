@@ -25,7 +25,7 @@ final class ErrorLogSink {
 	 *
 	 * @var     int
 	 */
-	private const MAX_CONTEXT_ARRAY_DEPTH = 8;
+	private const int MAX_CONTEXT_ARRAY_DEPTH = 8;
 
 	/**
 	 * Hexadecimal characters retained from one exception trace digest.
@@ -35,7 +35,7 @@ final class ErrorLogSink {
 	 *
 	 * @var     int
 	 */
-	private const TRACE_HASH_LENGTH = 16;
+	private const int TRACE_HASH_LENGTH = 16;
 
 	// endregion
 

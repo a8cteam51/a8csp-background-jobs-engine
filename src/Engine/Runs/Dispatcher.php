@@ -47,7 +47,7 @@ final readonly class Dispatcher {
 	 *
 	 * @var     int
 	 */
-	private const MAX_PRIORITY = 255;
+	private const int MAX_PRIORITY = 255;
 
 	// endregion
 

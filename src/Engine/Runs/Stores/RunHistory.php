@@ -27,7 +27,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     int
 	 */
-	private const DEFAULT_SIZE = 30;
+	private const int DEFAULT_SIZE = 30;
 
 	/**
 	 * Maximum exact-row compare-and-swap attempts before a contended write fails safely.
@@ -37,7 +37,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     int
 	 */
-	private const UPDATE_ATTEMPTS = 5;
+	private const int UPDATE_ATTEMPTS = 5;
 
 	/**
 	 * Prefix for run-history option names.
@@ -59,7 +59,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     int
 	 */
-	private const MAX_HASH_BUCKETS = 20;
+	private const int MAX_HASH_BUCKETS = 20;
 
 	// endregion
 
@@ -400,14 +400,7 @@ final readonly class RunHistory {
 			return array();
 		}
 
-		$strings = array();
-		foreach ( $value as $entry ) {
-			if ( \is_string( $entry ) ) {
-				$strings[] = $entry;
-			}
-		}
-
-		return $strings;
+		return \array_values( \array_filter( $value, static fn ( mixed $entry ): bool => \is_string( $entry ) ) );
 	}
 
 	/**

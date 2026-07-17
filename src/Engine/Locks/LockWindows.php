@@ -26,7 +26,7 @@ final readonly class LockWindows {
 	 *
 	 * @var     int
 	 */
-	private const CONTINUE_DELAY = 60;
+	private const int CONTINUE_DELAY = 60;
 
 	/**
 	 * Maximum credited callback window before crash reclamation can resume.
@@ -38,7 +38,7 @@ final readonly class LockWindows {
 	 *
 	 * @var     int
 	 */
-	private const MAX_EXECUTION_LEASE = 6 * \HOUR_IN_SECONDS;
+	private const int MAX_EXECUTION_LEASE = 6 * \HOUR_IN_SECONDS;
 
 	// endregion
 

@@ -33,7 +33,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @var     array<string, string>
 	 */
-	private const LIFECYCLE_HOOKS = array(
+	private const array LIFECYCLE_HOOKS = array(
 		'started'    => 'a8csp_background_tasks/started',
 		'completed'  => 'a8csp_background_tasks/completed',
 		'failed'     => 'a8csp_background_tasks/failed',
@@ -49,7 +49,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @var     array<string, array<'Task'|'Batch', list<string>>>
 	 */
-	private const TERMINAL_EFFECTS = array(
+	private const array TERMINAL_EFFECTS = array(
 		'failed'     => array(
 			'Batch' => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			'Task'  => array( 'retention', 'hooks', 'history' ),

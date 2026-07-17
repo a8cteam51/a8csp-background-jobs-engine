@@ -42,7 +42,7 @@ final readonly class FailedRunOutput {
 	 *
 	 * @var     list<string>
 	 */
-	private const FIELDS = array(
+	private const array FIELDS = array(
 		'owner',
 		'identity',
 		'run_id',

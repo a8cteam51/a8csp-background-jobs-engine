@@ -41,7 +41,7 @@ final readonly class OccurrenceLease {
 	 *
 	 * @var     int
 	 */
-	private const STALENESS = 60;
+	private const int STALENESS = 60;
 
 	// endregion
 

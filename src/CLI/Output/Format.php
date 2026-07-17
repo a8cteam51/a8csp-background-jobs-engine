@@ -23,7 +23,7 @@ final readonly class Format {
 	 *
 	 * @var     list<string>
 	 */
-	private const SUPPORTED = array( 'table', 'csv', 'json', 'count', 'yaml' );
+	private const array SUPPORTED = array( 'table', 'csv', 'json', 'count', 'yaml' );
 
 	// endregion
 

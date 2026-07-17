@@ -45,7 +45,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @var     int
 	 */
-	private const MALFORMED_RAW_BYTES = 200;
+	private const int MALFORMED_RAW_BYTES = 200;
 
 	/**
 	 * Prefix for execution-overlap lock option names.

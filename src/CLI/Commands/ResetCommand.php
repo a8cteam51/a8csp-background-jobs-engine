@@ -39,7 +39,7 @@ final readonly class ResetCommand {
 	 *
 	 * @var     list<string>
 	 */
-	private const OPTION_PREFIXES = array(
+	private const array OPTION_PREFIXES = array(
 		ScheduleRegistry::OPTION_PREFIX,
 		RunStore::OPTION_PREFIX,
 		FailedRunStore::OPTION_PREFIX,
@@ -58,7 +58,7 @@ final readonly class ResetCommand {
 	 *
 	 * @var     list<non-empty-string>
 	 */
-	private const ACTION_HOOKS = array(
+	private const array ACTION_HOOKS = array(
 		ActionDeliveries::START_HOOK,
 		ActionDeliveries::CONTINUE_HOOK,
 		ActionDeliveries::RUN_TASK_HOOK,

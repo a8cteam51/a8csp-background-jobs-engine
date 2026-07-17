@@ -29,7 +29,7 @@ final readonly class LatestRunPointer {
 	 *
 	 * @var     int
 	 */
-	private const HASH_LIMIT = 20;
+	private const int HASH_LIMIT = 20;
 
 	/**
 	 * Prefix for latest-run pointer option names.
@@ -49,7 +49,7 @@ final readonly class LatestRunPointer {
 	 *
 	 * @var     int
 	 */
-	private const UPDATE_ATTEMPTS = 5;
+	private const int UPDATE_ATTEMPTS = 5;
 
 	// endregion
 
@@ -266,14 +266,7 @@ final readonly class LatestRunPointer {
 			return array();
 		}
 
-		$by_hash = array();
-		foreach ( $value['by_hash'] as $args_hash => $run_id ) {
-			if ( \is_string( $run_id ) ) {
-				$by_hash[ $args_hash ] = $run_id;
-			}
-		}
-
-		return $by_hash;
+		return \array_filter( $value['by_hash'], static fn ( mixed $run_id ): bool => \is_string( $run_id ) );
 	}
 
 	/**

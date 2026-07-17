@@ -26,7 +26,7 @@ final class BatchContext implements BatchContextInterface {
 	 *
 	 * @var     int
 	 */
-	private const MAX_CHUNK_BYTES = 8_192;
+	private const int MAX_CHUNK_BYTES = 8_192;
 
 	/**
 	 * Maximum persisted serialization bytes accepted for one context-mutated batch queue.
@@ -39,7 +39,7 @@ final class BatchContext implements BatchContextInterface {
 	 *
 	 * @var     int
 	 */
-	private const MAX_QUEUE_BYTES = 1_048_576;
+	private const int MAX_QUEUE_BYTES = 1_048_576;
 
 	/**
 	 * Attempt-local queue in processing order.

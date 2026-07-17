@@ -53,7 +53,7 @@ final readonly class RunStore {
 	 *
 	 * @var     int
 	 */
-	private const TERMINAL_EFFECT_ATTEMPTS = 5;
+	private const int TERMINAL_EFFECT_ATTEMPTS = 5;
 
 	// endregion
 
