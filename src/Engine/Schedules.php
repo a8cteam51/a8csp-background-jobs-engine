@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
@@ -173,13 +174,23 @@ final readonly class Schedules {
 			$next_due_by_identity[ $schedule_identity ] = $next_due;
 		}
 
-		$next = $existing;
+		$next      = $existing;
+		$scheduler = $this->scheduler instanceof SchedulerFacade
+			? $this->scheduler
+			: new SchedulerFacade( array( $this->scheduler ) );
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				if ( $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity ) ) {
+				$scheduled_count = $scheduler->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
+				if ( 1 === $scheduled_count ) {
 					continue;
+				}
+				if ( 1 < $scheduled_count ) {
+					$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
+					if ( $removed->is_failure() ) {
+						return $this->replacement_clear_failure( $schedule );
+					}
 				}
 
 				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: $schedule->priority );

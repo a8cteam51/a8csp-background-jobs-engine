@@ -173,6 +173,24 @@ final readonly class SchedulerFacade implements BackendInterface {
 		return ! $this->snapshot_is_authoritative( $this->ready_backends() );
 	}
 
+	/**
+	 * Counts ready backends currently holding one scheduled identity.
+	 *
+	 * @internal Schedule sync-path convergence only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string      $hook  Hook to query.
+	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
+	 * @param   string      $group Backend grouping label.
+	 *
+	 * @return  int<0, max>
+	 */
+	public function ready_scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
+		return \count( \array_filter( $this->ready_backends(), static fn ( BackendInterface $backend ): bool => $backend->is_scheduled( $hook, $args, $group ) ) );
+	}
+
 	// endregion
 
 	// region INHERITED METHODS
