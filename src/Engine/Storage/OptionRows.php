@@ -149,6 +149,64 @@ final readonly class OptionRows {
 	}
 
 	/**
+	 * Returns one bounded option-name page strictly after an optional bytewise cursor.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string      $prefix     Literal option-name prefix.
+	 * @param   string|null $after_name Exclusive option-name cursor, or null for the prefix start.
+	 * @param   int         $limit      Positive maximum number of names returned.
+	 *
+	 * @throws  \InvalidArgumentException When the limit is non-positive.
+	 * @throws  \LogicException           When the current site differs from the bound site.
+	 *
+	 * @return  AbstractResult<array{names: list<string>, next_cursor: string|null, scanned: int}, EngineError>
+	 */
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function option_names_after( string $prefix, ?string $after_name, int $limit ): AbstractResult {
+		if ( 1 > $limit ) {
+			throw new \InvalidArgumentException( 'An option-name cursor page requires a positive limit.' );
+		}
+
+		$this->assert_site();
+		$wpdb       = $this->wpdb;
+		$pattern    = $wpdb->esc_like( $prefix ) . '%';
+		$candidates = null === $after_name
+			? $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $limit ) )
+			: $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $after_name, $limit ) );
+		if ( $this->last_read_failed() ) {
+			return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+		}
+
+		$scanned     = \count( $candidates );
+		$next_cursor = null;
+		if ( $scanned === $limit ) {
+			$next_cursor = $candidates[ $scanned - 1 ] ?? null;
+			if ( ! \is_string( $next_cursor ) || ( null !== $after_name && 0 >= \strcmp( $next_cursor, $after_name ) ) ) {
+				return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+			}
+		}
+
+		$typed = array();
+		foreach ( $candidates as $name ) {
+			if ( \is_string( $name ) && \str_starts_with( $name, $prefix ) && ( null === $after_name || 0 < \strcmp( $name, $after_name ) ) ) {
+				$typed[] = $name;
+			}
+		}
+
+		return new Success(
+			array(
+				'names'       => $typed,
+				'next_cursor' => $next_cursor,
+				'scanned'     => $scanned,
+			)
+		);
+	}
+
+	/**
 	 * Returns one bounded page and the complete accepted count for an exact option-name byte length.
 	 *
 	 * @since   1.0.0

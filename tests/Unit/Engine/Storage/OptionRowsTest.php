@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Storage;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -107,6 +108,202 @@ final class OptionRowsTest extends TestCase {
 		self::assertFalse( $result->is_failure() );
 		self::assertSame( array( $expected ), $result->value );
 		self::assertStringContainsString( "LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'", $wpdb->recorded_queries[0] );
+	}
+
+	/**
+	 * Cursor-paged enumeration keeps only names under the escaped literal prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_refilters_the_literal_prefix_boundary(): void {
+		$prefix                    = 'a8csp_bgte_%_';
+		$expected                  = $prefix . 'intent';
+		$wpdb                      = new WpdbLockSpy();
+		$wpdb->option_name_results = array( $expected, 'a8cspXbgteXwildcard-match', 42 );
+
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( $prefix, null, 10 );
+
+		self::assertFalse( $result->is_failure() );
+		self::assertSame(
+			array(
+				'names'       => array( $expected ),
+				'next_cursor' => null,
+				'scanned'     => 3,
+			),
+			$result->value
+		);
+		self::assertStringContainsString( "LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'", $wpdb->recorded_queries[0] );
+	}
+
+	/**
+	 * Cursor-paged enumeration excludes its cursor and orders names by exact bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_excludes_the_cursor_and_orders_by_binary_name(): void {
+		$prefix = 'a8csp_bgte_run_';
+		$wpdb   = new WpdbLockSpy();
+		$wpdb->put( $prefix . 'B', 'second' );
+		$wpdb->put( $prefix . 'a', 'third' );
+		$wpdb->put( $prefix . 'A', 'cursor' );
+
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( $prefix, $prefix . 'A', 10 );
+
+		self::assertFalse( $result->is_failure() );
+		self::assertSame(
+			array(
+				'names'       => array( $prefix . 'B', $prefix . 'a' ),
+				'next_cursor' => null,
+				'scanned'     => 2,
+			),
+			$result->value
+		);
+		self::assertStringContainsString( 'BINARY `option_name` > BINARY ', $wpdb->recorded_queries[0] );
+		self::assertStringContainsString( 'ORDER BY BINARY `option_name` ASC', $wpdb->recorded_queries[0] );
+	}
+
+	/**
+	 * Cursor-paged enumeration applies its limit and exposes a short final page.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_applies_the_limit_and_returns_a_short_final_page(): void {
+		$prefix = 'a8csp_bgte_run_';
+		$wpdb   = new WpdbLockSpy();
+		$wpdb->put( $prefix . '1', 'first' );
+		$wpdb->put( $prefix . '2', 'second' );
+		$wpdb->put( $prefix . '3', 'third' );
+		$rows = new OptionRows( $wpdb );
+
+		$first = $rows->option_names_after( $prefix, null, 2 );
+		self::assertFalse( $first->is_failure() );
+		self::assertSame(
+			array(
+				'names'       => array( $prefix . '1', $prefix . '2' ),
+				'next_cursor' => $prefix . '2',
+				'scanned'     => 2,
+			),
+			$first->value
+		);
+
+		$last = $rows->option_names_after( $prefix, $prefix . '2', 2 );
+		self::assertFalse( $last->is_failure() );
+		self::assertSame(
+			array(
+				'names'       => array( $prefix . '3' ),
+				'next_cursor' => null,
+				'scanned'     => 1,
+			),
+			$last->value
+		);
+	}
+
+	/**
+	 * Raw case-insensitive candidates drive exhaustion and the opaque cursor before bytewise filtering.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_pages_by_raw_case_colliding_candidates(): void {
+		$prefix    = 'a8csp_bgte_run_';
+		$collision = 'A8CSP_BGTE_RUN_collision';
+		$wpdb      = new WpdbLockSpy();
+		$wpdb->put( $collision, 'foreign' );
+		$wpdb->put( $prefix . '1', 'first' );
+		$wpdb->put( $prefix . '2', 'second' );
+		$rows = new OptionRows( $wpdb );
+
+		$first = $rows->option_names_after( $prefix, null, 2 );
+		self::assertFalse( $first->is_failure() );
+		self::assertSame(
+			array(
+				'names'       => array( $prefix . '1' ),
+				'next_cursor' => $prefix . '1',
+				'scanned'     => 2,
+			),
+			$first->value
+		);
+
+		$last = $rows->option_names_after( $prefix, $first->value['next_cursor'], 2 );
+		self::assertFalse( $last->is_failure() );
+		self::assertSame(
+			array(
+				'names'       => array( $prefix . '2' ),
+				'next_cursor' => null,
+				'scanned'     => 1,
+			),
+			$last->value
+		);
+	}
+
+	/**
+	 * A non-advancing raw cursor is reported as an authoritative storage failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_rejects_a_non_advancing_raw_cursor(): void {
+		$cursor                    = 'a8csp_bgte_run_cursor';
+		$wpdb                      = new WpdbLockSpy();
+		$wpdb->option_name_results = array( $cursor );
+
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgte_run_', $cursor, 1 );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+	}
+
+	/**
+	 * Cursor-paged enumeration rejects a non-positive limit.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_rejects_a_non_positive_limit(): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		(void) ( new OptionRows( new WpdbLockSpy() ) )->option_names_after( 'a8csp_bgte_', null, 0 );
+	}
+
+	/**
+	 * Cursor-paged enumeration returns a storage failure when its query fails.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_option_names_after_returns_an_explicit_failed_outcome(): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted option-name read failure';
+			}
+		);
+
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgte_', null, 10 );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( 'Authoritative option-name read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
 	}
 
 	/** A bounded page keysets past rejected candidates and counts only accepted names. */

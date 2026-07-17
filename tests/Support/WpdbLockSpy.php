@@ -261,18 +261,20 @@ final class WpdbLockSpy extends \wpdb {
 			return $this->option_name_results;
 		}
 
-		$args         = self::without_table( $statement['args'] );
-		$pattern      = $args[0] ?? null;
-		$total_length = $args[1] ?? null;
-		$has_cursor   = \str_contains( $statement['template'], 'BINARY `option_name` > BINARY %s' );
-		$cursor       = null;
+		$args             = self::without_table( $statement['args'] );
+		$pattern          = $args[0] ?? null;
+		$has_total_length = \str_contains( $statement['template'], 'LENGTH(`option_name`) = %d' );
+		$total_length     = $has_total_length ? ( $args[1] ?? null ) : null;
+		$has_cursor       = \str_contains( $statement['template'], 'BINARY `option_name` > BINARY %s' );
+		$cursor           = null;
 		if ( $has_cursor ) {
-			$cursor = $args[2] ?? null;
+			$cursor = $args[ $has_total_length ? 2 : 1 ] ?? null;
 			if ( ! \is_string( $cursor ) ) {
 				throw new \UnexpectedValueException( 'WpdbLockSpy keyset option scans require a string cursor.' );
 			}
 		}
-		$limit = $args[ $has_cursor ? 3 : 2 ] ?? null;
+		$limit_index = 1 + ( $has_total_length ? 1 : 0 ) + ( $has_cursor ? 1 : 0 );
+		$limit       = $args[ $limit_index ] ?? null;
 		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) ) {
 			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require one trailing-wildcard pattern.' );
 		}
@@ -295,7 +297,7 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
-		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \str_starts_with( $name, $prefix ) && ( null === $total_length || \strlen( $name ) === $total_length ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
+		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) && ( null === $total_length || \strlen( $name ) === $total_length ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
 		\sort( $names, \SORT_STRING );
 
 		return null === $limit ? $names : \array_slice( $names, 0, $limit );
@@ -351,7 +353,7 @@ final class WpdbLockSpy extends \wpdb {
 
 		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
 
-		return (string) \count( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \strlen( $name ) === $total_length && \str_starts_with( $name, $prefix ) ) );
+		return (string) \count( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \strlen( $name ) === $total_length && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) ) );
 	}
 
 	/**
