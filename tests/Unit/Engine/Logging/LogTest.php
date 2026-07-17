@@ -42,6 +42,7 @@ final class LogTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
 	}
 
 	/**

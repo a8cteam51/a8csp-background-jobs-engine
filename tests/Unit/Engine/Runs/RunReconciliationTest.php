@@ -126,6 +126,7 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
 		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_values']         = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations']  = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions']         = array();
 		$GLOBALS['a8csp_bgte_test_action_throwables']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events']      = array();

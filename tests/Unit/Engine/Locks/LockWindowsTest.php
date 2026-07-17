@@ -50,7 +50,8 @@ final class LockWindowsTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array();
+		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
 
 		$this->lock_windows = new LockWindows( new FixedClock( self::NOW ) );
 	}

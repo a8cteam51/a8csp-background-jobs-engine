@@ -125,6 +125,7 @@ final class RunTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
 		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
 		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
 		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
