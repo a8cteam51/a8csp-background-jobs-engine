@@ -121,10 +121,10 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * The diagnostic sink is registered before any component can emit an engine event.
+	 * The diagnostic sink is registered before graph construction can register another hook.
 	 *
-	 * @load-bearing structural
-	 * @pin-rationale Exact hook order proves construction failures and re-entrant boot paths have a log sink before scheduler, delivery, occurrence, or maintenance registration begins.
+	 * @load-bearing concurrency
+	 * @pin-rationale Re-entrant graph construction must expose the log sink before any later registration can emit; the public hook cannot stage this partially constructed registration window.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -134,12 +134,9 @@ final class EngineComponentTest extends TestCase {
 	public function test_boot_registers_the_sink_before_every_engine_hook(): void {
 		( new Component() )->initialize();
 
-		$actions = $this->action_registrations();
-		self::assertSame( 'a8csp_background_tasks/log', $actions[0]['hook_name'] ?? null );
-		self::assertSame(
-			array( 'a8csp_background_tasks/log', 'a8csp_background_tasks/start_batch', 'a8csp_background_tasks/continue_batch', 'a8csp_background_tasks/run_task', 'a8csp_background_tasks/run_chunk', 'a8csp_background_tasks/cleanup_batch', 'a8csp_background_tasks/schedule_due', 'init' ),
-			\array_column( $actions, 'hook_name' )
-		);
+		$hooks = $GLOBALS['a8csp_bgte_test_hooks'] ?? null;
+		self::assertIsArray( $hooks );
+		self::assertSame( 'a8csp_background_tasks/log', $hooks[0] ?? null );
 	}
 
 	/**

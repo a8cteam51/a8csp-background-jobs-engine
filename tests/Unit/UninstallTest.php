@@ -359,7 +359,8 @@ final class UninstallTest extends TestCase {
 			array(
 				array(
 					'fields' => 'ids',
-					'number' => 0,
+					'number' => 100,
+					'offset' => 0,
 				),
 			),
 			$GLOBALS['a8csp_bgte_test_get_sites_calls']
@@ -434,6 +435,60 @@ final class UninstallTest extends TestCase {
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
 			'Each site must delete engine actions from its own site-prefixed store'
 		);
+	}
+
+	/**
+	 * Network discovery advances through bounded pages until the final short page.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_uninstall_pages_network_sites_in_bounded_batches(): void {
+		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
+		require_once __DIR__ . '/wp-cron-stubs.php';
+
+		$site_ids = \range( 1, 101 );
+
+		$GLOBALS['a8csp_bgte_test_options']                  = array();
+		$GLOBALS['a8csp_bgte_test_option_calls']             = array();
+		$GLOBALS['a8csp_bgte_test_is_multisite']             = true;
+		$GLOBALS['a8csp_bgte_test_site_ids']                 = $site_ids;
+		$GLOBALS['a8csp_bgte_test_get_sites_calls']          = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']                  = 1;
+		$GLOBALS['a8csp_bgte_test_blog_stack']               = array();
+		$GLOBALS['a8csp_bgte_test_blog_switch_calls']        = array();
+		$GLOBALS['a8csp_bgte_test_blog_restore_calls']       = array();
+		$GLOBALS['a8csp_bgte_test_cron_array']               = array();
+		$GLOBALS['a8csp_bgte_test_cron_calls']               = array();
+		$GLOBALS['a8csp_bgte_test_uninstall_missing_tables'] = array( 'actionscheduler_logs' );
+		$GLOBALS['wpdb']                                     = new UninstallWpdbSpy();
+
+		\define( 'WP_UNINSTALL_PLUGIN', true );
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		self::assertSame(
+			array(
+				array(
+					'fields' => 'ids',
+					'number' => 100,
+					'offset' => 0,
+				),
+				array(
+					'fields' => 'ids',
+					'number' => 100,
+					'offset' => 100,
+				),
+			),
+			$GLOBALS['a8csp_bgte_test_get_sites_calls']
+		);
+		self::assertSame( $site_ids, $GLOBALS['a8csp_bgte_test_blog_switch_calls'] );
+		self::assertSame( \array_fill( 0, 101, 1 ), $GLOBALS['a8csp_bgte_test_blog_restore_calls'] );
+		self::assertSame( 1, $GLOBALS['a8csp_bgte_test_blog_id'] );
 	}
 
 	// endregion.

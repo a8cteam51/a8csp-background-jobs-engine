@@ -174,21 +174,29 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 
 /*
  * Options, WP-Cron events, and Action Scheduler actions are stored per site, while WordPress runs
- * a multisite uninstall only once for the network. `number => 0` removes get_sites()'s default
- * limit so every site's engine footprint is visited.
+ * a multisite uninstall only once for the network. Bounded pages keep site discovery memory
+ * proportional to one batch while still visiting every site's engine footprint.
  */
 if ( is_multisite() ) {
-	$a8csp_bgte_uninstall_site_ids = get_sites(
-		array(
-			'fields' => 'ids',
-			'number' => 0,
-		)
-	);
-	foreach ( $a8csp_bgte_uninstall_site_ids as $a8csp_bgte_uninstall_site_id ) {
-		switch_to_blog( $a8csp_bgte_uninstall_site_id );
-		$a8csp_bgte_uninstall_site();
-		restore_current_blog();
-	}
+	$a8csp_bgte_uninstall_site_batch_size = 100;
+	$a8csp_bgte_uninstall_site_offset     = 0;
+	do {
+		$a8csp_bgte_uninstall_site_ids = get_sites(
+			array(
+				'fields' => 'ids',
+				'number' => $a8csp_bgte_uninstall_site_batch_size,
+				'offset' => $a8csp_bgte_uninstall_site_offset,
+			)
+		);
+		foreach ( $a8csp_bgte_uninstall_site_ids as $a8csp_bgte_uninstall_site_id ) {
+			switch_to_blog( $a8csp_bgte_uninstall_site_id );
+			$a8csp_bgte_uninstall_site();
+			restore_current_blog();
+		}
+
+		$a8csp_bgte_uninstall_site_count   = \count( $a8csp_bgte_uninstall_site_ids );
+		$a8csp_bgte_uninstall_site_offset += $a8csp_bgte_uninstall_site_batch_size;
+	} while ( $a8csp_bgte_uninstall_site_count === $a8csp_bgte_uninstall_site_batch_size );
 } else {
 	$a8csp_bgte_uninstall_site();
 }

@@ -49,6 +49,13 @@ jobs:
       wp-env-config-file: '.wp-env.degraded.json'
       composer-script: 'test:degraded'
 
+  multisite:
+    name: Multisite
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    with:
+      wp-env-config-file: '.wp-env.multisite.json'
+      composer-script: 'test:multisite'
+
   requirements:
     name: Requirements (below-floor WP)
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk

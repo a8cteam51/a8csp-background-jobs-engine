@@ -94,6 +94,7 @@
     "test:integration": "npm --prefix=. run test:integration",
     "test:requirements": "npm --prefix=. run test:requirements",
     "test:degraded": "npm --prefix=. run test:degraded",
+    "test:multisite": "npm --prefix=. run test:multisite",
 
     "quality-check": [
       "@composer validate --strict",

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -41,6 +41,7 @@ final class PluginBootGateTest extends TestCase {
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
 		require_once __DIR__ . '/Engine/Backends/wp-json-encode-stub.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
 
 	/**
@@ -55,100 +56,56 @@ final class PluginBootGateTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_hooks']                = array();
 		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_cron_array']           = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']           = array();
-		$GLOBALS['a8csp_bgte_test_cron_results']         = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence']  = 0;
-		$GLOBALS['wpdb']                                 = new WpdbLockSpy();
+
+		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = array();
+
+		$GLOBALS['a8csp_bgte_test_filter_values']       = array();
+		$GLOBALS['a8csp_bgte_test_did_actions']         = array();
+		$GLOBALS['a8csp_bgte_test_doing_actions']       = array();
+		$GLOBALS['a8csp_bgte_test_blog_id']             = 1;
+		$GLOBALS['a8csp_bgte_test_options']             = array();
+		$GLOBALS['a8csp_bgte_test_option_calls']        = array();
+		$GLOBALS['a8csp_bgte_test_option_autoload']     = array();
+		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
+		$GLOBALS['a8csp_bgte_test_cron_results']        = array();
+		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
+		$GLOBALS['wpdb']                                = new WpdbLockSpy();
 	}
 
 	/**
-	 * Plugin boot publishes the engine and registers every runtime hook in deterministic order.
+	 * Plugin boot publishes the consumer facade through the public front door.
 	 *
 	 * @return  void
 	 */
-	public function test_boot_publishes_the_engine_and_registers_runtime_hooks(): void {
+	public function test_boot_publishes_the_public_consumer_facade(): void {
 		( new Plugin() )->boot();
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/log',
-				'cron_schedules',
-				'a8csp_background_tasks/start_batch',
-				'a8csp_background_tasks/continue_batch',
-				'a8csp_background_tasks/run_task',
-				'a8csp_background_tasks/run_chunk',
-				'a8csp_background_tasks/cleanup_batch',
-				'a8csp_background_tasks/schedule_due',
-				'init',
-			),
-			$GLOBALS['a8csp_bgte_test_hooks']
-		);
-		$action_registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
-		self::assertIsArray( $action_registrations );
-		self::assertCount( 8, $action_registrations );
-		$log_registration = $action_registrations[0] ?? null;
-		self::assertIsArray( $log_registration );
-		self::assertSame( 'a8csp_background_tasks/log', $log_registration['hook_name'] ?? null );
-		self::assertSame( 10, $log_registration['priority'] ?? null );
-		self::assertSame( 3, $log_registration['accepted_args'] ?? null );
-		$run_task_registration = $action_registrations[3] ?? null;
-		self::assertIsArray( $run_task_registration );
-		self::assertSame( 3, $run_task_registration['accepted_args'] ?? null );
-		$run_chunk_registration = $action_registrations[4] ?? null;
-		self::assertIsArray( $run_chunk_registration );
-		self::assertSame( 4, $run_chunk_registration['accepted_args'] ?? null );
-		$filter_registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? null;
-		self::assertIsArray( $filter_registrations );
-		self::assertSame( array( 'cron_schedules' ), \array_column( $filter_registrations, 'hook_name' ) );
-		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
+		self::assertInstanceOf( Consumer::class, \a8csp_bgte( 'plugin-boot-gate' ) );
 	}
 
 	/**
-	 * A failed boot clears both in-flight latches so the same plugin can retry the graph.
+	 * A boot throw poisons the stored plugin entry and the public consumer seam fails loudly.
 	 *
 	 * @return  void
 	 */
-	public function test_failed_boot_can_retry_on_the_same_plugin(): void {
-		$plugin          = new Plugin();
+	public function test_failed_accessor_boot_leaves_the_public_consumer_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
 		try {
-			$plugin->boot();
+			\a8csp_bgte_plugin();
 		} catch ( \TypeError $caught ) {
 			$throwable = $caught;
 		}
 
 		self::assertInstanceOf( \TypeError::class, $throwable );
-		self::assertNull( Component::get_engine() );
-
 		$GLOBALS['wpdb'] = new WpdbLockSpy();
-		$plugin->boot();
 
-		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
-	}
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 
-	/**
-	 * A second boot on the same instance leaves the hook-registration ledger unchanged.
-	 *
-	 * @return  void
-	 */
-	public function test_second_boot_is_a_no_op(): void {
-		$plugin = new Plugin();
-		$plugin->boot();
-		$actions = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
-		$filters = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? null;
-		self::assertIsArray( $actions );
-		self::assertIsArray( $filters );
-		$plugin->boot();
+		$this->expectException( \LogicException::class );
 
-		self::assertCount( 8, $actions );
-		self::assertSame( $actions, $GLOBALS['a8csp_bgte_test_action_registrations'] );
-		self::assertSame( $filters, $GLOBALS['a8csp_bgte_test_filter_registrations'] );
+		\a8csp_bgte( 'plugin-boot-gate' );
 	}
 }

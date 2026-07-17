@@ -35,6 +35,9 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	/** Owner-qualified demo schedule identity. */
 	private const SCHEDULE_IDENTITY = DemoConsumer::OWNER . ':' . DemoConsumer::SCHEDULE_NAME;
 
+	/** Documented owner-scoped schedule-registration option. */
+	private const SCHEDULE_OPTION = 'a8csp_bgte_schedule_registrations_' . DemoConsumer::OWNER;
+
 	/**
 	 * Posts created for the batch proof and removed during teardown.
 	 *
@@ -240,7 +243,7 @@ final class DemoConsumerTest extends IntegrationTestCase {
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $task_completed_named );
 		self::assertSame( array( array( self::TASK_IDENTITY, $manual_run_id, $manual_args ) ), $task_completed_generic );
 
-		\sleep( 1 );
+		$this->make_demo_schedule_due();
 		$schedule_due_before = \did_action( 'a8csp_background_tasks/schedule_due' );
 		self::assertSame( 1, \class_exists( \ActionScheduler::class ) ? $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ) : $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ), 'The scheduler must execute the demo consumer recurring occurrence' );
 		self::assertSame( $schedule_due_before + 1, \did_action( 'a8csp_background_tasks/schedule_due' ), 'The registered recurring occurrence must fire the engine schedule-due action' );
@@ -302,6 +305,47 @@ final class DemoConsumerTest extends IntegrationTestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Advances the real recurring occurrence from its persisted next-due token without wall time.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function make_demo_schedule_due(): void {
+		$registrations = \get_option( self::SCHEDULE_OPTION, null );
+		self::assertIsArray( $registrations );
+		$registration = $registrations[ self::SCHEDULE_IDENTITY ] ?? null;
+		self::assertIsArray( $registration );
+		$next_due = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+		$due = $next_due - 1;
+		self::assertGreaterThan( 0, $due );
+
+		$registration['next_due']                 = $due;
+		$registrations[ self::SCHEDULE_IDENTITY ] = $registration;
+		self::assertTrue( \update_option( self::SCHEDULE_OPTION, $registrations, false ), 'The persisted demo occurrence must advance into its due window' );
+
+		$args = array( self::SCHEDULE_IDENTITY );
+		if ( \class_exists( \ActionScheduler::class ) ) {
+			\as_unschedule_all_actions( 'a8csp_background_tasks/schedule_due', $args, self::SCHEDULE_IDENTITY );
+			$action_id = \as_schedule_recurring_action( $due, 1, 'a8csp_background_tasks/schedule_due', $args, self::SCHEDULE_IDENTITY, true, 10 );
+			self::assertGreaterThan( 0, $action_id, 'Action Scheduler must persist the advanced demo occurrence' );
+
+			return;
+		}
+
+		$events = $this->wordpress_cron_events( 'a8csp_background_tasks/schedule_due', $args );
+		self::assertCount( 1, $events );
+		$event = $events[0];
+		self::assertSame( $next_due, $event['timestamp'] );
+		self::assertIsString( $event['schedule'] );
+		self::assertSame( 1, $event['interval'] );
+		self::assertTrue( true === \wp_unschedule_event( $event['timestamp'], 'a8csp_background_tasks/schedule_due', $args, true ), 'WP-Cron must remove the future demo occurrence before advancing it' );
+		self::assertTrue( true === \wp_schedule_event( $due, $event['schedule'], 'a8csp_background_tasks/schedule_due', $args, true ), 'WP-Cron must persist the advanced demo occurrence' );
+	}
 
 	/**
 	 * Creates one published post with one approved comment for the recount queue.

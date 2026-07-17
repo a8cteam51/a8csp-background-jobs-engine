@@ -63,7 +63,13 @@ if ( ! \function_exists( 'get_sites' ) ) {
 			}
 		}
 
-		return $site_ids;
+		$number = $args['number'] ?? 100;
+		$offset = $args['offset'] ?? 0;
+		if ( ! \is_int( $number ) || 1 > $number || ! \is_int( $offset ) || 0 > $offset ) {
+			throw new \UnexpectedValueException( 'Query test sites with a positive integer page size and non-negative integer offset.' );
+		}
+
+		return \array_slice( $site_ids, $offset, $number );
 	}
 }
 

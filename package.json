@@ -42,6 +42,8 @@
     "wp-env:belowfloor:stop": "wp-env --config .wp-env.belowfloor.json stop",
     "wp-env:degraded:start": "wp-env --config .wp-env.degraded.json start",
     "wp-env:degraded:stop": "wp-env --config .wp-env.degraded.json stop",
+    "wp-env:multisite:start": "wp-env --config .wp-env.multisite.json start",
+    "wp-env:multisite:stop": "wp-env --config .wp-env.multisite.json stop",
 
     "audit": "composer audit --abandoned=report && npm audit",
     "audit:fix": "npm audit fix",
@@ -50,6 +52,7 @@
 
     "test:integration": "wp-env --config .wp-env.tests.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine php tests/complete-as-migration.php && wp-env --config .wp-env.tests.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine vendor/bin/phpunit --testsuite=Integration",
     "test:requirements": "wp-env --config .wp-env.belowfloor.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine vendor/bin/phpunit --testsuite=Requirements",
-    "test:degraded": "wp-env --config .wp-env.degraded.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine wp eval 'if ( class_exists( \"ActionScheduler\" ) || function_exists( \"as_enqueue_async_action\" ) ) { WP_CLI::error( \"Degraded integration requires Action Scheduler to be absent; remove every Action Scheduler plugin mapping and activation.\" ); }' && wp-env --config .wp-env.degraded.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine vendor/bin/phpunit --testsuite=Integration --group=degraded"
+    "test:degraded": "wp-env --config .wp-env.degraded.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine wp eval 'if ( class_exists( \"ActionScheduler\" ) || function_exists( \"as_enqueue_async_action\" ) ) { WP_CLI::error( \"Degraded integration requires Action Scheduler to be absent; remove every Action Scheduler plugin mapping and activation.\" ); }' && wp-env --config .wp-env.degraded.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine vendor/bin/phpunit --testsuite=Integration --group=degraded",
+    "test:multisite": "(wp-env --config .wp-env.multisite.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine wp core multisite-convert || wp-env --config .wp-env.multisite.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine wp core is-installed --network) && wp-env --config .wp-env.multisite.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine wp plugin activate --network action-scheduler a8csp-background-tasks-engine && wp-env --config .wp-env.multisite.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine php tests/complete-as-migration.php && wp-env --config .wp-env.multisite.json run cli --env-cwd=wp-content/plugins/a8csp-background-tasks-engine vendor/bin/phpunit --testsuite=Integration --group=multisite"
   }
 }
