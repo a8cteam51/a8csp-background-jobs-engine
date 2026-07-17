@@ -29,6 +29,7 @@ infection.json
 package*.json
 composer.json
 composer.lock
+/docs
 
 # Secret material — never ship, even if a consumer forgets to list it.
 # .pem/.key are root-anchored (leading /) so certs bundled under vendor/
