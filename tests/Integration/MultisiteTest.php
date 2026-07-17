@@ -2,6 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\Group;
@@ -29,12 +32,29 @@ final class MultisiteTest extends IntegrationTestCase {
 		'a8csp_bgte_cleanup_intent_multisite-%d-registration-hash',
 	);
 
+	/** Internal lifecycle hooks that may retain scheduled work. */
+	private const LIFECYCLE_HOOKS = array(
+		'a8csp_background_tasks/start_batch',
+		'a8csp_background_tasks/continue_batch',
+		'a8csp_background_tasks/run_task',
+		'a8csp_background_tasks/run_chunk',
+		'a8csp_background_tasks/cleanup_batch',
+		'a8csp_background_tasks/schedule_due',
+	);
+
 	/**
 	 * Sites provisioned by the current test and removed during teardown.
 	 *
 	 * @var list<int>
 	 */
 	private array $created_site_ids = array();
+
+	/**
+	 * Sites where the current test seeds lifecycle work and teardown clears interrupted runs.
+	 *
+	 * @var list<int>
+	 */
+	private array $scheduled_site_ids = array();
 
 	// endregion.
 
@@ -77,9 +97,20 @@ final class MultisiteTest extends IntegrationTestCase {
 				\restore_current_blog();
 			}
 
-			foreach ( $this->created_site_ids as $site_id ) {
-				$result = \wp_delete_site( $site_id );
-				self::assertNotInstanceOf( \WP_Error::class, $result );
+			try {
+				foreach ( $this->scheduled_site_ids as $site_id ) {
+					\switch_to_blog( $site_id );
+					try {
+						self::clear_scheduled_work();
+					} finally {
+						\restore_current_blog();
+					}
+				}
+			} finally {
+				foreach ( $this->created_site_ids as $site_id ) {
+					$result = \wp_delete_site( $site_id );
+					self::assertNotInstanceOf( \WP_Error::class, $result );
+				}
 			}
 		} finally {
 			parent::tearDown();
@@ -91,7 +122,7 @@ final class MultisiteTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * Network uninstall sweeps the documented engine ownership prefix from every site.
+	 * Network uninstall sweeps documented engine options and scheduled work from every site.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -101,14 +132,29 @@ final class MultisiteTest extends IntegrationTestCase {
 	#[RunInSeparateProcess]
 	public function test_network_uninstall_sweeps_every_site(): void {
 		$this->assert_engine_is_network_active();
-		$site_ids = $this->ensure_site_count( 3 );
+		$site_ids     = $this->ensure_site_count( 3 );
+		$scheduled_at = \time() + \HOUR_IN_SECONDS;
 
 		foreach ( $site_ids as $site_id ) {
 			\switch_to_blog( $site_id );
 			try {
+				self::initialize_action_scheduler_schema();
+				$this->scheduled_site_ids[] = $site_id;
+				$schedule_args              = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
+				$schedule_group             = \sprintf( 'multisite-uninstall|site-%d', $site_id );
+				$wp_cron                    = new WPCronBackend();
+				$action_scheduler           = new ActionSchedulerBackend( static fn (): bool => true );
+
 				foreach ( self::DOCUMENTED_OPTION_TEMPLATES as $template ) {
 					$option = \sprintf( $template, $site_id );
 					self::assertTrue( \update_option( $option, 'sentinel', false ), "Site {$site_id} must persist the '{$option}' uninstall sentinel" );
+				}
+
+				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+					self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, $schedule_args ) );
+					self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, $schedule_args, $schedule_group ) );
+					self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, $schedule_args ), "Site {$site_id} must persist the '{$hook}' WP-Cron uninstall sentinel" );
+					self::assertSame( $scheduled_at, $action_scheduler->get_next_scheduled( $hook, $schedule_args, $schedule_group ), "Site {$site_id} must persist the '{$hook}' Action Scheduler uninstall sentinel" );
 				}
 			} finally {
 				\restore_current_blog();
@@ -121,7 +167,18 @@ final class MultisiteTest extends IntegrationTestCase {
 		foreach ( $site_ids as $site_id ) {
 			\switch_to_blog( $site_id );
 			try {
+				// Action Scheduler binds its table names when a store initializes, not when the blog switches.
+				self::initialize_action_scheduler_schema();
 				self::assertSame( array(), self::engine_option_names(), "Network uninstall must leave site {$site_id} with zero a8csp_bgte_ rows" );
+
+				$schedule_args    = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
+				$schedule_group   = \sprintf( 'multisite-uninstall|site-%d', $site_id );
+				$wp_cron          = new WPCronBackend();
+				$action_scheduler = new ActionSchedulerBackend( static fn (): bool => true );
+				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+					self::assertFalse( $wp_cron->is_scheduled( $hook, $schedule_args ), "Network uninstall must remove every '{$hook}' WP-Cron event from site {$site_id}" );
+					self::assertFalse( $action_scheduler->is_scheduled( $hook, $schedule_args, $schedule_group ), "Network uninstall must remove every pending '{$hook}' Action Scheduler action from site {$site_id}" );
+				}
 			} finally {
 				\restore_current_blog();
 			}
@@ -162,6 +219,41 @@ final class MultisiteTest extends IntegrationTestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Creates the complete Action Scheduler custom-table schema for the switched site.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private static function initialize_action_scheduler_schema(): void {
+		$store = \ActionScheduler::store();
+		self::assertInstanceOf( \ActionScheduler_DBStore::class, $store );
+		$store->init();
+
+		$logger = \ActionScheduler::logger();
+		self::assertInstanceOf( \ActionScheduler_DBLogger::class, $logger );
+		$logger->init();
+	}
+
+	/**
+	 * Clears lifecycle work that may persist after an interrupted test.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private static function clear_scheduled_work(): void {
+		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+			\wp_unschedule_hook( $hook );
+			if ( \function_exists( 'as_unschedule_all_actions' ) ) {
+				\as_unschedule_all_actions( $hook );
+			}
+		}
+	}
 
 	/**
 	 * Asserts that the converted environment activates the engine for the complete network.
