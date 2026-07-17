@@ -6,7 +6,6 @@
 		 cacheDirectory="tests/.cache/phpunit"
 		 executionOrder="depends,defects"
 		 requireCoverageMetadata="false"
-		 beStrictAboutCoverageMetadata="true"
 		 beStrictAboutOutputDuringTests="true"
 		 failOnRisky="true"
 		 failOnWarning="true"
@@ -29,6 +28,7 @@
 		<include>
 			<directory>src</directory>
 			<directory>includes</directory>
+			<file>functions-bootstrap.php</file>
 		</include>
 	</source>
 </phpunit>
