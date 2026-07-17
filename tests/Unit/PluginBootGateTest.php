@@ -94,7 +94,7 @@ final class PluginBootGateTest extends TestCase {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
 		try {
-			\a8csp_bgte_plugin();
+			\a8csp_bgte_plugin()->boot();
 		} catch ( \TypeError $caught ) {
 			$throwable = $caught;
 		}

@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies the plugin boots on a supported runtime inside wp-env: the requirements gate passes,
- * the named accessor is wired, and repeated access returns the booted plugin instance.
+ * the plugin boot callback is wired, and repeated access returns the booted plugin instance.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -18,8 +18,8 @@ final class PluginBootTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * On an at-floor runtime the requirements gate passes, `plugins_loaded` is wired to the named
-	 * plugin accessor at priority zero; WordPress ignores the action callback's return value.
+	 * On an at-floor runtime the requirements gate passes and `plugins_loaded` is wired to the
+	 * plugin's boot callback at priority zero.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -29,7 +29,7 @@ final class PluginBootTest extends IntegrationTestCase {
 	public function test_plugin_boots_on_supported_runtime(): void {
 		self::assertTrue( \constant( 'A8CSP_BGTE_REQUIREMENTS_RESULT' ) );
 		self::assertTrue( \function_exists( 'a8csp_bgte_plugin' ) );
-		self::assertSame( 0, has_action( 'plugins_loaded', 'a8csp_bgte_plugin' ) );
+		self::assertSame( 0, has_action( 'plugins_loaded', array( a8csp_bgte_plugin(), 'boot' ) ) );
 		self::assertInstanceOf( Plugin::class, a8csp_bgte_plugin() );
 	}
 

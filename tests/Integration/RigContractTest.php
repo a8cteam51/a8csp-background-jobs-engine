@@ -49,7 +49,7 @@ final class RigContractTest extends IntegrationTestCase {
 
 		$action_count_before = \did_action( self::NEW_HOOK );
 		$filter_count_before = \did_filter( self::NEW_HOOK );
-		$plugin_listener     = \has_action( self::EXISTING_HOOK, 'a8csp_bgte_plugin' );
+		$plugin_listener     = \has_action( self::EXISTING_HOOK, array( \a8csp_bgte_plugin(), 'boot' ) );
 		self::assertIsInt( $plugin_listener, 'The plugin listener must exist before the hook-restoration probe runs' );
 
 		try {
@@ -60,7 +60,7 @@ final class RigContractTest extends IntegrationTestCase {
 
 			$this->restore_wordpress_hooks();
 
-			self::assertSame( $plugin_listener, \has_action( self::EXISTING_HOOK, 'a8csp_bgte_plugin' ) );
+			self::assertSame( $plugin_listener, \has_action( self::EXISTING_HOOK, array( \a8csp_bgte_plugin(), 'boot' ) ) );
 			self::assertFalse( \has_action( self::EXISTING_HOOK, $existing_hook_listener ) );
 			self::assertFalse( \has_filter( self::NEW_HOOK, $new_hook_listener ) );
 			self::assertSame( $action_count_before, \did_action( self::NEW_HOOK ) );

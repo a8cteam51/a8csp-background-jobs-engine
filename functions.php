@@ -9,9 +9,11 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
 // region META
 
 /**
- * Returns the plugin instance, booting it on first access.
+ * Returns the plugin's composition root.
  *
- * @internal Boot primitive for the engine's own hooks; consumers enter through `a8csp_bgte()`.
+ * Construction only; it never boots the plugin.
+ *
+ * @internal Engine boot wiring; consumers enter through `a8csp_bgte()`.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -20,18 +22,13 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
  */
 function a8csp_bgte_plugin(): Plugin {
 	/**
-	 * Boot-once shared instance.
+	 * Shared composition-root instance.
 	 *
 	 * @var Plugin|null $plugin
 	 */
 	static $plugin = null;
 
-	if ( null === $plugin ) {
-		$plugin = new Plugin();
-		$plugin->boot();
-	}
-
-	return $plugin;
+	return $plugin ??= new Plugin();
 }
 
 /**
