@@ -1,31 +1,35 @@
 # Tests
 
-The test rig has three PHPUnit suites run against wp-env fixtures at two WordPress-version tiers.
+The test rig defines three PHPUnit suites, exposes five local run configurations, and adds a separate mutation-testing job.
 
-## Suites
+## Suite matrix
 
-- **Unit** (`tests/Unit/`) — no WordPress, no wp-env. Runs against plain PHPUnit `TestCase` with
-  recording `add_action()`/`add_filter()` stubs (`tests/Unit/wp-hook-stubs.php`) instead of Mockery
-  or Brain Monkey, so the real `Plugin::boot()` path is exercised outside WordPress.
-  Fast; this is the suite `composer quality-check` runs on every push.
-- **Integration** (`tests/Integration/`) — boots inside wp-env against a supported WordPress
-  version and exercises the plugin's real boot path. `UninstallTest` runs the real
-  `uninstall.php` end-to-end (seeds sentinels, defines `WP_UNINSTALL_PLUGIN`, asserts its
-  footprint is gone and a canary key survives) inside `#[RunInSeparateProcess]`, since that
-  constant must not leak into the rest of the suite.
-- **Requirements** (`tests/Integration/RequirementsCheckTest.php`, run as its own suite) — boots
-  inside wp-env against a below-floor WordPress version to verify the requirements gate degrades
-  gracefully instead of fataling.
+- **Unit** (`tests/Unit/`) — the `Unit` suite runs without WordPress or wp-env. Plain PHPUnit
+  `TestCase` tests use recording WordPress stubs where needed, including
+  `tests/Unit/wp-hook-stubs.php` for the real `Plugin::boot()` path. CI runs it on PHP 8.5 and 8.6.
+- **Integration** (`tests/Integration/`) — the complete `Integration` suite runs against a
+  supported WordPress version with Action Scheduler active on port 8890. The command runs
+  `tests/complete-as-migration.php` before PHPUnit so the Action Scheduler store is on its
+  completed migration schema. CI runs this configuration against WordPress 7.0 and nightly.
+- **Degraded** — the `Integration` suite filtered to `--group=degraded` runs on port 8892 with
+  Action Scheduler absent, exercising the WP-Cron-only path. The command refuses to start PHPUnit
+  if the Action Scheduler class or enqueue function is present.
+- **Requirements** (`tests/Integration/RequirementsCheckTest.php`) — the separate `Requirements`
+  suite runs on port 8891 against the below-floor WordPress fixture and verifies that the
+  requirements gate degrades gracefully instead of fataling.
+- **Multisite** — the `Integration` suite filtered to `--group=multisite` runs on port 8894. The
+  command converts the fixture to multisite when needed, network-activates Action Scheduler and
+  the engine, runs `tests/complete-as-migration.php`, and then starts PHPUnit.
 
-## Running the suites
+## Running the configurations
 
-Unit (no wp-env required):
+Unit requires no wp-env instance:
 
 ```sh
 composer test:unit
 ```
 
-Integration (start the tests wp-env instance first):
+Integration:
 
 ```sh
 npm run wp-env:tests:start
@@ -33,7 +37,15 @@ composer test:integration
 npm run wp-env:tests:stop
 ```
 
-Requirements (start the below-floor wp-env instance first):
+Degraded:
+
+```sh
+npm run wp-env:degraded:start
+composer test:degraded
+npm run wp-env:degraded:stop
+```
+
+Requirements:
 
 ```sh
 npm run wp-env:belowfloor:start
@@ -41,13 +53,23 @@ composer test:requirements
 npm run wp-env:belowfloor:stop
 ```
 
+Multisite:
+
+```sh
+npm run wp-env:multisite:start
+composer test:multisite
+npm run wp-env:multisite:stop
+```
+
 ## Ports
 
-| Environment | Config                    | Port |
-| ----------- | ------------------------- | ---- |
-| Dev         | `.wp-env.json`            | 8893 |
-| Tests       | `.wp-env.tests.json`      | 8890 |
-| Below-floor | `.wp-env.belowfloor.json` | 8891 |
+| Environment  | Config                    | Port |
+| ------------ | ------------------------- | ---- |
+| Integration  | `.wp-env.tests.json`      | 8890 |
+| Requirements | `.wp-env.belowfloor.json` | 8891 |
+| Degraded     | `.wp-env.degraded.json`   | 8892 |
+| Dev          | `.wp-env.json`            | 8893 |
+| Multisite    | `.wp-env.multisite.json`  | 8894 |
 
 ## Why plain `TestCase`, not `WP_UnitTestCase`
 
@@ -58,14 +80,12 @@ plain `TestCase`, inside wp-env, rather than waiting on that migration or pinnin
 PHPUnit.
 
 That trade gives up `$this->factory` fixture helpers, `go_to()` routing simulation, and
-`WP_UnitTestCase`'s per-test transaction rollback. The first two exist for content- and
-query-heavy plugins exercising post/term/user fixtures and template routing — this scaffold's
-Integration suite is narrower (boot path, requirements gating), so their absence costs little.
-Transaction rollback specifically would be counterproductive here: the Integration and
-Requirements suites exist to observe persistence and boot-time side effects, and auto-rolling back
-every test would mask exactly the behavior they're written to catch.
+`WP_UnitTestCase`'s per-test transaction rollback. The WordPress-backed configurations create
+their explicit fixtures through public WordPress APIs and need to observe persistence, boot-time
+side effects, backend delivery, and uninstall behavior. Automatic transaction rollback would mask
+the storage behavior those tests are written to verify.
 
-## Mutation testing
+## Mutation testing (CI-first)
 
 `composer test:unit:mutation` runs Infection against the Unit suite's source. It sits outside the
 default `composer quality-check` target (only `quality-check:all` pulls it in) and does not gate

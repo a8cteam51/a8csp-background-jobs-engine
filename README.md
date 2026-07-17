@@ -40,6 +40,12 @@ composer install --no-dev
 
 Action Scheduler is optional and preferred when it is ready; when it is absent, the engine runs on WP-Cron alone.
 
+## Multisite
+
+Network activation is supported, and each site operates its own isolated engine state. Engine storage is bound to the request site when the engine graph is built, so a storage operation after `switch_to_blog()` throws a `LogicException` instead of writing through a graph created for another site.
+
+Per-site pattern: enter each site through a fresh request or execution context, then resolve its consumer and operate there; do not call engine APIs after switching blogs inside an existing context. Network uninstall sweeps the engine's options and pending backend work from every site.
+
 ## Quick start
 
 In a consumer plugin under its own namespace, register the Task and Batch implementations and synchronize the owner's complete schedule declaration from `init`:
@@ -159,66 +165,39 @@ Action Scheduler's optional `$group` defaults to `''`, leaving ownership implici
 
 ## Testing your consumer
 
-The public `Consumer` and facade constructors accept closures, so a consumer test can record calls without booting a scheduling backend. This example makes Task enqueue succeed and makes every unrelated operation return a scripted failure:
+The public facade constructors accept an owner string and their small engine port: `TasksEngineInterface`, `BatchesEngineInterface`, `SchedulesEngineInterface`, or `RunsEngineInterface`. A consumer test implements the required port, or uses a partial fake, and constructs `Tasks`, `Batches`, `Schedules`, or `Runs` directly without booting a scheduling backend. A complete `Consumer` can be assembled from those four owner-bound facades.
+
+This compact example records a Task enqueue through the real public facade:
 
 ```php
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Consumer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TasksEngineInterface;
 
-$calls    = array();
-$identity = static fn ( string $name ): string => 'my-plugin:' . $name;
-$accepted = new Success( 'run-test' );
-$rejected = new Failure(
-	new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' )
-);
+$engine = new class() implements TasksEngineInterface {
+	public array $calls = array();
 
-$consumer = new Consumer(
-	'my-plugin',
-	new Tasks(
-		$identity,
-		static function ( string $identity, TaskInterface $task ) use ( &$calls ): void {
-			$calls[] = array( 'register', $identity, $task );
-		},
-		static function ( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ) use ( &$calls, $accepted ): Success {
-			$calls[] = array( 'enqueue', $identity, $args, $delay, $dedup_key, $priority );
-			return $accepted;
-		}
-	),
-	new Batches(
-		$identity,
-		static function ( string $identity, BatchInterface $batch ): void {},
-		static fn ( string $identity, array $args, ExistingRunPolicy $existing, int $priority ): Failure => $rejected
-	),
-	new Schedules(
-		$identity,
-		static fn ( array $declarations ): Failure => $rejected,
-		static fn ( string $identity ): Failure => $rejected
-	),
-	new Runs(
-		$identity,
-		static fn ( string $identity, string $run_id ): Failure => $rejected,
-		static fn ( string $identity, string $run_id ): Failure => $rejected,
-		static fn ( string $identity ): Success => new Success( null )
-	)
-);
+	public function register_task( string $identity, TaskInterface $task ): void {}
 
-$result = $consumer->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ), delay: 30 );
+	/** @return AbstractResult<string, ApiError> */
+	public function enqueue( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ): AbstractResult {
+		$this->calls[] = array( $identity, $args, $delay, $dedup_key, $priority );
 
-\assert( $accepted === $result );
-\assert( array( array( 'enqueue', 'my-plugin:refresh', array( 'site_id' => 7 ), 30, null, 10 ) ) === $calls );
+		return new Success( 'run-test' );
+	}
+};
+
+$tasks  = new Tasks( 'my-plugin', $engine );
+$result = $tasks->enqueue( 'refresh', array( 'site_id' => 7 ), delay: 30 );
+
+\assert( $result->is_success() && 'run-test' === $result->value );
+\assert( array( array( 'my-plugin:refresh', array( 'site_id' => 7 ), 30, null, 10 ) ) === $engine->calls );
 ```
 
-Alternatively, an isolated test can stub the global `a8csp_bgte()` function before the engine's `functions.php` loads and return this fake `Consumer` to exercise code that resolves its dependency internally.
+Do not stub `a8csp_bgte()`. The engine's `functions.php` declares it unconditionally, so a test-defined function fatals with a redeclaration error when the engine loads. Code that resolves its consumer internally instead accepts a `Consumer`, or a `fn ( string $owner ): Consumer` resolver that defaults to `a8csp_bgte()`, and tests inject the fake facade set through that seam.
 
 ## The three contracts
 
@@ -238,7 +217,7 @@ interface TaskInterface extends WorkInterface {
 }
 ```
 
-`WorkInterface` owns the shared 300-second default, which `AbstractTask` supplies automatically. Invalid or non-positive declarations use that default, and the engine caps the credited window at six hours. The engine credits liveness for the bounded window before each `handle()` call; a handler that exceeds it becomes eligible for crash reclamation after the lock-staleness window.
+`WorkInterface` owns the shared 300-second default, which `AbstractTask` supplies automatically. Invalid or non-positive declarations use that default, and the engine caps the credited window at six hours. The engine credits liveness for the bounded window before each `handle()` call; a handler that exceeds it becomes eligible for crash reclamation after the lock-staleness window. A callback that exceeds its credited window can overlap its crash-recovery replacement, which is why handlers must be idempotent.
 
 ### Batch and batch context
 
@@ -311,7 +290,7 @@ Use `Recurrence::every( $seconds )` for fixed-interval schedule synchronization.
 
 ## Idempotency invariant
 
-Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and lifecycle hooks have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. A throwing `on_failed()` callback or lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
+Schedule-driven tasks and batch chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery and a reclaimed run that revives after its stale lock is taken can execute the same logical occurrence more than once. Terminal callbacks and terminal lifecycle hooks (`completed`, `failed`, `cancelled`, and `superseded`) have the same at-least-once crash window between the external effect and its persisted completion marker; replay of that window is durable under Action Scheduler and best-effort under the WP-Cron fallback. The `started` hook is an inline, non-durable notification on the admission or start path, so a crash between durable admission and hook delivery can lose it. A throwing `on_failed()` callback or terminal lifecycle hook remains pending for a later maintenance attempt, so a persistently failing consumer also retains the terminal row until it is fixed. The demo Task converges repeated deliveries by overwriting one stable consumer transient instead of appending a record or repeating an external command.
 
 ## Admission overlap and catch-up policies
 
@@ -392,6 +371,8 @@ Priority is an integer from 0 through 255 and defaults to 10. Action Scheduler r
 
 Use a stable owner slug and pass every schedule owned by that consumer on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration and self-removes when that backend delivers it.
 
+Action Scheduler becomes writable after `action_scheduler_init`, normally during `init` at priority 1. Synchronizing before that action fires routes occurrences to WP-Cron for that request; schedule the consumer callback after Action Scheduler's priority-1 initialization when that backend is required.
+
 ## Keep action arguments small
 
 Public start and enqueue arguments are validated as JSON-encodable portable arguments and persisted in run state. The initial Task or Batch delivery carries only the engine envelope of identity, run ID, and sequence. The 8,000-byte JSON ceiling applies to each backend action payload. A Batch chunk action also includes one chunk's arguments, so every chunk must fit with the envelope. An oversized or unencodable payload fails with a corrective message naming the hook:
@@ -427,8 +408,9 @@ The canonical command root is `wp background-tasks`; there is no alias.
 | Cancel a retained run | `wp background-tasks runs cancel <identity> <run_id>` |
 | List schedules | `wp background-tasks schedules list [--owner=<owner>] [--format=<format>]` |
 | List runs and recent history | `wp background-tasks runs list <identity> [--format=<format>]` |
+| Destroy all engine state (development reset) | `wp background-tasks reset [--yes]` |
 
-Every targeted `<identity>` argument is a composed `{owner}:{name}` identity. Failed-run and schedule list output include an `owner` column, retain the composed identity in the `name` column, and accept an exact `--owner` filter. The list commands accept `table`, `csv`, `json`, `count`, or `yaml`; the default is `table`. Examples matching the command help are:
+Every targeted `<identity>` argument is a composed `{owner}:{name}` identity. Failed-run and schedule list output include an `owner` column, carry the composed identity in an `identity` column, and accept an exact `--owner` filter. The list commands accept `table`, `csv`, `json`, `count`, or `yaml`; the default is `table`. Examples matching the command help are:
 
 ```sh
 wp background-tasks failed-runs list
@@ -442,7 +424,11 @@ wp background-tasks schedules list
 wp background-tasks schedules list --owner=consumer-plugin --format=json
 wp background-tasks runs list consumer-plugin:email-digest
 wp background-tasks runs list consumer-plugin:email-digest --format=json
+wp background-tasks reset
+wp background-tasks reset --yes
 ```
+
+`reset` permanently deletes every engine-owned option row and pending backend action. It is a development reset, not an operational cancellation workflow: it destroys in-flight work irrecoverably, including the engine maintenance registration, which the next boot synchronization recreates. The command prompts for confirmation, and `--yes` skips the prompt.
 
 `schedules list` reports `owner`, `identity`, `recurrence`, `next_due`, `last_fired`, `misfire_skips`, `overlap_skips`, `occurrence_visible`, and `lock`. The `occurrence_visible` value reflects state visible through ready backends. When registrations are listed in table format, the command adds a note if a present backend is not ready and may hold dormant occurrences.
 

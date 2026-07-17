@@ -191,6 +191,9 @@ function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_
 /**
  * Checks compatibility with the current WordPress version.
  *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
  * @param   string $min_wp_version The minimum WP version required to run.
  *
  * @return  bool
@@ -206,6 +209,9 @@ function a8csp_bgte_is_wp_version_compatible( $min_wp_version ) {
 /**
  * Checks compatibility with the current PHP version.
  *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
  * @param   string $min_php_version The minimum PHP version required to run.
  *
  * @return  bool
@@ -220,6 +226,9 @@ function a8csp_bgte_is_php_version_compatible( $min_php_version ) {
 
 /**
  * Validates the plugin requirements.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  *
  * @return  true|\WP_Error
  */
@@ -248,6 +257,9 @@ function a8csp_bgte_validate_requirements() {
 
 /**
  * Outputs an error that the system requirements weren't met.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  *
  * @param   \WP_Error $error          The error message to display.
  *
