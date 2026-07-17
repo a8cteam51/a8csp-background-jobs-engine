@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 
 \defined( 'ABSPATH' ) || exit;

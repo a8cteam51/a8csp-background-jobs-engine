@@ -20,7 +20,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;

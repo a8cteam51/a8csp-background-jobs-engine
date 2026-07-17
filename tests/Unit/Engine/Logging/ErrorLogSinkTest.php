@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( ErrorLogSink::class )]
 #[UsesClass( PortableArguments::class )]
-final class LogTest extends TestCase {
+final class ErrorLogSinkTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording action stub.
 	 *

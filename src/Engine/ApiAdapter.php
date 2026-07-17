@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\SchedulesEngineInterf
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TasksEngineInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 
 \defined( 'ABSPATH' ) || exit;

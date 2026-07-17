@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
@@ -16,7 +16,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 use Psr\Clock\ClockInterface;
-use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 

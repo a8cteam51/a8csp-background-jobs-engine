@@ -12,7 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;

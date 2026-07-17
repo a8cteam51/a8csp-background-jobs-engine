@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
