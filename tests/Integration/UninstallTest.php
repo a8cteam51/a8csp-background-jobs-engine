@@ -114,7 +114,7 @@ final class UninstallTest extends IntegrationTestCase {
 
 		$scheduled_at     = \time() + \HOUR_IN_SECONDS;
 		$wp_cron          = new WPCronBackend();
-		$action_scheduler = new ActionSchedulerBackend( static fn (): bool => true );
+		$action_scheduler = new ActionSchedulerBackend();
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
 			self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS ) );
 			self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );

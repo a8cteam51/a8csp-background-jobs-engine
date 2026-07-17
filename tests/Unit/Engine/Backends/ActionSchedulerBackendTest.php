@@ -84,10 +84,6 @@ final class ActionSchedulerBackendTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
 		self::assertFalse( $backend->is_ready() );
 		self::assertFalse( $backend->is_absent() );
-
-		$absent = new ActionSchedulerBackend( static fn (): bool => false, static fn ( string $function_name ): bool => false );
-		self::assertFalse( $absent->is_ready() );
-		self::assertTrue( $absent->is_absent() );
 	}
 
 	/**

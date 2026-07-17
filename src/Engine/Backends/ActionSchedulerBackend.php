@@ -15,9 +15,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason
  * Scheduling backend over Action Scheduler.
  *
  * Action Scheduler is commonly bundled by a consumer rather than activated as a standalone
- * plugin. Readiness therefore requires its complete procedural table and the signal that its data
- * store has initialized. Every procedural call remains guarded because load order can change
- * between requests and consumers can supply partial or competing copies of the library.
+ * plugin. Readiness derives from its complete procedural table and the lifecycle state reported by
+ * the action_scheduler_init and init actions. Every procedural call remains guarded because load
+ * order can change between requests and consumers can supply partial or competing copies of the
+ * library.
  *
  * @internal
  *
@@ -44,64 +45,6 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		'as_has_scheduled_action',
 		'as_next_scheduled_action',
 	);
-
-	/**
-	 * Predicate backing {@see self::is_ready()}.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     \Closure(): bool
-	 */
-	private \Closure $readiness_probe;
-
-	/**
-	 * Predicate reporting whether one runtime function exists.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     \Closure(string): bool
-	 */
-	private \Closure $function_exists_probe;
-
-	/**
-	 * Predicate reporting how many times one WordPress action fired.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     \Closure(string): int
-	 */
-	private \Closure $did_action_probe;
-
-	// endregion
-
-	// region MAGIC METHODS
-
-	/**
-	 * Constructor.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param (callable(): bool)|null        $readiness_probe
-	 * @phpstan-param (callable(string): bool)|null $function_exists_probe
-	 * @phpstan-param (callable(string): int)|null  $did_action_probe
-	 *
-	 * @param   callable|null $readiness_probe       Readiness predicate, or null for runtime facts.
-	 * @param   callable|null $function_exists_probe Function-existence predicate for runtime facts.
-	 * @param   callable|null $did_action_probe      Action-fire-count predicate for runtime facts.
-	 */
-	public function __construct( ?callable $readiness_probe = null, ?callable $function_exists_probe = null, ?callable $did_action_probe = null ) {
-		$this->function_exists_probe = \Closure::fromCallable( $function_exists_probe ?? static fn ( string $function_name ): bool => \function_exists( $function_name ) );
-
-		$this->did_action_probe = \Closure::fromCallable( $did_action_probe ?? static fn ( string $hook ): int => \function_exists( 'did_action' ) ? \did_action( $hook ) : 0 );
-
-		$this->readiness_probe = null === $readiness_probe
-			? fn (): bool => self::facts_are_ready( $this->readiness_facts() )
-			: \Closure::fromCallable( $readiness_probe );
-	}
 
 	// endregion
 
@@ -349,7 +292,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_ready(): bool {
-		return ( $this->readiness_probe )();
+		return self::facts_are_ready( $this->readiness_facts() );
 	}
 
 	/**
@@ -362,7 +305,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_absent(): bool {
-		return ! \array_any( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => ( $this->function_exists_probe )( $function_name ) );
+		return ! \array_any( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => \function_exists( $function_name ) );
 	}
 
 	/**
@@ -389,12 +332,12 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}
 	 */
 	private function readiness_facts(): array {
-		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => ( $this->function_exists_probe )( $function_name ) );
+		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => \function_exists( $function_name ) );
 
 		return array(
 			'action_scheduler_functions_exist' => $functions_exist,
-			'action_scheduler_init_fired'      => 0 < ( $this->did_action_probe )( 'action_scheduler_init' ),
-			'wp_init_fired'                    => 0 < ( $this->did_action_probe )( 'init' ),
+			'action_scheduler_init_fired'      => 0 < \did_action( 'action_scheduler_init' ),
+			'wp_init_fired'                    => 0 < \did_action( 'init' ),
 		);
 	}
 
@@ -423,7 +366,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  Failure<SchedulingError>|null
 	 */
 	private function missing_function_failure( string $function_name ): ?Failure {
-		if ( ( $this->function_exists_probe )( $function_name ) ) {
+		if ( \function_exists( $function_name ) ) {
 			return null;
 		}
 
@@ -478,7 +421,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		if ( 0 === $action_id ) {
 			if ( '' === $group ) {
 				$failure_cause = 'a unique scheduling write in the empty group returned zero, which is ambiguous between a duplicate and a store failure; use a non-empty group for verifiable uniqueness.';
-			} elseif ( ! ( $this->function_exists_probe )( 'as_has_scheduled_action' ) ) {
+			} elseif ( ! \function_exists( 'as_has_scheduled_action' ) ) {
 				$diagnostic_facts = $this->readiness_facts();
 
 				$diagnostic_facts['action_scheduler_functions_exist'] = false;

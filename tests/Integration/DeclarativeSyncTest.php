@@ -85,7 +85,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		parent::setUp();
 
 		$this->foreign_cron             = new WPCronBackend();
-		$this->foreign_action_scheduler = new ActionSchedulerBackend( static fn (): bool => true );
+		$this->foreign_action_scheduler = new ActionSchedulerBackend();
 		$this->foreign_cron->register_hooks();
 		$this->foreign_cron_at   = \time() + 2 * \HOUR_IN_SECONDS;
 		$this->foreign_action_at = $this->foreign_cron_at + \MINUTE_IN_SECONDS;
@@ -155,7 +155,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertCount( 1, $after );
 		self::assertSame( $retained, $this->schedule_entry( $after, self::ORPHAN_OWNER . ':orphan-a' ) );
 		self::assertNull( $this->schedule_entry( $after, self::ORPHAN_OWNER . ':orphan-b' ) );
-		self::assertFalse( ( new ActionSchedulerBackend( static fn (): bool => true ) )->is_scheduled( self::SCHEDULE_HOOK, array( self::ORPHAN_OWNER . ':orphan-b' ), self::ORPHAN_OWNER . ':orphan-b' ), 'Pruning must cancel the backend occurrence, not merely drop the registration' );
+		self::assertFalse( ( new ActionSchedulerBackend() )->is_scheduled( self::SCHEDULE_HOOK, array( self::ORPHAN_OWNER . ':orphan-b' ), self::ORPHAN_OWNER . ':orphan-b' ), 'Pruning must cancel the backend occurrence, not merely drop the registration' );
 	}
 
 	/**
@@ -183,7 +183,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertSame( 900, $after['recurrence'] );
 		self::assertTrue( $after['occurrence_visible'] );
 		self::assertNotSame( $before['next_due'], $after['next_due'], 'The changed recurrence must publish a replacement due time' );
-		self::assertSame( $after['next_due'], ( new ActionSchedulerBackend( static fn (): bool => true ) )->get_next_scheduled( self::SCHEDULE_HOOK, array( self::FINGERPRINT_OWNER . ':fingerprint' ), self::FINGERPRINT_OWNER . ':fingerprint' ), 'The earliest backend occurrence must carry the replacement due time; a surviving superseded original would surface here first' );
+		self::assertSame( $after['next_due'], ( new ActionSchedulerBackend() )->get_next_scheduled( self::SCHEDULE_HOOK, array( self::FINGERPRINT_OWNER . ':fingerprint' ), self::FINGERPRINT_OWNER . ':fingerprint' ), 'The earliest backend occurrence must carry the replacement due time; a surviving superseded original would surface here first' );
 	}
 
 	/**
@@ -238,7 +238,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		self::assertSame( array(), $this->schedule_entries( self::SCOPED_OWNER_A ) );
 		self::assertSame( $owner_b_snapshot, $this->schedule_entries( self::SCOPED_OWNER_B ) );
-		self::assertFalse( ( new ActionSchedulerBackend( static fn (): bool => true ) )->is_scheduled( self::SCHEDULE_HOOK, array( self::SCOPED_OWNER_A . ':scoped-a' ), self::SCOPED_OWNER_A . ':scoped-a' ), 'Empty owner sync must cancel its own backend occurrence' );
+		self::assertFalse( ( new ActionSchedulerBackend() )->is_scheduled( self::SCHEDULE_HOOK, array( self::SCOPED_OWNER_A . ':scoped-a' ), self::SCOPED_OWNER_A . ':scoped-a' ), 'Empty owner sync must cancel its own backend occurrence' );
 	}
 
 	// endregion.

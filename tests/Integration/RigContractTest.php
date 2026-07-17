@@ -3,6 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\ExpectationFailedException;
@@ -125,7 +128,8 @@ final class RigContractTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_action_scheduler_cleanup_removes_pending_actions(): void {
-		$scheduler = $this->scheduler_facade_with_action_scheduler_probe( static fn (): bool => true );
+		$scheduler = new SchedulerFacade( array( new ActionSchedulerBackend(), new WPCronBackend() ) );
+		$scheduler->register_hooks();
 		$scheduled = $scheduler->schedule_single( self::ACTION_SCHEDULER_HOOK, \time() + \HOUR_IN_SECONDS );
 		self::assertInstanceOf( Success::class, $scheduled );
 		self::assertTrue( $scheduler->is_scheduled( self::ACTION_SCHEDULER_HOOK ) );

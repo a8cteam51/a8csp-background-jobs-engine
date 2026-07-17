@@ -143,7 +143,7 @@ final class MultisiteTest extends IntegrationTestCase {
 				$schedule_args              = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
 				$schedule_group             = \sprintf( 'multisite-uninstall|site-%d', $site_id );
 				$wp_cron                    = new WPCronBackend();
-				$action_scheduler           = new ActionSchedulerBackend( static fn (): bool => true );
+				$action_scheduler           = new ActionSchedulerBackend();
 
 				foreach ( self::DOCUMENTED_OPTION_TEMPLATES as $template ) {
 					$option = \sprintf( $template, $site_id );
@@ -174,7 +174,7 @@ final class MultisiteTest extends IntegrationTestCase {
 				$schedule_args    = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
 				$schedule_group   = \sprintf( 'multisite-uninstall|site-%d', $site_id );
 				$wp_cron          = new WPCronBackend();
-				$action_scheduler = new ActionSchedulerBackend( static fn (): bool => true );
+				$action_scheduler = new ActionSchedulerBackend();
 				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
 					self::assertFalse( $wp_cron->is_scheduled( $hook, $schedule_args ), "Network uninstall must remove every '{$hook}' WP-Cron event from site {$site_id}" );
 					self::assertFalse( $action_scheduler->is_scheduled( $hook, $schedule_args, $schedule_group ), "Network uninstall must remove every pending '{$hook}' Action Scheduler action from site {$site_id}" );

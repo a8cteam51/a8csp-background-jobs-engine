@@ -310,7 +310,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade(
 			array(
-				new ActionSchedulerBackend( static fn (): bool => true ),
+				new ActionSchedulerBackend(),
 				new WPCronBackend(),
 			)
 		);

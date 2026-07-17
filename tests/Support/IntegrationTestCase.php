@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
@@ -78,21 +77,19 @@ abstract class IntegrationTestCase extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Builds the live facade in engine declaration order with a controllable Action Scheduler probe.
+	 * Builds the live facade in engine declaration order with controlled Action Scheduler readiness.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param callable(): bool $readiness_probe
-	 *
-	 * @param   callable $readiness_probe Action Scheduler readiness predicate.
+	 * @param   ReadinessControlledBackend $backend Readiness-controlled Action Scheduler backend.
 	 *
 	 * @return  SchedulerFacade
 	 */
-	protected function scheduler_facade_with_action_scheduler_probe( callable $readiness_probe ): SchedulerFacade {
+	protected function scheduler_facade_with_controllable_action_scheduler( ReadinessControlledBackend $backend ): SchedulerFacade {
 		$scheduler = new SchedulerFacade(
 			array(
-				new ActionSchedulerBackend( $readiness_probe ),
+				$backend,
 				new WPCronBackend(),
 			)
 		);

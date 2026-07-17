@@ -25,6 +25,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\ReadinessControlledBackend;
 
 /**
  * Not-ready Action Scheduler occurrences remain dormant and return when readiness recovers.
@@ -66,16 +67,12 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_action_scheduler_occurrence_is_dormant_not_lost_while_writes_fail_over(): void {
-		$action_scheduler_ready = true;
-		$scheduler              = $this->scheduler_facade_with_action_scheduler_probe(
-			static function () use ( &$action_scheduler_ready ): bool {
-				return $action_scheduler_ready;
-			}
-		);
-		$action_scheduler_args  = array( 'action-scheduler' );
-		$wp_cron_args           = array( 'wp-cron' );
-		$action_scheduler_at    = \time() + 2 * \HOUR_IN_SECONDS;
-		$wp_cron_at             = $action_scheduler_at + \MINUTE_IN_SECONDS;
+		$action_scheduler      = new ReadinessControlledBackend();
+		$scheduler             = $this->scheduler_facade_with_controllable_action_scheduler( $action_scheduler );
+		$action_scheduler_args = array( 'action-scheduler' );
+		$wp_cron_args          = array( 'wp-cron' );
+		$action_scheduler_at   = \time() + 2 * \HOUR_IN_SECONDS;
+		$wp_cron_at            = $action_scheduler_at + \MINUTE_IN_SECONDS;
 
 		$scheduled = $scheduler->schedule_single( self::HOOK, $action_scheduler_at, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP, 20 );
 		self::assertInstanceOf( Success::class, $scheduled, 'The ready preferred backend must accept the occurrence' );
@@ -85,7 +82,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		self::assertSame( $action_scheduler_at, $scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ) );
 		self::assertFalse( $scheduler->has_dormant_candidate() );
 
-		$action_scheduler_ready = false;
+		$action_scheduler->ready = false;
 
 		self::assertFalse( $scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'A not-ready backend occurrence must remain dormant to facade reads' );
 		self::assertNull( $scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'A not-ready backend timestamp must remain dormant to facade reads' );
@@ -101,7 +98,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		self::assertSame( $wp_cron_at, $scheduler->get_next_scheduled( self::HOOK, $wp_cron_args, self::WP_CRON_GROUP ) );
 		self::assertFalse( $scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ) );
 
-		$action_scheduler_ready = true;
+		$action_scheduler->ready = true;
 
 		self::assertTrue( $scheduler->is_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'The dormant occurrence must become visible when Action Scheduler readiness returns' );
 		self::assertSame( $action_scheduler_at, $scheduler->get_next_scheduled( self::HOOK, $action_scheduler_args, self::ACTION_SCHEDULER_GROUP ), 'The recovered backend must expose the original occurrence timestamp' );
@@ -128,12 +125,8 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	public function test_sync_converges_a_recovered_recurring_chain_with_its_fallback_duplicate(): void {
 		$registry_option = ScheduleRegistry::option_name( self::CONVERGENCE_OWNER );
 		$this->expect_option( $registry_option );
-		$action_scheduler_ready = true;
-		$scheduler              = $this->scheduler_facade_with_action_scheduler_probe(
-			static function () use ( &$action_scheduler_ready ): bool {
-				return $action_scheduler_ready;
-			}
-		);
+		$action_scheduler       = new ReadinessControlledBackend();
+		$scheduler              = $this->scheduler_facade_with_controllable_action_scheduler( $action_scheduler );
 		$schedules              = $this->schedules_with_scheduler( $scheduler );
 		$schedule               = new Schedule( 'recurring', Recurrence::every( 300 ), self::CONVERGENCE_TASK, priority: 37 );
 		$declarations           = array(
@@ -142,7 +135,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 				'task'     => self::CONVERGENCE_OWNER . ':' . self::CONVERGENCE_TASK,
 			),
 		);
-		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend( static fn (): bool => true ) ) );
+		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend() ) );
 		$wp_cron_probe          = new SchedulerFacade( array( new WPCronBackend() ) );
 
 		$preferred = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
@@ -152,14 +145,14 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		$registration_before = \get_option( $registry_option, null );
 		self::assertIsArray( $registration_before );
 
-		$action_scheduler_ready = false;
-		$fallback               = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$action_scheduler->ready = false;
+		$fallback                = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
 		self::assertSame( 1, $action_scheduler_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		self::assertSame( 1, $wp_cron_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 
-		$action_scheduler_ready = true;
-		$converged              = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$action_scheduler->ready = true;
+		$converged               = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
 
 		self::assertInstanceOf( Success::class, $converged );
 		self::assertSame( 1, $action_scheduler_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );

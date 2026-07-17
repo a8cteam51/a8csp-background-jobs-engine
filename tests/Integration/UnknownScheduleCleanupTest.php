@@ -85,7 +85,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			3
 		);
 
-		$scheduler = new ActionSchedulerBackend( static fn (): bool => true );
+		$scheduler = new ActionSchedulerBackend();
 		$scheduled = $scheduler->schedule_recurring( self::HOOK, 300, array( self::KEY ), \time() - 1, self::KEY );
 		self::assertInstanceOf( Success::class, $scheduled );
 
