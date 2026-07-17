@@ -444,6 +444,8 @@ wp background-tasks reset --yes
 
 Releases are cut by pushing a version tag. The release workflow fails closed unless the plugin header, `package.json`, and the newest `CHANGELOG.md` entry all agree with the tag, then builds and smoke-tests the distribution ZIP; prereleases publish outside the stable update channel.
 
+Publication additionally requires green trunk-push Quality and Tests runs at the exact tagged commit, so tag trunk `HEAD` only after those runs finish. A closely following merge can cancel the previous commit's runs; the gate then refuses fail-closed — re-run the cancelled workflows for that commit, or tag the newer one.
+
 `CHANGELOG.md` is generated from the fragments in `changelog/` by `composer changelog:write`, which derives the next version from the newest existing changelog entry and the fragments' significance. The first release starts from an empty changelog, so it must pass its version explicitly:
 
 ```sh
