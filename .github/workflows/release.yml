@@ -68,44 +68,15 @@ jobs:
   smoke:
     name: Smoke test the artifact
     needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
     permissions:
       actions: read
-    env:
-      WP_ENV_VERSION: '11.9.0'
-    steps:
-      - name: Download the release artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: release-zip
-          path: smoke
-      # wp-env activation catches missing runtime files and activation fatals in the built archive.
-      - name: Write the smoke wp-env config
-        run: |
-          zip_file=$(find smoke -name '*.zip' -print -quit)
-          if [ -z "$zip_file" ]; then
-            echo "::error::No plugin zip found in the downloaded artifact — nothing to smoke test."
-            exit 1
-          fi
-          jq -n --arg zip "$zip_file" '{ plugins: [$zip] }' > .wp-env.json
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '26'
-          package-manager-cache: false
-      - name: Start wp-env with the artifact installed
-        run: npx --yes @wordpress/env@"$WP_ENV_VERSION" start
-      - name: Assert the plugin is active, serves without a fatal, and registers its CLI command
-        env:
-          PLUGIN_SLUG: ${{ github.event.repository.name }}
-        run: |
-          npx --yes @wordpress/env@"$WP_ENV_VERSION" run cli wp plugin is-active "$PLUGIN_SLUG"
-          curl --fail --silent --show-error --output /dev/null http://localhost:8888/
-          npx --yes @wordpress/env@"$WP_ENV_VERSION" run cli wp help background-tasks > /dev/null
-      - name: Stop wp-env
-        if: always()
-        run: npx --yes @wordpress/env@"$WP_ENV_VERSION" stop
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-release-smoke.yml@trunk
+    with:
+      zip-artifact: release-zip
+      plugin-slug: ${{ github.event.repository.name }}
+      # The artifact smokes without Action Scheduler on purpose: the engine activates and
+      # registers its CLI surface in the documented WP-Cron-only degraded posture.
+      extra-smoke-commands: '["help background-tasks"]'
 
   publish:
     name: Publish the release
