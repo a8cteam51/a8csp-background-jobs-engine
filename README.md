@@ -274,7 +274,7 @@ interface BatchContextInterface {
 
 `Schedule` is a readonly value object with this constructor shape:
 
-```
+```php
 public function __construct(
 	public string $name,
 	public Recurrence $recurrence,
