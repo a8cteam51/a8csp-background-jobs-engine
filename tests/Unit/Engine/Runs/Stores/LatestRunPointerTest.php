@@ -236,6 +236,7 @@ final class LatestRunPointerTest extends TestCase {
 		self::assertTrue( $this->pointer()->record( 'run-caller', 'hash-caller' ) );
 
 		self::assertSame( $this->fixtures->latest( $expected )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 	}
 
@@ -276,6 +277,7 @@ final class LatestRunPointerTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 		self::assertFalse( $this->pointer()->record( 'run-b', 'hash-b' ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 	}
 

@@ -7,10 +7,12 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedeliveryFenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -31,6 +33,7 @@ final class LockRowWakeupProbe {
  *
  * @load-bearing concurrency
  * @pin-rationale Exact database interleavings decide lock acquisition, replacement, heartbeat, and release; public consumer operations cannot deterministically create the losing-writer states.
+ * @fixture StoreFixtureBuilder
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -40,6 +43,7 @@ final class LockRowWakeupProbe {
 #[UsesClass( LockClaimOutcome::class )]
 #[UsesClass( HeartbeatOutcome::class )]
 #[UsesClass( MaintenanceLockSweep::class )]
+#[UsesClass( RedeliveryFenceOutcome::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
@@ -395,6 +399,26 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
 
+	/** A failed heartbeat write leaves ownership indeterminate instead of reporting a lost generation. */
+	public function test_heartbeat_reports_indeterminate_after_write_failure(): void {
+		$logger    = new RecordingLogger();
+		$owned_raw = self::fixture_lock_raw( 'run-owner', 100, 120 );
+		$this->wpdb->put( self::KEY, $owned_raw );
+		$this->wpdb->script_result( 'update', false );
+
+		$outcome = $this->guard_at( 200, $logger )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+
+		self::assertSame( HeartbeatOutcome::Indeterminate, $outcome );
+		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
+		self::assertCount( 1, $logger->records );
+		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
+		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
+		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
+	}
+
 	/** A heartbeat that loses its CAS leaves the replacement owner's row unchanged. */
 	public function test_heartbeat_cas_loss_is_a_no_op(): void {
 		$winner_raw = self::raw( self::row( 'run-winner', 200, 200 ) );
@@ -611,6 +635,75 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
+	/** An absent redelivery fence reports an insert error without a diagnostic re-read. */
+	public function test_redelivery_fence_reports_indeterminate_after_insert_failure(): void {
+		$this->wpdb->script_result( 'insert', false );
+
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
+		self::assertSame( array( 'select', 'insert' ), $this->operations() );
+	}
+
+	/** A lost redelivery-fence insert inspects and classifies the incumbent generation. */
+	public function test_redelivery_fence_classifies_incumbent_after_lost_insert(): void {
+		$winner_raw = self::fixture_lock_raw( 'run-rival', 900, 950 );
+		$this->wpdb->before_next(
+			'insert',
+			function ( WpdbLockSpy $wpdb ) use ( $winner_raw ): void {
+				$wpdb->put( self::KEY, $winner_raw );
+			}
+		);
+
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Transferred, $outcome );
+		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select', 'insert', 'select' ), $this->operations() );
+	}
+
+	/** A malformed redelivery fence reports a replacement error without a diagnostic re-read. */
+	public function test_redelivery_fence_reports_indeterminate_after_compare_and_swap_failure(): void {
+		$this->wpdb->put( self::KEY, 'malformed' );
+		$this->wpdb->script_result( 'update', false );
+
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
+	}
+
+	/** A stale same-owner fence reports a replacement error without a diagnostic re-read. */
+	public function test_stale_redelivery_fence_reports_indeterminate_after_compare_and_swap_failure(): void {
+		$owned_raw = self::fixture_lock_raw( 'run-owner', 800, 800 );
+		$this->wpdb->put( self::KEY, $owned_raw );
+		$this->wpdb->script_result( 'update', false );
+
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
+		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
+	}
+
+	/** A lost redelivery-fence replacement inspects and classifies the incumbent generation. */
+	public function test_redelivery_fence_classifies_incumbent_after_lost_compare_and_swap(): void {
+		$this->wpdb->put( self::KEY, 'malformed' );
+		$winner_raw = self::fixture_lock_raw( 'run-rival', 900, 950 );
+		$this->wpdb->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ) use ( $winner_raw ): void {
+				$wpdb->put( self::KEY, $winner_raw );
+			}
+		);
+
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Transferred, $outcome );
+		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select', 'update', 'select' ), $this->operations() );
+	}
+
 	/** A callback credit remains owned through its strict credit-plus-staleness boundary. */
 	public function test_maintenance_fence_preserves_a_credited_callback_until_the_full_window_elapses(): void {
 		$credited = self::row( 'run-owner', 1_000, 1_300 );
@@ -716,6 +809,21 @@ final class OverlapGuardTest extends TestCase {
 			'claimed_at'   => $claimed_at,
 			'heartbeat_at' => $heartbeat_at,
 		);
+	}
+
+	/**
+	 * Returns one exact production-authored lock row.
+	 *
+	 * @param   string $run_id       Run identifier.
+	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $heartbeat_at Heartbeat timestamp.
+	 *
+	 * @return  string
+	 */
+	private static function fixture_lock_raw( string $run_id, int $claimed_at, int $heartbeat_at ): string {
+		[ , $raw ] = StoreFixtureBuilder::for_identity( 'owner-a:' . self::NAME )->lock( self::ARGS_HASH, $run_id, $claimed_at, $heartbeat_at );
+
+		return $raw;
 	}
 
 	/**

@@ -29,6 +29,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use Psr\Log\NullLogger;
 
@@ -344,7 +345,7 @@ final readonly class StoreFixtureBuilder {
 				$backend = new RecordingBackend();
 				$rows    = new OptionRows( $wpdb );
 				for ( $index = 0; $index < 500; ++$index ) {
-					if ( ! $rows->insert_if_absent( RunIdentity::option_prefix() . '!fixture-' . \sprintf( '%03d', $index ), 'schema-invalid-run' ) ) {
+					if ( RowWriteOutcome::Won !== $rows->insert_if_absent( RunIdentity::option_prefix() . '!fixture-' . \sprintf( '%03d', $index ), 'schema-invalid-run' ) ) {
 						throw new \LogicException( 'Store fixtures could not stage the maintenance scan budget.' );
 					}
 				}

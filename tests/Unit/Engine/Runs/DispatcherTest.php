@@ -344,21 +344,21 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A failed delayed heartbeat releases the provisional lock and run.
+	 * A failed delayed-heartbeat write releases the provisional lock and run.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A zero-row lock heartbeat occurs after provisional state exists; a second public enqueue proves compensation released both fences.
+	 * @pin-rationale A storage write error occurs after provisional state exists; a second public enqueue proves compensation released both fences.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_fails(): void {
+	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_write_fails(): void {
 		$this->rig->wpdb()->script_result( 'update', false );
 
 		$failed = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ApiErrorCode::OverlapHeld );
+		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$retried = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
@@ -396,7 +396,7 @@ final class DispatcherTest extends TestCase {
 	 * A failed delayed-state transition releases an explicit key for immediate reuse.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The second update loses the run-state CAS after the lock heartbeat; reusing the opaque key proves both provisional generations were compensated.
+	 * @pin-rationale The second run-state write fails after the lock heartbeat; reusing the opaque key proves both provisional generations were compensated.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -616,7 +616,7 @@ final class DispatcherTest extends TestCase {
 	 * A failed retained-entry removal leaves a successful retry and keeps the entry retryable.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The failed-store CAS loses after the fresh run is accepted; cancelling that run and retrying again proves the source entry was not consumed.
+	 * @pin-rationale The failed-run store's exact removal write fails after the fresh run is accepted; cancelling that run and retrying again proves the source entry was not consumed.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0

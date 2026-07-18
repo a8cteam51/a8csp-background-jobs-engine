@@ -374,7 +374,7 @@ final readonly class RunTransitions {
 	 *
 	 * Confirmed loss attempts a Superseded transition and always aborts the delivery; a rival terminal
 	 * compare-and-swap can prevent that transition from being claimed. A mismatched delivery generation or
-	 * indeterminate authoritative read leaves the running state untouched for a later delivery or the
+	 * indeterminate authoritative storage access leaves the running state untouched for a later delivery or the
 	 * staleness sweep to resolve.
 	 *
 	 * @internal Engine product service.

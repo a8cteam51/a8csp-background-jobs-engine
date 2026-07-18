@@ -659,10 +659,38 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
+	 * A failed registration update returns before an incumbent-classification read.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A typed write-failed outcome must stop delivery-state persistence without entering the comparison-loss path that reads a competing generation.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registration_update_write_failure_returns_without_a_diagnostic_read(): void {
+		$owner = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$next               = $owner['registrations']['owner-a:nightly'];
+		$next['next_due']   = self::NOW + 600;
+		$next['last_fired'] = self::NOW + 300;
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		self::assertSame( RegistrationUpdateOutcome::Failed, $this->registry()->update_registration( 'owner-a:nightly', $next['fingerprint'], $next ) );
+		self::assertSame( $this->fixtures->schedule_registration( $owner )[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
 	 * An unchanged row after a failed exact update reports failure without retaining declarations.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Rereading the same selected bytes distinguishes a genuine write failure from comparison loss and prevents request-local declarations from claiming an unpersisted owner state.
+	 * @pin-rationale A typed write-failed outcome prevents request-local declarations from claiming an unpersisted owner state without entering the comparison-loss retry path.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -675,6 +703,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$incumbent = self::owner_fixture( 'owner-a', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
 		$fixture   = $this->fixtures->schedule_registration( $incumbent );
 		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
 		$registry = $this->registry();
 
@@ -682,6 +711,8 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 	}
 
 	/**
@@ -717,6 +748,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$registry = $this->registry();
 
 		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertCount( 5, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'DELETE ' ) );

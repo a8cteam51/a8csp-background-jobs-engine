@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
@@ -185,11 +186,11 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
+	 * @return  string|null Exact replacement bytes when the write wins, otherwise null.
 	 */
 	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ) ) {
+		if ( RowWriteOutcome::Won !== $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ) ) {
 			return null;
 		}
 
@@ -211,11 +212,11 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  string|null Exact replacement bytes on success, or null after a lost transition.
+	 * @return  string|null Exact replacement bytes when the write wins, otherwise null.
 	 */
 	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): ?string {
 		$replacement_raw = self::serialize_state( $replacement );
-		if ( ! $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
+		if ( RowWriteOutcome::Won !== $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
 			return null;
 		}
 

@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
@@ -151,7 +152,7 @@ final readonly class FailedRunStore {
 			$replacement_raw = self::serialize_entries( $trimmed );
 
 			if ( null === $expected_raw ) {
-				if ( $this->rows->insert_if_absent( $key, $replacement_raw ) ) {
+				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, $replacement_raw ) ) {
 					$this->log_eviction( $evicted );
 
 					return true;
@@ -160,17 +161,13 @@ final readonly class FailedRunStore {
 				continue;
 			}
 
-			if ( $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
+			$write = $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
 				$this->log_eviction( $evicted );
 
 				return true;
 			}
-
-			$current = $this->rows->read( $key );
-			if ( $current->is_failure() ) {
-				return false;
-			}
-			if ( $expected_raw === $current->value ) {
+			if ( RowWriteOutcome::WriteFailed === $write ) {
 				return false;
 			}
 		}
@@ -244,10 +241,14 @@ final readonly class FailedRunStore {
 			$trimmed         = \array_slice( $remaining, -self::ENTRY_LIMIT );
 			$evicted         = \array_slice( $remaining, 0, \count( $remaining ) - \count( $trimmed ) );
 			$replacement_raw = self::serialize_entries( $trimmed );
-			if ( $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
+			$write           = $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
 				$this->log_eviction( $evicted );
 
 				return true;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return false;
 			}
 
 			$current = $this->rows->read( $key );

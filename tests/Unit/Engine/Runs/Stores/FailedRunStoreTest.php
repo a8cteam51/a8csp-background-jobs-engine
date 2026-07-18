@@ -329,6 +329,7 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertTrue( $this->record_entry( $caller ) );
 
 		self::assertSame( $this->fixtures->failed_runs( array( ...$concurrent, $caller ) )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 	}
@@ -337,7 +338,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * Read failures and unchanged failed updates cannot alter retained retry data.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A no-write result is required when authority is unavailable, while rereading unchanged bytes distinguishes persistence failure from a lost comparison.
+	 * @pin-rationale A no-write result is required when authority is unavailable, while a typed write-failed outcome prevents retrying as though a competing generation won.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -364,8 +365,16 @@ final class FailedRunStoreTest extends TestCase {
 
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
+		self::assertFalse( $this->record_entry( self::fixture_entry( 'run-new', 200 ) ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'update', false );
 		self::assertFalse( $this->store()->remove( 'run-existing' ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 	}
 

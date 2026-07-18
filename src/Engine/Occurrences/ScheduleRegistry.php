@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -207,7 +208,7 @@ final class ScheduleRegistry {
 				}
 
 				$replacement_raw = self::serialize_registrations( $owner_registrations );
-				if ( $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
+				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
 					return OwnerReplacementOutcome::Persisted;
@@ -264,22 +265,13 @@ final class ScheduleRegistry {
 			}
 
 			$replacement_raw = self::serialize_registrations( $replacement_registrations );
-			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
+			$write           = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
 				$this->retain_owner( $owner, $schedules );
 
 				return OwnerReplacementOutcome::Persisted;
 			}
-
-			$current = $this->rows->read( $option_name );
-			if ( $current->is_failure() ) {
-				return OwnerReplacementOutcome::ReadFailed;
-			}
-
-			$current_raw = $current->value;
-			if ( null === $current_raw ) {
-				continue;
-			}
-			if ( $current_raw === $expected_raw ) {
+			if ( RowWriteOutcome::WriteFailed === $write ) {
 				return OwnerReplacementOutcome::CasFailed;
 			}
 		}
@@ -391,8 +383,12 @@ final class ScheduleRegistry {
 
 			$stored[ $registration_key ] = $registration;
 			$replacement_raw             = self::serialize_registrations( $stored );
-			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
+			$write                       = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
 				return RegistrationUpdateOutcome::Updated;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return RegistrationUpdateOutcome::Failed;
 			}
 
 			$current = $this->rows->read( $option_name );

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -102,7 +103,7 @@ final readonly class OverlapGuard {
 		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
-		if ( $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
+		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
 			return LockClaimOutcome::Claimed;
 		}
 
@@ -131,7 +132,7 @@ final readonly class OverlapGuard {
 
 		$lock['heartbeat_at'] = $now;
 
-		return $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) )
+		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) )
 			? LockClaimOutcome::Claimed
 			: LockClaimOutcome::Held;
 	}
@@ -190,7 +191,7 @@ final readonly class OverlapGuard {
 
 		$now = $this->clock->now()->getTimestamp();
 
-		return $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
+		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
 	}
 
 	/**
@@ -241,11 +242,25 @@ final readonly class OverlapGuard {
 
 		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
 
-		// A lost CAS means ownership moved after selection, so execution cannot continue under this lock.
-		if ( $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) ) ) {
+		$write = $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) );
+		if ( RowWriteOutcome::Won === $write ) {
 			return HeartbeatOutcome::Owned;
 		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'name'      => $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
 
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		// Ownership moved after selection, so execution cannot continue under this lock.
 		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
 	}
 
@@ -576,8 +591,12 @@ final readonly class OverlapGuard {
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			if ( $this->rows->insert_if_absent( $key, self::serialize( $replacement ) ) ) {
+			$write = $this->rows->insert_if_absent( $key, self::serialize( $replacement ) );
+			if ( RowWriteOutcome::Won === $write ) {
 				return RedeliveryFenceOutcome::Ready;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return RedeliveryFenceOutcome::Indeterminate;
 			}
 
 			return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
@@ -585,8 +604,12 @@ final readonly class OverlapGuard {
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			if ( $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
+			$write = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
+			if ( RowWriteOutcome::Won === $write ) {
 				return RedeliveryFenceOutcome::Ready;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return RedeliveryFenceOutcome::Indeterminate;
 			}
 
 			return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
@@ -602,8 +625,12 @@ final readonly class OverlapGuard {
 		}
 
 		$replacement['claimed_at'] = $lock['claimed_at'];
-		if ( $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) ) ) {
+		$write                     = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
+		if ( RowWriteOutcome::Won === $write ) {
 			return RedeliveryFenceOutcome::Ready;
+		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			return RedeliveryFenceOutcome::Indeterminate;
 		}
 
 		return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
@@ -671,7 +698,7 @@ final readonly class OverlapGuard {
 	 * @return  LockClaimOutcome
 	 */
 	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $identity, string $args_hash, string $run_id ): LockClaimOutcome {
-		if ( RowDeleteOutcome::Deleted !== $this->rows->delete_if_value_matches( $key, $raw ) || ! $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
+		if ( RowDeleteOutcome::Deleted !== $this->rows->delete_if_value_matches( $key, $raw ) || RowWriteOutcome::Won !== $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
 			return LockClaimOutcome::Held;
 		}
 

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -197,22 +198,18 @@ final readonly class LatestRunPointer {
 			}
 
 			if ( null === $expected_raw ) {
-				if ( $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
+				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					return true;
 				}
 
 				continue;
 			}
 
-			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
+			$write = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
 				return true;
 			}
-
-			$current = $this->rows->read( $option_name );
-			if ( $current->is_failure() ) {
-				return false;
-			}
-			if ( $current->value === $expected_raw ) {
+			if ( RowWriteOutcome::WriteFailed === $write ) {
 				return false;
 			}
 		}

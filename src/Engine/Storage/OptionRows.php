@@ -68,16 +68,20 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  bool
+	 * @return  RowWriteOutcome Exact insert classification.
 	 */
-	public function insert_if_absent( string $key, string $raw ): bool {
+	public function insert_if_absent( string $key, string $raw ): RowWriteOutcome {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
 		$result = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'off') /* LOCK */", $wpdb->options, $key, $raw ) ?? '' );
 		$this->purge_cache( $key );
 
-		return 1 === $result;
+		return match ( $result ) {
+			1       => RowWriteOutcome::Won,
+			0       => RowWriteOutcome::Lost,
+			default => RowWriteOutcome::WriteFailed,
+		};
 	}
 
 	/**
@@ -295,29 +299,35 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  bool
+	 * @return  RowWriteOutcome Exact replacement classification.
 	 */
-	public function compare_and_swap( string $key, string $expected_raw, string $replacement_raw ): bool {
+	public function compare_and_swap( string $key, string $expected_raw, string $replacement_raw ): RowWriteOutcome {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
 		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `option_value` = %s WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s', $wpdb->options, $replacement_raw, $key, $expected_raw ) ?? '' );
 		$this->purge_cache( $key );
 		if ( 1 === $result ) {
-			return true;
+			return RowWriteOutcome::Won;
 		}
 
-		if ( 0 !== $result || $expected_raw !== $replacement_raw ) {
-			return false;
+		if ( 0 !== $result ) {
+			return RowWriteOutcome::WriteFailed;
+		}
+
+		if ( $expected_raw !== $replacement_raw ) {
+			return RowWriteOutcome::Lost;
 		}
 
 		// MySQL reports zero for an unchanged update, so the raw row distinguishes success from a lost CAS.
 		$selected = $this->read( $key );
 		if ( $selected->is_failure() ) {
-			return false;
+			return RowWriteOutcome::WriteFailed;
 		}
 
-		return $replacement_raw === $selected->value;
+		return $replacement_raw === $selected->value
+			? RowWriteOutcome::Won
+			: RowWriteOutcome::Lost;
 	}
 
 	/**

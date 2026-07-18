@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -243,22 +244,18 @@ final readonly class RunHistory {
 
 			$replacement_raw = self::serialize_history( $history );
 			if ( null === $expected_raw ) {
-				if ( $rows->insert_if_absent( $key, $replacement_raw ) ) {
+				if ( RowWriteOutcome::Won === $rows->insert_if_absent( $key, $replacement_raw ) ) {
 					return true;
 				}
 
 				continue;
 			}
 
-			if ( $rows->compare_and_swap( $key, $expected_raw, $replacement_raw ) ) {
+			$write = $rows->compare_and_swap( $key, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
 				return true;
 			}
-
-			$current = $rows->read( $key );
-			if ( $current->is_failure() ) {
-				return false;
-			}
-			if ( $current->value === $expected_raw ) {
+			if ( RowWriteOutcome::WriteFailed === $write ) {
 				return false;
 			}
 		}

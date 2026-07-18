@@ -344,6 +344,7 @@ final class RunHistoryTest extends TestCase {
 		self::assertTrue( $this->store()->record_started( 'run-caller', 'hash-a' ) );
 
 		self::assertSame( $this->fixtures->history( $expected )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 	}
 
@@ -385,6 +386,7 @@ final class RunHistoryTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 		self::assertFalse( $this->store()->record_started( 'run-new', 'hash-a' ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 	}
 

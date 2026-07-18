@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 
@@ -86,7 +87,8 @@ final readonly class OccurrenceLease {
 		);
 		$raw = self::serialize( $row );
 
-		if ( $this->rows->insert_if_absent( $key, $raw ) ) {
+		$insert = $this->rows->insert_if_absent( $key, $raw );
+		if ( RowWriteOutcome::Won === $insert ) {
 			$selected = $this->rows->read( $key );
 			if ( $selected->is_failure() ) {
 				return OccurrenceLeaseClaim::indeterminate_read();
@@ -95,6 +97,9 @@ final readonly class OccurrenceLease {
 			return $raw === $selected->value
 				? OccurrenceLeaseClaim::claimed( new ClaimedLease( $this->rows, $key, $raw ) )
 				: OccurrenceLeaseClaim::held();
+		}
+		if ( RowWriteOutcome::WriteFailed === $insert ) {
+			return OccurrenceLeaseClaim::indeterminate_write();
 		}
 
 		$selected = $this->rows->read( $key );
@@ -112,8 +117,12 @@ final readonly class OccurrenceLease {
 			return OccurrenceLeaseClaim::held();
 		}
 
-		if ( $this->rows->compare_and_swap( $key, $expected_raw, $raw ) ) {
+		$write = $this->rows->compare_and_swap( $key, $expected_raw, $raw );
+		if ( RowWriteOutcome::Won === $write ) {
 			return OccurrenceLeaseClaim::claimed( new ClaimedLease( $this->rows, $key, $raw ) );
+		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			return OccurrenceLeaseClaim::indeterminate_write();
 		}
 
 		$current = $this->rows->read( $key );

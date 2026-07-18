@@ -546,7 +546,7 @@ final readonly class Dispatcher {
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $task_name, $args_hash, $run_id, $scheduled_at ) ) {
 				HeartbeatOutcome::Owned => null,
 				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( 'Task "%s" lost lock ownership while preparing its delayed action; enqueue it again against the current lock state.', $task_name ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $task_name ), ),
-				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( 'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative reads recover.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ),
+				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( 'Task "%s" could not confirm lock ownership while preparing its delayed action; enqueue it again after authoritative storage access recovers.', $task_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $task_name ), ),
 			};
 			if ( null !== $heartbeat_error ) {
 				$this->roll_back_admitted_run( $task_name, $args_hash, $run_id, $run_store );

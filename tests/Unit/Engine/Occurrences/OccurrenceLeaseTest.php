@@ -146,6 +146,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertSame( 'write', $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
+		self::assertCount( 1, $this->wpdb->recorded_queries );
 	}
 
 	/** A claim exactly sixty seconds old remains a held lease. */
@@ -157,6 +158,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertNull( $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( self::NOW - 60, $this->stored_lease()['claimed_at'] ?? null );
+		self::assertCount( 2, $this->wpdb->recorded_queries );
 	}
 
 	/** A claim older than sixty seconds is reclaimed by raw-value CAS. */
@@ -217,6 +219,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertNull( $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( $winner, $this->wpdb->rows[ self::option_name() ] );
+		self::assertCount( 4, $this->wpdb->recorded_queries );
 	}
 
 	/** A stale reclaim that loses to row removal is classified as a lost race. */
@@ -237,10 +240,10 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
 	}
 
-	/** A failed stale reclaim with an unreadable diagnostic snapshot is indeterminate. */
+	/** A lost stale reclaim with an unreadable diagnostic snapshot is indeterminate. */
 	public function test_lost_reclaim_cas_diagnostic_read_failure_is_indeterminate(): void {
 		$this->put_lease( self::NOW - 61 );
-		$this->wpdb->script_result( 'update', false );
+		$this->wpdb->script_result( 'update', 0 );
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
@@ -255,10 +258,11 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertSame( 'read', $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( self::NOW - 61, $this->stored_lease()['claimed_at'] ?? null );
+		self::assertCount( 4, $this->wpdb->recorded_queries );
 	}
 
-	/** A stale reclaim whose unchanged row rejects the CAS reports a storage write failure. */
-	public function test_unchanged_reclaim_write_failure_is_indeterminate(): void {
+	/** A stale reclaim write error is indeterminate without a diagnostic re-read. */
+	public function test_reclaim_write_failure_is_indeterminate_without_a_diagnostic_read(): void {
 		$this->put_lease( self::NOW - 61 );
 		$this->wpdb->script_result( 'update', false );
 
@@ -268,6 +272,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertSame( 'write', $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( self::NOW - 61, $this->stored_lease()['claimed_at'] ?? null );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
 	}
 
 	/**
