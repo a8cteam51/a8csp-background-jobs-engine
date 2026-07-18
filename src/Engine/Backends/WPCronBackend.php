@@ -236,6 +236,22 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * WP-Cron can retain the same hook and serialized arguments at multiple timestamps. It stores no
+	 * groups, so the group dimension remains a no-op.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int<0, max>
+	 */
+	#[\Override]
+	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
+		return \count( $this->matching_timestamps( $hook, $args ) );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 */

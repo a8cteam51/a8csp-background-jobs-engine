@@ -140,23 +140,23 @@ final class BackendFailoverTest extends IntegrationTestCase {
 
 		$preferred = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
 		self::assertInstanceOf( Success::class, $preferred );
-		self::assertSame( 1, $action_scheduler_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 0, $wp_cron_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		$registration_before = \get_option( $registry_option, null );
 		self::assertIsArray( $registration_before );
 
 		$action_scheduler->ready = false;
 		$fallback                = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
-		self::assertSame( 1, $action_scheduler_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 1, $wp_cron_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 
 		$action_scheduler->ready = true;
 		$converged               = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
 
 		self::assertInstanceOf( Success::class, $converged );
-		self::assertSame( 1, $action_scheduler_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 0, $wp_cron_probe->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		self::assertSame( $registration_before, \get_option( $registry_option, null ) );
 	}
 

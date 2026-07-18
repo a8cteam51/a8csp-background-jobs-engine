@@ -173,24 +173,6 @@ final readonly class SchedulerFacade implements BackendInterface {
 		return ! $this->snapshot_is_authoritative( $this->ready_backends() );
 	}
 
-	/**
-	 * Counts ready backends currently holding one scheduled identity.
-	 *
-	 * @internal Schedule sync-path convergence only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string      $hook  Hook to query.
-	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
-	 * @param   string      $group Backend grouping label.
-	 *
-	 * @return  int<0, max>
-	 */
-	public function ready_scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
-		return \count( \array_filter( $this->ready_backends(), static fn ( BackendInterface $backend ): bool => $backend->is_scheduled( $hook, $args, $group ) ) );
-	}
-
 	// endregion
 
 	// region INHERITED METHODS
@@ -274,6 +256,27 @@ final readonly class SchedulerFacade implements BackendInterface {
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
 		return $this->unschedule_snapshot( $this->ready_backends(), $hook, $args, $group );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * The total spans every currently ready backend so same-backend and cross-backend surpluses share
+	 * one convergence signal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int<0, max>
+	 */
+	#[\Override]
+	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
+		$count = 0;
+		foreach ( $this->ready_backends() as $backend ) {
+			$count += $backend->scheduled_count( $hook, $args, $group );
+		}
+
+		return $count;
 	}
 
 	/**

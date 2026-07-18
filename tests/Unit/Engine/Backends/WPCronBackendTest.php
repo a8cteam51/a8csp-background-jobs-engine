@@ -99,6 +99,24 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
+	 * Matching WP-Cron events are counted across every stored timestamp.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scheduled_count_includes_every_matching_timestamp(): void {
+		a8csp_bgte_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'schedule-17' ), 'a8csp_bgte_every_300s' );
+		a8csp_bgte_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'schedule-17' ), 'a8csp_bgte_every_300s' );
+		a8csp_bgte_test_store_cron_event( 1_700_000_900, self::HOOK, array( 'other-schedule' ), 'a8csp_bgte_every_300s' );
+
+		$count = ( new WPCronBackend() )->scheduled_count( self::HOOK, array( 'schedule-17' ), 'ignored-group' );
+
+		self::assertSame( 2, $count );
+	}
+
+	/**
 	 * Events created during a clear do not expand the finite deletion snapshot.
 	 *
 	 * @load-bearing concurrency

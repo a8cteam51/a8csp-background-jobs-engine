@@ -11,7 +11,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
@@ -56,9 +55,10 @@ final readonly class Schedules {
 	 * Synchronizes one owner's complete declared schedule set.
 	 *
 	 * Synchronization runs on every initialization and converges every observable disagreement among
-	 * declared schedules, persisted registrations, and backend occurrences. Transient failures remain
-	 * result data because the next initialization retries. An occurrence stored in a backend that is
-	 * not ready during sync outlives the registration until its next delivery self-removes.
+	 * declared schedules, persisted registrations, and pending backend occurrences, including surplus
+	 * chains for one identity. Transient failures remain result data because the next initialization
+	 * retries. An occurrence stored in a backend that is not ready during sync outlives the registration
+	 * until its next delivery self-removes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -177,15 +177,12 @@ final readonly class Schedules {
 			$next_due_by_identity[ $schedule_identity ] = $next_due;
 		}
 
-		$next      = $existing;
-		$scheduler = $this->scheduler instanceof SchedulerFacade
-			? $this->scheduler
-			: new SchedulerFacade( array( $this->scheduler ) );
+		$next = $existing;
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				$scheduled_count = $scheduler->ready_scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
+				$scheduled_count = $this->scheduler->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 				if ( 1 === $scheduled_count ) {
 					continue;
 				}

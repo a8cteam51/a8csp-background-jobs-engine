@@ -271,6 +271,31 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
+	 * Records a pending-occurrence count and returns exact matching accepted deliveries.
+	 *
+	 * @phpstan-param list<mixed> $args
+	 *
+	 * @param   string $hook  Hook to query.
+	 * @param   array  $args  Hook arguments.
+	 * @param   string $group Group name.
+	 *
+	 * @return  int<0, max>
+	 */
+	#[\Override]
+	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
+		$this->calls[] = array(
+			'verb' => 'scheduled_count',
+			'args' => array(
+				'hook'  => $hook,
+				'args'  => $args,
+				'group' => $group,
+			),
+		);
+
+		return \count( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $hook === $delivery['hook'] && $args === $delivery['args'] && $group === $delivery['group'] ) );
+	}
+
+	/**
 	 * Records a scheduled-state query and returns its scripted value.
 	 *
 	 * @phpstan-param list<mixed> $args

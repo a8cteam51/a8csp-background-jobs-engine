@@ -157,6 +157,41 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * One sync replaces a same-backend surplus and leaves the repaired chain untouched thereafter.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A duplicate recurring chain has no distinct logical schedule entry, so the backend count plus the exact clear-and-recreate write sequence is the only public-fake evidence that convergence repairs the complete-to-repeat race without churning a healthy chain.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_repairs_same_backend_surplus_then_leaves_one_chain_untouched(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $schedule ) ) );
+		$registration = $this->owner_entries( 'owner-a' )[0];
+		$next_due     = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+		self::assertInstanceOf( Success::class, $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'owner-a:nightly' ), $next_due + 300, 'owner-a:nightly', priority: $schedule->priority ) );
+		$this->reset_backend_observations();
+
+		$repaired = $this->client_a->schedules()->sync( array( $schedule ) );
+
+		self::assertInstanceOf( Success::class, $repaired );
+		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
+		self::assertSame( $next_due, $this->calls( 'schedule_recurring' )[0]['args']['first_run_timestamp'] ?? null );
+		self::assertSame( 1, $this->rig->backend()->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( 'owner-a:nightly' ), 'owner-a:nightly' ) );
+		self::assertSame( $registration, $this->owner_entries( 'owner-a' )[0] );
+
+		$this->reset_backend_observations();
+		$healthy = $this->client_a->schedules()->sync( array( $schedule ) );
+
+		self::assertInstanceOf( Success::class, $healthy );
+		self::assertSame( array(), $this->write_calls(), 'A healthy single chain must not be unscheduled or recreated' );
+	}
+
+	/**
 	 * A failed owner-registry write aborts before a recurring delivery can be accepted.
 	 *
 	 * @load-bearing concurrency

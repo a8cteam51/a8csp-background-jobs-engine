@@ -377,6 +377,8 @@ Priority is an integer from 0 through 255 and defaults to 10. Action Scheduler r
 
 `$client->schedules()->sync( $schedules )` converges the bound owner's complete declaration. No public Schedule method accepts an owner, so a client cannot synchronize another client's or the engine's schedules. Synchronization targets only engine-owned `a8csp_background_tasks/schedule_due` occurrences identified by the composed schedule identity, so it does not mutate foreign WP-Cron events or Action Scheduler actions.
 
+For an unchanged declaration, synchronization leaves one healthy occurrence untouched, recreates a missing occurrence, and collapses multiple pending occurrences across ready backends to one.
+
 Use a stable owner slug and pass every schedule owned by that client on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration, and its removal is eventual: a durable cleanup intent converges it at delivery or through hourly maintenance.
 
 On client deactivation, call `$client->schedules()->sync( array() )`. Otherwise its registrations persist and their occurrences keep firing.

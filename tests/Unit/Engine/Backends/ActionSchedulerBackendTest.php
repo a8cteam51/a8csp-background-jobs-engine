@@ -107,6 +107,41 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * Pending occurrences are counted without fetching Action Scheduler objects.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Same-backend duplicate chains are invisible through logical schedule reads, so exact pending-ID cardinality is the repair signal; requesting IDs avoids materializing complete actions during every sync.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_pending_occurrence_count_uses_an_identity_scoped_id_query(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_get_scheduled_actions' => array( array( 41, 42 ) ),
+		);
+
+		$count = ( new ActionSchedulerBackend() )->scheduled_count( self::HOOK, array( 'schedule-17' ), 'reports' );
+
+		self::assertSame( 2, $count );
+		self::assertSame(
+			array(
+				array(
+					'hook'     => self::HOOK,
+					'args'     => array( 'schedule-17' ),
+					'group'    => 'reports',
+					'status'   => 'pending',
+					'per_page' => -1,
+					'orderby'  => 'none',
+				),
+				'ids',
+			),
+			$this->calls( 'as_get_scheduled_actions' )[0]['args']
+		);
+	}
+
+	/**
 	 * An unready adapter fails before calling any Action Scheduler write function.
 	 *
 	 * @since   1.0.0

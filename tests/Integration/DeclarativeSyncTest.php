@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 
@@ -44,6 +45,15 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 	/** Owner isolated to fingerprint replacement. */
 	private const string FINGERPRINT_OWNER = 'integration-decl-fingerprint';
+
+	/** Owner isolated to duplicate recurring-chain repair. */
+	private const string DUPLICATE_OWNER = 'integration-decl-duplicate';
+
+	/** Owner-qualified identity isolated to duplicate recurring-chain repair. */
+	private const string DUPLICATE_IDENTITY = self::DUPLICATE_OWNER . ':recurring';
+
+	/** Target task isolated to duplicate recurring-chain repair. */
+	private const string DUPLICATE_TASK = 'integration-declarative-duplicate-task';
 
 	/** Owner isolated to identical redeclaration. */
 	private const string NOOP_OWNER = 'integration-declarative-noop';
@@ -216,6 +226,106 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertSame( array( $action_id ), $this->pending_schedule_action_ids( $registration_key ) );
 		self::assertSame( $action_snapshot, $this->action_snapshot( $action_id ) );
 		self::assertSame( $registry_snapshot, \get_option( $registry_option, array() ) );
+	}
+
+	/**
+	 * One sync repairs a recurring-chain surplus created in Action Scheduler's completion gap.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Action Scheduler marks a recurring action complete before its non-unique repeat; a public sync in that gap creates one chain and repeat creates another, while public schedule inspection deliberately collapses both onto one registration, so only the real-store census before repair and after the retained repeat proves surplus removal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_repairs_a_real_action_scheduler_duplicate_chain(): void {
+		$registry_option = ScheduleRegistry::option_name( self::DUPLICATE_OWNER );
+		$this->expect_option( $registry_option );
+		$schedule = new Schedule( 'recurring', Recurrence::every( 300 ), self::DUPLICATE_TASK, priority: 37 );
+		$this->assert_sync_succeeds( self::DUPLICATE_OWNER, array( $schedule ) );
+		self::assertCount( 1, $this->schedule_entries( self::DUPLICATE_OWNER ) );
+
+		$initial_action_id = $this->sole_pending_schedule_action_id( self::DUPLICATE_IDENTITY );
+		\as_unschedule_all_actions( self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY );
+		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $initial_action_id ) );
+		self::assertSame( array(), $this->pending_schedule_action_ids( self::DUPLICATE_IDENTITY ) );
+
+		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 37 );
+		self::assertGreaterThan( 0, $gap_action_id );
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		$gap_callback_calls = 0;
+		$gap_status         = null;
+		$gap_visible        = null;
+		$gap_sync           = null;
+		$gap_entries        = null;
+		$on_completed       = function ( int $action_id ) use ( $gap_action_id, $schedule, &$gap_callback_calls, &$gap_status, &$gap_visible, &$gap_sync, &$gap_entries ): void {
+			if ( $gap_action_id !== $action_id ) {
+				return;
+			}
+
+			++$gap_callback_calls;
+			$gap_status  = $this->action_scheduler_store()->get_status( (string) $action_id );
+			$gap_visible = \as_has_scheduled_action( self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY );
+			$gap_entries = $this->schedule_entries( self::DUPLICATE_OWNER );
+			$gap_sync    = \a8csp_bgte( self::DUPLICATE_OWNER )->schedules()->sync( array( $schedule ) );
+		};
+		\add_action( 'action_scheduler_completed_action', $on_completed );
+		try {
+			self::assertSame( 1, $this->run_next_due_action() );
+		} finally {
+			\remove_action( 'action_scheduler_completed_action', $on_completed );
+		}
+
+		self::assertSame( 1, $gap_callback_calls );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $gap_status );
+		self::assertFalse( $gap_visible );
+		self::assertInstanceOf( Success::class, $gap_sync );
+		self::assertTrue( $gap_sync->value );
+		self::assertIsArray( $gap_entries );
+		self::assertCount( 1, $gap_entries );
+
+		$surplus_action_ids = $this->pending_schedule_action_ids( self::DUPLICATE_IDENTITY );
+		self::assertCount( 2, $surplus_action_ids );
+		foreach ( $surplus_action_ids as $surplus_action_id ) {
+			$action = $this->action_scheduler_store()->fetch_action( $surplus_action_id );
+			self::assertInstanceOf( \ActionScheduler_Action::class, $action );
+			self::assertSame( self::SCHEDULE_HOOK, $action->get_hook() );
+			self::assertSame( array( self::DUPLICATE_IDENTITY ), $action->get_args() );
+			self::assertSame( self::DUPLICATE_IDENTITY, $action->get_group() );
+			self::assertSame( 37, $action->get_priority() );
+			$action_schedule = $action->get_schedule();
+			self::assertInstanceOf( \ActionScheduler_Abstract_RecurringSchedule::class, $action_schedule );
+			self::assertSame( 300, $action_schedule->get_recurrence() );
+		}
+
+		$registry_snapshot = \get_option( $registry_option, array() );
+		self::assertIsArray( $registry_snapshot );
+		$logical_snapshot = $this->schedule_entries( self::DUPLICATE_OWNER );
+		self::assertCount( 1, $logical_snapshot );
+		self::assertSame( self::DUPLICATE_IDENTITY, $logical_snapshot[0]['name'] ?? null );
+
+		$this->assert_sync_succeeds( self::DUPLICATE_OWNER, array( $schedule ) );
+
+		foreach ( $surplus_action_ids as $surplus_action_id ) {
+			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $surplus_action_id ) );
+		}
+		$repaired_action_ids = $this->pending_schedule_action_ids( self::DUPLICATE_IDENTITY );
+		self::assertCount( 1, $repaired_action_ids );
+		self::assertFalse( \in_array( $repaired_action_ids[0], $surplus_action_ids, true ) );
+		self::assertSame( $registry_snapshot, \get_option( $registry_option, array() ) );
+		self::assertSame( $logical_snapshot, $this->schedule_entries( self::DUPLICATE_OWNER ) );
+
+		$runner = \ActionScheduler::runner();
+		self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
+		$runner->process_action( (int) $repaired_action_ids[0], 'Integration Test' );
+
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $repaired_action_ids[0] ) );
+		$successor_action_ids = $this->pending_schedule_action_ids( self::DUPLICATE_IDENTITY );
+		self::assertCount( 1, $successor_action_ids );
+		self::assertNotSame( $repaired_action_ids[0], $successor_action_ids[0] );
+		self::assertSame( $registry_snapshot, \get_option( $registry_option, array() ) );
+		self::assertSame( $logical_snapshot, $this->schedule_entries( self::DUPLICATE_OWNER ) );
 	}
 
 	/**

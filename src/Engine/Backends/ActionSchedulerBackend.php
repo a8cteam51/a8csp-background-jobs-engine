@@ -249,6 +249,42 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * A running action is the consumed occurrence rather than a queued successor, so multiplicity is
+	 * pending-only. A zero count during that in-progress window is safe to schedule against because
+	 * Action Scheduler's unique insert also treats a running action as a live occurrence and no-ops.
+	 * The procedural API has no count format; requesting IDs avoids fetching action objects while
+	 * retaining the exact total. An empty group remains unconstrained, matching Action Scheduler's
+	 * other query functions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int<0, max>
+	 */
+	#[\Override]
+	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
+		if ( ! $this->is_ready() || ! \function_exists( 'as_get_scheduled_actions' ) ) {
+			return 0;
+		}
+
+		$action_ids = \as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'args'     => $args,
+				'group'    => $group,
+				'status'   => 'pending',
+				'per_page' => -1,
+				'orderby'  => 'none',
+			),
+			'ids'
+		);
+
+		return \count( $action_ids );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * Both a future timestamp and Action Scheduler's true sentinel for async or in-progress state
 	 * count as scheduled.
 	 *
