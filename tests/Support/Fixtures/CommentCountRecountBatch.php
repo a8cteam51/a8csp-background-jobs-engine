@@ -11,8 +11,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 /**
  * Demonstrates a batch that recounts comments one post per independently retried chunk.
  *
- * The start action carries only a post-type key. Queue generation loads the matching post IDs from
- * WordPress, keeping bulk data out of the scheduling payload.
+ * The persisted start arguments contain only a post-type key. Queue generation loads the matching
+ * post IDs from WordPress and persists one identifier per chunk.
  *
  * @since   1.0.0
  * @version 1.0.0

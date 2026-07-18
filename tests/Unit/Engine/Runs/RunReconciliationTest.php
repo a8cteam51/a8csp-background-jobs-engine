@@ -302,7 +302,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array(), $batch->failed_calls );
 
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
-		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, $chunk, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
 
 		self::assertCount( 1, $batch->process_calls );
 		self::assertSame( $chunk, $batch->process_calls[0]['chunk_args'] ?? null );
@@ -806,10 +806,10 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
 		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
 		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( $name, self::RUN_ID, $chunk, 3 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 3 ), $this->backend->calls[0]['args']['args'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, $chunk, 3 );
-		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, $chunk, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
 
 		self::assertCount( 1, $batch->process_calls );
 		self::assertSame( array(), $batch->failed_calls );
@@ -831,9 +831,9 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, $chunk, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_chunk_action( self::IDENTITY, self::RUN_ID, $chunk, 1 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertSame( array(), $current_task->calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );

@@ -231,7 +231,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( array( $first_chunk, $next_chunk ), $pre_run_state['queue'] ?? null );
 		self::assertSame( 3, $pre_run_state['action_seq'] ?? null );
 		self::assertFalse( $pre_run_state['executing'] ?? true, 'The queued RUN must retain a cancellable head' );
-		$this->assert_sole_pending_action( 'a8csp_background_tasks/run_chunk', $group, array( self::BATCH_IDENTITY, $run_id, $first_chunk, 3 ) );
+		$this->assert_sole_pending_action( 'a8csp_background_tasks/run_chunk', $group, array( self::BATCH_IDENTITY, $run_id, 3 ) );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk' );
 

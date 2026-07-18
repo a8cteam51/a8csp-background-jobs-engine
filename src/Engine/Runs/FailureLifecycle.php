@@ -152,7 +152,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 
-		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $error, $chunk_args );
+		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $error );
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
 			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
@@ -227,20 +227,19 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'               $work_type  Work contract type.
-	 * @param   string                       $identity   Complete owner-qualified task or batch identity.
-	 * @param   string                       $run_id     Run identifier.
-	 * @param   RunState                     $state      Exact persisted state before the retry transition.
-	 * @param   RunStore                     $run_store  Active-run store.
-	 * @param   RetryPolicy                  $policy     Resolved retry policy.
-	 * @param   int                          $attempt    Consumed-attempt count.
-	 * @param   EngineError                  $error      Failed-attempt detail.
-	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
+	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string         $identity  Complete owner-qualified task or batch identity.
+	 * @param   string         $run_id    Run identifier.
+	 * @param   RunState       $state     Exact persisted state before the retry transition.
+	 * @param   RunStore       $run_store Active-run store.
+	 * @param   RetryPolicy    $policy    Resolved retry policy.
+	 * @param   int            $attempt   Consumed-attempt count.
+	 * @param   EngineError    $error     Failed-attempt detail.
 	 *
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ApiErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
-	private function reschedule_retry( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, ?array $chunk_args = null ): ?array {
+	private function reschedule_retry( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error ): ?array {
 		try {
 			$delay = $this->randomizer->int( 0, $policy->delay_ceiling_for_attempt( $attempt ) );
 			$now   = $this->clock->now()->getTimestamp();
@@ -313,13 +312,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$action_args = array( $identity, $run_id );
-			if ( null !== $chunk_args ) {
-				$action_args[] = $chunk_args;
-			}
-			$action_args[] = $state->action_seq;
-
-			$scheduled = $this->scheduler->schedule_single( 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task', $fire_at, $action_args, $identity . '|' . $run_id, 10 );
+			$scheduled = $this->scheduler->schedule_single( 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task', $fire_at, array( $identity, $run_id, $state->action_seq ), $identity . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,

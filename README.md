@@ -256,7 +256,7 @@ The batch ceiling applies independently to one `generate_queue()` or `process_ch
 
 `BatchContextInterface` exposes only the current run. Queue mutations are transactional within the chunk attempt: they take effect after a normal return and are discarded when the attempt throws.
 
-Each generated, filtered, enqueued, or prepended chunk is capped at 8,192 bytes in its encoded JSON representation before queue persistence; the 8,000-byte scheduler action envelope can impose a smaller effective limit after its delivery metadata is included.
+Each generated, filtered, enqueued, or prepended chunk is capped at 8,192 bytes in its encoded JSON representation before queue persistence. Chunks remain in the authoritative run row and do not consume the backend action envelope; the backend carries only the identity, run ID, and sequence token needed to resolve them.
 
 The complete queue is capped at 1,048,576 bytes in its persisted serialization both when generation materializes it and whenever `BatchContextInterface::enqueue()` or `prepend()` grows it during processing.
 
@@ -383,11 +383,11 @@ Action Scheduler becomes writable after `action_scheduler_init`, normally during
 
 ## Keep action arguments small
 
-Public start and enqueue arguments are validated as JSON-encodable portable arguments and persisted in run state. The initial Task or Batch delivery carries only the engine envelope of identity, run ID, and sequence. The 8,000-byte JSON ceiling applies to each backend action payload. A Batch chunk action also includes one chunk's arguments, so every chunk must fit with the envelope. An oversized or unencodable payload fails with a corrective message naming the hook:
+Public start and enqueue arguments are validated as JSON-encodable portable arguments and persisted in engine-owned run state. Every Task and Batch lifecycle delivery carries only the identity, run ID, and sequence token; handlers resolve start arguments and the current Batch chunk from that authoritative row. The 8,000-byte JSON ceiling remains a facade-wide guard for each backend action payload, including foreign facade consumers, while engine-owned run deliveries use only the small fixed-shape token. An oversized or unencodable payload fails with a corrective message naming the hook:
 
 > Scheduling hook "&lt;hook&gt;" has arguments that cannot be JSON-encoded within the 8000-byte limit; pass identifying keys and load bulk data from storage inside the handler.
 
-Bulk data belongs in storage that the Task or Batch reads by key. Pass identifying keys in action arguments. The tested Task carries its transient key. The tested Batch carries a `post_type` key, queries post IDs during queue generation, and puts one ID in each chunk.
+Bulk data belongs in storage that the Task or Batch reads by key. Pass identifying keys as public work arguments; the engine persists them instead of sending them through the scheduling backend. The tested Task persists its transient key. The tested Batch persists a `post_type` key, queries post IDs during queue generation, and puts one ID in each persisted chunk.
 
 ## Run inspection, failure, retry, and cancellation
 

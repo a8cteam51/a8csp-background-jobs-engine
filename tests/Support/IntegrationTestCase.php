@@ -258,6 +258,14 @@ abstract class IntegrationTestCase extends TestCase {
 	 * @return  string
 	 */
 	protected function assert_pending_chunk_action( string $name, string $run_id, string $group, array $expected_chunk ): string {
+		$run_state = \get_option( 'a8csp_bgte_run_' . $name . '_' . $run_id, null );
+		self::assertIsArray( $run_state, 'A pending chunk action must retain its authoritative run row' );
+		$queue = $run_state['queue'] ?? null;
+		self::assertIsArray( $queue, 'A pending chunk action must retain its authoritative queue' );
+		self::assertSame( $expected_chunk, $queue[0] ?? null, 'The expected chunk must be the authoritative queue head' );
+		$action_seq = $run_state['action_seq'] ?? null;
+		self::assertIsInt( $action_seq, 'A pending chunk action must retain its lifecycle sequence token' );
+
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
@@ -278,10 +286,7 @@ abstract class IntegrationTestCase extends TestCase {
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
 		self::assertSame( 'a8csp_background_tasks/run_chunk', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
-		$action_args = $action->get_args();
-		self::assertIsArray( $action_args );
-		self::assertSame( array( $name, $run_id, $expected_chunk ), \array_slice( $action_args, 0, 3 ) );
-		self::assertIsInt( $action_args[3] ?? null, 'A chunk action must carry its lifecycle sequence token' );
+		self::assertSame( array( $name, $run_id, $action_seq ), $action->get_args(), 'A chunk action must carry only its fenced delivery token' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
 
 		return $action_id;

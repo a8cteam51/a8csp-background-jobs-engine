@@ -15,6 +15,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
@@ -187,8 +190,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 
 		$this->rig->run_due();
 		\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
-		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $first, 3 );
-		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $first, 3 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
 
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $first, $this->batch->process_calls[0]['chunk_args'] );
@@ -595,6 +598,37 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
+	 * A chunk is delivered from its byte-faithful persisted queue through token-only backend arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_delivers_a_persisted_float_chunk_with_token_only_backend_args(): void {
+		$this->prepare_started_batch( array( array( 'value' => 1.0 ) ) );
+		$queue = $this->run_state()['queue'] ?? null;
+		self::assertIsArray( $queue );
+		$persisted_chunk = $queue[0] ?? null;
+		self::assertIsArray( $persisted_chunk );
+		self::assertIsFloat( $persisted_chunk['value'] ?? null );
+		self::assertSame( 1.0, $persisted_chunk['value'] );
+
+		$this->rig->run_due();
+
+		$run_call = $this->single_call_for_hook( 'a8csp_background_tasks/run_chunk' );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 3 ), $run_call['args']['args'] ?? null );
+
+		$this->rig->run_due();
+
+		self::assertCount( 1, $this->batch->process_calls );
+		$delivered_chunk = $this->batch->process_calls[0]['chunk_args'] ?? null;
+		self::assertIsArray( $delivered_chunk );
+		self::assertIsFloat( $delivered_chunk['value'] ?? null );
+		self::assertSame( $persisted_chunk, $delivered_chunk );
+	}
+
+	/**
 	 * Continue sends a drained queue to cleanup without invoking chunk work.
 	 *
 	 * @since   1.0.0
@@ -838,28 +872,28 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * A task-hook delivery for a batch clears its marker for the correctly routed redelivery.
+	 * A fixed-token task hook delivered against a batch run routes by the persisted kind and processes the current chunk.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale Direct registered-hook delivery injects the malformed scheduler payload that the public facade cannot express and proves it cannot strand execution.
+	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, processing the run-row chunk exactly once.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_run_task_hook_misdelivery_clears_the_batch_marker(): void {
+	public function test_run_task_hook_delivery_routes_a_batch_run_by_its_persisted_kind(): void {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current ) );
 		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
 
 		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 3 );
-		$this->rig->assert_no_delivery( self::IDENTITY );
-		self::assertSame( array(), $this->batch->process_calls );
-		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $current, 3 );
-
 		self::assertCount( 1, $this->batch->process_calls );
 		self::assertSame( $current, $this->batch->process_calls[0]['chunk_args'] );
+
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+
+		self::assertCount( 1, $this->batch->process_calls );
 	}
 
 	/**
@@ -881,7 +915,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$thrown = null;
 
 		try {
-			\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, $current );
+			\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID );
 		} catch ( \ArgumentCountError $error ) {
 			$thrown = $error;
 		}
@@ -889,6 +923,59 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		self::assertInstanceOf( \ArgumentCountError::class, $thrown );
 		self::assertSame( $before, $this->run_state() );
 		self::assertSame( array(), $this->batch->process_calls );
+	}
+
+	/**
+	 * A pending chunk delivery without an authoritative queue head fails instead of stranding the run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_chunk_handler_terminalizes_a_pending_run_without_a_queue_head(): void {
+		$state = new RunState(
+			status: RunStatus::Running,
+			kind: 'Batch',
+			executing: false,
+			start_args: self::ARGS,
+			args_hash: $this->args_hash(),
+			queue: array(),
+			failed_attempts: 0,
+			action_seq: 3,
+			created_at: self::NOW,
+			heartbeat_at: self::NOW,
+			pending: PendingAction::async( 'run', 10 ),
+		);
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+		$this->put_fixture(
+			$this->fixtures->history(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+
+		self::assertSame( array(), $this->batch->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+		$this->assert_failure( ApiErrorCode::UnsupportedOperation, RunFailureStage::Execution, null );
+		self::assertNull( $this->run_state() );
 	}
 
 	/**
@@ -1128,7 +1215,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->rig->assert_retry_scheduled();
 		$retry_call = $this->single_call_for_hook( 'a8csp_background_tasks/run_chunk' );
 		self::assertSame( 'schedule_single', $retry_call['verb'] );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, $current, 4 ), $retry_call['args']['args'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 4 ), $retry_call['args']['args'] ?? null );
 		self::assertSame( array(), $this->batch->failed_calls );
 	}
 

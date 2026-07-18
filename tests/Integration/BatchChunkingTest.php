@@ -25,6 +25,12 @@ final class BatchChunkingTest extends IntegrationTestCase {
 	/** Owner-qualified batch identity persisted by the engine. */
 	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
+	/** Batch identity for the Action Scheduler float-fidelity regression. */
+	private const string FIDELITY_NAME = 'integration-batch-chunk-fidelity';
+
+	/** Owner-qualified identity for the Action Scheduler float-fidelity regression. */
+	private const string FIDELITY_IDENTITY = self::OWNER . ':' . self::FIDELITY_NAME;
+
 	// endregion.
 
 	// region TESTS.
@@ -181,6 +187,63 @@ final class BatchChunkingTest extends IntegrationTestCase {
 			),
 			$runs['history'],
 			'Inspection must retain the completed lifecycle outcome'
+		);
+	}
+
+	/**
+	 * Action Scheduler delivers a float chunk from the authoritative run row without numeric coercion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_action_scheduler_delivers_float_chunk_from_the_authoritative_run_row(): void {
+		$batch        = new RecordingBatch( self::FIDELITY_NAME );
+		$batch->queue = array( array( 'value' => 1.0 ) );
+		$client       = \a8csp_bgte( self::OWNER );
+		$client->batches()->register( $batch );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::FIDELITY_IDENTITY );
+		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+
+		$result = $client->batches()->start( self::FIDELITY_NAME, array() );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+		$run_id = $result->value;
+		$group  = self::FIDELITY_IDENTITY . '|' . $run_id;
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the float chunk' );
+		$run_state = \get_option( 'a8csp_bgte_run_' . self::FIDELITY_IDENTITY . '_' . $run_id, null );
+		self::assertIsArray( $run_state );
+		$queue = $run_state['queue'] ?? null;
+		self::assertIsArray( $queue );
+		$persisted_chunk = $queue[0] ?? null;
+		self::assertIsArray( $persisted_chunk );
+		self::assertIsFloat( $persisted_chunk['value'] ?? null, 'The engine-owned run row must preserve 1.0 as a float' );
+		self::assertSame( 1.0, $persisted_chunk['value'] );
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the authoritative queue head' );
+		$this->assert_pending_chunk_action( self::FIDELITY_IDENTITY, $run_id, $group, $persisted_chunk );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the token-only chunk action' );
+
+		self::assertCount( 1, $batch->process_calls, 'The token-only delivery must process the authoritative chunk exactly once' );
+		$delivered_chunk = $batch->process_calls[0]['chunk_args'] ?? null;
+		self::assertIsArray( $delivered_chunk );
+		self::assertIsFloat( $delivered_chunk['value'] ?? null, 'The real Action Scheduler path must preserve 1.0 as a float' );
+		self::assertSame( $persisted_chunk, $delivered_chunk, 'Chunk processing must receive the exact persisted value' );
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete the batch cleanup' );
+		self::assertSame( array(), $batch->failed_calls, 'The fidelity run must not terminalize as a failure' );
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => $run_id,
+					'start_args' => array(),
+				),
+			),
+			$batch->completed_calls,
+			'The fidelity run must complete exactly once'
 		);
 	}
 

@@ -164,7 +164,7 @@ final class BatchContext implements BatchContextInterface {
 	}
 
 	/**
-	 * Rejects chunk arguments that option storage and scheduler payloads cannot carry safely.
+	 * Rejects chunk arguments outside the persisted portable-payload contract.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

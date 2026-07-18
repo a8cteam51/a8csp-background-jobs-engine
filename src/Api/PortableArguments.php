@@ -5,10 +5,11 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Enforces the portable-arguments rule for backend round-trips.
+ * Enforces the portable-arguments rule for engine-owned storage.
  *
- * Portable arguments contain only scalars, null, or nested arrays of such values and must survive
- * backend serialization round-trips byte-faithfully.
+ * Portable arguments contain only scalars, null, or nested arrays of such values. Work arguments
+ * persist in engine-owned storage, while scheduling backends carry only the delivery token; handlers
+ * resolve the persisted values byte-faithfully after delivery.
  *
  * @since   1.0.0
  * @version 1.0.0

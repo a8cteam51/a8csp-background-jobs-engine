@@ -402,35 +402,26 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Batch-shaped task arguments are rejected before claiming the task's execution ownership.
+	 * A fixed-token chunk hook delivered against a task run routes by the persisted kind and runs the task.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale A malformed scheduler payload is injected through the registered action boundary to prove it cannot strand the execution marker or reach user code.
+	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, without stranding the execution marker.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_batch_argument_misdelivery_does_not_strand_the_task(): void {
+	public function test_chunk_hook_delivery_routes_a_task_run_by_its_persisted_kind(): void {
 		$this->enqueue_task();
 
-		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ), 1 );
-		self::assertSame( array(), $this->task->calls );
-		self::assertSame( 'Lifecycle action work kind does not match the persisted run kind; the stale or malformed delivery was dropped.', $this->rig->logger()->records[0]['message'] ?? null );
-		self::assertSame(
-			array(
-				'name'           => self::IDENTITY,
-				'run_id'         => self::RUN_ID,
-				'persisted_kind' => 'Task',
-				'delivered_kind' => 'Batch',
-			),
-			$this->rig->logger()->records[0]['context'] ?? null
-		);
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 1 );
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		$this->rig->assert_completed();
+
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		$this->rig->assert_completed();
 	}
 
 	/**

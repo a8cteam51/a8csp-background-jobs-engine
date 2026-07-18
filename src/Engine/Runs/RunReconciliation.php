@@ -405,7 +405,7 @@ final readonly class RunReconciliation {
 	 * @param   RunState       $state     Stale non-executing running state.
 	 * @param   'Task'|'Batch' $work_type Work contract type.
 	 *
-	 * @throws  \LogicException When a schema-valid descriptor conflicts with its run state.
+	 * @throws  \LogicException When a schema-valid descriptor conflicts with its scheduling mode.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
@@ -415,17 +415,8 @@ final readonly class RunReconciliation {
 			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
 		}
 
-		$args = array( $identity, $run_id );
-		if ( 'run' === $pending->stage && 'Batch' === $work_type ) {
-			$chunk_args = $state->queue[0] ?? null;
-			if ( ! \is_array( $chunk_args ) ) {
-				throw new \LogicException( 'Pending batch run redelivery requires a retained queue head.' );
-			}
-
-			$args[] = $chunk_args;
-		}
-		$args[] = $state->action_seq;
-		$hook   = match ( $pending->stage ) {
+		$args = array( $identity, $run_id, $state->action_seq );
+		$hook = match ( $pending->stage ) {
 			'start'    => 'a8csp_background_tasks/start_batch',
 			'continue' => 'a8csp_background_tasks/continue_batch',
 			'cleanup'  => 'a8csp_background_tasks/cleanup_batch',

@@ -61,23 +61,24 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param (\Closure(): int)|null $liveness_at
+	 * @phpstan-param (\Closure(RunState): int)|null $liveness_at
 	 *
-	 * @param   'Task'|'Batch' $work_type   Work contract type.
-	 * @param   string         $identity    Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id      Run identifier.
-	 * @param   int|null       $action_seq  Received lifecycle action sequence.
-	 * @param   RunStore       $run_store   Active-run store.
-	 * @param   \Closure|null  $liveness_at Lazy liveness timestamp, or null to use the current clock time.
+	 * @param   'Task'|'Batch'|null $expected_work_type Expected work contract type, or null to use the persisted kind.
+	 * @param   string              $identity           Complete owner-qualified task or batch identity.
+	 * @param   string              $run_id             Run identifier.
+	 * @param   int|null            $action_seq         Received lifecycle action sequence.
+	 * @param   RunStore            $run_store          Active-run store.
+	 * @param   \Closure|null       $liveness_at        Lazy liveness timestamp, or null to use the current clock time.
 	 *
 	 * @return  RunState|null
 	 */
-	public function claim_delivery_ownership( string $work_type, string $identity, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
+	public function claim_delivery_ownership( ?string $expected_work_type, string $identity, string $run_id, ?int $action_seq, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
 		$inspection   = $run_store->inspect( $run_id );
-		$context_name = \strtolower( $work_type ) . '_name';
+		$work_label   = $expected_work_type ?? 'Background-work';
+		$context_name = null === $expected_work_type ? 'name' : \strtolower( $expected_work_type ) . '_name';
 		if ( $inspection->is_failure() ) {
 			$this->logger->warning(
-				$work_type . ' run state could not be read; repair WordPress option reads and retry the delivery.',
+				$work_label . ' run state could not be read; repair WordPress option reads and retry the delivery.',
 				array(
 					$context_name => $identity,
 					'run_id'      => $run_id,
@@ -104,7 +105,7 @@ final readonly class RunTransitions {
 		$state = $snapshot['state'];
 		if ( null === $state ) {
 			$this->logger->warning(
-				$work_type . ' run state is corrupt; repair or remove the row so the reconciliation sweep can release any remaining lock.',
+				$work_label . ' run state is corrupt; repair or remove the row so the reconciliation sweep can release any remaining lock.',
 				array(
 					$context_name => $identity,
 					'run_id'      => $run_id,
@@ -114,14 +115,16 @@ final readonly class RunTransitions {
 			return null;
 		}
 
-		if ( $work_type !== $state->kind ) {
+		$work_type    = $state->kind;
+		$context_name = \strtolower( $work_type ) . '_name';
+		if ( null !== $expected_work_type && $expected_work_type !== $work_type ) {
 			$this->logger->warning(
-				'Lifecycle action work kind does not match the persisted run kind; the stale or malformed delivery was dropped.',
+				'Lifecycle stage does not apply to the persisted run kind; the stale or malformed delivery was dropped.',
 				array(
 					'name'           => $identity,
 					'run_id'         => $run_id,
-					'persisted_kind' => $state->kind,
-					'delivered_kind' => $work_type,
+					'persisted_kind' => $work_type,
+					'expected_kind'  => $expected_work_type,
 				)
 			);
 
@@ -171,7 +174,7 @@ final readonly class RunTransitions {
 			return null;
 		}
 
-		$at = null !== $liveness_at ? $liveness_at() : $this->clock->now()->getTimestamp();
+		$at = null !== $liveness_at ? $liveness_at( $state ) : $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
 		if ( $this->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
