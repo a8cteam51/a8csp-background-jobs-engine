@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\CLI;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
@@ -17,10 +18,13 @@ use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
@@ -147,6 +151,200 @@ final class CommandsAndOutputTest extends TestCase {
 		if ( isset( $assoc_args['owner'] ) ) {
 			self::assertStringNotContainsString( 'other-plugin:nightly', $result->stdout );
 		}
+	}
+
+	/**
+	 * Acknowledged owner removal converges only that owner's registrations and is not silently idempotent.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedule_remove_clears_only_the_named_owner_and_then_reports_not_found(): void {
+		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
+			$client = $this->rig->client( $owner );
+			$client->tasks()->register( new RecordingTask( 'refresh' ) );
+			self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		}
+
+		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( 'Success: Removed every persisted schedule registration for owner "consumer-plugin".' . "\n", $result->stdout );
+		self::assertSame( '', $result->stderr );
+		$removed = $this->rig->inspection()->schedules( 'consumer-plugin' );
+		$sibling = $this->rig->inspection()->schedules( 'other-plugin' );
+		self::assertNotNull( $removed );
+		self::assertNotNull( $sibling );
+		self::assertSame( array(), $removed['entries'] );
+		self::assertSame( array( 'other-plugin:nightly' ), \array_column( $sibling['entries'], 'name' ) );
+		$this->rig->assert_no_delivery( 'consumer-plugin:nightly' );
+		$this->rig->backend()->assert_scheduled( 'other-plugin:nightly' );
+
+		$repeat = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 1, $repeat->exit_code );
+		self::assertSame( '', $repeat->stdout );
+		self::assertSame( 'Error: No schedule registrations are persisted for owner "consumer-plugin".' . "\n", $repeat->stderr );
+	}
+
+	/**
+	 * A present owner row with an incomplete registration reports corruption instead of not found.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_remove_breaks_and_reports_a_registration_without_undeclared_markers(): void {
+		$schedule   = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' );
+		$complete   = StoreFixtureBuilder::for_identity( 'consumer-plugin:refresh' )->schedule_registration(
+			array(
+				'owner'         => 'consumer-plugin',
+				'declarations'  => array(
+					'consumer-plugin:nightly' => array(
+						'schedule' => $schedule,
+						'task'     => 'consumer-plugin:refresh',
+					),
+				),
+				'registrations' => array( 'consumer-plugin:nightly' => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 ) ),
+			)
+		);
+		$incomplete = StoreFixtureBuilder::schedule_registration_without_undeclared_markers( $complete );
+		$this->rig->wpdb()->put( $incomplete[0], $incomplete[1] );
+
+		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( '', $result->stdout );
+		self::assertSame( 'Error: Schedule registry option row "a8csp_bgte_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Owner removal converges incrementally; after resolving this error, rerun "wp background-tasks schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( $incomplete[1], $this->rig->wpdb()->rows[ $incomplete[0] ] ?? null );
+	}
+
+	/**
+	 * Declining the owner-removal confirmation preserves registry and backend state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_declined_schedule_remove_confirmation_prevents_every_mutation(): void {
+		$result = CliHarness::run_interactive( 'schedules-remove-declined', "n\n" );
+		$probe  = \json_decode( $result->probe, true, 512, \JSON_THROW_ON_ERROR );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( 'This permanently removes every schedule registration for owner "consumer-plugin" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue? [y/n] ', $result->stdout );
+		self::assertSame( '', $result->stderr );
+		self::assertIsArray( $probe );
+		self::assertSame( $probe['before'] ?? null, $probe['after'] ?? null );
+	}
+
+	/**
+	 * A first backend refusal leaves the owner registry intact and returns an incremental retry path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_remove_reports_first_backend_failure_without_deleting_the_registry(): void {
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'refresh' ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Backend clearance failed.' ) );
+
+		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( '', $result->stdout );
+		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp background-tasks schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
+		self::assertNotNull( $snapshot );
+		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'name' ) );
+		$this->rig->backend()->assert_scheduled( 'consumer-plugin:nightly' );
+	}
+
+	/**
+	 * Owner removal reports successful ready-backend convergence when a dormant chain may remain.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_remove_warns_when_an_unavailable_backend_may_retain_the_chain(): void {
+		$this->rig->tear_down();
+		$this->rig = EngineRig::set_up( self::NOW, 2 );
+		CliHarness::set_up();
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'refresh' ) );
+		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$this->rig->backend()->ready = false;
+
+		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( 'Success: Removed every persisted schedule registration for owner "consumer-plugin".' . "\n", $result->stdout );
+		self::assertSame( 'Warning: a scheduling backend is not ready; dormant recurring occurrences for this owner may remain until that backend delivers them or subsequent maintenance clears the recurring chain.' . "\n", $result->stderr );
+		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
+		self::assertNotNull( $snapshot );
+		self::assertSame( array(), $snapshot['entries'] );
+		$this->rig->backend()->assert_scheduled( 'consumer-plugin:nightly' );
+	}
+
+	/**
+	 * A later backend refusal retains partial progress and the same command completes it on retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_remove_reports_partial_progress_and_converges_on_retry(): void {
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'refresh' ) );
+		self::assertInstanceOf(
+			Success::class,
+			$client->schedules()->sync(
+				array(
+					new Schedule( 'alpha', Recurrence::every( 300 ), 'refresh' ),
+					new Schedule( 'beta', Recurrence::every( 600 ), 'refresh' ),
+				)
+			)
+		);
+		$failure = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Backend clearance failed.' ) );
+		$this->rig->backend()->before_next(
+			'unschedule',
+			static function ( RecordingBackend $backend ) use ( $failure ): void {
+				$backend->before_next(
+					'unschedule',
+					static function ( RecordingBackend $backend ) use ( $failure ): void {
+						$backend->results['unschedule'] = $failure;
+					}
+				);
+			}
+		);
+
+		$failed = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 1, $failed->exit_code );
+		self::assertSame( '', $failed->stdout );
+		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp background-tasks schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
+		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
+		self::assertNotNull( $snapshot );
+		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'name' ) );
+		$this->rig->assert_no_delivery( 'consumer-plugin:alpha' );
+		$this->rig->backend()->assert_scheduled( 'consumer-plugin:beta' );
+
+		unset( $this->rig->backend()->results['unschedule'] );
+		$retried = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+
+		self::assertSame( 0, $retried->exit_code );
+		self::assertSame( 'Success: Removed every persisted schedule registration for owner "consumer-plugin".' . "\n", $retried->stdout );
+		self::assertSame( '', $retried->stderr );
+		$this->rig->assert_no_delivery( 'consumer-plugin:beta' );
 	}
 
 	/**
@@ -279,28 +477,14 @@ final class CommandsAndOutputTest extends TestCase {
 			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-task', array( 'case' => 'invalid' ) ),
 		);
 		$declarations  = array();
-		$registrations = array(
-			'lock-tests:orphaned' => array(
-				'fingerprint'   => 'orphaned',
-				'next_due'      => self::NOW + 300,
-				'last_fired'    => null,
-				'misfire_skips' => 0,
-				'overlap_skips' => 0,
-			),
-		);
+		$registrations = array( 'lock-tests:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
 			$client->tasks()->register( new RecordingTask( $schedule->task ) );
 			$declarations[ 'lock-tests:' . $name ]  = array(
 				'schedule' => $schedule,
 				'task'     => 'lock-tests:' . $schedule->task,
 			);
-			$registrations[ 'lock-tests:' . $name ] = array(
-				'fingerprint'   => $schedule->fingerprint(),
-				'next_due'      => self::NOW + 300,
-				'last_fired'    => null,
-				'misfire_skips' => 0,
-				'overlap_skips' => 0,
-			);
+			$registrations[ 'lock-tests:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'lock-tests:invalid-task' );
@@ -573,27 +757,9 @@ final class CommandsAndOutputTest extends TestCase {
 					'owner'         => 'due-tests',
 					'declarations'  => $declarations,
 					'registrations' => array(
-						'due-tests:future'  => array(
-							'fingerprint'   => $schedules['future']->fingerprint(),
-							'next_due'      => 86_460,
-							'last_fired'    => null,
-							'misfire_skips' => 0,
-							'overlap_skips' => 0,
-						),
-						'due-tests:now'     => array(
-							'fingerprint'   => $schedules['now']->fingerprint(),
-							'next_due'      => 86_400,
-							'last_fired'    => null,
-							'misfire_skips' => 0,
-							'overlap_skips' => 0,
-						),
-						'due-tests:overdue' => array(
-							'fingerprint'   => $schedules['overdue']->fingerprint(),
-							'next_due'      => 82_800,
-							'last_fired'    => null,
-							'misfire_skips' => 0,
-							'overlap_skips' => 0,
-						),
+						'due-tests:future'  => StoreFixtureBuilder::schedule_registration_state( $schedules['future']->fingerprint(), 86_460 ),
+						'due-tests:now'     => StoreFixtureBuilder::schedule_registration_state( $schedules['now']->fingerprint(), 86_400 ),
+						'due-tests:overdue' => StoreFixtureBuilder::schedule_registration_state( $schedules['overdue']->fingerprint(), 82_800 ),
 					),
 				)
 			)
@@ -790,7 +956,7 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
-	 * Supplies every rejected schedule-list invocation.
+	 * Supplies every rejected schedule invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -798,47 +964,78 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_schedule_requests(): array {
-		$usage = 'Schedule list accepts only --owner and --format; use wp background-tasks schedules list [--owner=<owner>] [--format=<format>].';
+		$usage        = 'Schedule list accepts only --owner and --format; use wp background-tasks schedules list [--owner=<owner>] [--format=<format>].';
+		$remove_usage = 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-tasks schedules remove <owner> [--yes].';
 		return array(
-			'missing action'   => array(
+			'missing action'         => array(
 				'args'       => array(),
 				'assoc_args' => array(),
-				'message'    => 'A schedule action is required; use list.',
+				'message'    => 'A schedule action is required; use list or remove <owner>.',
 			),
-			'unknown action'   => array(
+			'unknown action'         => array(
 				'args'       => array( 'show' ),
 				'assoc_args' => array(),
-				'message'    => 'Schedule action "show" is invalid; use list.',
+				'message'    => 'Schedule action "show" is invalid; use list or remove.',
 			),
-			'extra positional' => array(
+			'extra positional'       => array(
 				'args'       => array( 'list', 'extra' ),
 				'assoc_args' => array(),
 				'message'    => $usage,
 			),
-			'stray flag'       => array(
+			'stray flag'             => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'all' => true ),
 				'message'    => $usage,
 			),
-			'negated owner'    => array(
+			'negated owner'          => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'owner' => false ),
 				'message'    => 'Schedule list owner is invalid; pass a value with --owner=<owner>.',
 			),
-			'invalid owner'    => array(
+			'invalid owner'          => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'owner' => 'Consumer-Plugin' ),
 				'message'    => 'Schedule list owner is invalid; pass a canonical owner with --owner=<owner>.',
 			),
-			'invalid format'   => array(
+			'invalid format'         => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'format' => 'ids' ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
-			'negated format'   => array(
+			'negated format'         => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'format' => false ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
+			),
+			'remove missing owner'   => array(
+				'args'       => array( 'remove' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $remove_usage,
+			),
+			'remove extra owner'     => array(
+				'args'       => array( 'remove', 'consumer-plugin', 'other-plugin' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $remove_usage,
+			),
+			'remove stray flag'      => array(
+				'args'       => array( 'remove', 'consumer-plugin' ),
+				'assoc_args' => array( 'format' => 'json' ),
+				'message'    => $remove_usage,
+			),
+			'remove non-boolean yes' => array(
+				'args'       => array( 'remove', 'consumer-plugin' ),
+				'assoc_args' => array( 'yes' => 'yes' ),
+				'message'    => $remove_usage,
+			),
+			'remove invalid owner'   => array(
+				'args'       => array( 'remove', 'Consumer-Plugin' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
+			),
+			'remove reserved owner'  => array(
+				'args'       => array( 'remove', 'a8csp-bgte' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
 			),
 		);
 	}

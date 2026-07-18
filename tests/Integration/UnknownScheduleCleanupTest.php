@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
@@ -57,9 +58,102 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	/** Engine-reserved maintenance registration identity. */
 	private const string MAINTENANCE_KEY = 'a8csp-bgte:maintenance';
 
+	/** Owner isolated to undeclared-registration aging. */
+	private const string ZOMBIE_OWNER = 'integration-zombie-owner';
+
+	/** Schedule isolated to undeclared-registration aging. */
+	private const string ZOMBIE_SCHEDULE = 'zombie-schedule';
+
+	/** Registration identity isolated to undeclared-registration aging. */
+	private const string ZOMBIE_KEY = self::ZOMBIE_OWNER . ':' . self::ZOMBIE_SCHEDULE;
+
+	/** Target task persisted only in the isolated declaration fixture. */
+	private const string ZOMBIE_TASK = 'zombie-task';
+
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * A persisted registration warns exactly once after three request-undeclared deliveries.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Request-local declarations cannot be withdrawn after sync within one process; production-built durable bytes plus the Action Scheduler runner reproduce a later undeclared request and its recurring successor.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_persisted_undeclared_schedule_escalates_once_across_recurring_deliveries(): void {
+		$this->expect_option( ScheduleRegistry::option_name( self::ZOMBIE_OWNER ) );
+		$schedule = new Schedule( self::ZOMBIE_SCHEDULE, Recurrence::every( 300 ), self::ZOMBIE_TASK );
+		$fixture  = StoreFixtureBuilder::for_identity( self::ZOMBIE_KEY )->schedule_registration(
+			array(
+				'owner'         => self::ZOMBIE_OWNER,
+				'declarations'  => array(
+					self::ZOMBIE_KEY => array(
+						'schedule' => $schedule,
+						'task'     => self::ZOMBIE_OWNER . ':' . self::ZOMBIE_TASK,
+					),
+				),
+				'registrations' => array(
+					self::ZOMBIE_KEY => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), \time() - 1 ),
+				),
+			)
+		);
+		self::assertTrue( \update_option( $fixture[0], \maybe_unserialize( $fixture[1] ), false ), 'The isolated production registry row must persist outside the live request declarations' );
+
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_action(
+			'a8csp_background_tasks/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
+
+		$action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::ZOMBIE_KEY ), self::ZOMBIE_KEY, true, 10 );
+		self::assertGreaterThan( 0, $action_id );
+		$runner = \ActionScheduler::runner();
+		self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
+		$warnings = array();
+
+		for ( $occurrence = 1; $occurrence <= 4; ++$occurrence ) {
+			$pending = $this->pending_schedule_action_ids( self::ZOMBIE_KEY );
+			self::assertCount( 1, $pending, 'Each recurring delivery must retain exactly one successor chain' );
+			$runner->process_action( (int) $pending[0], 'Integration Test' );
+
+			$warnings = \array_values(
+				\array_filter(
+					$log_records,
+					static fn ( array $record ): bool => 'warning' === $record[0] && \str_contains( $record[1], 'fired undeclared' )
+				)
+			);
+			self::assertCount( 3 > $occurrence ? 0 : 1, $warnings );
+		}
+
+		self::assertStringContainsString( 'wp background-tasks schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
+		$debug_records = \array_values(
+			\array_filter(
+				$log_records,
+				static fn ( array $record ): bool => 'debug' === $record[0] && 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.' === $record[1]
+			)
+		);
+		self::assertCount( 4, $debug_records );
+
+		global $wpdb;
+		self::assertInstanceOf( \wpdb::class, $wpdb );
+		$registration = ( new ScheduleRegistry( new OptionRows( $wpdb ), new HookLogger() ) )->registration( self::ZOMBIE_KEY );
+		self::assertInstanceOf( Success::class, $registration );
+		self::assertIsArray( $registration->value );
+		self::assertSame( 3, $registration->value['undeclared_occurrences'] );
+		self::assertTrue( $registration->value['undeclared_escalated'] );
+	}
 
 	/**
 	 * An unknown delivery records an intent that the live maintenance schedule converges.

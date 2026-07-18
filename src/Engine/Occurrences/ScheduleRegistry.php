@@ -24,6 +24,16 @@ use Psr\Log\LoggerInterface;
  *
  * @since   1.0.0
  * @version 1.0.0
+ *
+ * @phpstan-type Registration array{
+ *     fingerprint: string,
+ *     next_due: int,
+ *     last_fired: int|null,
+ *     misfire_skips: int,
+ *     overlap_skips: int,
+ *     undeclared_occurrences: int,
+ *     undeclared_escalated: bool
+ * }
  */
 final class ScheduleRegistry {
 	// region FIELDS AND CONSTANTS
@@ -88,6 +98,26 @@ final class ScheduleRegistry {
 	// region METHODS
 
 	/**
+	 * Returns whether one owner has an authoritative registry option row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Stable client identifier.
+	 *
+	 * @return  AbstractResult<bool, EngineError>
+	 */
+	#[\NoDiscard( 'a schedule-registry presence outcome must be handled, not dropped' )]
+	public function owner_exists( string $owner ): AbstractResult {
+		$selected = $this->rows->read( self::option_name( $owner ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
+
+		return new Success( null !== $selected->value );
+	}
+
+	/**
 	 * Returns valid persisted registrations belonging to exactly one owner.
 	 *
 	 * @since   1.0.0
@@ -95,7 +125,7 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $owner Stable client identifier.
 	 *
-	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError|SchedulingError>
+	 * @return  AbstractResult<array<string, Registration>, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registrations_for( string $owner ): AbstractResult {
@@ -111,7 +141,7 @@ final class ScheduleRegistry {
 		}
 
 		$stored = RawOptionDecoder::decode( $raw );
-		if ( ! \is_array( $stored ) ) {
+		if ( ! \is_array( $stored ) || self::has_registration_without_undeclared_markers( $owner, $stored ) ) {
 			$this->warn_corrupt_row( $option_name );
 
 			return new Failure( SchedulingError::registry_corrupt( $owner, $option_name ) );
@@ -128,7 +158,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError>
+	 * @return  AbstractResult<array<string, Registration>, EngineError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function all_registrations(): AbstractResult {
@@ -155,7 +185,7 @@ final class ScheduleRegistry {
 			}
 
 			$stored = RawOptionDecoder::decode( $raw );
-			if ( ! \is_array( $stored ) ) {
+			if ( ! \is_array( $stored ) || self::has_registration_without_undeclared_markers( $owner, $stored ) ) {
 				$this->warn_corrupt_row( $option_name );
 				continue;
 			}
@@ -174,22 +204,32 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: Schedule, task: string}>                                          $schedules
-	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}> $registrations
+	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $schedules
+	 * @phpstan-param array<string, Registration>                            $registrations
 	 *
-	 * @param   string $owner         Stable client identifier.
-	 * @param   array  $schedules     Declared schedules keyed by complete identity.
-	 * @param   array  $registrations Persisted owner state keyed by complete identity.
+	 * @param   string $owner                       Stable client identifier.
+	 * @param   array  $schedules                   Declared schedules keyed by complete identity.
+	 * @param   array  $registrations               Persisted owner state keyed by complete identity.
+	 * @param   bool   $reset_undeclared_episodes   Whether successful request declarations end their inactive episodes.
 	 *
 	 * @throws  \InvalidArgumentException When a registration identity is invalid or belongs to another owner.
 	 *
 	 * @return  OwnerReplacementOutcome Classified persistence outcome.
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function replace_owner( string $owner, array $schedules, array $registrations ): OwnerReplacementOutcome {
+	public function replace_owner( string $owner, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): OwnerReplacementOutcome {
 		$owner_registrations = self::owner_registrations( $owner, $registrations );
 		if ( null === $owner_registrations ) {
 			throw new \InvalidArgumentException( 'Schedule registration identities must be canonical and belong to the bound owner.' );
+		}
+		$replacement_baseline = $owner_registrations;
+		if ( $reset_undeclared_episodes ) {
+			// Resetting the baseline keeps a lost-update retry from re-inserting stale inactive episode state.
+			foreach ( $replacement_baseline as $registration_key => $registration ) {
+				$registration['undeclared_occurrences']    = 0;
+				$registration['undeclared_escalated']      = false;
+				$replacement_baseline[ $registration_key ] = $registration;
+			}
 		}
 		$option_name = self::option_name( $owner );
 
@@ -207,7 +247,7 @@ final class ScheduleRegistry {
 					return OwnerReplacementOutcome::Persisted;
 				}
 
-				$replacement_raw = self::serialize_registrations( $owner_registrations );
+				$replacement_raw = self::serialize_registrations( $replacement_baseline );
 				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
@@ -222,12 +262,16 @@ final class ScheduleRegistry {
 				return OwnerReplacementOutcome::Corrupt;
 			}
 
-			$replacement_registrations = $owner_registrations;
+			$replacement_registrations = $replacement_baseline;
 			$stored_registrations      = self::registrations_from_rows( $owner, $stored );
 			foreach ( $replacement_registrations as $registration_key => $registration ) {
 				$stored_registration = $stored_registrations[ $registration_key ] ?? null;
 				if ( null !== $stored_registration && $registration['fingerprint'] === $stored_registration['fingerprint'] ) {
-					// An unchanged definition retains the freshest delivery fence from the selected generation.
+					// An unchanged definition retains the selected generation while a completed declaration refresh ends its inactive episode.
+					if ( $reset_undeclared_episodes ) {
+						$stored_registration['undeclared_occurrences'] = 0;
+						$stored_registration['undeclared_escalated']   = false;
+					}
 					$replacement_registrations[ $registration_key ] = $stored_registration;
 				}
 			}
@@ -310,7 +354,7 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  AbstractResult<array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}|null, EngineError|SchedulingError>
+	 * @return  AbstractResult<Registration|null, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registration( string $registration_key ): AbstractResult {
@@ -333,7 +377,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int} $registration
+	 * @phpstan-param Registration $registration
 	 *
 	 * @param   string $registration_key     `{owner}:{name}` schedule identity.
 	 * @param   string $observed_fingerprint Definition fingerprint observed before the update.
@@ -408,9 +452,120 @@ final class ScheduleRegistry {
 		return RegistrationUpdateOutcome::Failed;
 	}
 
+	/**
+	 * Classifies one undeclared delivery and atomically persists its pre-escalation aging transition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   int    $warning_threshold Consecutive undeclared occurrences required for escalation.
+	 *
+	 * @return  UndeclaredOccurrenceOutcome Fenced aging outcome.
+	 */
+	#[\NoDiscard( 'an undeclared occurrence outcome must be handled, not dropped' )]
+	public function record_undeclared_occurrence( string $registration_key, int $warning_threshold ): UndeclaredOccurrenceOutcome {
+		$parts = WorkIdentity::parts( $registration_key );
+		if ( null === $parts || 1 > $warning_threshold ) {
+			return UndeclaredOccurrenceOutcome::Failed;
+		}
+
+		$owner       = $parts[0];
+		$option_name = self::option_name( $owner );
+		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
+			$expected = $this->rows->read( $option_name );
+			if ( $expected->is_failure() ) {
+				return UndeclaredOccurrenceOutcome::Failed;
+			}
+
+			$expected_raw = $expected->value;
+			if ( null === $expected_raw ) {
+				return UndeclaredOccurrenceOutcome::Pruned;
+			}
+
+			$stored = RawOptionDecoder::decode( $expected_raw );
+			if ( ! \is_array( $stored ) ) {
+				return UndeclaredOccurrenceOutcome::Failed;
+			}
+			if ( ! \array_key_exists( $registration_key, $stored ) ) {
+				return UndeclaredOccurrenceOutcome::Pruned;
+			}
+
+			$current = self::registrations_from_rows( $owner, $stored )[ $registration_key ] ?? null;
+			if ( null === $current ) {
+				return UndeclaredOccurrenceOutcome::Failed;
+			}
+			if ( $current['undeclared_escalated'] ) {
+				return UndeclaredOccurrenceOutcome::AlreadyEscalated;
+			}
+
+			$current['undeclared_occurrences'] = self::increment_counter( $current['undeclared_occurrences'] );
+			$outcome                           = UndeclaredOccurrenceOutcome::Recorded;
+			if ( $warning_threshold <= $current['undeclared_occurrences'] ) {
+				$current['undeclared_escalated'] = true;
+				$outcome                         = UndeclaredOccurrenceOutcome::Escalated;
+			}
+
+			$stored[ $registration_key ] = $current;
+			$replacement_raw             = self::serialize_registrations( $stored );
+			$write                       = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
+				return $outcome;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return UndeclaredOccurrenceOutcome::Failed;
+			}
+
+			$current_row = $this->rows->read( $option_name );
+			if ( $current_row->is_failure() ) {
+				return UndeclaredOccurrenceOutcome::Failed;
+			}
+			if ( null === $current_row->value ) {
+				return UndeclaredOccurrenceOutcome::Pruned;
+			}
+			if ( $current_row->value === $expected_raw ) {
+				return UndeclaredOccurrenceOutcome::Failed;
+			}
+		}
+
+		return UndeclaredOccurrenceOutcome::Failed;
+	}
+
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Detects a canonical registration written without the required inactive-episode markers.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $owner Validated persisted owner key.
+	 * @param   array<array-key, mixed> $rows  Persisted rows for one owner.
+	 *
+	 * @return  bool
+	 */
+	public static function has_registration_without_undeclared_markers( string $owner, array $rows ): bool {
+		foreach ( $rows as $registration_key => $row ) {
+			if ( ! \is_string( $registration_key ) || ! \is_array( $row ) ) {
+				continue;
+			}
+
+			$parts = WorkIdentity::parts( $registration_key );
+			if ( null === $parts || $owner !== $parts[0] ) {
+				continue;
+			}
+
+			if ( ! \array_key_exists( 'undeclared_occurrences', $row ) || ! \array_key_exists( 'undeclared_escalated', $row ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	/**
 	 * Returns valid registration rows from one persisted owner slice.
@@ -421,7 +576,7 @@ final class ScheduleRegistry {
 	 * @param   string                  $owner Validated persisted owner key.
 	 * @param   array<array-key, mixed> $rows  Persisted rows for one owner.
 	 *
-	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>
+	 * @return  array<string, Registration>
 	 */
 	private static function registrations_from_rows( string $owner, array $rows ): array {
 		$registrations = array();
@@ -439,8 +594,10 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$misfire_skips = $row['misfire_skips'] ?? 0;
-			$overlap_skips = $row['overlap_skips'] ?? 0;
+			$misfire_skips          = $row['misfire_skips'] ?? 0;
+			$overlap_skips          = $row['overlap_skips'] ?? 0;
+			$undeclared_occurrences = $row['undeclared_occurrences'] ?? null;
+			$undeclared_escalated   = $row['undeclared_escalated'] ?? null;
 			if (
 				! \is_string( $row['fingerprint'] ?? null )
 				|| ! \is_int( $row['next_due'] ?? null )
@@ -450,16 +607,21 @@ final class ScheduleRegistry {
 				|| 0 > $misfire_skips
 				|| ! \is_int( $overlap_skips )
 				|| 0 > $overlap_skips
+				|| ! \is_int( $undeclared_occurrences )
+				|| 0 > $undeclared_occurrences
+				|| ! \is_bool( $undeclared_escalated )
 			) {
 				continue;
 			}
 
 			$registrations[ $registration_key ] = array(
-				'fingerprint'   => $row['fingerprint'],
-				'next_due'      => $row['next_due'],
-				'last_fired'    => $row['last_fired'] ?? null,
-				'misfire_skips' => $misfire_skips,
-				'overlap_skips' => $overlap_skips,
+				'fingerprint'            => $row['fingerprint'],
+				'next_due'               => $row['next_due'],
+				'last_fired'             => $row['last_fired'] ?? null,
+				'misfire_skips'          => $misfire_skips,
+				'overlap_skips'          => $overlap_skips,
+				'undeclared_occurrences' => $undeclared_occurrences,
+				'undeclared_escalated'   => $undeclared_escalated,
 			);
 		}
 
@@ -472,12 +634,12 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}> $registrations
+	 * @phpstan-param array<string, Registration> $registrations
 	 *
 	 * @param   string $owner         Stable client or engine identifier.
 	 * @param   array  $registrations Persisted owner state keyed by complete identity.
 	 *
-	 * @return  array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>|null
+	 * @return  array<string, Registration>|null
 	 */
 	private static function owner_registrations( string $owner, array $registrations ): ?array {
 		$rows = array();
@@ -534,6 +696,20 @@ final class ScheduleRegistry {
 		}
 
 		return $raw;
+	}
+
+	/**
+	 * Increments an operational counter without overflowing persisted integer state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $counter Current non-negative count.
+	 *
+	 * @return  int
+	 */
+	private static function increment_counter( int $counter ): int {
+		return \PHP_INT_MAX === $counter ? $counter : $counter + 1;
 	}
 
 	/**

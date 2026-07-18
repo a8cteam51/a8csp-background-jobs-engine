@@ -11,7 +11,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
@@ -341,6 +343,61 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::INTERVAL, $this->rig->logger()->records[0]['context']['default_grace'] ?? null );
 	}
 
+	/**
+	 * An inactive registration warns once after three consecutive recurring deliveries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inactive_registration_warns_once_after_three_consecutive_deliveries(): void {
+		$schedule = self::schedule();
+		$this->put_fixture( $this->fixtures->schedule_registration( self::owner_fixture( $schedule, self::NOW + self::INTERVAL ) ) );
+		$scheduled = $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, self::INTERVAL, array( self::REGISTRATION_KEY ), self::NOW + self::INTERVAL, self::REGISTRATION_KEY );
+		self::assertInstanceOf( Success::class, $scheduled );
+		$this->reset_observations();
+
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		self::assertCount( 2, $this->inactive_debug_records() );
+		self::assertSame( array(), $this->inactive_warning_records() );
+
+		$this->rig->run_due();
+
+		$warnings = $this->inactive_warning_records();
+		self::assertCount( 3, $this->inactive_debug_records() );
+		self::assertCount( 1, $warnings );
+		$records = $this->rig->logger()->records;
+		self::assertNotEmpty( $records );
+		$warning_record = \array_pop( $records );
+		self::assertIsArray( $warning_record );
+		$warning_message = $warning_record['message'] ?? null;
+		self::assertIsString( $warning_message );
+		self::assertStringContainsString( 'reinstate', $warning_message );
+		self::assertStringContainsString( 'sync( array() )', $warning_message );
+		self::assertStringContainsString( 'wp background-tasks schedules remove ' . self::OWNER, $warning_message );
+
+		$this->rig->run_due();
+
+		self::assertCount( 4, $this->inactive_debug_records() );
+		self::assertCount( 1, $this->inactive_warning_records() );
+		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
+
+		$redeclared = self::owner_fixture( $schedule, self::NOW + self::INTERVAL );
+		$registry   = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( self::OWNER, $redeclared['declarations'], $redeclared['registrations'], reset_undeclared_episodes: true ) );
+		$this->reset_observations();
+
+		$this->rig->run_due();
+		$this->rig->run_due();
+		self::assertSame( array(), $this->inactive_warning_records() );
+
+		$this->rig->run_due();
+		self::assertCount( 1, $this->inactive_warning_records() );
+	}
+
 	// endregion.
 
 	// region KEEP GENERATION AND SECURITY MICRO-SUITE.
@@ -520,7 +577,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @param   Schedule $schedule Schedule declaration.
 	 * @param   int      $next_due Next occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture( Schedule $schedule, int $next_due ): array {
 		return array(
@@ -531,15 +588,7 @@ final class ScheduleExecutionTest extends TestCase {
 					'task'     => self::TASK_IDENTITY,
 				),
 			),
-			'registrations' => array(
-				self::REGISTRATION_KEY => array(
-					'fingerprint'   => $schedule->fingerprint(),
-					'next_due'      => $next_due,
-					'last_fired'    => null,
-					'misfire_skips' => 0,
-					'overlap_skips' => 0,
-				),
-			),
+			'registrations' => array( self::REGISTRATION_KEY => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due ) ),
 		);
 	}
 
@@ -572,6 +621,40 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	private function calls( string $verb ): array {
 		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => $verb === $call['verb'] ) );
+	}
+
+	/**
+	 * Returns inactive-registration debug records.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{level: mixed, message: string, context: array<array-key, mixed>}>
+	 */
+	private function inactive_debug_records(): array {
+		return \array_values(
+			\array_filter(
+				$this->rig->logger()->records,
+				static fn ( array $record ): bool => 'debug' === $record['level'] && 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.' === $record['message']
+			)
+		);
+	}
+
+	/**
+	 * Returns zombie-schedule warning records.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{level: mixed, message: string, context: array<array-key, mixed>}>
+	 */
+	private function inactive_warning_records(): array {
+		return \array_values(
+			\array_filter(
+				$this->rig->logger()->records,
+				static fn ( array $record ): bool => 'warning' === $record['level'] && \str_contains( $record['message'], 'wp background-tasks schedules remove' )
+			)
+		);
 	}
 
 	/**

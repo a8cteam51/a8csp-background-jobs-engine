@@ -181,6 +181,23 @@ final readonly class Inspection {
 	}
 
 	/**
+	 * Returns whether one owner has a persisted schedule-registry row.
+	 *
+	 * @internal CLI inspection only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Exact client owner.
+	 *
+	 * @return  bool|null Null when the authoritative row read fails.
+	 */
+	public function schedule_owner_exists( string $owner ): ?bool {
+		$read = $this->schedules->owner_exists( $owner );
+		return $read->is_failure() ? null : $read->value;
+	}
+
+	/**
 	 * Returns validated live runs and bounded recent history for one background-work identity.
 	 *
 	 * @since   1.0.0

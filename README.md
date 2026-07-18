@@ -381,7 +381,7 @@ For an unchanged declaration, synchronization leaves one healthy occurrence unto
 
 Use a stable owner slug and pass every schedule owned by that client on every `init`. Passing an empty array removes only that owner's registry branch and occurrences on ready backends. An occurrence dormant on an unavailable backend outlives the registration, and its removal is eventual: a durable cleanup intent converges it at delivery or through hourly maintenance.
 
-On client deactivation, call `$client->schedules()->sync( array() )`. Otherwise its registrations persist and their occurrences keep firing.
+On client deactivation, call `$client->schedules()->sync( array() )`. Otherwise its registrations persist and their occurrences keep firing. If the client is already inactive, remove its registrations with `wp background-tasks schedules remove <owner>`.
 
 Action Scheduler becomes writable after `action_scheduler_init`, normally during `init` at priority 1. Synchronizing before that action fires routes occurrences to WP-Cron for that request; schedule the client callback after Action Scheduler's priority-1 initialization when that backend is required.
 
@@ -419,6 +419,7 @@ The canonical command root is `wp background-tasks`; there is no alias.
 | Purge every discovered failed-run store | `wp background-tasks failed-runs purge --all` |
 | Cancel a retained run | `wp background-tasks runs cancel <identity> <run_id>` |
 | List schedules | `wp background-tasks schedules list [--owner=<owner>] [--format=<format>]` |
+| Remove every schedule owned by one client | `wp background-tasks schedules remove <owner> [--yes]` |
 | List runs and recent history | `wp background-tasks runs list <identity> [--format=<format>]` |
 | Destroy all engine state (development reset) | `wp background-tasks reset [--yes]` |
 
@@ -433,6 +434,8 @@ wp background-tasks failed-runs purge --all
 wp background-tasks runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 wp background-tasks schedules list
 wp background-tasks schedules list --owner=consumer-plugin --format=json
+wp background-tasks schedules remove consumer-plugin
+wp background-tasks schedules remove consumer-plugin --yes
 wp background-tasks runs list consumer-plugin:email-digest
 wp background-tasks runs list consumer-plugin:email-digest --format=json
 wp background-tasks reset
@@ -442,6 +445,8 @@ wp background-tasks reset --yes
 `reset` permanently deletes every engine-owned option row and pending backend action. It is a development reset, not an operational cancellation workflow: it destroys in-flight work irrecoverably, including the engine maintenance registration, which the next boot synchronization recreates. The command prompts for confirmation, and `--yes` skips the prompt.
 
 `schedules list` reports `owner`, `identity`, `recurrence`, `next_due`, `last_fired`, `misfire_skips`, `overlap_skips`, `occurrence_visible`, and `lock`. The `occurrence_visible` value reflects state visible through ready backends. If a present backend is not ready and may hold dormant occurrences, the command emits a warning on STDERR for every format, including an empty table result, so machine-readable STDOUT remains parseable.
+
+`schedules remove <owner>` converges that owner's complete declaration to empty: it unschedules the owner's recurring occurrences on ready backends and deletes the owner's registry row without cancelling existing runs. An occurrence dormant on an unavailable backend can outlive the row; its recurring chain converges through delivery or subsequent maintenance after the backend recovers. The command warns when a dormant candidate exists. Removal is incrementally durable, so a later failure can follow earlier successful clears; resolve the error and rerun the same command to converge the remaining owner state. The command prompts for confirmation, and `--yes` skips the prompt. An owner with no persisted registry row returns a not-found error.
 
 `runs list` table output separates live runs from bounded recent history. History rows expose `run_id`, `outcome`, and `failed_store`; the `failed_store` cell renders as `failed store` when the failure is available to `failed-runs retry`, or `—` otherwise. A waiting live run has a backend delivery or retry pending; an executing run has an admitted lifecycle action in progress, which may be engine orchestration or a client callback. For a Batch, the queue count retains the current chunk until that chunk returns normally. A stale heartbeat on an executing row identifies work that maintenance can reclaim.
 

@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Inspects persisted recurring schedule registrations.
+ * Inspects or removes persisted recurring schedule registrations.
  *
  * @internal
  *
@@ -21,7 +21,7 @@ final readonly class SchedulesCommand {
 	// region METHODS
 
 	/**
-	 * Lists persisted recurring schedule registrations and their observable runtime state.
+	 * Lists persisted registrations or removes every registration for one client owner.
 	 *
 	 * The `occurrence_visible` column reflects occurrence visibility on backends that are currently ready.
 	 * `occurrence_visible: no` means no occurrence is visible there. A present but unavailable backend
@@ -30,7 +30,10 @@ final readonly class SchedulesCommand {
 	 * ## OPTIONS
 	 *
 	 * <action>
-	 * : Operation to perform: list.
+	 * : Operation to perform: list or remove.
+	 *
+	 * [<owner>]
+	 * : Client owner required by remove.
 	 *
 	 * [--owner=<owner>]
 	 * : Show only registrations belonging to the exact owner.
@@ -38,10 +41,15 @@ final readonly class SchedulesCommand {
 	 * [--format=<format>]
 	 * : Render list output as table, csv, json, count, or yaml. Defaults to table.
 	 *
+	 * [--yes]
+	 * : Skip the interactive removal confirmation.
+	 *
 	 * ## EXAMPLES
 	 *
 	 *     $ wp background-tasks schedules list
 	 *     $ wp background-tasks schedules list --owner=consumer-plugin --format=json
+	 *     $ wp background-tasks schedules remove consumer-plugin
+	 *     $ wp background-tasks schedules remove consumer-plugin --yes
 	 *
 	 * An overdue `next_due` with `occurrence_visible: no` means no occurrence is visible on currently-ready
 	 * backends. A separately reported dormant backend candidate may retain an occurrence outside that
@@ -65,11 +73,17 @@ final readonly class SchedulesCommand {
 			return;
 		}
 
-		$this->list_schedules( $request['owner'], $request['format'] );
+		if ( 'list' === $request['action'] ) {
+			$this->list_schedules( $request['owner'], $request['format'] );
+			return;
+		}
+
+		ScheduleOutput::confirm_removal( $request['owner'], $assoc_args );
+		$this->remove_schedules( $request['owner'] );
 	}
 
 	/**
-	 * Validates schedule-list arguments without requiring WordPress or WP-CLI state.
+	 * Validates schedule arguments without requiring WordPress or WP-CLI state.
 	 *
 	 * @internal Command decision seam.
 	 *
@@ -81,19 +95,48 @@ final readonly class SchedulesCommand {
 	 *
 	 * @return  array{action: 'error', message: string}
 	 *          |array{action: 'list', owner: string|null, format: string}
+	 *          |array{action: 'remove', owner: string}
 	 */
 	public static function request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'A schedule action is required; use list.',
+				'message' => 'A schedule action is required; use list or remove <owner>.',
+			);
+		}
+
+		if ( 'remove' === $args[0] ) {
+			if (
+				2 !== \count( $args )
+				|| ! self::has_only_keys( $assoc_args, array( 'yes' ) )
+				|| ( \array_key_exists( 'yes', $assoc_args ) && ! \is_bool( $assoc_args['yes'] ) )
+			) {
+				return array(
+					'action'  => 'error',
+					'message' => 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-tasks schedules remove <owner> [--yes].',
+				);
+			}
+
+			$owner = $args[1];
+			try {
+				WorkIdentity::validate_owner( $owner );
+			} catch ( \InvalidArgumentException ) {
+				return array(
+					'action'  => 'error',
+					'message' => 'Schedule removal owner is invalid; pass a canonical client owner.',
+				);
+			}
+
+			return array(
+				'action' => 'remove',
+				'owner'  => $owner,
 			);
 		}
 
 		if ( 'list' !== $args[0] ) {
 			return array(
 				'action'  => 'error',
-				'message' => \sprintf( 'Schedule action "%s" is invalid; use list.', $args[0] ),
+				'message' => \sprintf( 'Schedule action "%s" is invalid; use list or remove.', $args[0] ),
 			);
 		}
 
@@ -169,6 +212,54 @@ final readonly class SchedulesCommand {
 		}
 
 		ScheduleOutput::render( $snapshot, $owner, $format );
+	}
+
+	/**
+	 * Removes every persisted registration for one client owner through schedule convergence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Canonical client owner.
+	 *
+	 * @return  void
+	 */
+	private function remove_schedules( string $owner ): void {
+		$inspection = Component::get_inspection();
+		if ( null === $inspection ) {
+			ScheduleOutput::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
+			return;
+		}
+
+		$owner_exists = $inspection->schedule_owner_exists( $owner );
+		if ( null === $owner_exists ) {
+			ScheduleOutput::error( 'Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.' );
+			return;
+		}
+		if ( ! $owner_exists ) {
+			ScheduleOutput::error( \sprintf( 'No schedule registrations are persisted for owner "%s".', $owner ) );
+			return;
+		}
+
+		$engine = Component::get_engine();
+		if ( null === $engine ) {
+			ScheduleOutput::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
+			return;
+		}
+		$scheduler = Component::get_scheduler();
+		if ( null === $scheduler ) {
+			ScheduleOutput::error( 'The background tasks scheduler is unavailable; run the command after plugins_loaded.' );
+			return;
+		}
+		$has_dormant_candidate = $scheduler->has_dormant_candidate();
+
+		$result = $engine->schedules->sync( $owner, array() );
+		if ( $result->is_failure() ) {
+			ScheduleOutput::removal_error( $owner, $result->error->message );
+			return;
+		}
+
+		ScheduleOutput::report_removal( $owner, $has_dormant_candidate );
 	}
 
 	/**

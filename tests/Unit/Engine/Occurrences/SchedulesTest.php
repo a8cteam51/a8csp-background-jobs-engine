@@ -14,6 +14,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\UndeclaredOccurrenceOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -223,6 +225,53 @@ final class SchedulesTest extends TestCase {
 		self::assertSame( array(), $backend->calls );
 		$backend->assert_not_scheduled( 'owner-a:nightly' );
 		self::assertSame( $before, $this->raw_registry() );
+	}
+
+	/**
+	 * A failed sync preserves an escalation that wins during its intermediate owner write.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An undeclared-aging CAS can win while sync adds another schedule; the intermediate replacement must retain that fence when later backend convergence fails.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_failed_sync_preserves_a_concurrent_undeclared_escalation_until_retry_resets_it(): void {
+		$nightly = self::schedule( 'nightly', 300 );
+		$hourly  = self::schedule( 'hourly', 3_600 );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $nightly ) ) );
+		$registry = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
+		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function () use ( $registry ): void {
+				self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+			}
+		);
+		$this->rig->backend()->results['schedule_recurring'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair scheduling and retry.' ) );
+
+		$failed = $this->client_a->schedules()->sync( array( $nightly, $hourly ) );
+
+		self::assertInstanceOf( Failure::class, $failed );
+		$escalated = $registry->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $escalated );
+		self::assertIsArray( $escalated->value );
+		self::assertSame( 3, $escalated->value['undeclared_occurrences'] ?? null );
+		self::assertTrue( $escalated->value['undeclared_escalated'] ?? false );
+		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+
+		unset( $this->rig->backend()->results['schedule_recurring'] );
+		$repaired = $this->client_a->schedules()->sync( array( $nightly, $hourly ) );
+
+		self::assertInstanceOf( Success::class, $repaired );
+		$reset = $registry->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $reset );
+		self::assertIsArray( $reset->value );
+		self::assertSame( 0, $reset->value['undeclared_occurrences'] ?? null );
+		self::assertFalse( $reset->value['undeclared_escalated'] ?? true );
 	}
 
 	/**
@@ -455,7 +504,7 @@ final class SchedulesTest extends TestCase {
 	 * @param   int      $next_due  Next occurrence timestamp.
 	 * @param   int|null $last_fired Last dispatched timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		$identity = 'owner-a:' . $schedule->name;
@@ -468,15 +517,7 @@ final class SchedulesTest extends TestCase {
 					'task'     => 'owner-a:refresh-index',
 				),
 			),
-			'registrations' => array(
-				$identity => array(
-					'fingerprint'   => $schedule->fingerprint(),
-					'next_due'      => $next_due,
-					'last_fired'    => $last_fired,
-					'misfire_skips' => 0,
-					'overlap_skips' => 0,
-				),
-			),
+			'registrations' => array( $identity => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due, $last_fired ) ),
 		);
 	}
 

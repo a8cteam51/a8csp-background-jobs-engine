@@ -29,6 +29,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use Psr\Log\NullLogger;
@@ -98,6 +99,67 @@ final readonly class StoreFixtureBuilder {
 		}
 
 		return $hash;
+	}
+
+	/**
+	 * Returns one complete schedule-registration state value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $fingerprint            Schedule-definition fingerprint.
+	 * @param   int      $next_due               Next due timestamp.
+	 * @param   int|null $last_fired             Last fired timestamp.
+	 * @param   int      $misfire_skips          Misfire-skip count.
+	 * @param   int      $overlap_skips          Overlap-skip count.
+	 * @param   int      $undeclared_occurrences Consecutive undeclared occurrence count.
+	 * @param   bool     $undeclared_escalated   Whether the current undeclared episode warned.
+	 *
+	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}
+	 */
+	public static function schedule_registration_state( string $fingerprint, int $next_due, ?int $last_fired = null, int $misfire_skips = 0, int $overlap_skips = 0, int $undeclared_occurrences = 0, bool $undeclared_escalated = false ): array {
+		return array(
+			'fingerprint'            => $fingerprint,
+			'next_due'               => $next_due,
+			'last_fired'             => $last_fired,
+			'misfire_skips'          => $misfire_skips,
+			'overlap_skips'          => $overlap_skips,
+			'undeclared_occurrences' => $undeclared_occurrences,
+			'undeclared_escalated'   => $undeclared_escalated,
+		);
+	}
+
+	/**
+	 * Returns a registration fixture missing its mandatory inactive-episode markers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Complete production registration fixture.
+	 *
+	 * @return  array{string, string}
+	 */
+	public static function schedule_registration_without_undeclared_markers( array $fixture ): array {
+		$registrations = RawOptionDecoder::decode( $fixture[1] );
+		if ( ! \is_array( $registrations ) ) {
+			throw new \InvalidArgumentException( 'The schedule-registration fixture must decode to an owner row.' );
+		}
+
+		foreach ( $registrations as $registration_key => $registration ) {
+			if ( ! \is_array( $registration ) ) {
+				continue;
+			}
+
+			unset( $registration['undeclared_occurrences'], $registration['undeclared_escalated'] );
+			$registrations[ $registration_key ] = $registration;
+		}
+
+		$raw = \maybe_serialize( $registrations );
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'WordPress must serialize the incomplete schedule-registration fixture to a string.' );
+		}
+
+		return array( $fixture[0], $raw );
 	}
 
 	/**
@@ -261,7 +323,7 @@ final readonly class StoreFixtureBuilder {
 	 * @phpstan-param array{
 	 *     owner: string,
 	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule, task: string}>,
-	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>
+	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>
 	 * } $owner
 	 *
 	 * @param   array $owner Complete owner fixture request.

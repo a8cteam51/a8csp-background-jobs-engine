@@ -321,7 +321,7 @@ final class Component extends AbstractComponent {
 	/**
 	 * Returns the initialized scheduling facade, or null before component boot.
 	 *
-	 * @internal CLI development reset only.
+	 * @internal Destructive CLI schedule and reset operations only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

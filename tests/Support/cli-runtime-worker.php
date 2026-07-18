@@ -55,6 +55,47 @@ try {
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'csv' ) );
 			break;
 
+		case 'schedules-remove-declined':
+			$client = $rig->client( 'consumer-plugin' );
+			$client->tasks()->register( new RecordingTask( 'refresh' ) );
+			$synced = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
+			if ( ! $synced instanceof Success ) {
+				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
+			}
+			$before = array(
+				'wpdb'    => $rig->wpdb()->rows,
+				'options' => $GLOBALS['a8csp_bgte_test_options'],
+				'pending' => $rig->backend()->pending_actions,
+			);
+
+			$probe = \fopen( 'php://fd/3', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- File descriptor 3 is the parent's isolated test probe.
+			if ( false === $probe ) {
+				throw new \RuntimeException( 'The CLI worker probe stream is unavailable.' );
+			}
+			\register_shutdown_function(
+				static function () use ( $rig, $before, $probe ): void {
+					$after   = array(
+						'wpdb'    => $rig->wpdb()->rows,
+						'options' => $GLOBALS['a8csp_bgte_test_options'],
+						'pending' => $rig->backend()->pending_actions,
+					);
+					$encoded = \wp_json_encode(
+						array(
+							'before' => $before,
+							'after'  => $after,
+						),
+						\JSON_THROW_ON_ERROR
+					);
+					if ( ! \is_string( $encoded ) ) {
+						throw new \RuntimeException( 'The CLI worker probe could not encode its mutation evidence.' );
+					}
+					\fwrite( $probe, $encoded ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- File descriptor 3 carries test-only mutation evidence.
+					\fclose( $probe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- File descriptor 3 is a native process resource.
+				}
+			);
+			$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ) );
+			break;
+
 		case 'failed-runs':
 			$client = $rig->client( 'consumer-plugin' );
 			$client->tasks()->register( new RecordingTask( 'email-digest' ) );

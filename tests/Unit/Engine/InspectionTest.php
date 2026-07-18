@@ -113,15 +113,7 @@ final class InspectionTest extends TestCase {
 							'task'     => 'owner-a:refresh-index',
 						),
 					),
-					'registrations' => array(
-						'owner-a:nightly' => array(
-							'fingerprint'   => $schedule->fingerprint(),
-							'next_due'      => self::NOW + 300,
-							'last_fired'    => self::NOW - 60,
-							'misfire_skips' => 1,
-							'overlap_skips' => 2,
-						),
-					),
+					'registrations' => array( 'owner-a:nightly' => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, self::NOW - 60, 1, 2 ) ),
 				)
 			)
 		);
@@ -130,15 +122,7 @@ final class InspectionTest extends TestCase {
 				array(
 					'owner'         => 'owner-b',
 					'declarations'  => array(),
-					'registrations' => array(
-						'owner-b:orphaned' => array(
-							'fingerprint'   => 'orphaned',
-							'next_due'      => self::NOW + 600,
-							'last_fired'    => null,
-							'misfire_skips' => 4,
-							'overlap_skips' => 5,
-						),
-					),
+					'registrations' => array( 'owner-b:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 600, misfire_skips: 4, overlap_skips: 5 ) ),
 				)
 			)
 		);
@@ -181,28 +165,14 @@ final class InspectionTest extends TestCase {
 			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-task', array( 'case' => 'invalid' ) ),
 		);
 		$declarations  = array();
-		$registrations = array(
-			'owner:orphaned' => array(
-				'fingerprint'   => 'orphaned',
-				'next_due'      => self::NOW + 300,
-				'last_fired'    => null,
-				'misfire_skips' => 0,
-				'overlap_skips' => 0,
-			),
-		);
+		$registrations = array( 'owner:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
 			$client->tasks()->register( new RecordingTask( $schedule->task ) );
 			$declarations[ 'owner:' . $name ]  = array(
 				'schedule' => $schedule,
 				'task'     => 'owner:' . $schedule->task,
 			);
-			$registrations[ 'owner:' . $name ] = array(
-				'fingerprint'   => $schedule->fingerprint(),
-				'next_due'      => self::NOW + 300,
-				'last_fired'    => null,
-				'misfire_skips' => 0,
-				'overlap_skips' => 0,
-			);
+			$registrations[ 'owner:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-task' );

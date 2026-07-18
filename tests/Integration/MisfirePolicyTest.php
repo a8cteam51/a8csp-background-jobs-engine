@@ -34,6 +34,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 
 /**
  * Verifies fixed-recurrence misfire policy, hook payloads, counters, and the strict grace boundary.
@@ -397,12 +398,16 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertTrue( null === $last_fired || \is_int( $last_fired ) );
 		self::assertIsInt( $registration['misfire_skips'] ?? null );
 		self::assertIsInt( $registration['overlap_skips'] ?? null );
-		$updated = array(
-			'fingerprint'   => $registration['fingerprint'],
-			'next_due'      => $next_due,
-			'last_fired'    => $last_fired,
-			'misfire_skips' => $registration['misfire_skips'],
-			'overlap_skips' => $registration['overlap_skips'],
+		self::assertIsInt( $registration['undeclared_occurrences'] ?? null );
+		self::assertIsBool( $registration['undeclared_escalated'] ?? null );
+		$updated = StoreFixtureBuilder::schedule_registration_state(
+			$registration['fingerprint'],
+			$next_due,
+			$last_fired,
+			$registration['misfire_skips'],
+			$registration['overlap_skips'],
+			$registration['undeclared_occurrences'],
+			$registration['undeclared_escalated']
 		);
 		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( $identity, $registration['fingerprint'], $updated ) );
 	}

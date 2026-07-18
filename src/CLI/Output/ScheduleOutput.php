@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Shapes and renders persisted schedule inspection output.
+ * Shapes and renders persisted schedule inspection and removal output.
  *
  * @internal
  *
@@ -59,6 +59,16 @@ final readonly class ScheduleOutput {
 	 * @var     string
 	 */
 	private const string DORMANT_BACKEND_NOTE = 'a scheduling backend is not ready; dormant occurrences are not visible.';
+
+	/**
+	 * Eventual-clearance warning for destructive owner removal with an unavailable backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const string DORMANT_REMOVAL_NOTE = 'a scheduling backend is not ready; dormant recurring occurrences for this owner may remain until that backend delivers them or subsequent maintenance clears the recurring chain.';
 
 	// endregion
 
@@ -124,6 +134,68 @@ final readonly class ScheduleOutput {
 	 */
 	public static function dormant_backend_note( bool $has_dormant_candidate ): ?string {
 		return $has_dormant_candidate ? self::DORMANT_BACKEND_NOTE : null;
+	}
+
+	/**
+	 * Requires acknowledgement of one owner's recurring-schedule removal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string               $owner      Canonical client owner.
+	 * @param   array<string, mixed> $assoc_args Named command arguments.
+	 *
+	 * @return  void
+	 */
+	public static function confirm_removal( string $owner, array $assoc_args ): void {
+		\WP_CLI::confirm( \sprintf( 'This permanently removes every schedule registration for owner "%s" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue?', $owner ), $assoc_args );
+	}
+
+	/**
+	 * Reports successful owner-scoped removal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner                 Canonical client owner.
+	 * @param   bool   $has_dormant_candidate Whether an unavailable backend may retain occurrences.
+	 *
+	 * @return  void
+	 */
+	public static function report_removal( string $owner, bool $has_dormant_candidate ): void {
+		if ( $has_dormant_candidate ) {
+			\WP_CLI::warning( self::DORMANT_REMOVAL_NOTE );
+		}
+		\WP_CLI::success( \sprintf( 'Removed every persisted schedule registration for owner "%s".', $owner ) );
+	}
+
+	/**
+	 * Reports an incremental owner-removal failure with its retry path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner   Canonical client owner.
+	 * @param   string $message Scheduling or storage failure.
+	 *
+	 * @return  void
+	 */
+	public static function removal_error( string $owner, string $message ): void {
+		self::error( \sprintf( '%1$s Owner removal converges incrementally; after resolving this error, rerun "wp background-tasks schedules remove %2$s" to clear any remaining registrations.', $message, $owner ) );
+	}
+
+	/**
+	 * Reports a fatal schedule-command error.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $message Corrective error.
+	 *
+	 * @return  void
+	 */
+	public static function error( string $message ): void {
+		\WP_CLI::error( $message );
 	}
 
 	/**

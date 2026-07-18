@@ -40,6 +40,9 @@ final readonly class OccurrenceDelivery {
 	 */
 	public const string SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
 
+	/** Three consecutive gaps tolerate two transient occurrence-time declaration misses. */
+	private const int INACTIVE_WARNING_DELIVERY_THRESHOLD = 3;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -225,7 +228,26 @@ final readonly class OccurrenceDelivery {
 		$declaration = $this->registry->declaration( $registration_key );
 		if ( null === $declaration ) {
 			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'registration_key' => $registration_key ) );
-
+			// Aging is best-effort because a lost fenced increment never affects delivery and a later occurrence retries it.
+			$aging = $this->registry->record_undeclared_occurrence( $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
+			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
+				$parts = WorkIdentity::parts( $registration_key );
+				if ( null !== $parts ) {
+					$this->logger->warning(
+						\sprintf(
+							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync( array() ) on deactivation, or run "wp background-tasks schedules remove %3$s".',
+							$registration_key,
+							self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
+							$parts[0]
+						),
+						array(
+							'owner'                  => $parts[0],
+							'registration_key'       => $registration_key,
+							'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
+						)
+					);
+				}
+			}
 			return;
 		}
 
@@ -507,7 +529,7 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int} $registration
+	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $registration
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 * @param   string $owner            Stable client identifier.

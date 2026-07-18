@@ -212,11 +212,13 @@ final readonly class Schedules {
 			$interval                   = $interval_by_identity[ $schedule_identity ];
 			$next_due                   = $next_due_by_identity[ $schedule_identity ];
 			$next[ $schedule_identity ] = array(
-				'fingerprint'   => $schedule->fingerprint(),
-				'next_due'      => $next_due,
-				'last_fired'    => null,
-				'misfire_skips' => 0,
-				'overlap_skips' => 0,
+				'fingerprint'            => $schedule->fingerprint(),
+				'next_due'               => $next_due,
+				'last_fired'             => null,
+				'misfire_skips'          => 0,
+				'overlap_skips'          => 0,
+				'undeclared_occurrences' => 0,
+				'undeclared_escalated'   => false,
 			);
 			$replacement                = $this->registry->replace_owner( $owner, $declared, $next );
 			if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
@@ -245,7 +247,8 @@ final readonly class Schedules {
 			}
 		}
 
-		$replacement = $this->registry->replace_owner( $owner, $declared, $next );
+		// Backend convergence precedes marker reset so only a successful declaration refresh ends the zombie episode.
+		$replacement = $this->registry->replace_owner( $owner, $declared, $next, reset_undeclared_episodes: true );
 		if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
 			return $this->registry_replacement_failure( $owner, $replacement );
 		}

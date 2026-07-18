@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\UndeclaredOccurrenceOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -193,6 +194,96 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
+	 * A successful same-definition redeclaration resets only the inactive episode markers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_successful_redeclaration_resets_inactive_episode_markers_without_rewinding_timing(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $schedule ) ) );
+		$registry     = $this->registry();
+		$registration = $registry->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $registration );
+		self::assertIsArray( $registration->value );
+		$marked = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 600, self::NOW + 300, 2, 3, 3, true );
+		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( 'owner-a:nightly', $schedule->fingerprint(), $marked ) );
+
+		$persisted = $registry->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $persisted );
+		self::assertIsArray( $persisted->value );
+		self::assertSame( 3, $persisted->value['undeclared_occurrences'] ?? null );
+		self::assertTrue( $persisted->value['undeclared_escalated'] ?? false );
+
+		$this->rig->backend()->calls = array();
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $schedule ) ) );
+
+		$reset = $registry->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $reset );
+		self::assertIsArray( $reset->value );
+		self::assertSame( self::NOW + 600, $reset->value['next_due'] ?? null );
+		self::assertSame( self::NOW + 300, $reset->value['last_fired'] ?? null );
+		self::assertSame( 2, $reset->value['misfire_skips'] ?? null );
+		self::assertSame( 3, $reset->value['overlap_skips'] ?? null );
+		self::assertSame( 0, $reset->value['undeclared_occurrences'] ?? null );
+		self::assertFalse( $reset->value['undeclared_escalated'] ?? true );
+		self::assertSame( array(), \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'schedule_recurring', 'unschedule' ), true ) ) ) );
+
+		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
+		$fresh_episode = $registry->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $fresh_episode );
+		self::assertIsArray( $fresh_episode->value );
+		self::assertSame( 3, $fresh_episode->value['undeclared_occurrences'] ?? null );
+		self::assertTrue( $fresh_episode->value['undeclared_escalated'] ?? false );
+	}
+
+	/**
+	 * A declaration reset survives deletion of the selected owner row.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Deletion at the reset CAS boundary forces the absent-row retry path, which must not reinsert the selected inactive episode.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_declaration_reset_survives_row_deletion_during_owner_update(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$owner    = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+
+		$owner['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 3, undeclared_escalated: true );
+		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$option_name = ScheduleRegistry::option_name( 'owner-a' );
+				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
+			}
+		);
+		$registry = $this->registry();
+
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $owner['declarations'], $owner['registrations'], reset_undeclared_episodes: true ) );
+
+		$expected = $owner;
+
+		$expected['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
+		self::assertSame( $this->fixtures->schedule_registration( $expected )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'INSERT ' ) );
+	}
+
+	/**
 	 * Numeric canonical components remain string identities through sync and inspection.
 	 *
 	 * @since   1.0.0
@@ -350,6 +441,31 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
+	 * A registration without mandatory inactive-episode markers fails and reports its owner row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registration_without_undeclared_markers_breaks_and_reports_the_owner_row(): void {
+		$complete   = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 ) );
+		$incomplete = StoreFixtureBuilder::schedule_registration_without_undeclared_markers( $complete );
+		$this->put_fixture( $incomplete );
+		$this->rig->logger()->records = array();
+
+		$read = $this->registry()->registrations_for( 'owner-a' );
+
+		self::assertInstanceOf( Failure::class, $read );
+		self::assertInstanceOf( SchedulingError::class, $read->error );
+		self::assertSame( $incomplete[0], $read->error->context['option_name'] ?? null );
+		self::assertSame( $incomplete[1], $this->raw_row() );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( $incomplete[0], $this->rig->logger()->records[0]['context']['option_name'] ?? null );
+	}
+
+	/**
 	 * A listener inspecting the same corrupt row cannot recursively emit its warning.
 	 *
 	 * @return  void
@@ -389,6 +505,67 @@ final class ScheduleRegistryTest extends TestCase {
 	// endregion.
 
 	// region KEEP CAS MICRO-SUITE.
+
+	/**
+	 * Interleaved inactive-aging writers persist one warning transition.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Two writers crossing the threshold at the same owner-row update boundary must classify exactly one winning CAS as the escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_interleaved_undeclared_aging_has_exactly_one_escalation_winner(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$owner    = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+
+		$owner['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$nested = null;
+		$this->rig->wpdb()->before_next(
+			'update',
+			function () use ( &$nested ): void {
+				$nested = $this->registry()->record_undeclared_occurrence( 'owner-a:nightly', 3 );
+			}
+		);
+
+		$outer = $this->registry()->record_undeclared_occurrence( 'owner-a:nightly', 3 );
+
+		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $nested );
+		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $outer );
+		$persisted = $this->registry()->registration( 'owner-a:nightly' );
+		self::assertInstanceOf( Success::class, $persisted );
+		self::assertIsArray( $persisted->value );
+		self::assertSame( 3, $persisted->value['undeclared_occurrences'] ?? null );
+		self::assertTrue( $persisted->value['undeclared_escalated'] ?? false );
+	}
+
+	/**
+	 * An inactive-aging write failure loses only that best-effort increment.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_write_failure_leaves_the_selected_registration_unchanged(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$owner    = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+
+		$owner['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+
+		$fixture = $this->fixtures->schedule_registration( $owner );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		self::assertSame( UndeclaredOccurrenceOutcome::Failed, $this->registry()->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
 
 	/**
 	 * Owner replacement and final removal compare exact binary option bytes.
@@ -843,7 +1020,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   int      $next_due    Next occurrence timestamp.
 	 * @param   int|null $last_fired  Last occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture( string $owner, Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		return self::owner_fixture_many( $owner, array( $schedule ), array( $next_due ), array( $last_fired ) );
@@ -864,7 +1041,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   array  $next_due    Next occurrence timestamps.
 	 * @param   array  $last_fired  Last occurrence timestamps.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture_many( string $owner, array $schedules, array $next_due, array $last_fired = array() ): array {
 		$declarations  = array();
@@ -895,16 +1072,10 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   int      $next_due   Next occurrence timestamp.
 	 * @param   int|null $last_fired Last occurrence timestamp.
 	 *
-	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}
+	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}
 	 */
 	private static function registration( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
-		return array(
-			'fingerprint'   => $schedule->fingerprint(),
-			'next_due'      => $next_due,
-			'last_fired'    => $last_fired,
-			'misfire_skips' => 0,
-			'overlap_skips' => 0,
-		);
+		return StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due, $last_fired );
 	}
 
 	/**

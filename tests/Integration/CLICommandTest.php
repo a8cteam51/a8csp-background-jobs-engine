@@ -9,6 +9,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
@@ -79,6 +82,18 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/** Prefix shared by dynamically named failed-run options. */
 	private const string FAILED_OPTION_PREFIX = 'a8csp_bgte_failed_runs_';
+
+	/** Owner isolated to real owner-scoped schedule removal. */
+	private const string REMOVE_OWNER = 'integration-cli-remove-owner';
+
+	/** Schedule isolated to real owner-scoped schedule removal. */
+	private const string REMOVE_SCHEDULE = 'removable-schedule';
+
+	/** Task isolated to real owner-scoped schedule removal. */
+	private const string REMOVE_TASK = 'removable-task';
+
+	/** Registration identity isolated to real owner-scoped schedule removal. */
+	private const string REMOVE_KEY = self::REMOVE_OWNER . ':' . self::REMOVE_SCHEDULE;
 
 	// endregion.
 
@@ -506,6 +521,84 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * The real remove command clears an escalated zombie registry and recurring chain, then reports not found.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An isolated request cannot withdraw a declaration after sync, so a production-built durable row plus direct delivery-hook drives reproduce later undeclared requests before the WP-CLI process removes that exact escalated state.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedules_remove_converges_one_owner_and_is_not_silently_idempotent(): void {
+		$option_name = ScheduleRegistry::option_name( self::REMOVE_OWNER );
+		$this->expect_option( $option_name );
+		$schedule = new Schedule( self::REMOVE_SCHEDULE, Recurrence::every( 300 ), self::REMOVE_TASK );
+		$fixture  = StoreFixtureBuilder::for_identity( self::REMOVE_KEY )->schedule_registration(
+			array(
+				'owner'         => self::REMOVE_OWNER,
+				'declarations'  => array(
+					self::REMOVE_KEY => array(
+						'schedule' => $schedule,
+						'task'     => self::REMOVE_OWNER . ':' . self::REMOVE_TASK,
+					),
+				),
+				'registrations' => array(
+					self::REMOVE_KEY => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), \time() - 1 ),
+				),
+			)
+		);
+		self::persist_store_fixture( $fixture );
+		$action_id = \as_schedule_recurring_action( \time() - 1, 300, OccurrenceDelivery::SCHEDULE_HOOK, array( self::REMOVE_KEY ), self::REMOVE_KEY, true, 10 );
+		self::assertGreaterThan( 0, $action_id );
+		self::assertTrue( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::REMOVE_KEY ), self::REMOVE_KEY ) );
+
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_action(
+			'a8csp_background_tasks/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
+		for ( $occurrence = 0; $occurrence < 4; ++$occurrence ) {
+			\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REMOVE_KEY );
+		}
+		$warnings = \array_values(
+			\array_filter(
+				$log_records,
+				static fn ( array $record ): bool => 'warning' === $record[0] && \str_contains( $record[1], 'fired undeclared' )
+			)
+		);
+		self::assertCount( 1, $warnings );
+
+		$removed = self::run_command( 'schedules', 'remove', self::REMOVE_OWNER, '--yes' );
+
+		self::assertSame( 0, $removed['exit_code'] );
+		self::assertSame( 'Success: Removed every persisted schedule registration for owner "' . self::REMOVE_OWNER . '".' . "\n", $removed['stdout'] );
+		self::assertSame( '', $removed['stderr'] );
+		\wp_cache_delete( $option_name, 'options' );
+		$missing = new \stdClass();
+		self::assertSame( $missing, \get_option( $option_name, $missing ) );
+		self::assertFalse( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::REMOVE_KEY ), self::REMOVE_KEY ) );
+
+		$list = self::run_command( 'schedules', 'list', '--format=json' );
+		self::assertSame( 0, $list['exit_code'] );
+		self::assertSame( '', $list['stderr'] );
+		self::assertStringNotContainsString( self::REMOVE_OWNER, $list['stdout'] );
+
+		$repeat = self::run_command( 'schedules', 'remove', self::REMOVE_OWNER, '--yes' );
+		self::assertSame( 1, $repeat['exit_code'] );
+		self::assertSame( '', $repeat['stdout'] );
+		self::assertSame( 'Error: No schedule registrations are persisted for owner "' . self::REMOVE_OWNER . '".' . "\n", $repeat['stderr'] );
+	}
+
+	/**
 	 * A failed schedule-registry read renders as unavailable instead of an empty registry.
 	 *
 	 * @since   1.0.0
@@ -544,7 +637,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_command( 'schedules' );
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-tasks schedules <action> [--owner=<owner>] [--format=<format>]\n", $result['stdout'] );
+		self::assertSame( "usage: wp background-tasks schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -587,7 +680,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * The real parser rejects an extra schedules-list positional before execution.
+	 * The command guard rejects a remove-only owner positional on schedule listing.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -599,7 +692,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Too many positional arguments: extra\n", $result['stderr'] );
+		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp background-tasks schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**

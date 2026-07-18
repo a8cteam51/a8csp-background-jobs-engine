@@ -236,6 +236,37 @@ final class MaintenanceTaskTest extends TestCase {
 	}
 
 	/**
+	 * A registration row missing mandatory inactive-episode markers is reclaimed.
+	 *
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schema_invalid_schedule_registry_row_is_reclaimed(): void {
+		$complete   = StoreFixtureBuilder::for_identity( 'legacy-owner:task' )->schedule_registration(
+			array(
+				'owner'         => 'legacy-owner',
+				'declarations'  => array(),
+				'registrations' => array(
+					'legacy-owner:schedule' => StoreFixtureBuilder::schedule_registration_state( 'legacy-fingerprint', self::NOW + 300 ),
+				),
+			)
+		);
+		$incomplete = StoreFixtureBuilder::schedule_registration_without_undeclared_markers( $complete );
+		$this->wpdb->put( $incomplete[0], $incomplete[1] );
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $incomplete[0], $this->wpdb->rows );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $incomplete[0], $this->logger->records[0]['context']['option_name'] ?? null );
+	}
+
+	/**
 	 * Exact deletion cannot remove a registry row replaced after maintenance selected it.
 	 *
 	 * @load-bearing concurrency
@@ -252,13 +283,7 @@ final class MaintenanceTaskTest extends TestCase {
 				'owner'         => 'poison-owner',
 				'declarations'  => array(),
 				'registrations' => array(
-					'poison-owner:replacement' => array(
-						'fingerprint'   => 'replacement-fingerprint',
-						'next_due'      => self::NOW + 300,
-						'last_fired'    => null,
-						'misfire_skips' => 0,
-						'overlap_skips' => 0,
-					),
+					'poison-owner:replacement' => StoreFixtureBuilder::schedule_registration_state( 'replacement-fingerprint', self::NOW + 300 ),
 				),
 			)
 		);
