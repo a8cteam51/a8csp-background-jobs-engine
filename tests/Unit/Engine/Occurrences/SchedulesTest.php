@@ -136,6 +136,36 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * Unchanged declarations share one bulk backend census per synchronization.
+	 *
+	 * @load-bearing performance
+	 * @pin-rationale Schedule sync runs on every init, so per-declaration backend reads multiply an unbounded Action Scheduler query and WP-Cron scan by the declaration count.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_bulk_counts_unchanged_declarations_once(): void {
+		$declarations = array(
+			self::schedule( 'nightly', 300 ),
+			self::schedule( 'hourly', 3_600 ),
+		);
+		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( $declarations ) );
+		$this->reset_backend_observations();
+
+		$result = $this->client_a->schedules()->sync( $declarations );
+
+		self::assertInstanceOf( Success::class, $result );
+		$calls = $this->calls( 'scheduled_counts' );
+		self::assertCount( 1, $calls );
+		self::assertSame( OccurrenceDelivery::SCHEDULE_HOOK, $calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( 'owner-a:nightly', 'owner-a:hourly' ), $calls[0]['args']['identities'] ?? null );
+		self::assertSame( array(), $this->calls( 'scheduled_count' ) );
+		self::assertSame( array(), $this->write_calls() );
+	}
+
+	/**
 	 * A persisted registration without its backend chain is recreated at the retained due instant.
 	 *
 	 * @since   1.0.0

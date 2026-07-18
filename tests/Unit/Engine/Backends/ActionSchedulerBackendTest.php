@@ -110,7 +110,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 * Pending occurrences are counted without fetching Action Scheduler objects.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Same-backend duplicate chains are invisible through logical schedule reads, so exact pending-ID cardinality is the repair signal; requesting IDs avoids materializing complete actions during every sync.
+	 * @pin-rationale Same-backend duplicate chains are invisible through logical schedule reads, so exact pending-ID cardinality remains the scalar query signal; requesting IDs avoids materializing complete actions for callers that need only one identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -139,6 +139,54 @@ final class ActionSchedulerBackendTest extends TestCase {
 			),
 			$this->calls( 'as_get_scheduled_actions' )[0]['args']
 		);
+	}
+
+	/**
+	 * Multiple schedule identities are bucketed from one hook-wide pending-action read.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scheduled_counts_buckets_multiple_identities_from_one_query(): void {
+		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+			'as_get_scheduled_actions' => array(
+				array(
+					41 => self::action( array( 'single' ), 'single' ),
+					42 => self::action( array( 'many' ), 'many' ),
+					43 => self::action( array( 'many' ), 'many' ),
+					44 => self::action( array( 'many' ), 'wrong-group' ),
+					45 => self::action( array( 'many', 'extra' ), 'many' ),
+					46 => self::action( array( '' ), 'empty-group-is-unconstrained' ),
+				),
+			),
+		);
+
+		$counts = ( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( 'single', 'missing', 'many', '' ) );
+
+		self::assertSame(
+			array(
+				'single'  => 1,
+				'missing' => 0,
+				'many'    => 2,
+				''        => 1,
+			),
+			$counts
+		);
+		self::assertSame(
+			array(
+				array(
+					'hook'     => self::HOOK,
+					'status'   => 'pending',
+					'per_page' => -1,
+					'orderby'  => 'none',
+				),
+				'OBJECT',
+			),
+			$this->calls( 'as_get_scheduled_actions' )[0]['args']
+		);
+		self::assertCount( 1, $this->calls( 'as_get_scheduled_actions' ) );
 	}
 
 	/**
@@ -181,6 +229,47 @@ final class ActionSchedulerBackendTest extends TestCase {
 		return null === $function_name
 			? $calls
 			: \array_values( \array_filter( $calls, static fn ( array $call ): bool => $function_name === $call['function'] ) );
+	}
+
+	/**
+	 * Returns one Action Scheduler object-shaped fixture.
+	 *
+	 * @param   list<mixed> $args  Action arguments.
+	 * @param   string      $group Action group.
+	 *
+	 * @return  object
+	 */
+	private static function action( array $args, string $group ): object {
+		return new readonly class( $args, $group ) {
+			/**
+			 * Creates an immutable action fixture.
+			 *
+			 * @param   list<mixed> $args  Action arguments.
+			 * @param   string      $group Action group.
+			 */
+			public function __construct(
+				private array $args,
+				private string $group,
+			) {}
+
+			/**
+			 * Returns the action arguments.
+			 *
+			 * @return  list<mixed>
+			 */
+			public function get_args(): array {
+				return $this->args;
+			}
+
+			/**
+			 * Returns the action group.
+			 *
+			 * @return  string
+			 */
+			public function get_group(): string {
+				return $this->group;
+			}
+		};
 	}
 
 	// endregion.

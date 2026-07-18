@@ -75,6 +75,12 @@ final class ReadinessControlledBackend implements BackendInterface {
 
 	/** {@inheritDoc} */
 	#[\Override]
+	public function scheduled_counts( string $hook, array $identities ): array {
+		return $this->backend->scheduled_counts( $hook, $identities );
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
 	public function is_scheduled( string $hook, array $args = array(), string $group = '' ): bool {
 		return $this->backend->is_scheduled( $hook, $args, $group );
 	}

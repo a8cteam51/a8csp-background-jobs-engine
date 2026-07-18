@@ -177,12 +177,13 @@ final readonly class Schedules {
 			$next_due_by_identity[ $schedule_identity ] = $next_due;
 		}
 
-		$next = $existing;
+		$next             = $existing;
+		$scheduled_counts = $this->scheduler->scheduled_counts( OccurrenceDelivery::SCHEDULE_HOOK, \array_keys( $declared ) );
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				$scheduled_count = $this->scheduler->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
+				$scheduled_count = $scheduled_counts[ $schedule_identity ] ?? 0;
 				if ( 1 === $scheduled_count ) {
 					continue;
 				}

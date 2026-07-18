@@ -296,6 +296,49 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
+	 * Records one bulk pending-occurrence read and buckets exact schedule identities.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string       $hook       Hook to query.
+	 * @param   list<string> $identities Schedule identities to query.
+	 *
+	 * @return  array<string, int<0, max>>
+	 */
+	#[\Override]
+	public function scheduled_counts( string $hook, array $identities ): array {
+		$this->calls[] = array(
+			'verb' => 'scheduled_counts',
+			'args' => array(
+				'hook'       => $hook,
+				'identities' => $identities,
+			),
+		);
+
+		$counts = array();
+		foreach ( $identities as $identity ) {
+			$counts[ $identity ] = 0;
+		}
+
+		foreach ( $this->deliveries as $delivery ) {
+			$args = $delivery['args'];
+			if ( $hook !== $delivery['hook'] || 1 !== \count( $args ) || ! isset( $args[0] ) || ! \is_string( $args[0] ) || array( $args[0] ) !== $args ) {
+				continue;
+			}
+
+			$identity = $args[0];
+			if ( ! \array_key_exists( $identity, $counts ) || $identity !== $delivery['group'] ) {
+				continue;
+			}
+
+			++$counts[ $identity ];
+		}
+
+		return $counts;
+	}
+
+	/**
 	 * Records a scheduled-state query and returns its scripted value.
 	 *
 	 * @phpstan-param list<mixed> $args

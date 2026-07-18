@@ -285,6 +285,61 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * Action Scheduler cannot query multiple argument-and-group pairs together, so the hook-wide read
+	 * returns action objects whose exact schedule identities are bucketed in memory. A PHP-empty group
+	 * is unconstrained in Action Scheduler's native query semantics.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, int<0, max>>
+	 */
+	#[\Override]
+	public function scheduled_counts( string $hook, array $identities ): array {
+		$counts = array();
+		foreach ( $identities as $identity ) {
+			$counts[ $identity ] = 0;
+		}
+
+		if ( array() === $counts || ! $this->is_ready() || ! \function_exists( 'as_get_scheduled_actions' ) ) {
+			return $counts;
+		}
+
+		/**
+		 * Hook-wide pending actions.
+		 *
+		 * @var array<array-key, \ActionScheduler_Action> $actions
+		 */
+		$actions = \as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'status'   => 'pending',
+				'per_page' => -1,
+				'orderby'  => 'none',
+			),
+			'OBJECT'
+		);
+
+		foreach ( $actions as $action ) {
+			$args = $action->get_args();
+			if ( ! \is_array( $args ) || 1 !== \count( $args ) || ! isset( $args[0] ) || ! \is_string( $args[0] ) || array( $args[0] ) !== $args ) {
+				continue;
+			}
+
+			$identity = $args[0];
+			if ( ! \array_key_exists( $identity, $counts ) || ( '' !== $identity && '0' !== $identity && $identity !== $action->get_group() ) ) {
+				continue;
+			}
+
+			++$counts[ $identity ];
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * Both a future timestamp and Action Scheduler's true sentinel for async or in-progress state
 	 * count as scheduled.
 	 *

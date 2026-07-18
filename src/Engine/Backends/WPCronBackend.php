@@ -252,6 +252,65 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * WP-Cron stores no groups, so one cron-option snapshot can bucket every exact serialized
+	 * one-identity argument list.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, int<0, max>>
+	 */
+	#[\Override]
+	public function scheduled_counts( string $hook, array $identities ): array {
+		$counts                      = array();
+		$identity_by_serialized_args = array();
+		foreach ( $identities as $identity ) {
+			$counts[ $identity ] = 0;
+			$serialized_args     = \maybe_serialize( array( $identity ) );
+			if ( \is_string( $serialized_args ) ) {
+				$identity_by_serialized_args[ $serialized_args ] = $identity;
+			}
+		}
+
+		if ( array() === $counts ) {
+			return $counts;
+		}
+
+		foreach ( $this->cron_array() as $timestamp => $hooks ) {
+			if ( ! \is_int( $timestamp ) || ! \is_array( $hooks ) ) {
+				continue;
+			}
+
+			$events = $hooks[ $hook ] ?? null;
+			if ( ! \is_array( $events ) ) {
+				continue;
+			}
+
+			foreach ( $events as $event ) {
+				if ( ! \is_array( $event ) ) {
+					continue;
+				}
+
+				$event_args = $event['args'] ?? null;
+				if ( ! \is_array( $event_args ) ) {
+					continue;
+				}
+
+				$serialized_args = \maybe_serialize( $event_args );
+				if ( ! \is_string( $serialized_args ) || ! \array_key_exists( $serialized_args, $identity_by_serialized_args ) ) {
+					continue;
+				}
+
+				++$counts[ $identity_by_serialized_args[ $serialized_args ] ];
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 */

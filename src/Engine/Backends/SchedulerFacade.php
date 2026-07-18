@@ -282,6 +282,38 @@ final readonly class SchedulerFacade implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * The per-identity totals span every currently ready backend so same-backend and cross-backend
+	 * surpluses retain the scalar convergence semantics.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, int<0, max>>
+	 */
+	#[\Override]
+	public function scheduled_counts( string $hook, array $identities ): array {
+		$counts = array();
+		foreach ( $identities as $requested_identity ) {
+			$counts[ $requested_identity ] = 0;
+		}
+
+		if ( array() === $counts ) {
+			return $counts;
+		}
+
+		foreach ( $this->ready_backends() as $backend ) {
+			$backend_counts = $backend->scheduled_counts( $hook, $identities );
+			foreach ( $counts as $identity => $count ) {
+				$counts[ $identity ] = $count + ( $backend_counts[ $identity ] ?? 0 );
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 */

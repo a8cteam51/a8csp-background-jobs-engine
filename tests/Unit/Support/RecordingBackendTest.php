@@ -181,6 +181,13 @@ final class RecordingBackendTest extends TestCase {
 		$backend->ready          = false;
 
 		self::assertSame( 0, $backend->scheduled_count( 'count', array( 'pending' ), 'reports' ) );
+		self::assertSame(
+			array(
+				'first'  => 0,
+				'second' => 0,
+			),
+			$backend->scheduled_counts( 'counts', array( 'first', 'second' ) )
+		);
 		self::assertTrue( $backend->is_scheduled( 'query', array( 'a' ), 'reports' ) );
 		self::assertSame( 1_700_000_000, $backend->get_next_scheduled( 'next', array( 'b' ), 'imports' ) );
 		self::assertFalse( $backend->is_ready() );
@@ -194,6 +201,13 @@ final class RecordingBackendTest extends TestCase {
 						'hook'  => 'count',
 						'args'  => array( 'pending' ),
 						'group' => 'reports',
+					),
+				),
+				array(
+					'verb' => 'scheduled_counts',
+					'args' => array(
+						'hook'       => 'counts',
+						'identities' => array( 'first', 'second' ),
 					),
 				),
 				array(

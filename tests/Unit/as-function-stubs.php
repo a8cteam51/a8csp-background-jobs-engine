@@ -169,19 +169,33 @@ if ( ! \function_exists( 'as_get_scheduled_actions' ) ) {
 	 * @param   array<string, mixed> $args          Query arguments.
 	 * @param   string               $return_format Return format.
 	 *
-	 * @return  list<int>
+	 * @return  array<int, object>|list<int>
 	 */
 	function as_get_scheduled_actions( $args = array(), $return_format = OBJECT ) {
 		a8csp_bgte_test_record_as_call( 'as_get_scheduled_actions', array( $args, $return_format ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_get_scheduled_actions', array() );
-		if ( ! \is_array( $result ) || ! \array_is_list( $result ) ) {
-			throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with a list result.' );
+		if ( ! \is_array( $result ) ) {
+			throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with an array result.' );
 		}
 
-		foreach ( $result as $action_id ) {
-			if ( ! \is_int( $action_id ) ) {
-				throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with integer action identifiers.' );
+		if ( 'ids' === $return_format || 'int' === $return_format ) {
+			if ( ! \array_is_list( $result ) ) {
+				throw new \UnexpectedValueException( 'Script Action Scheduler IDs with a list result.' );
+			}
+
+			foreach ( $result as $action_id ) {
+				if ( ! \is_int( $action_id ) ) {
+					throw new \UnexpectedValueException( 'Script Action Scheduler IDs with integer action identifiers.' );
+				}
+			}
+
+			return $result;
+		}
+
+		foreach ( $result as $action_id => $action ) {
+			if ( ! \is_int( $action_id ) || ! \is_object( $action ) || ! \method_exists( $action, 'get_args' ) || ! \method_exists( $action, 'get_group' ) ) {
+				throw new \UnexpectedValueException( 'Script Action Scheduler objects with integer keys, get_args(), and get_group().' );
 			}
 		}
 

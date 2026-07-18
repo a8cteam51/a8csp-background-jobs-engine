@@ -189,6 +189,43 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Bulk scheduled counts preserve zero, one, and surplus totals across ready backends.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scheduled_counts_sum_multiple_identities_across_ready_backends(): void {
+		$identities = array( 'single', 'missing', 'many', 'split' );
+		$scheduler  = new SchedulerFacade( $this->rig->backends() );
+		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'single' ), self::NOW + 300, 'single' ) );
+		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'many' ), self::NOW + 300, 'many' ) );
+		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'many' ), self::NOW + 600, 'many' ) );
+		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'split' ), self::NOW + 300, 'split' ) );
+		self::assertInstanceOf( Success::class, $this->fallback()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'split' ), self::NOW + 300, 'split' ) );
+		$this->reset_backend_observations();
+
+		$counts = $scheduler->scheduled_counts( OccurrenceDelivery::SCHEDULE_HOOK, $identities );
+
+		self::assertSame(
+			array(
+				'single'  => 1,
+				'missing' => 0,
+				'many'    => 2,
+				'split'   => 2,
+			),
+			$counts
+		);
+		foreach ( $this->rig->backends() as $backend ) {
+			$calls = $this->calls( $backend, 'scheduled_counts' );
+			self::assertCount( 1, $calls );
+			self::assertSame( $identities, $calls[0]['args']['identities'] ?? null );
+			self::assertSame( array(), $this->calls( $backend, 'scheduled_count' ) );
+		}
+	}
+
+	/**
 	 * Schedule removal clears the same owner-qualified chain from every ready backend.
 	 *
 	 * @since   1.0.0
@@ -296,7 +333,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$result = $this->client->schedules()->sync( array( $schedule ) );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array(), $this->calls( $this->preferred(), 'scheduled_count' ) );
+		self::assertSame( array(), $this->calls( $this->preferred(), 'scheduled_counts' ) );
 		foreach ( $this->rig->backends() as $backend ) {
 			self::assertSame( array(), $this->calls( $backend, 'unschedule' ) );
 			self::assertSame( array(), $this->calls( $backend, 'schedule_recurring' ) );
