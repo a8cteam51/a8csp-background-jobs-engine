@@ -406,6 +406,30 @@ final readonly class StoreFixtureBuilder {
 
 	// endregion.
 
+	// region CORRUPTION FIXTURES.
+
+	/**
+	 * Mints one deliberately malformed row for corruption tests that cannot pass through a canonical store writer.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed>|object $value Deliberately malformed row value.
+	 *
+	 * @return  string
+	 */
+	public static function corrupt_row( array|object $value ): string {
+		EngineRig::bootstrap();
+		$raw = \maybe_serialize( $value );
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'Corrupt row fixtures require a serializable array or object.' );
+		}
+
+		return $raw;
+	}
+
+	// endregion.
+
 	// region HELPERS.
 
 	/**

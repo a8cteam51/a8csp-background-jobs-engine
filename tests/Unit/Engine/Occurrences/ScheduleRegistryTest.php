@@ -716,6 +716,46 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
+	 * Same-owner replacement retries and wins after an ABA row restoration.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A rival generation at the update boundary and restoration at the retry-read boundary reproduce A-to-B-to-A; only a staged storage interleave proves the comparison loss remains retryable when the selected bytes reappear.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_same_owner_replace_retries_and_wins_after_an_aba_restore(): void {
+		$owner_a     = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$schedule_b  = self::schedule( 'hourly', 3_600 );
+		$initial     = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_600 ) );
+		$rival       = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_601 ) );
+		$replacement = $this->fixtures->schedule_registration( $owner_a );
+		$this->put_fixture( $initial );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $initial, $rival ): void {
+				$wpdb->put( $rival[0], $rival[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( $initial ): void {
+						$wpdb->put( $initial[0], $initial[1] );
+					}
+				);
+			}
+		);
+		$registry = $this->registry();
+
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
+		self::assertSame( $replacement[1], $this->raw_row() );
+	}
+
+	/**
 	 * Same-owner replacement stops after five consecutive comparison losses.
 	 *
 	 * @load-bearing concurrency

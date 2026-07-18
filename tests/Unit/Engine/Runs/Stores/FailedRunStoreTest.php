@@ -335,6 +335,45 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
+	 * A lost exact update remains retryable when its selected generation is restored.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An update-boundary rival followed by a read-boundary restoration reproduces A-to-B-to-A; only this storage interleave proves a typed comparison loss retries instead of restored bytes being misclassified as a failed write.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_retries_and_wins_when_the_selected_generation_is_restored_after_a_loss(): void {
+		$initial         = array( self::fixture_entry( 'run-existing', 100 ) );
+		$caller          = self::fixture_entry( 'run-caller', 300 );
+		$initial_fixture = $this->fixtures->failed_runs( $initial );
+		$rival_fixture   = $this->fixtures->failed_runs( array( ...$initial, self::fixture_entry( 'run-rival', 200 ) ) );
+		$this->put_fixture( $initial_fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $initial_fixture, $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( $initial_fixture ): void {
+						$wpdb->put( $initial_fixture[0], $initial_fixture[1] );
+					}
+				);
+			}
+		);
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertTrue( $this->record_entry( $caller ) );
+
+		self::assertSame( $this->fixtures->failed_runs( array( ...$initial, $caller ) )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
 	 * Read failures and unchanged failed updates cannot alter retained retry data.
 	 *
 	 * @load-bearing concurrency
