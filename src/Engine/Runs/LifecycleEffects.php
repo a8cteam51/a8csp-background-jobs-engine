@@ -615,8 +615,34 @@ final readonly class LifecycleEffects {
 		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
 		if ( null === $failure ) {
 			try {
+				/**
+				 * Fires when a work run starts, completes, is cancelled, or is superseded.
+				 *
+				 * The dynamic portion of the hook name, `$hook`, refers to the `started`, `completed`,
+				 * `cancelled`, or `superseded` lifecycle event.
+				 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+				 *
+				 * @since   1.0.0
+				 * @version 1.0.0
+				 *
+				 * @param   string                  $run_id     Run identifier.
+				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+				 */
 				\do_action( $hook . '/' . $identity, $run_id, $start_args );
 			} finally {
+				/**
+				 * Fires after the identity-specific started, completed, cancelled, or superseded lifecycle hook.
+				 *
+				 * The dynamic portion of the hook name, `$hook`, refers to the `started`, `completed`,
+				 * `cancelled`, or `superseded` lifecycle event.
+				 *
+				 * @since   1.0.0
+				 * @version 1.0.0
+				 *
+				 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+				 * @param   string                  $run_id     Run identifier.
+				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+				 */
 				\do_action( $hook, $identity, $run_id, $start_args );
 			}
 
@@ -624,8 +650,34 @@ final readonly class LifecycleEffects {
 		}
 
 		try {
+			/**
+			 * Fires when a work run fails.
+			 *
+			 * The dynamic portion of the hook name, `$hook`, refers to the `failed` lifecycle event.
+			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   RunFailure              $failure    Reconstructed client failure value.
+			 */
 			\do_action( $hook . '/' . $identity, $run_id, $start_args, $failure );
 		} finally {
+			/**
+			 * Fires after the identity-specific failed lifecycle hook.
+			 *
+			 * The dynamic portion of the hook name, `$hook`, refers to the `failed` lifecycle event.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   RunFailure              $failure    Reconstructed client failure value.
+			 */
 			\do_action( $hook, $identity, $run_id, $start_args, $failure );
 		}
 		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound

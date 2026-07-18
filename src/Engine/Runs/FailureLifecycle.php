@@ -205,6 +205,16 @@ final readonly class FailureLifecycle {
 	 * @return  RetryPolicy
 	 */
 	private function retry_policy( string $identity, RetryPolicy $contract_policy ): RetryPolicy {
+		/**
+		 * Filters the retry policy for one work identity.
+		 *
+		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   RetryPolicy $contract_policy Retry policy supplied by the work contract.
+		 */
 		$filtered_policy = \apply_filters( 'a8csp_background_tasks/retry_policy/' . $identity, $contract_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
@@ -363,8 +373,33 @@ final readonly class FailureLifecycle {
 	 */
 	private function fire_retry_scheduled_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
 		try {
+			/**
+			 * Fires after retry state is persisted for one failed work attempt.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   int                     $attempt    One-indexed number of the failed attempt.
+			 * @param   int                     $delay      Delay before the next attempt in seconds.
+			 */
 			\do_action( 'a8csp_background_tasks/retry_scheduled/' . $identity, $run_id, $start_args, $attempt, $delay );
 		} finally {
+			/**
+			 * Fires after the identity-specific retry-scheduled hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   int                     $attempt    One-indexed number of the failed attempt.
+			 * @param   int                     $delay      Delay before the next attempt in seconds.
+			 */
 			\do_action( 'a8csp_background_tasks/retry_scheduled', $identity, $run_id, $start_args, $attempt, $delay );
 		}
 	}

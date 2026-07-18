@@ -314,6 +314,8 @@ Each persisted schedule-registration entry records `misfire_skips` for beyond-gr
 
 ## Hooks and filters
 
+Detailed parameter contracts are documented inline at each `do_action()` and `apply_filters()` fire site under `src/`; the tables below summarize cross-hook semantics for consumers.
+
 For each lifecycle pair, the identity-specific hook fires first and the generic companion follows with the identity prepended. Every `{identity}` suffix and every generic `$identity` payload is the complete `{owner}:{name}` identity. The misfire-skipped hooks likewise receive the complete schedule identity; `$owner` remains a separate argument.
 
 | Event | Identity-specific hook and payload | Generic hook and payload |
@@ -336,11 +338,11 @@ Clients do not hook the engine's internal delivery actions: `a8csp_background_ta
 | Filter | Input and required return |
 | --- | --- |
 | `a8csp_background_tasks/queue/{identity}` | `($queue, $start_args, $run_id)` returns the complete list of chunk argument arrays. |
-| `a8csp_background_tasks/continue_delay` | `($delay, $identity, $run_id)` returns a non-negative delay in seconds; the default is 60. It receives complete Task identities as well as complete Batch identities because the value also sets every run's lock-staleness floor at twice the delay — once twice the delay exceeds the lock-staleness window, raising it extends how long a crashed run waits for reclamation. |
-| `a8csp_background_tasks/lock_staleness/{identity}` | `($seconds)` returns a positive lock window; the default is 900 and the effective value is at least twice the continue delay. |
-| `a8csp_background_tasks/history_size` | `($size)` returns a positive per-buffer history cap; the default is 30. |
+| `a8csp_background_tasks/continue_delay` | `($delay, $identity, $run_id)` returns a non-negative integer delay in seconds; the default is 60. It receives complete Task identities as well as complete Batch identities because the value also sets every run's lock-staleness floor at twice the delay — once twice the delay exceeds the lock-staleness window, raising it extends how long a crashed run waits for reclamation. |
+| `a8csp_background_tasks/lock_staleness/{identity}` | `($seconds)` returns a positive integer lock window; the default is 900 and the effective value is at least twice the continue delay. |
+| `a8csp_background_tasks/history_size` | `($size)` returns a positive integer per-buffer history cap; the default is 30. |
 | `a8csp_background_tasks/retry_policy/{identity}` | `(RetryPolicy $policy)` returns a `RetryPolicy`; a foreign return leaves the contract policy in effect. |
-| `a8csp_background_tasks/misfire_grace/{identity}` | `($grace, $owner, $identity)` returns a non-negative grace in seconds; the default is one interval. |
+| `a8csp_background_tasks/misfire_grace/{identity}` | `($grace, $owner, $identity)` returns a non-negative integer grace in seconds; the default is one interval. |
 | `a8csp_background_tasks/log_to_error_log` | `($enabled)` returns whether to register the default PHP error-log sink; the default is `true`, and returning `false` disables it. |
 
 ## Bring your own PSR-3 logger

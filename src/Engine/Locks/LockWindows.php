@@ -80,6 +80,16 @@ final readonly class LockWindows {
 	 * @return  int
 	 */
 	public function continue_delay( string $batch_name, string $run_id ): int {
+		/**
+		 * Filters the delay between completed batch chunks.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int    $delay      Default inter-chunk delay in seconds.
+		 * @param   string $batch_name Complete owner-qualified task or batch identity.
+		 * @param   string $run_id     Run identifier.
+		 */
 		$delay = \apply_filters( 'a8csp_background_tasks/continue_delay', self::CONTINUE_DELAY, $batch_name, $run_id );
 		if ( \is_int( $delay ) && 0 <= $delay ) {
 			return $delay;
@@ -113,7 +123,18 @@ final readonly class LockWindows {
 		$continue_delay = $this->continue_delay( $identity, $run_id );
 
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
-		$staleness         = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $identity, $default_staleness );
+
+		/**
+		 * Filters the lock-staleness window in seconds.
+		 *
+		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int $default_staleness Default lock-staleness window in seconds.
+		 */
+		$staleness = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $identity, $default_staleness );
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
 			$this->logger->warning(
 				'Lock-staleness filter returned an invalid value; return a positive integer to override the default staleness window.',

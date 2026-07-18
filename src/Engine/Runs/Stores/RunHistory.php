@@ -275,6 +275,14 @@ final readonly class RunHistory {
 	 * @return  int
 	 */
 	private function history_size(): int {
+		/**
+		 * Filters the number of runs retained in each history buffer.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int $size Default per-buffer history cap.
+		 */
 		$size = \apply_filters( 'a8csp_background_tasks/history_size', self::DEFAULT_SIZE );
 		if ( \is_int( $size ) && 0 < $size ) {
 			return $size;

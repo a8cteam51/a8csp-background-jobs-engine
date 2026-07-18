@@ -188,6 +188,18 @@ final readonly class ActionDeliveries {
 		}
 
 		try {
+			/**
+			 * Filters the generated chunk queue for a batch.
+			 *
+			 * The dynamic portion of the hook name, `$batch_name`, refers to the owner-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   list<array<array-key, mixed>> $queue      Complete list of chunk argument arrays.
+			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
+			 * @param   string                        $run_id     Run identifier.
+			 */
 			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_background_tasks/queue/' . $batch_name, $queue, $state->start_args, $run_id ) );
 		} catch ( \Throwable $throwable ) {
 			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
