@@ -37,7 +37,8 @@ $a8csp_bgte_lifecycle_hooks = array(
  * registration-hash, or argument-hash identifiers that do not exist until runtime. The shared
  * prefix is the complete ownership boundary for standalone engine options. Escaping it before
  * appending the wildcard keeps each underscore literal instead of letting SQL LIKE broaden the
- * sweep to similarly spelled foreign options.
+ * sweep to similarly spelled foreign options. The deletion loop repeats the byte-exact prefix
+ * check because the option-name column collation may admit case-distinct candidates.
  *
  * Selecting the names directly is intentional in this cold bootstrap: delete_option() still
  * performs each deletion so WordPress preserves its normal cache invalidation and hooks. The
@@ -58,7 +59,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hook
 	$a8csp_bgte_option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
 
 	foreach ( $a8csp_bgte_option_names as $a8csp_bgte_option_name ) {
-		if ( \is_string( $a8csp_bgte_option_name ) ) {
+		if ( \is_string( $a8csp_bgte_option_name ) && \str_starts_with( $a8csp_bgte_option_name, 'a8csp_bgte_' ) ) {
 			delete_option( $a8csp_bgte_option_name );
 		}
 	}

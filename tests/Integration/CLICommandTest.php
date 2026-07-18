@@ -47,6 +47,9 @@ final class CLICommandTest extends IntegrationTestCase {
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
 	private const string CANCEL_NAME = 'a8csp-bgte:maintenance';
 
+	/** Background-work identity isolated to real reset state. */
+	private const string RESET_NAME = 'integration-cli-command:integration-cli-command-reset-store';
+
 	/** Batch identity registered by the cancel-completeness WP-CLI bootstrap. */
 	private const string CANCEL_BATCH_NAME = 'integration-cli-command:integration-cli-command-cancel-batch';
 
@@ -72,7 +75,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const string INSPECTION_TASK_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_TASK;
 
 	/** Run identity shared by deterministic retained-failure fixtures. */
-	private const string RUN_ID = 'integration-cli-command-run-1';
+	private const string RUN_ID = '00000000001784030000-0000000000000000002';
 
 	/** Canonical-format run identifier for rows the live-run enumeration must parse. */
 	private const string CANONICAL_RUN_ID = '00000000001784030000-0000000000000000001';
@@ -132,7 +135,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( "Success: Cancelled run integration-cli-command-run-1 of \"a8csp-bgte:maintenance\".\n", $result['stdout'] );
+		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-bgte:maintenance".' . "\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		$inspection = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=json' );
 		self::assertSame( 0, $inspection['exit_code'] );
@@ -157,7 +160,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Run \"integration-cli-command-run-1\" is executing; a run in flight completes or fails on its own.\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" is executing; a run in flight completes or fails on its own.' . "\n", $result['stderr'] );
 	}
 
 	/**
@@ -177,7 +180,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Run \"integration-cli-command-run-1\" has no chunks left to process; the pending cleanup completes it.\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" has no chunks left to process; the pending cleanup completes it.' . "\n", $result['stderr'] );
 	}
 
 	/**
@@ -209,7 +212,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Run "integration-cli-command-run-1" for background-work ' . "\"a8csp-bgte:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-bgte:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
 	}
 
 	/**
@@ -309,7 +312,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame(
 			'[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store",' .
-			'"run_id":"integration-cli-command-run-1",' .
+			'"run_id":"' . self::RUN_ID . '",' .
 			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed",' .
 			'"error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]',
 			$result['stdout']
@@ -445,6 +448,73 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( "Error: Failed-run action \"remove\" is invalid; use list, retry, or purge.\n", $result['stderr'] );
+	}
+
+	/**
+	 * The acknowledged real command clears persisted rows and its maintenance occurrence; a later
+	 * process boot recreates only the reserved maintenance registration and occurrence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_reset_yes_converges_engine_state_and_the_next_boot_recreates_maintenance(): void {
+		$this->seed_failed_run( self::RESET_NAME );
+		$builder = StoreFixtureBuilder::for_identity( self::RESET_NAME );
+		self::persist_store_fixture(
+			$builder->latest(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $builder->args_hash( array( 'source' => 'reset-boundary' ) ),
+					),
+				)
+			)
+		);
+		$action_id = \as_schedule_recurring_action( \time() + 300, 300, OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME, true, 10 );
+		self::assertGreaterThan( 0, $action_id );
+		self::assertTrue( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
+
+		$result = self::run_command( 'reset', '--yes' );
+
+		self::assertSame( 0, $result['exit_code'] );
+		self::assertSame( "Option rows deleted: 3\nPending backend actions unscheduled: 1\nSuccess: Background tasks development state reset.\n", $result['stdout'] );
+		self::assertSame( '', $result['stderr'] );
+		self::assertSame( array(), $this->engine_option_rows() );
+		self::assertFalse( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
+
+		$next_boot = self::run_failed_runs_command( 'list' );
+
+		self::assertSame( 0, $next_boot['exit_code'] );
+		self::assertSame( "No failed runs are retained.\n", $next_boot['stdout'] );
+		self::assertSame( '', $next_boot['stderr'] );
+		self::assertSame( array( 'a8csp_bgte_schedule_registrations_a8csp-bgte' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
+		self::assertTrue( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
+
+		$cleanup = self::run_command( 'reset', '--yes' );
+
+		self::assertSame( 0, $cleanup['exit_code'] );
+		self::assertSame( "Option rows deleted: 1\nPending backend actions unscheduled: 1\nSuccess: Background tasks development state reset.\n", $cleanup['stdout'] );
+		self::assertSame( '', $cleanup['stderr'] );
+		self::assertSame( array(), $this->engine_option_rows() );
+		self::assertFalse( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
+	}
+
+	/**
+	 * An extra positional is rejected by the real WP-CLI synopsis before reset can execute.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_reset_rejects_an_extra_positional_argument(): void {
+		$result = self::run_command( 'reset', 'extra', '--yes' );
+
+		self::assertSame( 1, $result['exit_code'] );
+		self::assertSame( '', $result['stdout'] );
+		self::assertSame( "Error: Too many positional arguments: extra\n", $result['stderr'] );
 	}
 
 	/**

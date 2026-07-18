@@ -38,6 +38,7 @@ final class DispatcherTest extends TestCase {
 	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
+	private const string OTHER_RUN_ID     = '00000000001700000001-0000000000000000043';
 	private const string OWNER            = 'runs-tests';
 	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
 	private const string UNKNOWN_NAME     = 'unknown';
@@ -592,6 +593,23 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Failed-run retry rejects a malformed run identifier at the engine boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_malformed_run_identifier(): void {
+		try {
+			(void) $this->client->runs()->retry_failed( self::NAME, 'malformed_run_id' );
+			self::fail( 'A malformed retry identifier must be rejected before storage lookup.' );
+		} catch ( \InvalidArgumentException $exception ) {
+			self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $exception->getMessage() );
+		}
+	}
+
+	/**
 	 * Manual retry schedules the failed task's original arguments and consumes the entry.
 	 *
 	 * @since   1.0.0
@@ -600,15 +618,15 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_reenqueues_original_arguments_and_consumes_the_entry(): void {
-		$this->seed_failed_run( 'failed-run', self::ARGS, 2 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$result = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		$consumed = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$consumed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
 	}
 
@@ -625,18 +643,18 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_keeps_the_entry_when_consumption_cas_fails(): void {
-		$this->seed_failed_run( 'failed-run', self::ARGS, 2 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		$first = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$first = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $first );
 		self::assertIsString( $first->value );
 		$cancelled = $this->client->runs()->cancel( self::NAME, $first->value );
 		self::assertInstanceOf( Success::class, $cancelled );
 		$this->rig->clock()->timestamp = self::NOW + 101;
 
-		$second = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$second = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $second );
 	}
 
@@ -652,15 +670,15 @@ final class DispatcherTest extends TestCase {
 	public function test_retry_failed_uses_the_first_payload_for_a_corrupt_duplicate_identifier(): void {
 		$raw = \maybe_serialize(
 			array(
-				$this->failed_entry( 'failed-run', array( 'ordinal' => 'first' ), 2, self::NOW - 2 ),
-				$this->failed_entry( 'failed-run', array( 'ordinal' => 'second' ), 2, self::NOW - 1 ),
+				$this->failed_entry( self::RUN_ID, array( 'ordinal' => 'first' ), 2, self::NOW - 2 ),
+				$this->failed_entry( self::RUN_ID, array( 'ordinal' => 'second' ), 2, self::NOW - 1 ),
 			)
 		);
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $raw );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$result = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
@@ -680,7 +698,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_rejects_an_authoritative_store_read_failure(): void {
-		$this->seed_failed_run( 'failed-run', self::ARGS, 2 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 		$before = $this->rig->wpdb()->rows;
 		$this->rig->wpdb()->before_next(
 			'select',
@@ -689,7 +707,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 
 		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -705,13 +723,13 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_rejects_a_missing_entry_without_consuming_existing_work(): void {
-		$this->seed_failed_run( 'retained-run', self::ARGS, 2 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 
-		$missing = $this->client->runs()->retry_failed( self::NAME, 'missing-run' );
+		$missing = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
 		$error   = $this->assert_failure_code( $missing, ApiErrorCode::RunNotRetained );
-		self::assertSame( 'missing-run', $error->context['run_id'] ?? null );
+		self::assertSame( self::OTHER_RUN_ID, $error->context['run_id'] ?? null );
 
-		$retained = $this->client->runs()->retry_failed( self::NAME, 'retained-run' );
+		$retained = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $retained );
 	}
 
@@ -724,15 +742,15 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_retains_the_entry_when_enqueue_fails(): void {
-		$this->seed_failed_run( 'failed-run', self::ARGS, 2 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
 
-		$failed = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$failed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$retried = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$retried = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 

@@ -32,15 +32,16 @@ use PHPUnit\Framework\TestCase;
 final class DispatcherBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const array ARGS      = array(
+	private const array ARGS           = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
-	private const string NAME     = 'catalog-sync';
-	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
-	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
+	private const string FAILED_RUN_ID = '00000000001699999999-0000000000000000041';
+	private const string IDENTITY      = self::OWNER . ':' . self::NAME;
+	private const string NAME          = 'catalog-sync';
+	private const int NOW              = 1_700_000_000;
+	private const string OWNER         = 'runs-tests';
+	private const string RUN_ID        = '00000000001700000000-0000000000000000042';
 
 	private RecordingBatch $batch;
 	private Client $client;
@@ -176,16 +177,16 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_batch_and_removes_the_failed_entry(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: 'failed-run', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$result = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
-		$consumed = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$consumed = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
 		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
 	}
 
@@ -198,14 +199,14 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_refuses_to_replace_a_live_batch(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: 'failed-run', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$incumbent = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Reject );
 		self::assertInstanceOf( Success::class, $incumbent );
 		self::assertIsString( $incumbent->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$refused = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$refused = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
 
 		$error = $this->assert_failure_code( $refused, ApiErrorCode::OverlapHeld );
 		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
@@ -213,7 +214,7 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertInstanceOf( Success::class, $cancelled );
 		$this->rig->clock()->timestamp = self::NOW + 2;
 
-		$retried = $this->client->runs()->retry_failed( self::NAME, 'failed-run' );
+		$retried = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 

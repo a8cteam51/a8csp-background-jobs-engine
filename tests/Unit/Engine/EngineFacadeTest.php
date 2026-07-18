@@ -32,7 +32,8 @@ use PHPUnit\Framework\TestCase;
 final class EngineFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const int NOW = 1_700_000_000;
+	private const string FAILED_RUN_ID = '00000000001699999999-0000000000000000041';
+	private const int NOW              = 1_700_000_000;
 
 	private EngineRig $rig;
 
@@ -176,12 +177,12 @@ final class EngineFacadeTest extends TestCase {
 		$identity = 'facade-tests:email-digest';
 		$client   = $this->rig->client( 'facade-tests' );
 		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$failure               = new RunFailure( identity: $identity, run_id: 'failed-run', attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure               = new RunFailure( identity: $identity, run_id: self::FAILED_RUN_ID, attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
 		$GLOBALS['a8csp_bgte_test_option_calls'] = array();
 
-		$result = $client->runs()->retry_failed( 'email-digest', 'failed-run' );
+		$result = $client->runs()->retry_failed( 'email-digest', self::FAILED_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();

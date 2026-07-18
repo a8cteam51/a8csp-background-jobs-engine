@@ -250,7 +250,7 @@ final class ApiTest extends TestCase {
 			}
 		);
 
-		$result = $client->runs()->retry_failed( 'sync', 'missing-run' );
+		$result = $client->runs()->retry_failed( 'sync', '00000000001700000000-0000000000000000042' );
 
 		self::assert_api_failure( $result, ApiErrorCode::StorageFailure, array( 'option_name' ) );
 		if ( ! $result instanceof Failure || ! $result->error instanceof ApiError ) {

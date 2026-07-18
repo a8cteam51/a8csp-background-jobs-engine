@@ -37,6 +37,8 @@ interface RunsEngineInterface {
 	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 * @param   string $run_id   Retained failed-run identifier.
 	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
 	public function retry_failed( string $identity, string $run_id ): AbstractResult;
@@ -49,6 +51,8 @@ interface RunsEngineInterface {
 	 *
 	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 * @param   string $run_id   Retained run identifier.
+	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */

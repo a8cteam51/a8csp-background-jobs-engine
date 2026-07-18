@@ -47,6 +47,7 @@ final class FailedRunStoreTest extends TestCase {
 	private const string NAME     = 'reports';
 	private const int NOW         = 1_700_000_000;
 	private const string OWNER    = 'runs-tests';
+	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private Client $client;
 	private StoreFixtureBuilder $fixtures;
@@ -318,7 +319,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
 		self::assertSame( array(), $snapshot['history'] );
-		$result = $this->client->runs()->retry_failed( self::NAME, 'legacy-run' );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
@@ -337,11 +338,11 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_unknown_failure_stages_are_tolerated_as_unretained_data(): void {
-		$fixture = StoreFixtureBuilder::failed_runs_with_unknown_stage( $this->fixtures->failed_runs( array( self::fixture_entry( 'run-unknown-stage', self::NOW ) ) ) );
+		$fixture = StoreFixtureBuilder::failed_runs_with_unknown_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ) );
 		$this->put_fixture( $fixture );
 
 		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
-		$result = $this->client->runs()->retry_failed( self::NAME, 'run-unknown-stage' );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );

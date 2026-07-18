@@ -222,12 +222,14 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_inspect_retry_and_cancel_owner_qualified_work(): void {
-		$engine = new FakeRunsEngine( new Success( 'completed-run' ), new Success( 'replacement-run' ), new Success( 'live-run' ) );
-		$runs   = new Runs( 'consumer-plugin', $engine );
+		$failed_run_id = '00000000001700000000-0000000000000000042';
+		$live_run_id   = '00000000001700000001-0000000000000000043';
+		$engine        = new FakeRunsEngine( new Success( 'completed-run' ), new Success( 'replacement-run' ), new Success( 'live-run' ) );
+		$runs          = new Runs( 'consumer-plugin', $engine );
 
 		$completed = $runs->last_completed_run_id( 'sync' );
-		$retry     = $runs->retry_failed( 'sync', 'failed-run' );
-		$cancel    = $runs->cancel( 'sync', 'live-run' );
+		$retry     = $runs->retry_failed( 'sync', $failed_run_id );
+		$cancel    = $runs->cancel( 'sync', $live_run_id );
 		if ( $completed->is_failure() ) {
 			self::fail( 'The completed-run facade returned an unexpected failure.' );
 		}
@@ -244,8 +246,8 @@ final class ClientTest extends TestCase {
 		self::assertSame(
 			array(
 				array( 'last_completed_run_id', 'consumer-plugin:sync' ),
-				array( 'retry_failed', 'consumer-plugin:sync', 'failed-run' ),
-				array( 'cancel', 'consumer-plugin:sync', 'live-run' ),
+				array( 'retry_failed', 'consumer-plugin:sync', $failed_run_id ),
+				array( 'cancel', 'consumer-plugin:sync', $live_run_id ),
 			),
 			$engine->calls
 		);
@@ -266,6 +268,7 @@ final class ClientTest extends TestCase {
 	 */
 	public function test_result_methods_preserve_the_delegated_failure_instance(): void {
 		$failure   = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
+		$run_id    = '00000000001700000000-0000000000000000042';
 		$tasks     = new Tasks( 'consumer-plugin', new FakeTasksEngine( $failure ) );
 		$batches   = new Batches( 'consumer-plugin', new FakeBatchesEngine( $failure ) );
 		$schedules = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( $failure, $failure ) );
@@ -276,8 +279,8 @@ final class ClientTest extends TestCase {
 		self::assertSame( $failure, $schedules->sync( array() ) );
 		self::assertSame( $failure, $schedules->dispatch_now( 'nightly' ) );
 		self::assertSame( $failure, $runs->last_completed_run_id( 'sync' ) );
-		self::assertSame( $failure, $runs->retry_failed( 'sync', 'failed-run' ) );
-		self::assertSame( $failure, $runs->cancel( 'sync', 'live-run' ) );
+		self::assertSame( $failure, $runs->retry_failed( 'sync', $run_id ) );
+		self::assertSame( $failure, $runs->cancel( 'sync', $run_id ) );
 	}
 
 	/**

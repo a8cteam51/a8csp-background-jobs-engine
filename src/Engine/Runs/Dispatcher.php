@@ -259,11 +259,17 @@ final readonly class Dispatcher {
 	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 * @param   string $run_id   Retained failed-run identifier.
 	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError> Success carries the new run identifier after
 	 *          re-enqueueing; it does not report whether the work ran or succeeded.
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $identity, string $run_id ): AbstractResult {
+		if ( null === RunIdentity::parse( $run_id ) ) {
+			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
+		}
+
 		$task  = $this->work->task( $identity );
 		$batch = $this->work->batch( $identity );
 
@@ -323,10 +329,16 @@ final readonly class Dispatcher {
 	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 * @param   string $run_id   Retained run identifier.
 	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $identity, string $run_id ): AbstractResult {
+		if ( null === RunIdentity::parse( $run_id ) ) {
+			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
+		}
+
 		$task  = $this->work->task( $identity );
 		$batch = $this->work->batch( $identity );
 

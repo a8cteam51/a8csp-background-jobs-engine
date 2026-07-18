@@ -155,7 +155,7 @@ final class UninstallWpdbSpy {
 		/** @var array<string, mixed> $options */
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
 
-		return \array_values( \array_filter( \array_keys( $options ), static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
+		return \array_values( \array_filter( \array_keys( $options ), static fn ( string $name ): bool => \str_starts_with( \strtolower( $name ), 'a8csp_bgte_' ) ) );
 	}
 
 	// endregion.
@@ -194,14 +194,15 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgte_github_latest_release_stable',
 		'a8csp_bgte_github_latest_release_prerelease',
 	);
-	private const string NEAR_MISS        = 'a8cspXbgteYforeign';
+	private const string BYTE_NEAR_MISS   = 'A8CSP_BGTE_foreign';
+	private const string LIKE_NEAR_MISS   = 'a8cspXbgteYforeign';
 
 	// endregion.
 
 	// region TESTS.
 
 	/**
-	 * Engine option rows and updater transients are removed while an escaped-LIKE near miss survives.
+	 * Engine option rows and updater transients are removed while LIKE and byte-prefix near misses survive.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -221,7 +222,8 @@ final class UninstallTest extends TestCase {
 			$options[ '_transient_timeout_' . $transient ] = 1_700_003_600;
 		}
 
-		$options[ self::NEAR_MISS ] = 'sentinel';
+		$options[ self::BYTE_NEAR_MISS ] = 'sentinel';
+		$options[ self::LIKE_NEAR_MISS ] = 'sentinel';
 
 		$GLOBALS['a8csp_bgte_test_options']                = $options;
 		$GLOBALS['a8csp_bgte_test_option_calls']           = array();
@@ -254,8 +256,10 @@ final class UninstallTest extends TestCase {
 		$first_option_call = $option_calls[0] ?? null;
 		self::assertIsArray( $first_option_call );
 		self::assertSame( array( 'a8csp_bgte_schedule_registrations_consumer-plugin' ), $first_option_call['args'] ?? null );
-		self::assertArrayHasKey( self::NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
-		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::NEAR_MISS ] );
+		self::assertArrayHasKey( self::BYTE_NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::BYTE_NEAR_MISS ] );
+		self::assertArrayHasKey( self::LIKE_NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
+		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::LIKE_NEAR_MISS ] );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
 			self::assertFalse( \wp_next_scheduled( $hook, array( $hook ) ) );
 		}

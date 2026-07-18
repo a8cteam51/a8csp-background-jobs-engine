@@ -28,7 +28,10 @@ final class UninstallTest extends IntegrationTestCase {
 	 * exercises "delete only what's owned" rather than "delete everything".
 	 *
 	 */
-	private const string CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
+	private const string LIKE_CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
+
+	/** A case-distinct canary that may match the prefix query under a case-insensitive collation. */
+	private const string BYTE_CANARY_OPTION = 'A8CSP_BGTE_test_uninstall_canary';
 
 	/**
 	 * One sentinel from every option family documented for operators.
@@ -78,7 +81,8 @@ final class UninstallTest extends IntegrationTestCase {
 	protected function tearDown(): void {
 		try {
 			self::clear_scheduled_work();
-			delete_option( self::CANARY_OPTION );
+			delete_option( self::LIKE_CANARY_OPTION );
+			delete_option( self::BYTE_CANARY_OPTION );
 			foreach ( self::DOCUMENTED_OPTIONS as $option ) {
 				delete_option( $option );
 			}
@@ -92,10 +96,10 @@ final class UninstallTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * Seeds every documented option family plus the canary, then runs the real `uninstall.php`.
-	 * It also seeds every lifecycle hook in both scheduler stores. The canary
-	 * resembles the prefix but replaces its underscores, proving the cleanup query treats those
-	 * underscores literally rather than as SQL LIKE wildcards.
+	 * Seeds every documented option family plus two canaries, then runs the real `uninstall.php`.
+	 * It also seeds every lifecycle hook in both scheduler stores. One canary replaces the prefix
+	 * underscores to exercise LIKE escaping; the other differs only by case to exercise the
+	 * byte-exact deletion boundary under a case-insensitive option-name collation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -110,7 +114,8 @@ final class UninstallTest extends IntegrationTestCase {
 			self::assertTrue( update_option( $option, 'sentinel', false ), "The '{$option}' option-family sentinel must be persisted before uninstall" );
 		}
 
-		self::assertTrue( update_option( self::CANARY_OPTION, 'sentinel', false ), 'The outside-prefix canary must be persisted before uninstall' );
+		self::assertTrue( update_option( self::LIKE_CANARY_OPTION, 'sentinel', false ), 'The outside-prefix canary must be persisted before uninstall' );
+		self::assertTrue( update_option( self::BYTE_CANARY_OPTION, 'sentinel', false ), 'The case-distinct canary must be persisted before uninstall' );
 
 		$scheduled_at     = \time() + \HOUR_IN_SECONDS;
 		$wp_cron          = new WPCronBackend();
@@ -131,7 +136,8 @@ final class UninstallTest extends IntegrationTestCase {
 			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
 		}
 
-		self::assertSame( 'sentinel', get_option( self::CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
+		self::assertSame( 'sentinel', get_option( self::LIKE_CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
+		self::assertSame( 'sentinel', get_option( self::BYTE_CANARY_OPTION ), 'uninstall.php must preserve byte-distinct option names selected by a case-insensitive collation' );
 	}
 
 	// endregion.
@@ -171,7 +177,7 @@ final class UninstallTest extends IntegrationTestCase {
 		self::assertIsArray( $names );
 		self::assertContainsOnlyString( $names );
 
-		return \array_values( $names );
+		return \array_values( \array_filter( $names, static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
 	}
 
 	// endregion.

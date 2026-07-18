@@ -48,7 +48,7 @@ final class CommandsAndOutputTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const int NOW       = 86_400;
-	private const string RUN_ID = 'run-1';
+	private const string RUN_ID = '00000000000000086340-0000000000000000001';
 
 	private EngineRig $rig;
 
@@ -645,7 +645,7 @@ final class CommandsAndOutputTest extends TestCase {
 			self::assertStringContainsString( 'post_id: 42', $result->stdout );
 		}
 		if ( 'retry' === $action ) {
-			self::assertStringContainsString( 'Retried failed run "run-1"', $result->stdout );
+			self::assertStringContainsString( 'Retried failed run "' . self::RUN_ID . '"', $result->stdout );
 		}
 		if ( 'purge' === $action ) {
 			self::assertStringContainsString( 'Purged ', $result->stdout );
@@ -1182,6 +1182,11 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array(),
 				'message'    => 'Run identity is invalid; use a composed {owner}:{name} identity.',
 			),
+			'malformed run'  => array(
+				'args'       => array( 'cancel', 'consumer-plugin:email-digest', 'malformed_run_id' ),
+				'assoc_args' => array(),
+				'message'    => 'Run identifier is malformed; pass a run ID the engine returned.',
+			),
 			'invalid format' => array(
 				'args'       => array( 'list', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'format' => 'ids' ),
@@ -1255,15 +1260,15 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array(),
 			),
 			'extra positional' => array(
-				'args'       => array( 'email-digest', 'run-1', 'extra' ),
+				'args'       => array( 'email-digest', self::RUN_ID, 'extra' ),
 				'assoc_args' => array(),
 			),
 			'stray flag'       => array(
-				'args'       => array( 'email-digest', 'run-1' ),
+				'args'       => array( 'email-digest', self::RUN_ID ),
 				'assoc_args' => array( 'force' => true ),
 			),
 			'negated flag'     => array(
-				'args'       => array( 'email-digest', 'run-1' ),
+				'args'       => array( 'email-digest', self::RUN_ID ),
 				'assoc_args' => array( 'force' => false ),
 			),
 		);
@@ -1310,7 +1315,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'action'     => 'list',
 			),
 			'retry'        => array(
-				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'run-1' ),
+				'args'       => array( 'retry', 'consumer-plugin:email-digest', self::RUN_ID ),
 				'assoc_args' => array(),
 				'action'     => 'retry',
 			),
@@ -1386,14 +1391,19 @@ final class CommandsAndOutputTest extends TestCase {
 				'message'    => $retry_usage,
 			),
 			'retry flag'             => array(
-				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'run-1' ),
+				'args'       => array( 'retry', 'consumer-plugin:email-digest', self::RUN_ID ),
 				'assoc_args' => array( 'all' => true ),
 				'message'    => $retry_usage,
 			),
 			'retry invalid identity' => array(
-				'args'       => array( 'retry', 'email-digest', 'run-1' ),
+				'args'       => array( 'retry', 'email-digest', self::RUN_ID ),
 				'assoc_args' => array(),
 				'message'    => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
+			),
+			'retry malformed run_id' => array(
+				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'malformed_run_id' ),
+				'assoc_args' => array(),
+				'message'    => 'Run identifier is malformed; pass a run ID the engine returned.',
 			),
 			'bare purge'             => array(
 				'args'       => array( 'purge' ),

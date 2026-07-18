@@ -36,8 +36,9 @@ use PHPUnit\Framework\TestCase;
 final class ProceduralFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const int NOW      = 1_700_000_000;
-	private const string OWNER = 'procedural-facade';
+	private const string MISSING_RUN_ID = '00000000001700000001-0000000000000000043';
+	private const int NOW               = 1_700_000_000;
+	private const string OWNER          = 'procedural-facade';
 
 	private EngineRig $rig;
 
@@ -386,7 +387,7 @@ final class ProceduralFacadeTest extends TestCase {
 		$retry_run = \a8csp_bgte_run_retry_failed( self::OWNER, 'task', $failed_run );
 		self::assertIsString( $retry_run );
 		self::assertNotSame( $failed_run, $retry_run );
-		self::assert_wp_error( \a8csp_bgte_run_retry_failed( self::OWNER, 'task', 'missing-run' ), 'run_not_retained' );
+		self::assert_wp_error( \a8csp_bgte_run_retry_failed( self::OWNER, 'task', self::MISSING_RUN_ID ), 'run_not_retained' );
 	}
 
 	/**
@@ -401,6 +402,25 @@ final class ProceduralFacadeTest extends TestCase {
 
 		self::assertSame( $run_id, \a8csp_bgte_run_cancel( self::OWNER, 'task', $run_id ) );
 		self::assert_wp_error( \a8csp_bgte_run_cancel( self::OWNER, 'task', $run_id ), 'run_not_retained' );
+	}
+
+	/**
+	 * Run mutations translate malformed identifiers to the stable WordPress error.
+	 *
+	 * @return  void
+	 */
+	public function test_run_mutations_map_malformed_identifiers_to_invalid_argument_errors(): void {
+		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', static function ( array $args ): void {} ) );
+
+		foreach (
+			array(
+				\a8csp_bgte_run_retry_failed( self::OWNER, 'task', 'malformed_run_id' ),
+				\a8csp_bgte_run_cancel( self::OWNER, 'task', 'malformed_run_id' ),
+			) as $result
+		) {
+			$error = self::assert_wp_error( $result, 'invalid_argument' );
+			self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $error->get_error_message() );
+		}
 	}
 
 	/**
@@ -490,8 +510,8 @@ final class ProceduralFacadeTest extends TestCase {
 			'schedule sync'     => array( 'call' => static fn (): mixed => \a8csp_bgte_schedule_sync( $owner, array() ) ),
 			'schedule dispatch' => array( 'call' => static fn (): mixed => \a8csp_bgte_schedule_dispatch( $owner, 'schedule' ) ),
 			'last completed'    => array( 'call' => static fn (): mixed => \a8csp_bgte_run_last_completed( $owner, 'task' ) ),
-			'retry failed'      => array( 'call' => static fn (): mixed => \a8csp_bgte_run_retry_failed( $owner, 'task', 'run' ) ),
-			'cancel'            => array( 'call' => static fn (): mixed => \a8csp_bgte_run_cancel( $owner, 'task', 'run' ) ),
+			'retry failed'      => array( 'call' => static fn (): mixed => \a8csp_bgte_run_retry_failed( $owner, 'task', self::MISSING_RUN_ID ) ),
+			'cancel'            => array( 'call' => static fn (): mixed => \a8csp_bgte_run_cancel( $owner, 'task', self::MISSING_RUN_ID ) ),
 		);
 	}
 

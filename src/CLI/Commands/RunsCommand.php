@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
@@ -125,6 +126,12 @@ final readonly class RunsCommand {
 				return array(
 					'action'  => 'error',
 					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
+				);
+			}
+			if ( null === RunIdentity::parse( $args[2] ) ) {
+				return array(
+					'action'  => 'error',
+					'message' => 'Run identifier is malformed; pass a run ID the engine returned.',
 				);
 			}
 
@@ -317,6 +324,12 @@ final readonly class RunsCommand {
 					return array(
 						'action'  => 'error',
 						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
+					);
+				}
+				if ( null === RunIdentity::parse( $args[2] ) ) {
+					return array(
+						'action'  => 'error',
+						'message' => 'Run identifier is malformed; pass a run ID the engine returned.',
 					);
 				}
 

@@ -146,6 +146,23 @@ final class DispatcherCancelTest extends TestCase {
 	}
 
 	/**
+	 * Cancellation rejects a malformed run identifier at the engine boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_a_malformed_run_identifier(): void {
+		try {
+			(void) $this->client->runs()->cancel( self::TASK_NAME, 'malformed_run_id' );
+			self::fail( 'A malformed cancellation identifier must be rejected before storage lookup.' );
+		} catch ( \InvalidArgumentException $exception ) {
+			self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $exception->getMessage() );
+		}
+	}
+
+	/**
 	 * A missing run returns the stable not-retained classification without effects.
 	 *
 	 * @since   1.0.0
@@ -156,7 +173,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_a_missing_run(): void {
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( self::TASK_NAME, 'missing-run' );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, self::RUN_ID );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -171,10 +188,10 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_rejects_a_corrupt_run(): void {
-		$this->rig->wpdb()->put( $this->run_option_name( self::TASK_IDENTITY, 'corrupt-run' ), 'corrupt' );
+		$this->rig->wpdb()->put( $this->run_option_name( self::TASK_IDENTITY, self::RUN_ID ), 'corrupt' );
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( self::TASK_NAME, 'corrupt-run' );
+		$result = $this->client->runs()->cancel( self::TASK_NAME, self::RUN_ID );
 
 		$this->assert_failure_code( $result, ApiErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -321,7 +338,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_an_unregistered_name(): void {
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( 'unknown', 'run-1' );
+		$result = $this->client->runs()->cancel( 'unknown', self::RUN_ID );
 
 		$this->assert_failure_code( $result, ApiErrorCode::UnknownWork );
 		self::assertSame( $before, $this->cancellation_effects() );
