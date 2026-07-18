@@ -13,8 +13,22 @@ use PHPUnit\Framework\TestCase;
 final class ApiBoundaryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string API_NAMESPACE  = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\';
-	private const string ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
+	private const string API_NAMESPACE           = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\';
+	private const string ROOT_NAMESPACE          = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
+	private const array PROCEDURAL_BUILTIN_TYPES = array( 'array', 'bool', 'callable', 'false', 'int', 'null', 'string', 'true', 'void' );
+	private const array PROCEDURAL_FUNCTIONS     = array(
+		'a8csp_bgte_task_register',
+		'a8csp_bgte_task_enqueue',
+		'a8csp_bgte_batch_register',
+		'a8csp_bgte_batch_start',
+		'a8csp_bgte_schedule_sync',
+		'a8csp_bgte_schedule_dispatch',
+		'a8csp_bgte_run_last_completed',
+		'a8csp_bgte_run_retry_failed',
+		'a8csp_bgte_run_cancel',
+		'a8csp_bgte_run_on_completed',
+		'a8csp_bgte_run_on_failed',
+	);
 
 	private const array EXPECTED_API_TYPES = array(
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\AdmissionValidator',
@@ -46,6 +60,7 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\Schedules',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\SchedulesEngineInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\AbstractTask',
+		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\CallableTask',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\TaskInterface',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\Tasks',
 		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\TasksEngineInterface',
@@ -67,6 +82,8 @@ final class ApiBoundaryTest extends TestCase {
 		if ( ! \defined( 'ABSPATH' ) ) {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
+
+		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
 
 	// endregion.
@@ -81,7 +98,7 @@ final class ApiBoundaryTest extends TestCase {
 	public function test_api_declarations_do_not_reference_internal_namespaces(): void {
 		$types = self::declared_api_types();
 		self::assertNotEmpty( $types );
-		self::assertCount( 34, $types );
+		self::assertCount( 35, $types );
 		self::assertSame( self::EXPECTED_API_TYPES, $types );
 
 		foreach ( $types as $type ) {
@@ -107,6 +124,21 @@ final class ApiBoundaryTest extends TestCase {
 			foreach ( $reflection->getProperties( \ReflectionProperty::IS_PUBLIC ) as $property ) {
 				self::assert_supported_reflection_type( $property->getType(), $property->getDeclaringClass(), $type . '::$' . $property->getName() );
 			}
+		}
+	}
+
+	/**
+	 * Procedural signatures expose only supported public and native types.
+	 *
+	 * @return  void
+	 */
+	public function test_procedural_signatures_do_not_reference_internal_namespaces(): void {
+		foreach ( self::PROCEDURAL_FUNCTIONS as $function ) {
+			$reflection = new \ReflectionFunction( $function );
+			foreach ( $reflection->getParameters() as $parameter ) {
+				self::assert_supported_procedural_type( $parameter->getType(), $function . '() $' . $parameter->getName() );
+			}
+			self::assert_supported_procedural_type( $reflection->getReturnType(), $function . '() return' );
 		}
 	}
 
@@ -184,6 +216,42 @@ final class ApiBoundaryTest extends TestCase {
 	}
 
 	/**
+	 * Checks every named member of a procedural nullable, union, or intersection type.
+	 *
+	 * @param   \ReflectionType|null $type     Reflected signature type.
+	 * @param   string               $location Signature location for assertion diagnostics.
+	 *
+	 * @return  void
+	 */
+	private static function assert_supported_procedural_type( ?\ReflectionType $type, string $location ): void {
+		if ( null === $type ) {
+			return;
+		}
+
+		if ( $type instanceof \ReflectionNamedType ) {
+			$name = $type->getName();
+			if ( $type->isBuiltin() ) {
+				self::assertContains( $name, self::PROCEDURAL_BUILTIN_TYPES, $location . ' exposes unsupported built-in type ' . $name );
+
+				return;
+			}
+
+			if ( 'WP_Error' !== $name && \Closure::class !== $name && ! \str_starts_with( $name, self::API_NAMESPACE ) ) {
+				self::fail( $location . ' exposes unsupported procedural type ' . $name );
+			}
+			self::assert_supported_type_name( $name, $location );
+
+			return;
+		}
+
+		if ( $type instanceof \ReflectionUnionType || $type instanceof \ReflectionIntersectionType ) {
+			foreach ( $type->getTypes() as $member ) {
+				self::assert_supported_procedural_type( $member, $location );
+			}
+		}
+	}
+
+	/**
 	 * Allows API, PHP-native, and PSR types while rejecting every implementation namespace.
 	 *
 	 * @param   string $name     Fully qualified reflected type name.
@@ -192,7 +260,7 @@ final class ApiBoundaryTest extends TestCase {
 	 * @return  void
 	 */
 	private static function assert_supported_type_name( string $name, string $location ): void {
-		if ( \str_starts_with( $name, self::API_NAMESPACE ) || \str_starts_with( $name, 'Psr\\' ) ) {
+		if ( 'WP_Error' === $name || \str_starts_with( $name, self::API_NAMESPACE ) || \str_starts_with( $name, 'Psr\\' ) ) {
 			return;
 		}
 

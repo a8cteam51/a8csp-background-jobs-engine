@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
@@ -126,7 +127,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array(), $batch->process_calls, 'The incumbent continue action must not process its exposed chunk inline' );
 		$run_a_action_id = $this->assert_pending_chunk_action( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
-		$run_b_result = $client->batches()->start( self::NAME, $start_args );
+		$run_b_result = $client->batches()->start( self::NAME, $start_args, ExistingRunPolicy::Replace );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal batch start must replace the same-arguments incumbent' );
 		self::assertIsString( $run_b_result->value );
 		$run_b      = $run_b_result->value;

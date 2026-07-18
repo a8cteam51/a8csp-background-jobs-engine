@@ -57,7 +57,8 @@ final readonly class Batches {
 	/**
 	 * Creates and schedules one run for a registered batch.
 	 *
-	 * Reject refuses a fresh matching incumbent. Replace transfers its ownership fence to the new run.
+	 * Reject is the default and refuses a fresh matching incumbent. Replace transfers its ownership
+	 * fence to the new run.
 	 *
 	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
 	 * caller handles the returned failure by starting the batch again.
@@ -67,7 +68,7 @@ final readonly class Batches {
 	 *
 	 * @param   string                  $name       Owner-local batch name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
+	 * @param   ExistingRunPolicy       $existing   Optional. Behavior when a fresh matching incumbent holds the lock. Default Reject.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity or priority is invalid, or arguments are not portable.
@@ -75,7 +76,7 @@ final readonly class Batches {
 	 * @return  AbstractResult<string, ApiError>
 	 */
 	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
-	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
+	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Reject, int $priority = 10 ): AbstractResult {
 		$identity = WorkIdentity::compose( $this->owner, $name );
 		AdmissionValidator::assert_priority( $priority, \sprintf( 'Batch "%s"', $name ) );
 		$payload_error = AdmissionValidator::assert_portable_args( $start_args, \sprintf( 'Batch "%s"', $name ) );

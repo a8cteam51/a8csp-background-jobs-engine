@@ -14,5 +14,9 @@ if ( \file_exists( $a8csp_bgte_wp_load ) ) {
 	require_once $a8csp_bgte_wp_load;
 	require_once __DIR__ . '/../a8csp-background-tasks-engine.php';
 } elseif ( ! \class_exists( 'wpdb' ) ) {
+	if ( ! \defined( 'A8CSP_BGTE_DIR_PATH' ) ) {
+		\define( 'A8CSP_BGTE_DIR_PATH', \dirname( __DIR__ ) . '/' );
+	}
+
 	\class_alias( \A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbRuntimeStub::class, 'wpdb' );
 }

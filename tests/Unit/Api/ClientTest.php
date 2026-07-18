@@ -460,7 +460,7 @@ final class ClientTest extends TestCase {
 		self::assertSame(
 			array(
 				array( 'enqueue', 'consumer-plugin:sync', array(), 0, null, 10 ),
-				array( 'start', 'consumer-plugin:sync', array(), ExistingRunPolicy::Replace, 10 ),
+				array( 'start', 'consumer-plugin:sync', array(), ExistingRunPolicy::Reject, 10 ),
 			),
 			\array_merge( $tasks_engine->calls, $batches_engine->calls )
 		);

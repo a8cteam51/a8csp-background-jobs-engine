@@ -59,3 +59,19 @@ function a8csp_bgte( string $owner ): Client {
 }
 
 // endregion
+
+// region OTHER
+
+$a8csp_bgte_includes = \glob( \constant( 'A8CSP_BGTE_DIR_PATH' ) . 'includes/*.php' );
+if ( false !== $a8csp_bgte_includes ) {
+	\sort( $a8csp_bgte_includes ); // Glob order is filesystem-dependent, so sort for a deterministic load order.
+	foreach ( $a8csp_bgte_includes as $a8csp_bgte_include ) {
+		if ( \str_starts_with( \basename( $a8csp_bgte_include ), '_' ) ) {
+			continue; // An underscore prefix opts a file out of automatic loading.
+		}
+
+		require_once $a8csp_bgte_include;
+	}
+}
+
+// endregion

@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
@@ -1422,7 +1423,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 		$this->prepare_cleanup_delivery();
 		$replacement               = null;
 		$this->batch->on_completed = function () use ( &$replacement ): void {
-			$replacement = $this->client->batches()->start( self::NAME, self::ARGS );
+			$replacement = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 		};
 
 		$this->rig->run_due();
