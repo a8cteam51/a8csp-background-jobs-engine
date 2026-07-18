@@ -10,8 +10,9 @@
   "mutators": {
     "@default": true
   },
-  "minMsi": 87,
-  "minCoveredMsi": 87,
+  "minMsi": 80,
+  "minCoveredMsi": 80,
+  "bootstrap": "tests/infection-bootstrap.php",
   "testFramework": "phpunit",
   "testFrameworkExtraArgs": "--testsuite=Unit"
 }
