@@ -83,6 +83,9 @@ final class HookLoggerTest extends TestCase {
 	/**
 	 * Throwable context reaches subscribers projected without entering placeholder interpolation.
 	 *
+	 * @load-bearing security
+	 * @pin-rationale Throwable messages and non-standard codes may contain secrets, so subscribers receive projected metadata without the raw exception or its sensitive prose.
+	 *
 	 * @return  void
 	 */
 	public function test_log_projects_throwable_context_without_interpolating_it(): void {
@@ -139,6 +142,9 @@ final class HookLoggerTest extends TestCase {
 
 	/**
 	 * A failing Stringable context value leaves its placeholder intact without aborting dispatch.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale An untrusted Stringable conversion failure must remain contained so diagnostic dispatch cannot be interrupted by context rendering.
 	 *
 	 * @return  void
 	 */
@@ -233,6 +239,9 @@ final class HookLoggerTest extends TestCase {
 	/**
 	 * A failing log subscriber cannot interrupt the engine caller.
 	 *
+	 * @load-bearing security
+	 * @pin-rationale Third-party subscriber failures stay contained, while the emergency breadcrumb excludes the original context and exception prose that may contain secrets.
+	 *
 	 * @return  void
 	 */
 	public function test_throwing_subscriber_is_contained_and_reported_to_error_log(): void {
@@ -258,6 +267,9 @@ final class HookLoggerTest extends TestCase {
 	/**
 	 * A failing message conversion cannot interrupt the engine caller.
 	 *
+	 * @load-bearing security
+	 * @pin-rationale Message rendering failures stay contained, and the emergency breadcrumb identifies the failure without exposing exception prose.
+	 *
 	 * @return  void
 	 */
 	public function test_throwing_message_stringable_is_contained_and_reported_to_error_log(): void {
@@ -282,6 +294,9 @@ final class HookLoggerTest extends TestCase {
 
 	/**
 	 * A failing level conversion cannot interrupt the engine caller.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Level rendering failures stay contained, and the emergency breadcrumb identifies the unrenderable type without exposing exception prose.
 	 *
 	 * @return  void
 	 */

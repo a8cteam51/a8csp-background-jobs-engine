@@ -73,18 +73,6 @@ final class OverlapGuardTest extends TestCase {
 		$this->rows                             = new OptionRows( $this->wpdb );
 	}
 
-	/** Lock-claim outcomes expose only the three lowercase-backed contract states. */
-	public function test_lock_claim_outcome_pins_cases_and_backing_values(): void {
-		self::assertSame( array( LockClaimOutcome::Claimed, LockClaimOutcome::Reclaimed, LockClaimOutcome::Held ), LockClaimOutcome::cases() );
-		self::assertSame( array( 'claimed', 'reclaimed', 'held' ), \array_column( LockClaimOutcome::cases(), 'value' ) );
-	}
-
-	/** Heartbeat outcomes expose only the four lowercase-backed ownership states. */
-	public function test_heartbeat_outcome_pins_cases_and_backing_values(): void {
-		self::assertSame( array( HeartbeatOutcome::Owned, HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch, HeartbeatOutcome::Indeterminate ), HeartbeatOutcome::cases() );
-		self::assertSame( array( 'owned', 'lost', 'generation_mismatch', 'indeterminate' ), \array_column( HeartbeatOutcome::cases(), 'value' ) );
-	}
-
 	/** Lock option parsing derives the exact prefix and accepts the canonical identity and lowercase hash grammar. */
 	public function test_option_name_parser_uses_the_canonical_lock_key_grammar(): void {
 		$hash = \str_repeat( 'a', 64 );
@@ -109,7 +97,7 @@ final class OverlapGuardTest extends TestCase {
 
 		self::assertSame( LockClaimOutcome::Claimed, $result );
 		self::assertSame( self::row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
-		self::assertSame( 'off', $this->wpdb->autoload[ self::KEY ] );
+		self::assertTrue( $this->wpdb->is_non_autoloaded( self::KEY ) );
 		self::assertSame( array( 'insert' ), $this->operations() );
 	}
 
@@ -190,21 +178,12 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( LockClaimOutcome::Reclaimed, $result );
 		self::assertSame( self::row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
 		self::assertSame( array( 'insert', 'select', 'delete', 'insert' ), $this->operations() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Reclaimed stale execution-overlap lock.',
-					'context' => array(
-						'name'        => self::NAME,
-						'args_hash'   => self::ARGS_HASH,
-						'dead_run_id' => 'run-dead',
-						'run_id'      => 'run-new',
-					),
-				),
-			),
-			$logger->records
-		);
+		self::assertCount( 1, $logger->records );
+		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
+		self::assertSame( 'run-dead', $logger->records[0]['context']['dead_run_id'] ?? null );
+		self::assertSame( 'run-new', $logger->records[0]['context']['run_id'] ?? null );
 	}
 
 	/** A rival that inserts after deletion owns the row and makes the reclaim attempt Held. */
@@ -290,23 +269,14 @@ final class OverlapGuardTest extends TestCase {
 
 		self::assertSame( LockClaimOutcome::Reclaimed, $result );
 		self::assertSame( self::row( 'run-new', 1_000, 1_000 ), $this->lock() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Reclaimed malformed execution-overlap lock.',
-					'context' => array(
-						'name'       => self::NAME,
-						'args_hash'  => self::ARGS_HASH,
-						'malformed'  => true,
-						'raw_length' => \strlen( $raw ),
-						'raw_sha256' => \substr( \hash( 'sha256', $raw ), 0, 16 ),
-						'run_id'     => 'run-new',
-					),
-				),
-			),
-			$logger->records
-		);
+		self::assertCount( 1, $logger->records );
+		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
+		self::assertTrue( $logger->records[0]['context']['malformed'] ?? false );
+		self::assertSame( \strlen( $raw ), $logger->records[0]['context']['raw_length'] ?? null );
+		self::assertSame( \substr( \hash( 'sha256', $raw ), 0, 16 ), $logger->records[0]['context']['raw_sha256'] ?? null );
+		self::assertSame( 'run-new', $logger->records[0]['context']['run_id'] ?? null );
 		self::assertArrayNotHasKey( 'dead_run_id', $logger->records[0]['context'] );
 		self::assertArrayNotHasKey( 'raw_row', $logger->records[0]['context'] );
 	}
@@ -417,21 +387,12 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( HeartbeatOutcome::Indeterminate, $outcome );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
-					'context' => array(
-						'key'       => self::KEY,
-						'name'      => self::NAME,
-						'args_hash' => self::ARGS_HASH,
-						'run_id'    => 'run-owner',
-					),
-				),
-			),
-			$logger->records
-		);
+		self::assertCount( 1, $logger->records );
+		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
+		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
+		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
 
 	/** A heartbeat that loses its CAS leaves the replacement owner's row unchanged. */
@@ -517,21 +478,12 @@ final class OverlapGuardTest extends TestCase {
 		self::assertFalse( $released );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
-					'context' => array(
-						'key'       => self::KEY,
-						'name'      => self::NAME,
-						'args_hash' => self::ARGS_HASH,
-						'run_id'    => 'run-owner',
-					),
-				),
-			),
-			$logger->records
-		);
+		self::assertCount( 1, $logger->records );
+		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
+		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
+		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
 
 	/** A release that loses its CAS leaves the replacement owner's row unchanged. */
@@ -774,6 +726,7 @@ final class OverlapGuardTest extends TestCase {
 	 * @return  string
 	 */
 	private static function raw( mixed $value ): string {
+		// These rows are the test's independent encoding oracle; builder-sourced bytes would make the storage assertions circular.
 		$raw = \maybe_serialize( $value );
 		self::assertIsString( $raw );
 

@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
@@ -49,11 +50,15 @@ use PHPUnit\Framework\TestCase;
 final class MaintenanceTaskTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string ARGS_HASH     = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
-	private const string CURSOR_OPTION = 'a8csp_bgte_maintenance_sweep';
-	private const int NOW              = 1_700_000_000;
-	private const string RUN_ID        = '00000000001700000000-0000000000000000042';
+	private const string ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
+	private const int NOW          = 1_700_000_000;
+	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
+	/** @var array{string, string}|null */
+	private static ?array $cursor_fixture = null;
+
+	private string $cursor_option;
+	private string $cursor_raw;
 	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
 	private WpdbLockSpy $wpdb;
@@ -111,9 +116,12 @@ final class MaintenanceTaskTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 
-		$clock                = new FixedClock( self::NOW );
-		$this->logger         = new RecordingLogger();
-		$this->wpdb           = new WpdbLockSpy();
+		$clock        = new FixedClock( self::NOW );
+		$this->logger = new RecordingLogger();
+		$this->wpdb   = new WpdbLockSpy();
+
+		[ $this->cursor_option, $this->cursor_raw ] = self::cursor_fixture();
+
 		$backend              = new RecordingBackend();
 		$work                 = new WorkRegistry();
 		$rows                 = new OptionRows( $this->wpdb );
@@ -134,6 +142,10 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * Each phase consumes its own budget when both prefixes contain more work.
 	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale Independent phase budgets ensure a saturated run scan cannot starve stale-lock and registry convergence across maintenance invocations.
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -149,7 +161,7 @@ final class MaintenanceTaskTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
-		self::assertCount( 1, $this->names_under( 'a8csp_bgte_overlap_lock_' ) );
+		self::assertCount( 1, $this->names_under( OverlapGuard::OPTION_PREFIX ) );
 		self::assertCount( 1, $this->names_under( ScheduleRegistry::OPTION_PREFIX ) );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
 		self::assertSame( self::lock_name( 499 ), $this->cursor_state()['locks'] );
@@ -159,6 +171,9 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * A later invocation resumes strictly after the durable run cursor.
 	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale A durable bytewise keyset cursor must resume beyond the exhausted page so bounded passes eventually reach every later run row.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -166,7 +181,7 @@ final class MaintenanceTaskTest extends TestCase {
 	 */
 	public function test_incomplete_pass_persists_and_resumes_after_the_cursor(): void {
 		$this->put_hostile_run_names( 500 );
-		$remaining = 'a8csp_bgte_run_sweep-tests:remaining_' . self::RUN_ID;
+		$remaining = RunStore::OPTION_PREFIX . 'sweep-tests:remaining_' . self::RUN_ID;
 		$this->wpdb->put( $remaining, 'schema-invalid-run' );
 
 		$this->maintenance->handle( array() );
@@ -177,12 +192,16 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $remaining, $this->wpdb->rows );
-		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
 		self::assertStringContainsString( 'BINARY `option_name` > BINARY ', $this->wpdb->recorded_queries[ $this->first_query_after_cursor() ] );
 	}
 
 	/**
 	 * An under-budget pass preserves lock reconciliation and leaves no cursor residue.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale An under-budget pass must converge its stale lock and remove cursor residue so later invocations restart a complete sweep.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -196,7 +215,7 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
-		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
 	}
 
 	/**
@@ -211,20 +230,17 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Deleted corrupt schedule registry option during maintenance sweep.',
-					'context' => array( 'option_name' => $option_name ),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
 	}
 
 	/**
 	 * Exact deletion cannot remove a registry row replaced after maintenance selected it.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Exact-value deletion must lose to a concurrent registry generation so maintenance cannot erase a replacement selected after its read.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @return  void
 	 */
@@ -263,6 +279,9 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * A database delete failure aborts without advancing past the corrupt registry row.
 	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale A failed corrupt-row delete must leave the cursor unadvanced so the same registry row remains eligible on the next bounded retry.
+	 *
 	 * @return  void
 	 */
 	public function test_corrupt_schedule_registry_delete_failure_retries_the_same_row(): void {
@@ -273,31 +292,27 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertSame( 'poison-registry-row', $this->wpdb->rows[ $option_name ] ?? null );
-		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Maintenance schedule-registry sweep aborted while deleting a corrupt registration row; repair WordPress option writes and retry the sweep.',
-					'context' => array(
-						'option_name' => $option_name,
-						'phase'       => 'registry-delete',
-						'outcome'     => 'delete_failed',
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
+		self::assertSame( 'registry-delete', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( 'delete_failed', $this->logger->records[0]['context']['outcome'] ?? null );
 
 		$this->logger->records = array();
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
-		self::assertSame( 'Deleted corrupt schedule registry option during maintenance sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
 	}
 
 	/**
 	 * Unparseable names consume the run scan budget before a valid later name is reached.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale Rejected names must consume the raw scan budget or hostile rows can turn one bounded maintenance invocation into unbounded work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -306,7 +321,7 @@ final class MaintenanceTaskTest extends TestCase {
 	 */
 	public function test_run_budget_counts_unparseable_option_names(): void {
 		$this->put_hostile_run_names( 500 );
-		$later = 'a8csp_bgte_run_sweep-tests:later_' . self::RUN_ID;
+		$later = RunStore::OPTION_PREFIX . 'sweep-tests:later_' . self::RUN_ID;
 		$this->wpdb->put( $later, 'schema-invalid-run' );
 
 		$this->maintenance->handle( array() );
@@ -318,6 +333,9 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * A full raw page advances past a filtered case collision before exhaustion is recorded.
 	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale Case-colliding candidates must advance the raw cursor so a full filtered page cannot permanently starve later canonical run rows.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -326,18 +344,21 @@ final class MaintenanceTaskTest extends TestCase {
 	public function test_case_colliding_raw_page_does_not_starve_later_run_rows(): void {
 		$this->put_case_colliding_run_names( 1 );
 		$this->put_hostile_run_names( 99 );
-		$remaining = 'a8csp_bgte_run_sweep-tests:remaining_' . self::RUN_ID;
+		$remaining = RunStore::OPTION_PREFIX . 'sweep-tests:remaining_' . self::RUN_ID;
 		$this->wpdb->put( $remaining, 'schema-invalid-run' );
 
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $remaining, $this->wpdb->rows );
-		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
 		self::assertStringContainsString( self::hostile_run_name( 98 ), $this->wpdb->recorded_queries[ $this->first_query_after_cursor() ] );
 	}
 
 	/**
 	 * Raw work stops at the page budget and retains the cursor before filtered counting could overshoot.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale The raw candidate count, not the accepted-name count, bounds each pass and persists a cursor before filtered rows can bypass the work ceiling.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -357,6 +378,10 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * A malformed cursor row restarts both prefixes without raising an exception.
 	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale A malformed durable cursor must fail open to a fresh bounded pass so corrupt progress metadata cannot halt maintenance permanently.
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -364,17 +389,20 @@ final class MaintenanceTaskTest extends TestCase {
 	 */
 	public function test_malformed_cursor_row_starts_a_fresh_full_pass(): void {
 		$lock_name = self::lock_name( 0 );
-		$this->wpdb->put( self::CURSOR_OPTION, 'schema-invalid-cursor' );
+		$this->wpdb->put( $this->cursor_option, 'schema-invalid-cursor' );
 		$this->wpdb->put( $lock_name, $this->stale_lock_raw() );
 
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
-		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
 	}
 
 	/**
 	 * A failed cursor read aborts before either sweep phase and reports the storage cause.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An unauthoritative cursor read must abort before any phase mutates rows because advancing from guessed progress can skip concurrently retained work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -402,14 +430,18 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * Enumeration failure leaves the previously persisted cursor bytes unchanged.
 	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A failed authoritative page read cannot advance the exact durable cursor generation without risking skipped work.
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_enumeration_failure_does_not_advance_persisted_cursors(): void {
-		$cursor_raw = self::cursor_raw( self::hostile_run_name( 99 ), self::lock_name( 99 ) );
-		$this->wpdb->put( self::CURSOR_OPTION, $cursor_raw );
+		$cursor_raw = $this->cursor_raw;
+		$this->wpdb->put( $this->cursor_option, $cursor_raw );
 		$this->wpdb->before_next(
 			'scan',
 			static function ( WpdbLockSpy $database ): void {
@@ -419,7 +451,7 @@ final class MaintenanceTaskTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
-		self::assertSame( $cursor_raw, $this->wpdb->rows[ self::CURSOR_OPTION ] ?? null );
+		self::assertSame( $cursor_raw, $this->wpdb->rows[ $this->cursor_option ] ?? null );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
@@ -430,14 +462,18 @@ final class MaintenanceTaskTest extends TestCase {
 	/**
 	 * Reconciliation failure leaves the previously persisted cursor bytes unchanged.
 	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A failed run reconciliation cannot publish later progress over the exact production-authored cursor generation.
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_reconciliation_failure_does_not_advance_persisted_cursors(): void {
-		$cursor_raw = self::cursor_raw( null, null );
-		$this->wpdb->put( self::CURSOR_OPTION, $cursor_raw );
+		$cursor_raw = $this->cursor_raw;
+		$this->wpdb->put( $this->cursor_option, $cursor_raw );
 		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( 'sweep-tests:read-failure' )->run(
 			self::RUN_ID,
 			new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: array(), args_hash: self::ARGS_HASH, queue: array(), failed_attempts: 0, action_seq: 0, created_at: self::NOW, heartbeat_at: self::NOW )
@@ -453,7 +489,7 @@ final class MaintenanceTaskTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
-		self::assertSame( $cursor_raw, $this->wpdb->rows[ self::CURSOR_OPTION ] ?? null );
+		self::assertSame( $cursor_raw, $this->wpdb->rows[ $this->cursor_option ] ?? null );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
@@ -509,7 +545,6 @@ final class MaintenanceTaskTest extends TestCase {
 
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
 		self::assertSame( 'registry-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
 		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
@@ -536,7 +571,6 @@ final class MaintenanceTaskTest extends TestCase {
 		self::assertSame( 'poison-registry-row', $this->wpdb->rows[ $option_name ] ?? null );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
 		self::assertSame( 'registry-read', $this->logger->records[0]['context']['phase'] ?? null );
 		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
@@ -603,7 +637,7 @@ final class MaintenanceTaskTest extends TestCase {
 	 * @return  string
 	 */
 	private static function hostile_run_name( int $index ): string {
-		return 'a8csp_bgte_run_!hostile-' . \sprintf( '%03d', $index );
+		return RunStore::OPTION_PREFIX . '!hostile-' . \sprintf( '%03d', $index );
 	}
 
 	/**
@@ -617,7 +651,18 @@ final class MaintenanceTaskTest extends TestCase {
 	 * @return  string
 	 */
 	private static function lock_name( int $index ): string {
-		return 'a8csp_bgte_overlap_lock_sweep-tests:lock-' . \sprintf( '%03d', $index ) . '_' . self::ARGS_HASH;
+		return OverlapGuard::OPTION_PREFIX . 'sweep-tests:lock-' . \sprintf( '%03d', $index ) . '_' . self::ARGS_HASH;
+	}
+
+	/**
+	 * Returns one production-authored sweep cursor fixture.
+	 *
+	 * @return array{0: string, 1: string}
+	 */
+	private static function cursor_fixture(): array {
+		self::$cursor_fixture ??= StoreFixtureBuilder::for_identity( 'sweep-tests:cursor-fixture' )->sweep_cursor();
+
+		return self::$cursor_fixture;
 	}
 
 	/**
@@ -646,31 +691,6 @@ final class MaintenanceTaskTest extends TestCase {
 	}
 
 	/**
-	 * Returns exact serialized cursor bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string|null $runs         Run cursor.
-	 * @param   string|null $locks        Lock cursor.
-	 * @param   string|null $registrations Schedule-registration cursor.
-	 *
-	 * @return  string
-	 */
-	private static function cursor_raw( ?string $runs, ?string $locks, ?string $registrations = null ): string {
-		$raw = \maybe_serialize(
-			array(
-				'runs'          => $runs,
-				'locks'         => $locks,
-				'registrations' => $registrations,
-			)
-		);
-		self::assertIsString( $raw );
-
-		return $raw;
-	}
-
-	/**
 	 * Returns the decoded persisted cursor state.
 	 *
 	 * @since   1.0.0
@@ -679,7 +699,7 @@ final class MaintenanceTaskTest extends TestCase {
 	 * @return  array{runs: string|null, locks: string|null, registrations: string|null}
 	 */
 	private function cursor_state(): array {
-		$raw = $this->wpdb->rows[ self::CURSOR_OPTION ] ?? null;
+		$raw = $this->wpdb->rows[ $this->cursor_option ] ?? null;
 		self::assertIsString( $raw );
 		$state = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $state );

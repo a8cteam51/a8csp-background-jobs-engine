@@ -265,6 +265,7 @@ final class RunHistoryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built before/after rows prove the caller retries the rival generation and caps both the global and per-argument buffers.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -302,6 +303,7 @@ final class RunHistoryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Production serialization supplies every generation, including a rival identifier with null bytes that exposes normalization or stale-overwrite shortcuts.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -350,6 +352,7 @@ final class RunHistoryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The no-write branches preserve the last confirmed generation when storage cannot establish whether a competing writer exists.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

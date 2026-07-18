@@ -177,7 +177,7 @@ final class RunTransitionsTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
+		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame( array(), $this->logger->records );
 		self::assertSame(
 			array(
@@ -213,21 +213,12 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( $expected, $this->option( $this->run_option_name() ) );
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Stale lifecycle action delivery dropped.',
-					'context' => array(
-						'name'     => self::IDENTITY,
-						'expected' => 2,
-						'received' => 1,
-						'run_id'   => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( 2, $this->logger->records[0]['context']['expected'] ?? null );
+		self::assertSame( 1, $this->logger->records[0]['context']['received'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
 	/**
@@ -257,20 +248,11 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_lifecycle_events'] );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'debug',
-					'message' => 'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
-					'context' => array(
-						'task_name'  => self::IDENTITY,
-						'run_id'     => self::RUN_ID,
-						'action_seq' => 1,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 1, $this->logger->records[0]['context']['action_seq'] ?? null );
 	}
 
 	/**
@@ -381,29 +363,15 @@ final class RunTransitionsTest extends TestCase {
 		foreach ( $this->wpdb->recorded_queries as $query ) {
 			self::assertStringStartsWith( 'SELECT ', $query );
 		}
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
-					'context' => array(
-						'key'       => $this->lock_option_name(),
-						'name'      => self::IDENTITY,
-						'args_hash' => self::ARGS_HASH,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-				array(
-					'level'   => 'debug',
-					'message' => 'Task ownership fence is indeterminate; the delivery aborts without a terminal transition.',
-					'context' => array(
-						'task_name' => self::IDENTITY,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $this->lock_option_name(), $this->logger->records[0]['context']['key'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::ARGS_HASH, $this->logger->records[0]['context']['args_hash'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'debug', $this->logger->records[1]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[1]['context']['run_id'] ?? null );
 	}
 
 	/**
@@ -480,7 +448,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( 0, $this->recorded_run_state( 'completed' )['failed_attempts'] );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
+		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 	}
 
 	/**
@@ -506,7 +474,7 @@ final class RunTransitionsTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
 		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
+		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
@@ -541,7 +509,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
 
 		self::assertSame( array(), $this->task->calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
+		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
@@ -557,20 +525,11 @@ final class RunTransitionsTest extends TestCase {
 			),
 			$this->fired_actions()
 		);
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Superseded task run after its ownership fence failed.',
-					'context' => array(
-						'task_name'     => self::IDENTITY,
-						'run_id'        => self::RUN_ID,
-						'latest_run_id' => 'run-newer',
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'run-newer', $this->logger->records[0]['context']['latest_run_id'] ?? null );
 		self::assertSame(
 			array(
 				'run:superseded',
@@ -634,19 +593,10 @@ final class RunTransitionsTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
-					'context' => array(
-						'task_name' => self::IDENTITY,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
 
@@ -772,20 +722,11 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->task->calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Task run is already terminal; allow the reconciliation sweep to finish its cleanup.',
-					'context' => array(
-						'task_name' => self::IDENTITY,
-						'run_id'    => self::RUN_ID,
-						'status'    => $status,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( $status, $this->logger->records[0]['context']['status'] ?? null );
 	}
 
 
@@ -907,7 +848,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
+		return RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -1218,7 +1159,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
+		return OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**

@@ -114,6 +114,7 @@ final class FailureLifecycleTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built foreign lock and pointer generations replace authority inside the real throwing callback before failure fencing.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -138,6 +139,7 @@ final class FailureLifecycleTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The policy hook installs a production-built foreign generation before returning a terminal policy, proving the expired attempt cannot fail it.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -168,6 +170,7 @@ final class FailureLifecycleTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The public retry-scheduled hook installs a fixture-built foreign generation after delay selection but before the retry scheduling write.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -423,7 +426,10 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( 7, $this->latest_retry()[4] ?? null );
-		self::assertSame( 'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.', $this->rig->logger()->records[0]['message'] ?? null );
+		self::assertNotEmpty( $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
 	}
 
 	/**
@@ -457,6 +463,7 @@ final class FailureLifecycleTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The policy filter installs fixture-built foreign ownership before throwing, so terminal retention must not target the expired generation.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -508,6 +515,7 @@ final class FailureLifecycleTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The public retry-scheduled hook installs a fixture-built foreign generation before its scripted throwable reaches failure preparation.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

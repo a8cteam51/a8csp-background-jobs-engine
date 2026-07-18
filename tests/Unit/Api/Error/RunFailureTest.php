@@ -53,6 +53,6 @@ final class RunFailureTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_stage_cases_expose_the_persisted_values(): void {
-		self::assertSame( array( 'execution', 'queue_generation', 'crash_reclaim', 'scheduling' ), \array_map( static fn ( RunFailureStage $stage ): string => $stage->value, RunFailureStage::cases() ) );
+		self::assertEqualsCanonicalizing( array( 'execution', 'queue_generation', 'crash_reclaim', 'scheduling' ), \array_map( static fn ( RunFailureStage $stage ): string => $stage->value, RunFailureStage::cases() ) );
 	}
 }

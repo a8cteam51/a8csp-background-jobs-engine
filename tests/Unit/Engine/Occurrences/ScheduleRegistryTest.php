@@ -331,16 +331,10 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $owner );
 		self::assertInstanceOf( SchedulingError::class, $owner->error );
 		self::assertSame( $option_name, $owner->error->context['option_name'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
-					'context' => array( 'option_name' => $option_name ),
-				),
-			),
-			$this->rig->logger()->records
-		);
+		$records = $this->rig->logger()->records;
+		self::assertCount( 1, $records );
+		self::assertSame( 'warning', $records[0]['level'] ?? null );
+		self::assertSame( $option_name, $records[0]['context']['option_name'] ?? null );
 
 		$this->rig->logger()->records = array();
 
@@ -349,16 +343,10 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertInstanceOf( Success::class, $all );
 		self::assertIsArray( $all->value );
 		self::assertSame( array(), \array_filter( \array_keys( $all->value ), static fn ( int|string $identity ): bool => \is_string( $identity ) && \str_starts_with( $identity, 'owner-a:' ) ) );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
-					'context' => array( 'option_name' => $option_name ),
-				),
-			),
-			$this->rig->logger()->records
-		);
+		$records = $this->rig->logger()->records;
+		self::assertCount( 1, $records );
+		self::assertSame( 'warning', $records[0]['level'] ?? null );
+		self::assertSame( $option_name, $records[0]['context']['option_name'] ?? null );
 	}
 
 	/**
@@ -407,6 +395,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built generations and literal SQL predicates prove owner updates cannot match a collation-equivalent but byte-distinct registry row.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -438,6 +427,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Production-built owner rows and an update-boundary interleave prove cross-owner writes do not share a CAS generation while both timing advances survive.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -581,6 +571,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Deleting the selected owner generation at the exact update boundary proves retry reconstructs only that owner's current declaration.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -613,6 +604,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Owner-row CAS must merge a same-owner sibling update, but the same retry must refuse to resurrect a definition whose fingerprint changed or whose row disappeared.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -671,6 +663,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Rereading the same selected bytes distinguishes a genuine write failure from comparison loss and prevents request-local declarations from claiming an unpersisted owner state.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -696,6 +689,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The exact five-attempt bound (UPDATE_ATTEMPTS=5) is the liveness contract; an unbounded loop under permanent contention would hang schedule synchronization.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -376,7 +376,10 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( $replacement_raw, $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
 		self::assertSame( 600, $this->registration()['recurrence'] ?? null );
 		self::assertContains( 'enqueue_async', \array_column( $this->rig->backend()->calls, 'verb' ) );
-		self::assertSame( 'Schedule registration superseded concurrently; delivery state discarded.', $this->rig->logger()->records[0]['message'] ?? null );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::OWNER, $this->rig->logger()->records[0]['context']['owner'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
 	}
 
 	/**
@@ -384,6 +387,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Production-built replacement bytes retain a newer fingerprint while the request keeps its original declaration, proving delivery fences the registry generation before task admission.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -402,7 +406,9 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
 		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
-		self::assertSame( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', $this->rig->logger()->records[0]['message'] ?? null );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
 	}
 
 	/**
@@ -410,6 +416,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built lock and latest-pointer rows prove the occurrence observes one coherent incumbent generation instead of a hand-authored approximation of private storage.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -446,6 +453,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 *
 	 * @load-bearing security
 	 * @pin-rationale The deliberately corrupt row bypasses production serialization and places an object at the task-lock boundary, proving occurrence admission neither runs wakeup code nor treats poison as an incumbent generation.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

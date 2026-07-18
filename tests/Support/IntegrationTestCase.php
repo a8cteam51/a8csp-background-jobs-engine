@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
@@ -303,10 +304,10 @@ abstract class IntegrationTestCase extends TestCase {
 	 * @return  string
 	 */
 	protected static function args_hash( array $args ): string {
-		$encoded = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		self::assertIsString( $encoded );
+		$hash = PortableArguments::hash( $args );
+		self::assertIsString( $hash );
 
-		return \hash( 'sha256', $encoded );
+		return $hash;
 	}
 
 	/**

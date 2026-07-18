@@ -205,6 +205,7 @@ final class DispatcherCancelTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A fixture-built executing generation is the durable fence; exact pre/post rows prove cancellation cannot mutate or clear it.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -229,6 +230,7 @@ final class DispatcherCancelTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The heartbeat generation changes at the terminal CAS boundary; fixture-built replacement bytes prove cancellation preserves the winner.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -256,6 +258,7 @@ final class DispatcherCancelTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built executing bytes replace the inspected generation at the cancellation CAS, modeling the marker winner without bypassing production cancellation logic.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

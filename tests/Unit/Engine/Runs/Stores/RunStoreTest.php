@@ -244,6 +244,7 @@ final class RunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built running and terminal rows prove both transitions compare binary option bytes and reject stale replays after the generation changes.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -273,6 +274,7 @@ final class RunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The rival bytes are produced by RunStore serialization and installed at the exact update boundary, so a null result proves lost-CAS fencing rather than a scripted pass-through.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -302,6 +304,7 @@ final class RunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The rival append executes real production logic at the outer CAS boundary, proving retry merges monotonic effect progress instead of replacing it.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -334,6 +337,7 @@ final class RunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The exact five-attempt bound (TERMINAL_EFFECT_ATTEMPTS=5) is the liveness contract; an unbounded loop under permanent contention would hang delivery.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

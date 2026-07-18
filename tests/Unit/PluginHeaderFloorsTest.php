@@ -7,6 +7,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Guards agreement between the plugin header floors and composer.json.
  *
+ * @load-bearing structural-guard
+ * @pin-rationale This release-metadata guard keeps the plugin header and composer PHP floors in cross-file agreement so packaged installs cannot advertise an unsupported runtime.
  */
 final class PluginHeaderFloorsTest extends TestCase {
 	/**

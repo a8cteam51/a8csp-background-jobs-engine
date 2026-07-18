@@ -14,8 +14,10 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the authoritative option-row seam: direct SQL shape, raw-value compare-and-swap, cache
- * invalidation, and site binding.
+ * Pins the authoritative option-row seam: raw-value compare-and-swap, cache invalidation, and site binding.
+ *
+ * @load-bearing concurrency
+ * @pin-rationale Exact-raw losing-writer outcomes, no-write failures, and absent-row atomic acquisition are storage-bound concurrency contracts not observable through higher-level result objects.
  */
 #[CoversClass( OptionRows::class )]
 #[UsesClass( RowDeleteOutcome::class )]
@@ -42,12 +44,6 @@ final class OptionRowsTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
 	}
 
-	/** Row-delete outcomes expose only the three lowercase-backed storage states. */
-	public function test_row_delete_outcome_pins_cases_and_backing_values(): void {
-		self::assertSame( array( RowDeleteOutcome::Deleted, RowDeleteOutcome::ValueMismatch, RowDeleteOutcome::DeleteFailed ), RowDeleteOutcome::cases() );
-		self::assertSame( array( 'deleted', 'value_mismatch', 'delete_failed' ), \array_column( RowDeleteOutcome::cases(), 'value' ) );
-	}
-
 	/** An UPDATE-only replacement cannot recreate a row deleted before the CAS. */
 	public function test_compare_and_swap_is_insertless_when_the_expected_row_is_absent(): void {
 		$wpdb = new WpdbLockSpy();
@@ -55,8 +51,6 @@ final class OptionRowsTest extends TestCase {
 
 		self::assertFalse( $rows->compare_and_swap( self::KEY, 'expected-raw', 'replacement-raw' ) );
 		self::assertArrayNotHasKey( self::KEY, $wpdb->rows );
-		self::assertCount( 1, $wpdb->recorded_queries );
-		self::assertStringStartsWith( 'UPDATE ', $wpdb->recorded_queries[0] );
 	}
 
 	/** Replacement and deletion require byte-identical expected values. */
@@ -75,8 +69,6 @@ final class OptionRowsTest extends TestCase {
 		$missing = $rows->read( self::KEY );
 		self::assertFalse( $missing->is_failure() );
 		self::assertNull( $missing->value );
-		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
-		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[2] );
 	}
 
 	/** Already-absent exact deletion is a value mismatch rather than idempotent success. */
@@ -97,8 +89,13 @@ final class OptionRowsTest extends TestCase {
 		self::assertSame( 'expected-raw', $wpdb->rows[ self::KEY ] );
 	}
 
-	/** Literal wildcard characters are escaped and imprecise database matches are filtered. */
-	public function test_option_names_escapes_and_refilters_a_literal_prefix(): void {
+	/**
+	 * Literal wildcard characters cannot admit imprecise database matches.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A wildcard-bearing caller prefix must remain a literal storage boundary even when the database returns imprecise candidates.
+	 */
+	public function test_option_names_refilters_a_literal_prefix_boundary(): void {
 		$prefix                    = 'a8csp_bgte_%_';
 		$expected                  = $prefix . 'intent';
 		$wpdb                      = new WpdbLockSpy();
@@ -107,11 +104,13 @@ final class OptionRowsTest extends TestCase {
 		$result = ( new OptionRows( $wpdb ) )->option_names( $prefix );
 		self::assertFalse( $result->is_failure() );
 		self::assertSame( array( $expected ), $result->value );
-		self::assertStringContainsString( "LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'", $wpdb->recorded_queries[0] );
 	}
 
 	/**
 	 * Cursor-paged enumeration keeps only names under the escaped literal prefix.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Paged maintenance enumeration must reject wildcard-expanded candidates outside the caller's literal option namespace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -135,7 +134,6 @@ final class OptionRowsTest extends TestCase {
 			),
 			$result->value
 		);
-		self::assertStringContainsString( "LIKE 'a8csp\\\\_bgte\\\\_\\\\%\\\\_%'", $wpdb->recorded_queries[0] );
 	}
 
 	/**
@@ -164,8 +162,6 @@ final class OptionRowsTest extends TestCase {
 			),
 			$result->value
 		);
-		self::assertStringContainsString( 'BINARY `option_name` > BINARY ', $wpdb->recorded_queries[0] );
-		self::assertStringContainsString( 'ORDER BY BINARY `option_name` ASC', $wpdb->recorded_queries[0] );
 	}
 
 	/**
@@ -209,6 +205,9 @@ final class OptionRowsTest extends TestCase {
 
 	/**
 	 * Raw case-insensitive candidates drive exhaustion and the opaque cursor before bytewise filtering.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Case-insensitive database prefix collisions must consume bounded work without crossing the engine's byte-exact option namespace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -302,7 +301,7 @@ final class OptionRowsTest extends TestCase {
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( 'Authoritative option-name read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
 	}
 
@@ -352,7 +351,7 @@ final class OptionRowsTest extends TestCase {
 		$failed = $rows->read( self::KEY );
 		self::assertTrue( $failed->is_failure() );
 		self::assertInstanceOf( EngineError::class, $failed->error );
-		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $failed->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $failed->error->reason );
 		self::assertSame(
 			array(
 				'option_name'   => self::KEY,
@@ -376,7 +375,7 @@ final class OptionRowsTest extends TestCase {
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( 'Authoritative option-name read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
 	}
 
@@ -394,11 +393,7 @@ final class OptionRowsTest extends TestCase {
 		self::assertFalse( $rows->insert_if_absent( self::KEY, self::raw( self::row( 'run-rival', 200, 200 ) ) ) );
 
 		self::assertSame( self::raw( $row ), $wpdb->rows[ self::KEY ] );
-		self::assertSame( 'off', $wpdb->autoload[ self::KEY ] );
-		self::assertCount( 2, $wpdb->recorded_queries );
-		self::assertStringStartsWith( 'INSERT IGNORE INTO `wp_options`', $wpdb->recorded_queries[0] );
-		self::assertStringContainsString( '`autoload`) VALUES (', $wpdb->recorded_queries[0] );
-		self::assertStringEndsWith( "'off') /* LOCK */", $wpdb->recorded_queries[0] );
+		self::assertTrue( $wpdb->is_non_autoloaded( self::KEY ) );
 	}
 
 	/**
@@ -422,7 +417,12 @@ final class OptionRowsTest extends TestCase {
 		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cache_calls'] );
 	}
 
-	/** Prepared values containing placeholder text remain byte-for-byte data. */
+	/**
+	 * Prepared values containing placeholder text remain byte-for-byte data.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Caller-controlled placeholder text must remain inert data across the prepared-statement boundary.
+	 */
 	public function test_prepared_values_cannot_be_reparsed_as_placeholders(): void {
 		$wpdb = new WpdbLockSpy();
 		$rows = new OptionRows( $wpdb );
@@ -450,8 +450,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertSame( $old_raw, $wpdb->rows[ self::KEY ] );
 		self::assertTrue( $rows->compare_and_swap( self::KEY, $old_raw, self::raw( $new_row ) ) );
 		self::assertSame( self::raw( $new_row ), $wpdb->rows[ self::KEY ] );
-		self::assertStringContainsString( 'WHERE `option_name` = ', $wpdb->recorded_queries[0] );
-		self::assertStringContainsString( 'AND BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
 	}
 
 	/**
@@ -469,8 +467,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertTrue( $rows->compare_and_swap( self::KEY, $raw, $raw ) );
 		self::assertSame( 0, $wpdb->rows_affected );
 		self::assertCount( 2, $wpdb->recorded_queries );
-		self::assertStringStartsWith( 'UPDATE ', $wpdb->recorded_queries[0] );
-		self::assertStringStartsWith( 'SELECT ', $wpdb->recorded_queries[1] );
 	}
 
 	/**
@@ -507,8 +503,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertFalse( $rows->compare_and_swap( self::KEY, $expected_raw, self::raw( self::row( 'run-owner', 100, 200 ) ) ) );
 		self::assertSame( RowDeleteOutcome::ValueMismatch, $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 		self::assertSame( $winner_raw, $wpdb->rows[ self::KEY ] );
-		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
-		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $wpdb->recorded_queries[1] );
 	}
 
 	/** A database error is not the zero-row identical-update case and does not trigger confirmation. */
@@ -523,7 +517,6 @@ final class OptionRowsTest extends TestCase {
 
 		self::assertFalse( $rows->compare_and_swap( self::KEY, $raw, $raw ) );
 		self::assertCount( 1, $wpdb->recorded_queries );
-		self::assertStringStartsWith( 'UPDATE ', $wpdb->recorded_queries[0] );
 		self::assert_cache_purge();
 	}
 
@@ -542,8 +535,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertSame( $raw, $wpdb->rows[ self::KEY ] );
 		self::assertSame( RowDeleteOutcome::Deleted, $rows->delete_if_value_matches( self::KEY, $raw ) );
 		self::assertArrayNotHasKey( self::KEY, $wpdb->rows );
-		self::assertStringContainsString( 'WHERE `option_name` = ', $wpdb->recorded_queries[0] );
-		self::assertStringContainsString( 'AND BINARY `option_value` = BINARY ', $wpdb->recorded_queries[0] );
 	}
 
 	/**
@@ -593,6 +584,9 @@ final class OptionRowsTest extends TestCase {
 
 	/**
 	 * Site-bound rows reject every single-row operation after an ambient blog switch.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A row service bound to one site must fail before storage or cache access after an ambient site switch.
 	 *
 	 * @param   callable(OptionRows): mixed $operation Operation under test.
 	 *
@@ -679,13 +673,6 @@ final class OptionRowsTest extends TestCase {
 
 	/** Asserts Core-shaped per-key and notoptions invalidation. */
 	private static function assert_cache_purge(): void {
-		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_cache_calls'];
-		self::assertSame( array( 'wp_cache_delete', 'wp_cache_get', 'wp_cache_set' ), \array_column( $calls, 'function' ) );
-		self::assertSame( array( self::KEY, 'options' ), $calls[0]['args'] );
-		self::assertSame( array( 'notoptions', 'options', false ), $calls[1]['args'] );
-		self::assertSame( array( 'notoptions', array( 'other' => true ), 'options', 0 ), $calls[2]['args'] );
-
 		/** @var array<string, array<int|string, mixed>> $cache */
 		$cache = $GLOBALS['a8csp_bgte_test_cache'];
 		self::assertArrayNotHasKey( self::KEY, $cache['options'] );

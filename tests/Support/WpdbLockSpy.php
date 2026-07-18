@@ -48,6 +48,17 @@ final class WpdbLockSpy extends \wpdb {
 	}
 
 	/**
+	 * Returns whether one modeled row is excluded from autoloading.
+	 *
+	 * @param   string $key Option name.
+	 *
+	 * @return  bool
+	 */
+	public function is_non_autoloaded( string $key ): bool {
+		return 'off' === ( $this->autoload[ $key ] ?? null );
+	}
+
+	/**
 	 * Runs a callback immediately before the next matching operation reaches storage.
 	 *
 	 * @param   'count'|'insert'|'scan'|'select'|'update'|'delete' $operation Query operation.

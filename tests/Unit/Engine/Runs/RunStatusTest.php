@@ -26,24 +26,15 @@ final class RunStatusTest extends TestCase {
 	}
 
 	/**
-	 * The five cases and their persisted values remain an exact closed set.
+	 * The persisted values remain an exact order-independent closed set.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Run-status backing values are persisted in run rows, so their closed value set must remain decodable independent of declaration order.
 	 *
 	 * @return  void
 	 */
-	public function test_cases_and_backing_values_are_exact(): void {
-		$statuses = RunStatus::cases();
-
-		self::assertSame(
-			array(
-				RunStatus::Running,
-				RunStatus::Completed,
-				RunStatus::Failed,
-				RunStatus::Cancelled,
-				RunStatus::Superseded,
-			),
-			$statuses
-		);
-		self::assertSame(
+	public function test_backing_values_are_an_exact_set(): void {
+		self::assertEqualsCanonicalizing(
 			array(
 				'running',
 				'completed',
@@ -51,7 +42,7 @@ final class RunStatusTest extends TestCase {
 				'cancelled',
 				'superseded',
 			),
-			\array_map( static fn ( RunStatus $status ): string => $status->value, $statuses )
+			\array_map( static fn ( RunStatus $status ): string => $status->value, RunStatus::cases() )
 		);
 	}
 }

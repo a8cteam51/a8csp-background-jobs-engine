@@ -91,13 +91,16 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 		$fresh_backend = new WPCronBackend();
 		$fresh_backend->register_hooks();
 
+		$drive_started_at = \time();
 		self::assertSame( 1, $this->run_next_due_cron_event(), 'The WP-Cron drive must dispatch one due occurrence' );
+		$drive_finished_at = \time();
 		self::assertSame( array( 'occurrence-a' ), $fired, 'The due recurring hook must fire exactly once with its stored arguments' );
 
 		self::assertTrue( $fresh_backend->is_scheduled( self::RECURRING_HOOK, $args ) );
 		$successor = $fresh_backend->get_next_scheduled( self::RECURRING_HOOK, $args );
 		self::assertIsInt( $successor );
-		self::assertGreaterThan( \time(), $successor, 'The recurring successor must be scheduled in the future' );
+		self::assertGreaterThan( $drive_started_at, $successor, 'The recurring successor must be scheduled after the staged drive starts' );
+		self::assertLessThanOrEqual( $drive_finished_at + $interval, $successor, 'The recurring successor must remain within one interval of the staged drive' );
 		self::assertNotSame( $timestamp, $successor, 'The due occurrence must be replaced by its successor' );
 	}
 

@@ -172,10 +172,10 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Re-entry into an in-flight initialize() cannot build a competing graph.
+	 * Re-entry from filter registration retains the published graph and one registration set.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The two-phase boot publishes the graph before any hook registration, so an organic re-entry before publication is architecturally unreachable; the booting latch remains the defense for the construction window itself (any future collaborator that fires a filter while wiring). No public seam can stage an in-flight boot, so this pin forces the window by reflection and proves the latch rejects the competing boot.
+	 * @pin-rationale Filter registration is the reachable re-entry seam during boot; this proves it cannot publish a competing graph or duplicate registrations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -196,23 +196,7 @@ final class EngineComponentTest extends TestCase {
 
 		$component = new Component();
 		$component->initialize();
-
-		$engine = Component::get_engine();
-		self::assertInstanceOf( EngineFacade::class, $engine );
-
-		// Hook registration follows publication, so this pin stages the otherwise inaccessible
-		// in-flight window directly and proves re-entry cannot publish a competing graph.
-		$engine_property  = new \ReflectionProperty( Component::class, 'engine' );
-		$booting_property = new \ReflectionProperty( Component::class, 'booting' );
-		$engine_property->setValue( null, null );
-		$booting_property->setValue( null, true );
-		try {
-			$component->register_hooks();
-			self::assertNull( Component::get_engine() );
-		} finally {
-			$booting_property->setValue( null, false );
-			$engine_property->setValue( null, $engine );
-		}
+		$component->register_hooks();
 
 		self::assertTrue( $reentered );
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );

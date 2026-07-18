@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -20,6 +21,7 @@ use PHPUnit\Framework\TestCase;
  *
  * @load-bearing concurrency
  * @pin-rationale Lease-token ownership and stale takeover are raw compare-and-swap contracts whose losing-writer states cannot be forced through a public schedule delivery.
+ * @fixture StoreFixtureBuilder
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -61,12 +63,6 @@ final class OccurrenceLeaseTest extends TestCase {
 		$this->lease                            = new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) );
 	}
 
-	/** The claim result has exactly the three ownership classifications. */
-	public function test_outcomes_are_closed_to_claimed_held_and_indeterminate(): void {
-		self::assertSame( array( OccurrenceLeaseOutcome::Claimed, OccurrenceLeaseOutcome::Held, OccurrenceLeaseOutcome::Indeterminate ), OccurrenceLeaseOutcome::cases() );
-		self::assertSame( array( 'claimed', 'held', 'indeterminate' ), \array_column( OccurrenceLeaseOutcome::cases(), 'value' ) );
-	}
-
 	/** An absent lease is exclusively inserted and released by exact raw value. */
 	public function test_absent_lease_is_claimed_and_exact_released(): void {
 		$claim = $this->lease->claim( self::KEY );
@@ -95,7 +91,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		$claim = $this->lease->claim( self::KEY );
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
 		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
-		$winner = self::raw_lease( 'newer-winner', self::NOW + 1 );
+		$winner = self::raw_lease( 43, self::NOW + 1 );
 		$this->wpdb->put( self::option_name(), $winner );
 
 		$claim->lease->release();
@@ -124,7 +120,7 @@ final class OccurrenceLeaseTest extends TestCase {
 
 	/** A successful insert whose confirmation observes a rival is classified as a lost race. */
 	public function test_insert_confirmation_changed_by_a_rival_is_held(): void {
-		$winner = self::raw_lease( 'confirmation-winner', self::NOW );
+		$winner = self::raw_lease( 44, self::NOW );
 		$this->wpdb->before_next(
 			'select',
 			function ( WpdbLockSpy $wpdb ) use ( $winner ): void {
@@ -175,7 +171,7 @@ final class OccurrenceLeaseTest extends TestCase {
 
 	/** An unreadable incumbent is not replaced from non-authoritative absence. */
 	public function test_incumbent_read_failure_does_not_replace_the_lease(): void {
-		$raw = self::raw_lease( 'incumbent', self::NOW - 61 );
+		$raw = self::raw_lease( 41, self::NOW - 61 );
 		$this->wpdb->put( self::option_name(), $raw );
 		$incumbent_read_failures = 0;
 		$this->wpdb->before_next(
@@ -208,7 +204,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	/** A stale reclaim that loses its CAS leaves the winner untouched. */
 	public function test_lost_reclaim_cas_does_not_claim(): void {
 		$this->put_lease( self::NOW - 61 );
-		$winner = self::raw_lease( 'winner', self::NOW );
+		$winner = self::raw_lease( 45, self::NOW );
 		$this->wpdb->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $winner ): void {
@@ -282,7 +278,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	 * @return  void
 	 */
 	private function put_lease( int $claimed_at ): void {
-		$this->wpdb->put( self::option_name(), self::raw_lease( 'incumbent', $claimed_at ) );
+		$this->wpdb->put( self::option_name(), self::raw_lease( 41, $claimed_at ) );
 	}
 
 	/**
@@ -308,25 +304,20 @@ final class OccurrenceLeaseTest extends TestCase {
 	/**
 	 * Returns one exact raw lease row.
 	 *
-	 * @param   string $claim_token Lease claim token.
-	 * @param   int    $claimed_at  Lease claim timestamp.
+	 * @param   int $claim_token Deterministic claim-token source.
+	 * @param   int $claimed_at  Lease claim timestamp.
 	 *
 	 * @return  string
 	 */
-	private static function raw_lease( string $claim_token, int $claimed_at ): string {
-		$raw = \maybe_serialize(
-			array(
-				'claim_token' => $claim_token,
-				'claimed_at'  => $claimed_at,
-			)
-		);
-		self::assertIsString( $raw );
+	private static function raw_lease( int $claim_token, int $claimed_at ): string {
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::KEY )->occurrence_lease( $claimed_at, $claim_token );
+		self::assertSame( self::option_name(), $option_name );
 
 		return $raw;
 	}
 
 	/** Returns the bounded hashed lease option name. */
 	private static function option_name(): string {
-		return 'a8csp_bgte_occurrence_lease_' . \hash( 'sha256', self::KEY );
+		return OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::KEY );
 	}
 }

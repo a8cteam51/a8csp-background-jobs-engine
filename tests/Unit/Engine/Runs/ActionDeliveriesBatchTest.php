@@ -484,6 +484,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built foreign lock and pointer generations replace authority inside the real queue callback before post-callback fencing.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -507,6 +508,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The foreign generation wins inside the throwing callback, so failure adjudication must fence the expired delivery before retention.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -530,6 +532,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The legitimate started-hook boundary installs a fixture-built foreign generation before delivery schedules its successor.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -556,6 +559,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Foreign ownership is installed before the listener throws, distinguishing supersession from terminal failure after the same hook.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1030,6 +1034,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The real context buffers a mutation while fixture-built foreign ownership replaces the executing delivery before commit.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1054,6 +1059,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The foreign generation is installed inside the throwing real callback, so no retry or failure may target the expired owner.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1130,6 +1136,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The filter installs a fixture-built foreign generation after chunk commit but before the next delivery write.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1158,6 +1165,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The same filter boundary both transfers authority and throws, proving supersession wins over terminal error retention.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1519,6 +1527,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The foreign lock generation exists before the registered continuation claims execution, so it must create no successor or callback.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1540,6 +1549,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The foreign lock generation exists before the registered run delivery claims execution, preventing chunk and terminal callbacks.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1591,9 +1601,8 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * Returns a portable 128-chunk queue with the requested PHP serialization length.
 	 *
 	 * Each full chunk has an 8,178-byte payload and therefore an 8,192-byte JSON representation.
-	 * The PHP array grammar contributes the queue header/trailer, integer keys, and each chunk's
-	 * `a:1:{s:7:"payload";s:N:"...";}` framing. Subtracting that arithmetic overhead from the
-	 * requested total derives the final payload length without probing serialized candidates.
+	 * Measuring the complete serialized queue yields the overflow removed from the final payload;
+	 * the four-digit guard keeps that payload's serialized length field at a stable width.
 	 *
 	 * @param   int $persisted_bytes Exact persisted byte length.
 	 *
@@ -1616,7 +1625,7 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * Calculates PHP's serialized byte length for the fixture queue grammar.
+	 * Calculates PHP's serialized byte length for the fixture queue.
 	 *
 	 * @phpstan-param list<int> $payload_lengths
 	 *
@@ -1625,13 +1634,13 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	 * @return  int
 	 */
 	private static function serialized_queue_bytes_for_payload_lengths( array $payload_lengths ): int {
-		$bytes = \strlen( 'a:' . \count( $payload_lengths ) . ':{' ) + 1;
-		foreach ( $payload_lengths as $index => $payload_bytes ) {
-			$bytes += \strlen( 'i:' . $index . ';' );
-			$bytes += \strlen( 'a:1:{s:7:"payload";s:' . $payload_bytes . ':"";}' ) + $payload_bytes;
-		}
+		$queue = \array_map(
+			static fn ( int $payload_bytes ): array => array( 'payload' => \str_repeat( 'a', $payload_bytes ) ),
+			$payload_lengths
+		);
 
-		return $bytes;
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Production persists this queue through WordPress serialization; the boundary fixture measures the same grammar.
+		return \strlen( \serialize( $queue ) );
 	}
 
 	/**

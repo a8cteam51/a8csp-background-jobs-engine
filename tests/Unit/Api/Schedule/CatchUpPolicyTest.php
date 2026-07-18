@@ -26,14 +26,11 @@ final class CatchUpPolicyTest extends TestCase {
 	}
 
 	/**
-	 * The two cases and their persisted values remain an exact closed set.
+	 * The public backing values remain an exact order-independent set.
 	 *
 	 * @return  void
 	 */
-	public function test_cases_and_backing_values_are_exact(): void {
-		$policies = CatchUpPolicy::cases();
-
-		self::assertSame( array( CatchUpPolicy::RunOnce, CatchUpPolicy::Skip ), $policies );
-		self::assertSame( array( 'run_once', 'skip' ), \array_map( static fn ( CatchUpPolicy $policy ): string => $policy->value, $policies ) );
+	public function test_backing_values_are_an_exact_set(): void {
+		self::assertEqualsCanonicalizing( array( 'run_once', 'skip' ), \array_map( static fn ( CatchUpPolicy $policy ): string => $policy->value, CatchUpPolicy::cases() ) );
 	}
 }

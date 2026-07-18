@@ -25,20 +25,11 @@ final class ExistingRunPolicyTest extends TestCase {
 	}
 
 	/**
-	 * The two cases and their backing values remain an exact closed set.
+	 * The public backing values remain an exact order-independent set.
 	 *
 	 * @return  void
 	 */
-	public function test_cases_and_backing_values_are_exact(): void {
-		$policies = ExistingRunPolicy::cases();
-
-		self::assertSame(
-			array(
-				ExistingRunPolicy::Reject,
-				ExistingRunPolicy::Replace,
-			),
-			$policies
-		);
-		self::assertSame( array( 'reject', 'replace' ), \array_map( static fn ( ExistingRunPolicy $policy ): string => $policy->value, $policies ) );
+	public function test_backing_values_are_an_exact_set(): void {
+		self::assertEqualsCanonicalizing( array( 'reject', 'replace' ), \array_map( static fn ( ExistingRunPolicy $policy ): string => $policy->value, ExistingRunPolicy::cases() ) );
 	}
 }

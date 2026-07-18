@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
@@ -288,6 +289,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The foreign lock is the production overlap fence; the public refusal and unchanged owner prove Reject cannot displace it.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -310,6 +312,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The second lock read fails after contention is established; unchanged fixture bytes prove admission performs no replacement write.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -359,6 +362,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The fixture-built lock is authoritative when the bounded latest pointer is absent, so the refusal must still identify its owner.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -380,6 +384,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Divergent production-built lock and pointer fixtures prove the lock owner, not stale history, controls the refusal payload.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -411,6 +416,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The public start must atomically replace a live foreign owner before its accepted delivery may enter batch code.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -434,6 +440,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A fixture-built lock without a latest pointer proves replacement ownership does not depend on evictable pointer history.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -455,6 +462,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Once replacement ownership transfers, restoring the incumbent after scheduling failure would revive a generation already superseded.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -477,6 +485,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Replacement state must persist before the foreign lock CAS, otherwise a storage collision could strand ownership on a run with no state.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -502,6 +511,7 @@ final class DispatcherBatchTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A production-built concurrent lock generation interleaves at the replacement CAS, proving compensation cannot delete the winner.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -599,7 +609,7 @@ final class DispatcherBatchTest extends TestCase {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private function lock(): ?array {
-		$raw   = $this->rig->wpdb()->rows[ 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		$raw   = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		$value = \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 
 		return \is_array( $value ) ? $value : null;

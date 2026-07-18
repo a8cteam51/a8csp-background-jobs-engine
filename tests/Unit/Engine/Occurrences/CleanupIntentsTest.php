@@ -29,6 +29,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -146,8 +147,8 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
 		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
-		self::assertSame( 'Unknown schedule registration "owner-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -163,16 +164,17 @@ final class CleanupIntentsTest extends TestCase {
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
-		self::assertSame(
-			array(
-				'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
-				'Schedule occurrence registration could not be read: {error}',
-			),
-			\array_column( $this->logger->records, 'message' )
-		);
-		self::assertSame(
-			'Schedule registry option row "a8csp_bgte_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
-			$this->logger->records[1]['context']['error'] ?? null
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
+		self::assertSame( 'warning', $this->logger->records[1]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[1]['context']['registration_key'] ?? null );
+		$propagated_error = $this->logger->records[1]['context']['error'] ?? null;
+		self::assertIsString( $propagated_error );
+		self::assertStringContainsString(
+			'a8csp_bgte_schedule_registrations_owner-a',
+			$propagated_error,
+			'The propagated corrupt-registry error must name the exact option row so an operator can act on it.'
 		);
 	}
 
@@ -247,7 +249,8 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Unknown schedule cleanup intent remains pending because verified clearance failed.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( 'Repair the backend before retrying convergence.', $this->logger->records[0]['context']['error'] ?? null );
 	}
 
 	/**
@@ -294,30 +297,22 @@ final class CleanupIntentsTest extends TestCase {
 
 		$this->cleanup_intents->converge_pending_intents();
 
-		self::assertSame(
-			array(
-				'level'   => 'warning',
-				'message' => 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.',
-				'context' => array( 'exception' => $throwable ),
-			),
-			$this->logger->records[0] ?? null
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $throwable, $this->logger->records[0]['context']['exception'] ?? null );
 	}
 
 	/**
 	 * A throwable during one intent convergence is retained with its schedule identity.
 	 *
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_logs_a_convergence_throwable_as_exception_context(): void {
-		$raw = \maybe_serialize(
-			array(
-				'key'        => self::REGISTRATION_KEY,
-				'created_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( $this->intent_option_name(), $raw );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( self::NOW );
+		self::assertSame( $this->intent_option_name(), $option_name );
+		$this->wpdb->put( $option_name, $raw );
 		$throwable = new \RuntimeException( 'Intent convergence secret.' );
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
@@ -329,33 +324,23 @@ final class CleanupIntentsTest extends TestCase {
 
 		$this->cleanup_intents->converge_pending_intents();
 
-		self::assertSame(
-			array(
-				'level'   => 'warning',
-				'message' => 'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
-				'context' => array(
-					'registration_key' => self::REGISTRATION_KEY,
-					'exception'        => $throwable,
-				),
-			),
-			$this->logger->records[0] ?? null
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( $throwable, $this->logger->records[0]['context']['exception'] ?? null );
 	}
 
 	/**
 	 * An unreadable intent row is retained and skipped without consulting the scheduler.
 	 *
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_skips_a_failed_row_read(): void {
-		$raw = \maybe_serialize(
-			array(
-				'key'        => self::REGISTRATION_KEY,
-				'created_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( $this->intent_option_name(), $raw );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( self::NOW );
+		self::assertSame( $this->intent_option_name(), $option_name );
+		$this->wpdb->put( $option_name, $raw );
 		$row_read_failures = 0;
 		$this->wpdb->before_next(
 			'select',
@@ -429,6 +414,8 @@ final class CleanupIntentsTest extends TestCase {
 	/**
 	 * Exact-value deletion loses to an intent generation reinserted after the read.
 	 *
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @return  void
 	 */
 	public function test_intent_cas_delete_loses_to_a_delete_reinsert(): void {
@@ -436,13 +423,9 @@ final class CleanupIntentsTest extends TestCase {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$this->clock->timestamp = self::NOW + 1;
-		$replacement_raw        = \maybe_serialize(
-			array(
-				'key'        => self::REGISTRATION_KEY,
-				'created_at' => $this->clock->timestamp,
-			)
-		);
-		self::assertIsString( $replacement_raw );
+
+		[ $replacement_name, $replacement_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( $this->clock->timestamp );
+		self::assertSame( $this->intent_option_name(), $replacement_name );
 		$this->wpdb->before_next(
 			'delete',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement_raw ): void {

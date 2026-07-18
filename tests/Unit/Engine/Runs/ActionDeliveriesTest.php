@@ -348,6 +348,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built run and lock generations stage the replacement between callback entry and incumbent completion, the race production generation fences must preserve.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -363,6 +364,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built run and lock generations stage replacement ownership before the incumbent enters failure adjudication.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -378,6 +380,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The legitimate retry-policy hook stages a fixture-built replacement after user code fails but before the incumbent failure transition writes.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -451,6 +454,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Production-built latest-pointer and foreign-lock bytes stage ownership loss inside user code so post-callback fencing can be observed without replacing production logic.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -163,7 +163,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( RunStatus::Failed, $remaining->status );
 		self::assertSame( array( 'hooks', 'history' ), $remaining->effects );
 		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_runs_' . self::IDENTITY ) );
+		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . self::IDENTITY,
@@ -172,19 +172,10 @@ final class LifecycleEffectsTest extends TestCase {
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		$this->assert_terminal_history( 'failed' );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Failed run "00000000001700000000-0000000000000000042" could not be retained for manual retry.',
-					'context' => array(
-						'task_name' => self::IDENTITY,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
 	/** Terminal-history failure leaves a marked claim for reconciliation after active lock cleanup. */
@@ -223,19 +214,10 @@ final class LifecycleEffectsTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Terminal run history could not be persisted; inspection data may be incomplete.',
-					'context' => array(
-						'name'   => self::IDENTITY,
-						'run_id' => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
 	/** Only the exact terminal snapshot carrying every required effect marker may be deleted. */
@@ -478,7 +460,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
+		return OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**

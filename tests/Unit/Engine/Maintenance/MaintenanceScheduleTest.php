@@ -77,13 +77,11 @@ final class MaintenanceScheduleTest extends TestCase {
 
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
-		self::assertSame(
-			array(
-				'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
-				'Engine maintenance schedule could not be synchronized: {error}',
-			),
-			\array_column( $this->rig->logger()->records, 'message' )
-		);
+		$records = $this->rig->logger()->records;
+		self::assertCount( 2, $records );
+		self::assertSame( array( 'warning', 'error' ), \array_column( $records, 'level' ) );
+		self::assertSame( $option_name, $records[0]['context']['option_name'] ?? null );
+		self::assertArrayHasKey( 'error', $records[1]['context'] );
 
 		$rows = new OptionRows( $this->rig->wpdb() );
 		self::assertSame( RowDeleteOutcome::Deleted, $rows->delete_if_value_matches( $option_name, $poison ) );

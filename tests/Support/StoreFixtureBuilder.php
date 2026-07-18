@@ -3,22 +3,33 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLeaseOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
 use Psr\Log\NullLogger;
 
 /**
@@ -270,6 +281,95 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
+	 * Returns one occurrence-lease option name and exact raw value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $claimed_at  Claim timestamp.
+	 * @param   int $claim_token Deterministic claim-token source.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function occurrence_lease( int $claimed_at, int $claim_token = 42 ): array {
+		return $this->isolated(
+			function ( \wpdb $wpdb ) use ( $claimed_at, $claim_token ): array {
+				$rows  = new OptionRows( $wpdb );
+				$claim = ( new OccurrenceLease( $rows, new FixedClock( $claimed_at ), new RecordingRandomizer( $claim_token ) ) )->claim( $this->identity );
+				if ( OccurrenceLeaseOutcome::Claimed !== $claim->outcome ) {
+					throw new \LogicException( 'Production OccurrenceLease rejected an isolated lease fixture.' );
+				}
+
+				return $this->only_row_under( $rows, $wpdb, OccurrenceLease::OPTION_PREFIX );
+			}
+		);
+	}
+
+	/**
+	 * Returns one cleanup-intent option name and exact raw value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $created_at Intent timestamp.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function cleanup_intent( int $created_at ): array {
+		return $this->isolated(
+			function ( \wpdb $wpdb ) use ( $created_at ): array {
+				$rows      = new OptionRows( $wpdb );
+				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
+				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
+				$intents->record_intent( $this->identity );
+
+				return $this->only_row_under( $rows, $wpdb, CleanupIntents::OPTION_PREFIX );
+			}
+		);
+	}
+
+	/**
+	 * Returns the cursor row authored by one incomplete production maintenance pass.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array{string, string}
+	 */
+	public function sweep_cursor(): array {
+		return $this->isolated(
+			function ( \wpdb $wpdb ): array {
+				$clock   = new FixedClock( 1_700_000_000 );
+				$logger  = new NullLogger();
+				$backend = new RecordingBackend();
+				$rows    = new OptionRows( $wpdb );
+				for ( $index = 0; $index < 500; ++$index ) {
+					if ( ! $rows->insert_if_absent( RunIdentity::option_prefix() . '!fixture-' . \sprintf( '%03d', $index ), 'schema-invalid-run' ) ) {
+						throw new \LogicException( 'Store fixtures could not stage the maintenance scan budget.' );
+					}
+				}
+
+				$before         = $this->option_names( $rows, '' );
+				$guard          = new OverlapGuard( $clock, $logger, $rows );
+				$stores         = new StoreFactory( $clock, $rows, $logger );
+				$windows        = new LockWindows( $clock, $logger );
+				$effects        = new LifecycleEffects( $guard, $stores, $logger );
+				$transitions    = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
+				$reconciliation = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, new WorkRegistry(), $backend );
+				$intents        = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
+
+				( new MaintenanceTask( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array() );
+				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
+				if ( 1 !== \count( $added ) ) {
+					throw new \LogicException( 'Production MaintenanceTask did not emit exactly one isolated cursor row.' );
+				}
+
+				return $this->row( $wpdb, $added[0] );
+			}
+		);
+	}
+
+	/**
 	 * Returns one overlap-lock option name and exact raw value.
 	 *
 	 * @since   1.0.0
@@ -443,6 +543,47 @@ final readonly class StoreFixtureBuilder {
 		}
 
 		return array( $option_name, $raw );
+	}
+
+	/**
+	 * Returns the only production-authored row under one option prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   OptionRows $rows   Authoritative option-name reader.
+	 * @param   \wpdb      $wpdb   Isolated database boundary.
+	 * @param   string     $prefix Complete option prefix.
+	 *
+	 * @return  array{string, string}
+	 */
+	private function only_row_under( OptionRows $rows, \wpdb $wpdb, string $prefix ): array {
+		$names = $this->option_names( $rows, $prefix );
+		if ( 1 !== \count( $names ) ) {
+			throw new \LogicException( 'The production store did not emit exactly one isolated row.' );
+		}
+
+		return $this->row( $wpdb, $names[0] );
+	}
+
+	/**
+	 * Returns authoritative option names or rejects an isolated read failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   OptionRows $rows   Authoritative option-name reader.
+	 * @param   string     $prefix Complete literal prefix.
+	 *
+	 * @return  list<string>
+	 */
+	private function option_names( OptionRows $rows, string $prefix ): array {
+		$selected = $rows->option_names( $prefix );
+		if ( $selected->is_failure() ) {
+			throw new \LogicException( 'Store fixtures could not enumerate isolated option rows.' );
+		}
+
+		return $selected->value;
 	}
 
 	/**

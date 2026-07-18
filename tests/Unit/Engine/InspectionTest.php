@@ -421,6 +421,7 @@ final class InspectionTest extends TestCase {
 	 *
 	 * @load-bearing fail-closed-ordering
 	 * @pin-rationale Twenty lexically leading malformed candidates and one prefix-colliding identity prove validation precedes the row cap, so corrupt or foreign names cannot hide an authoritative valid run.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -449,6 +450,7 @@ final class InspectionTest extends TestCase {
 	 *
 	 * @load-bearing bounded-retry-liveness
 	 * @pin-rationale Twenty-four production-encoded rows prove the paged scan stops after twenty accepted candidates while exposing four uninspected rows instead of retrying without a bound.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -13,7 +13,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
@@ -125,7 +128,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
-				self::assertArrayNotHasKey( 'a8csp_bgte_run_history_' . self::IDENTITY, $wpdb->rows );
+				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::IDENTITY, $wpdb->rows );
 				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started' ) );
 			}
 		);
@@ -228,7 +231,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertSame( 'run-incumbent', $error->context['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
 	/**
@@ -254,7 +257,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
 		self::assertStringContainsString( 'could not confirm the owner', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
 	/**
@@ -288,7 +291,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertSame( 'run-rival', $this->lock_owner( $this->args_hash() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
@@ -308,7 +311,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$error = $this->api_error( $result );
 		self::assertSame( ApiErrorCode::BackendRejected, $error->code );
 		self::assertNull( $this->lock_owner( $this->args_hash() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID ) );
+		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
 	// endregion.
@@ -355,7 +358,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			)
 		);
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, $raw );
+		$this->rig->wpdb()->put( OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $args_hash, $raw );
 	}
 
 	/** Returns the production argument identity for the pilot arguments. */
@@ -369,7 +372,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @param   string $args_hash Argument identity.
 	 */
 	private function lock_owner( string $args_hash ): ?string {
-		$raw  = $this->rig->wpdb()->rows[ 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash ] ?? null;
+		$raw  = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $args_hash ] ?? null;
 		$lock = \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 
 		return \is_array( $lock ) && \is_string( $lock['run_id'] ?? null ) ? $lock['run_id'] : null;

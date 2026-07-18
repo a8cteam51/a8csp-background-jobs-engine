@@ -43,6 +43,9 @@ final class ActionSchedulerAbsenceTest extends IntegrationTestCase {
 	/**
 	 * An absent Action Scheduler reports its state and rejects writes without calling vendor code.
 	 *
+	 * @load-bearing security
+	 * @pin-rationale The public facade fails over to WP-Cron, so direct internal-backend staging covers the otherwise unreachable rejection branch and records that mutation-coverage gap.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

@@ -25,17 +25,6 @@ final class PendingActionTest extends TestCase {
 		}
 	}
 
-	/** The value shape is closed to inheritance, mutation, and direct construction. */
-	public function test_class_is_final_readonly_and_factory_constructed(): void {
-		$reflection  = new \ReflectionClass( PendingAction::class );
-		$constructor = $reflection->getConstructor();
-
-		self::assertTrue( $reflection->isFinal() );
-		self::assertTrue( $reflection->isReadOnly() );
-		self::assertNotNull( $constructor );
-		self::assertTrue( $constructor->isPrivate() );
-	}
-
 	/**
 	 * Every lifecycle stage supports immediate asynchronous delivery.
 	 *

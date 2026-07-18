@@ -221,6 +221,7 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Production-built foreign lock bytes distinguish the exact fresh/stale edge that controls whether admission may replace an incumbent.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -261,6 +262,7 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The second authoritative lock read fails after the held claim, so exact row equality proves the refusal is fail-closed and write-free.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -615,6 +617,7 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The failed-store CAS loses after the fresh run is accepted; cancelling that run and retrying again proves the source entry was not consumed.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -639,6 +642,7 @@ final class DispatcherTest extends TestCase {
 
 	/**
 	 * A deliberately duplicated retained identifier retries the first stored payload.
+	 * Production failed-run recording deduplicates run IDs, so this corrupt row cannot be builder-produced.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -668,6 +672,7 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The authoritative failed-store read fails before dispatch; unchanged fixture bytes and an empty backend ledger prove fail-closed behavior.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

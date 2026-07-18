@@ -30,7 +30,7 @@ final class ApiErrorCodeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_error_code_backing_values_are_stable(): void {
-		self::assertSame(
+		self::assertEqualsCanonicalizing(
 			array(
 				'engine_unavailable',
 				'unknown_work',

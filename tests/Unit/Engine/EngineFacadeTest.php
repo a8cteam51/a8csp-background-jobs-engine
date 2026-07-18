@@ -165,6 +165,7 @@ final class EngineFacadeTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The fixture-built failed row and option-function ledger prove the facade consumes authoritative storage through exact SQL CAS instead of a non-atomic WordPress option write.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

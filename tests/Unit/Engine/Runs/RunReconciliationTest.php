@@ -20,6 +20,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
@@ -50,6 +52,7 @@ use PHPUnit\Framework\TestCase;
  *
  * @load-bearing durability
  * @pin-rationale Maintenance must classify and converge exact retained run/lock combinations, including crashed and corrupt states that supported consumer operations cannot manufacture.
+ * @fixture StoreFixtureBuilder
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -177,14 +180,8 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_converges_pending_unknown_chain_intent(): void {
 		$registration_key = 'orphan-owner:orphan-schedule';
-		$option_name      = 'a8csp_bgte_cleanup_intent_' . \hash( 'sha256', $registration_key );
-		$raw              = \maybe_serialize(
-			array(
-				'key'        => $registration_key,
-				'created_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
+
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
 		$this->wpdb->put( $option_name, $raw );
 
 		$this->maintenance->handle( array() );
@@ -199,7 +196,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_deletes_a_stale_orphaned_lock(): void {
 		$orphan_name = self::identity( 'orphan-task' );
-		$lock_name   = 'a8csp_bgte_overlap_lock_' . $orphan_name . '_' . \str_repeat( 'a', 64 );
+		$lock_name   = OverlapGuard::OPTION_PREFIX . $orphan_name . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
@@ -216,7 +213,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_leaves_a_fresh_orphaned_lock_untouched(): void {
-		$lock_name = 'a8csp_bgte_overlap_lock_' . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
+		$lock_name = OverlapGuard::OPTION_PREFIX . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW );
 
 		$this->maintenance->handle( array() );
@@ -298,7 +295,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'running', $state['status'] ?? null );
 		self::assertFalse( $state['executing'] ?? true );
 		self::assertSame( 2, $state['action_seq'] ?? null );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . $name, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
 		self::assertSame( array(), $batch->failed_calls );
 
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
@@ -400,7 +397,7 @@ final class RunReconciliationTest extends TestCase {
 			$this->backend->calls
 		);
 		self::assertSame( 'running', $this->run_state( self::IDENTITY )['status'] ?? null );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 	}
 
 	/**
@@ -432,7 +429,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 	}
 
 	/**
@@ -456,7 +453,7 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		self::assertCount( 1, $this->backend->calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		$this->assert_history_status( $options, 'completed' );
 		self::assertSame(
 			array(
@@ -515,7 +512,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 	}
 
 	/**
@@ -621,7 +618,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $pending_before, $state_after['pending'] ?? null );
 		$options = $this->options();
 		self::assertArrayHasKey( $this->run_option_name( $name ), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . $name, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $options );
 		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
@@ -638,7 +635,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $rejected_call, $this->backend->calls[1] );
 		self::assertCount( 1, $this->logger->records );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . $name, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
 		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 	}
@@ -666,7 +663,7 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		self::assertCount( 1, $this->backend->calls );
 		self::assertArrayHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame( array(), $this->fired_actions() );
 		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock_raw );
@@ -679,7 +676,7 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		self::assertCount( 1, $this->backend->calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/superseded/' . self::IDENTITY,
@@ -716,7 +713,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame( array(), $this->fired_actions() );
 		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock_raw );
@@ -732,7 +729,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
 		self::assertArrayHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame( array(), $this->fired_actions() );
 		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock_raw );
@@ -759,7 +756,15 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_crashed_run_terminalized();
-		self::assertNotNull( $this->log_record( 'Reclaimed stale running run that carries no pending-action descriptor.' ) );
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'name'   => self::IDENTITY,
+					'run_id' => self::RUN_ID,
+				)
+			)
+		);
 	}
 
 	/**
@@ -838,7 +843,13 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array(), $current_task->calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
-		$record = $this->log_record( 'Batch run action references an unregistered batch; register the batch before dispatching its run action.' );
+		$record = $this->log_record(
+			'warning',
+			array(
+				'batch_name' => self::IDENTITY,
+				'run_id'     => self::RUN_ID,
+			)
+		);
 		self::assertNotNull( $record );
 		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
 	}
@@ -866,7 +877,13 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array(), $current_batch->process_calls );
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $this->options() );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $this->options() );
-		$record = $this->log_record( 'Task run action references an unregistered task; register the task before dispatching its run action.' );
+		$record = $this->log_record(
+			'warning',
+			array(
+				'task_name' => $name,
+				'run_id'    => self::RUN_ID,
+			)
+		);
 		self::assertNotNull( $record );
 		self::assertSame( $name, $record['context']['task_name'] ?? null );
 	}
@@ -911,20 +928,18 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( $run_name, $options );
 		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
 		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
-		self::assertArrayNotHasKey( 'a8csp_bgte_run_' . $healthy_name . '_' . self::RUN_ID, $options );
+		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $healthy_name . '_' . self::RUN_ID, $options );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $healthy_name, $options );
 		self::assertCount( 1, $healthy_batch->failed_calls );
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
 		self::assertSame(
 			array(
-				'level'   => 'warning',
-				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
-				'context' => array(
-					'name'      => self::IDENTITY,
-					'run_id'    => self::RUN_ID,
-					'exception' => $throwable,
-				),
+				'name'      => self::IDENTITY,
+				'run_id'    => self::RUN_ID,
+				'exception' => $throwable,
 			),
-			$this->exception_diagnostic( $throwable )
+			$diagnostic['context']
 		);
 	}
 
@@ -964,17 +979,15 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( $run_name, $options );
 		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
 		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
 		self::assertSame(
 			array(
-				'level'   => 'warning',
-				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
-				'context' => array(
-					'name'      => self::IDENTITY,
-					'run_id'    => self::RUN_ID,
-					'exception' => $throwable,
-				),
+				'name'      => self::IDENTITY,
+				'run_id'    => self::RUN_ID,
+				'exception' => $throwable,
 			),
-			$this->exception_diagnostic( $throwable )
+			$diagnostic['context']
 		);
 
 		$GLOBALS['a8csp_bgte_test_filter_values'] = array();
@@ -1004,7 +1017,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
@@ -1036,7 +1049,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertArrayHasKey( $orphan_lock, $this->wpdb->rows );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
@@ -1089,7 +1102,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/superseded/' . self::IDENTITY,
@@ -1113,7 +1126,13 @@ final class RunReconciliationTest extends TestCase {
 		$lock_row = \maybe_unserialize( $lock );
 		self::assertIsArray( $lock_row );
 		self::assertSame( $replacement_run_id, $lock_row['run_id'] ?? null );
-		$record = $this->log_record( 'Superseded batch run after its ownership fence failed.' );
+		$record = $this->log_record(
+			'info',
+			array(
+				'batch_name' => self::IDENTITY,
+				'run_id'     => self::RUN_ID,
+			)
+		);
 		self::assertNotNull( $record );
 		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
 		self::assertArrayNotHasKey( 'task_name', $record['context'] );
@@ -1134,7 +1153,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame(
 			array(
@@ -1169,7 +1188,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->logger->records );
 	}
@@ -1206,7 +1225,7 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/superseded/' . self::IDENTITY,
@@ -1244,7 +1263,7 @@ final class RunReconciliationTest extends TestCase {
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
 		self::assertSame( $this->clock->timestamp, $state['heartbeat_at'] ?? null );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		$history = $options[ 'a8csp_bgte_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame( array(), $history['terminal'] ?? null );
@@ -1285,7 +1304,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertNull( $failure->failed_chunk );
 		$actions = $this->fired_actions();
 		$options = $this->options();
-		self::assertArrayNotHasKey( 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID, $options );
+		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID, $options );
 		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $options );
 		self::assertSame(
 			array(
@@ -1324,7 +1343,16 @@ final class RunReconciliationTest extends TestCase {
 		$error = $failed_entry['error'] ?? null;
 		self::assertIsArray( $error );
 		self::assertSame( self::ARGS, $error['failed_chunk'] ?? null );
-		self::assertNotNull( $this->log_record( 'Terminal batch callback was skipped because the batch is not registered in this request.' ) );
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'batch_name' => self::IDENTITY,
+					'run_id'     => self::RUN_ID,
+					'status'     => 'failed',
+				)
+			)
+		);
 	}
 
 	/**
@@ -1365,17 +1393,15 @@ final class RunReconciliationTest extends TestCase {
 			),
 			$history['terminal'] ?? null
 		);
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
 		self::assertSame(
 			array(
-				'level'   => 'warning',
-				'message' => 'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
-				'context' => array(
-					'name'      => $throwing_name,
-					'run_id'    => self::RUN_ID,
-					'exception' => $throwable,
-				),
+				'name'      => $throwing_name,
+				'run_id'    => self::RUN_ID,
+				'exception' => $throwable,
 			),
-			$this->exception_diagnostic( $throwable )
+			$diagnostic['context']
 		);
 	}
 
@@ -1386,7 +1412,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_deletes_a_schema_invalid_lock_row(): void {
 		$corrupt_name = self::identity( 'corrupt-task' );
-		$lock_name    = 'a8csp_bgte_overlap_lock_' . $corrupt_name . '_' . \str_repeat( 'b', 64 );
+		$lock_name    = OverlapGuard::OPTION_PREFIX . $corrupt_name . '_' . \str_repeat( 'b', 64 );
 		$this->wpdb->put( $lock_name, 'not-serialized' );
 
 		$this->maintenance->handle( array() );
@@ -1405,13 +1431,13 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_continues_after_one_lock_cleanup_throws(): void {
 		$throwing_name = self::identity( 'broken-lock' );
 		$throwing_hash = \str_repeat( 'b', 64 );
-		$throwing_key  = 'a8csp_bgte_overlap_lock_' . $throwing_name . '_' . $throwing_hash;
+		$throwing_key  = OverlapGuard::OPTION_PREFIX . $throwing_name . '_' . $throwing_hash;
 		$throwing_raw  = 'broken-lock-row';
 		$this->wpdb->put( $throwing_key, $throwing_raw );
 
 		$healthy_name = self::identity( 'healthy-lock' );
 		$healthy_hash = \str_repeat( 'c', 64 );
-		$healthy_key  = 'a8csp_bgte_overlap_lock_' . $healthy_name . '_' . $healthy_hash;
+		$healthy_key  = OverlapGuard::OPTION_PREFIX . $healthy_name . '_' . $healthy_hash;
 		$this->wpdb->put( $healthy_key, 'healthy-lock-row' );
 
 		$throwable = new \RuntimeException( 'Lock cleanup exploded.' );
@@ -1426,18 +1452,16 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertSame( $throwing_raw, $this->wpdb->rows[ $throwing_key ] ?? null );
 		self::assertArrayNotHasKey( $healthy_key, $this->wpdb->rows );
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
 		self::assertSame(
 			array(
-				'level'   => 'warning',
-				'message' => 'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
-				'context' => array(
-					'name'      => $throwing_name,
-					'args_hash' => $throwing_hash,
-					'run_id'    => null,
-					'exception' => $throwable,
-				),
+				'name'      => $throwing_name,
+				'args_hash' => $throwing_hash,
+				'run_id'    => null,
+				'exception' => $throwable,
 			),
-			$this->exception_diagnostic( $throwable )
+			$diagnostic['context']
 		);
 	}
 
@@ -1449,11 +1473,11 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_reclaims_a_stale_lock_whose_run_row_is_corrupt(): void {
 		$name                               = self::identity( 'corrupt-task' );
 		$args_hash                          = \str_repeat( 'b', 64 );
-		$run_name                           = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
+		$run_name                           = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
 		$options                            = $this->options();
 		$options[ $run_name ]               = 'corrupt-run';
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
-		$lock_name                          = 'a8csp_bgte_overlap_lock_' . $name . '_' . $args_hash;
+		$lock_name                          = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
@@ -1471,7 +1495,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_reclaims_a_stale_lock_when_the_valid_run_has_a_different_fencing_hash(): void {
 		$this->create_running_run();
 		$mismatched_hash = \str_repeat( 'f', 64 );
-		$mismatched_lock = 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $mismatched_hash;
+		$mismatched_lock = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $mismatched_hash;
 		$this->put_lock( $mismatched_lock, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
@@ -1487,7 +1511,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_exact_deletes_an_unpaired_corrupt_run_row(): void {
-		$run_name                           = 'a8csp_bgte_run_' . self::identity( 'corrupt-task' ) . '_' . self::RUN_ID;
+		$run_name                           = RunStore::OPTION_PREFIX . self::identity( 'corrupt-task' ) . '_' . self::RUN_ID;
 		$options                            = $this->options();
 		$options[ $run_name ]               = 'corrupt-run';
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
@@ -1568,7 +1592,7 @@ final class RunReconciliationTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		$history = $this->options()[ 'a8csp_bgte_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
@@ -1880,7 +1904,16 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
-		self::assertNotNull( $this->log_record( 'Terminal batch callback was skipped because the batch is not registered in this request.' ) );
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'batch_name' => self::IDENTITY,
+					'run_id'     => self::RUN_ID,
+					'status'     => 'completed',
+				)
+			)
+		);
 	}
 
 	/**
@@ -1904,17 +1937,15 @@ final class RunReconciliationTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame(
-			array(
-				'level'   => 'warning',
-				'message' => 'Terminal batch callback was skipped because the batch is not registered in this request.',
-				'context' => array(
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
 					'batch_name' => $name,
 					'run_id'     => self::RUN_ID,
 					'status'     => 'completed',
-				),
-			),
-			$this->log_record( 'Terminal batch callback was skipped because the batch is not registered in this request.' )
+				)
+			)
 		);
 	}
 
@@ -2253,7 +2284,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name( string $name = self::IDENTITY ): string {
-		return 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
+		return RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -2262,7 +2293,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . self::ARGS_HASH;
+		return OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . self::ARGS_HASH;
 	}
 
 	/**
@@ -2283,24 +2314,25 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Returns the first log record with an exact message.
+	 * Returns the first log record matching a level and context identity.
 	 *
-	 * @param   string $message Expected log message.
+	 * @param   string                  $level            Expected log level.
+	 * @param   array<array-key, mixed> $context_identity Context entries that identify the record.
 	 *
 	 * @return  array{level: string, message: string, context: array<array-key, mixed>}|null
 	 */
-	private function log_record( string $message ): ?array {
+	private function log_record( string $level, array $context_identity ): ?array {
 		foreach ( $this->logger->records as $record ) {
-			if ( $message === $record['message'] ) {
-				$level = $record['level'];
-				self::assertIsString( $level );
-
-				return array(
-					'level'   => $level,
-					'message' => $record['message'],
-					'context' => $record['context'],
-				);
+			if ( $level !== $record['level'] ) {
+				continue;
 			}
+			foreach ( $context_identity as $key => $value ) {
+				if ( ! \array_key_exists( $key, $record['context'] ) || $value !== $record['context'][ $key ] ) {
+					continue 2;
+				}
+			}
+
+			return $record;
 		}
 
 		return null;

@@ -157,6 +157,7 @@ final class LatestRunPointerTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built before/after rows prove the caller retries the rival generation instead of overwriting it or exceeding the bounded LRU.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -194,6 +195,7 @@ final class LatestRunPointerTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Every valid precondition and expected generation comes from production serialization, so exact equality proves a genuine lost-CAS retry.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -242,6 +244,7 @@ final class LatestRunPointerTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale No-write outcomes are the safety boundary when the authoritative generation cannot be read or an exact update fails without a competing winner.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

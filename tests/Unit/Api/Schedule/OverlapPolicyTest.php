@@ -26,21 +26,11 @@ final class OverlapPolicyTest extends TestCase {
 	}
 
 	/**
-	 * The three cases and their persisted values remain an exact closed set.
+	 * The public backing values remain an exact order-independent set.
 	 *
 	 * @return  void
 	 */
-	public function test_cases_and_backing_values_are_exact(): void {
-		$policies = OverlapPolicy::cases();
-
-		self::assertSame(
-			array(
-				OverlapPolicy::Allow,
-				OverlapPolicy::Skip,
-				OverlapPolicy::Replace,
-			),
-			$policies
-		);
-		self::assertSame( array( 'allow', 'skip', 'replace' ), \array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, $policies ) );
+	public function test_backing_values_are_an_exact_set(): void {
+		self::assertEqualsCanonicalizing( array( 'allow', 'skip', 'replace' ), \array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, OverlapPolicy::cases() ) );
 	}
 }

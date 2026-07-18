@@ -241,6 +241,7 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @load-bearing security
 	 * @pin-rationale A canonical fixture cannot contain an unknown stage, so corrupting only that scalar proves read validation fails closed through the public inspection and retry seams.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -274,6 +275,7 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built generations prove replayed writers cannot replace the retained retry arguments chosen by the first successful CAS.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -302,6 +304,7 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Embedded null bytes in a production-built rival generation make exact preservation distinguishable from decode-and-recreate shortcuts.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -335,6 +338,7 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A no-write result is required when authority is unavailable, while rereading unchanged bytes distinguishes persistence failure from a lost comparison.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -370,6 +374,7 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Exact-delete retry bounds prevent an unbounded maintenance loop while preserving each interleaved append until one complete generation is deleted.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -410,6 +415,7 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A failed exact DELETE must not enter the generation-reread loop used only for competing writers; the public store result cannot otherwise distinguish those storage outcomes.
+	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
