@@ -471,6 +471,76 @@ final readonly class StoreFixtureBuilder {
 	// region CORRUPTION FIXTURES.
 
 	/**
+	 * Returns a production failed-run row with one deliberately unreadable member appended.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Complete production failed-run fixture.
+	 *
+	 * @return  array{string, string}
+	 */
+	public static function failed_runs_with_corrupt_member( array $fixture ): array {
+		$entries = RawOptionDecoder::decode( $fixture[1] );
+		if ( ! \is_array( $entries ) ) {
+			throw new \InvalidArgumentException( 'The failed-run fixture must decode to an entry list.' );
+		}
+
+		$entries[] = array( 'run_id' => null );
+
+		return array( $fixture[0], self::corrupt_row( $entries ) );
+	}
+
+	/**
+	 * Returns a whole failed-run row that cannot decode to an entry list.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   object|null $value Deliberately unreadable row value, or null for an inert object.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function unreadable_failed_runs( ?object $value = null ): array {
+		return array( FailedRunStore::OPTION_PREFIX . $this->identity, self::corrupt_row( $value ?? new \stdClass() ) );
+	}
+
+	/**
+	 * Returns a production failed-run row whose first member has an unknown failure stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Complete production failed-run fixture.
+	 *
+	 * @return  array{string, string}
+	 */
+	public static function failed_runs_with_unknown_stage( array $fixture ): array {
+		$entries = RawOptionDecoder::decode( $fixture[1] );
+		if ( ! \is_array( $entries ) || ! \is_array( $entries[0] ?? null ) || ! \is_array( $entries[0]['error'] ?? null ) ) {
+			throw new \InvalidArgumentException( 'The failed-run fixture must contain a complete first entry.' );
+		}
+
+		$entries[0]['error']['stage'] = 'unknown';
+
+		return array( $fixture[0], self::corrupt_row( $entries ) );
+	}
+
+	/**
+	 * Returns one deliberately unreadable run row for a canonical or malformed run-id suffix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Persisted run-id suffix.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function unreadable_run( string $run_id ): array {
+		return array( RunIdentity::option_name_prefix( $this->identity ) . $run_id, self::corrupt_row( array( 'state' => 'unreadable' ) ) );
+	}
+
+	/**
 	 * Mints one deliberately malformed row for corruption tests that cannot pass through a canonical store writer.
 	 *
 	 * @since   1.0.0

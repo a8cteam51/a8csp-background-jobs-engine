@@ -174,6 +174,26 @@ final readonly class RunOutput {
 	}
 
 	/**
+	 * Returns the warning carried by every output format when live-run rows are unreadable.
+	 *
+	 * @internal Command honesty seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $unreadable Number of unreadable live-run rows omitted from inspection.
+	 *
+	 * @return  string|null
+	 */
+	public static function unreadable_message( int $unreadable ): ?string {
+		if ( 1 > $unreadable ) {
+			return null;
+		}
+
+		return \sprintf( '%1$d unreadable live-run %2$s %3$s omitted; maintenance reclaims corrupt state, but repair malformed option names manually.', $unreadable, 1 === $unreadable ? 'row' : 'rows', 1 === $unreadable ? 'was' : 'were' );
+	}
+
+	/**
 	 * Formats one live heartbeat as a non-negative relative age and optional stale signal.
 	 *
 	 * @internal Command time seam.
@@ -205,6 +225,7 @@ final readonly class RunOutput {
 	 *     live: list<LiveRunEntry>,
 	 *     live_scanned: int,
 	 *     live_uninspected: int,
+	 *     live_unreadable: int,
 	 *     live_error: 'enumeration_failed'|'read_failed'|null,
 	 *     history: list<HistoryEntry>|null
 	 * } $snapshot
@@ -226,12 +247,14 @@ final readonly class RunOutput {
 		$history_unavailable = null === $snapshot['history'];
 		$history_rows        = $history_unavailable ? array() : self::history_rows_from_entries( $snapshot['history'] );
 		$truncation          = self::truncation_message( $snapshot['live_scanned'], $snapshot['live_uninspected'] );
+		$unreadable          = self::unreadable_message( $snapshot['live_unreadable'] );
 		if (
 			array() === $live_rows
 			&& array() === $history_rows
 			&& 'table' === $format
 			&& ! $history_unavailable
 			&& null === $truncation
+			&& null === $unreadable
 		) {
 			\WP_CLI::line( \sprintf( 'No live runs or history are retained for "%s".', $name ) );
 			return;
@@ -260,6 +283,9 @@ final readonly class RunOutput {
 
 		if ( $history_unavailable ) {
 			\WP_CLI::warning( 'Recent run history is unavailable because an authoritative database read failed.' );
+		}
+		if ( null !== $unreadable ) {
+			\WP_CLI::warning( $unreadable );
 		}
 		if ( null !== $truncation ) {
 			\WP_CLI::warning( $truncation );

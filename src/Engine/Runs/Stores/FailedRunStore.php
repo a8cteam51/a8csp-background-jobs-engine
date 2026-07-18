@@ -124,7 +124,7 @@ final readonly class FailedRunStore {
 			}
 
 			$expected_raw = $read->value;
-			$entries      = self::entries_from_option( null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw ) );
+			$entries      = $this->entries_from_raw( $expected_raw )['entries'];
 			// First write wins per run identifier; live and replayed writers construct identical entries.
 			if ( \in_array( $run_id, \array_column( $entries, 'run_id' ), true ) ) {
 				return true;
@@ -193,14 +193,44 @@ final readonly class FailedRunStore {
 	 */
 	#[\NoDiscard( 'a failed-run read outcome must be handled, not dropped' )]
 	public function all(): AbstractResult {
+		$inspection = $this->inspect();
+		if ( $inspection->is_failure() ) {
+			return $inspection;
+		}
+
+		return new Success( $inspection->value['entries'] );
+	}
+
+	/**
+	 * Returns retained failed runs with unreadable-entry metadata for operator inspection.
+	 *
+	 * @internal CLI inspection only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site.
+	 *
+	 * @return  AbstractResult<array{
+	 *     entries: list<array{
+	 *         run_id: string,
+	 *         failed_at: int,
+	 *         start_args: array<array-key, mixed>,
+	 *         attempts: int,
+	 *         error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 *     }>,
+	 *     unreadable: int,
+	 *     row_unreadable: bool
+	 * }, EngineError>
+	 */
+	#[\NoDiscard( 'a failed-run inspection outcome must be handled, not dropped' )]
+	public function inspect(): AbstractResult {
 		$selected = $this->rows->read( $this->option_name() );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
 
-		$raw = $selected->value;
-
-		return new Success( self::entries_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) ) );
+		return new Success( $this->entries_from_raw( $selected->value ) );
 	}
 
 	/**
@@ -232,7 +262,7 @@ final readonly class FailedRunStore {
 				return true;
 			}
 
-			$entries   = self::entries_from_option( RawOptionDecoder::decode( $expected_raw ) );
+			$entries   = $this->entries_from_raw( $expected_raw )['entries'];
 			$remaining = \array_values( \array_filter( $entries, static fn ( array $entry ): bool => $run_id !== $entry['run_id'] ) );
 			if ( $entries === $remaining ) {
 				return true;
@@ -291,7 +321,7 @@ final readonly class FailedRunStore {
 		}
 
 		for ( $attempt = 0; $attempt < self::PURGE_ATTEMPTS; ++$attempt ) {
-			$count   = \count( self::entries_from_option( RawOptionDecoder::decode( $raw ) ) );
+			$count   = \count( $this->entries_from_raw( $raw )['entries'] );
 			$outcome = $this->rows->delete_if_value_matches( $key, $raw );
 			if ( RowDeleteOutcome::Deleted === $outcome ) {
 				return $count;
@@ -384,35 +414,118 @@ final readonly class FailedRunStore {
 	}
 
 	/**
-	 * Normalizes valid failed-run entries from a persisted option.
+	 * Normalizes valid failed-run entries and unreadable metadata from exact persisted bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   mixed $value Persisted option value.
+	 * @param   string|null $raw Exact persisted option bytes, or null when the row is absent.
 	 *
-	 * @return  list<array{
-	 *     run_id: string,
-	 *     failed_at: int,
-	 *     start_args: array<array-key, mixed>,
-	 *     attempts: int,
-	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
-	 * }>
+	 * @return  array{
+	 *     entries: list<array{
+	 *         run_id: string,
+	 *         failed_at: int,
+	 *         start_args: array<array-key, mixed>,
+	 *         attempts: int,
+	 *         error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 *     }>,
+	 *     unreadable: int,
+	 *     row_unreadable: bool
+	 * }
 	 */
-	private static function entries_from_option( mixed $value ): array {
-		if ( ! \is_array( $value ) ) {
-			return array();
+	private function entries_from_raw( ?string $raw ): array {
+		if ( null === $raw ) {
+			return array(
+				'entries'        => array(),
+				'unreadable'     => 0,
+				'row_unreadable' => false,
+			);
 		}
 
-		$entries = array();
+		$value = RawOptionDecoder::decode( $raw );
+		if ( ! \is_array( $value ) ) {
+			$this->warn_unreadable_row();
+
+			return array(
+				'entries'        => array(),
+				'unreadable'     => 0,
+				'row_unreadable' => true,
+			);
+		}
+
+		$entries    = array();
+		$unreadable = 0;
 		foreach ( $value as $raw_entry ) {
 			$entry = self::entry_from_option( $raw_entry );
-			if ( null !== $entry ) {
-				$entries[] = $entry;
+			if ( null === $entry ) {
+				++$unreadable;
+				continue;
 			}
+
+			$entries[] = $entry;
 		}
 
-		return $entries;
+		if ( 0 < $unreadable ) {
+			$this->warn_unreadable_row( $unreadable );
+		}
+
+		return array(
+			'entries'        => $entries,
+			'unreadable'     => $unreadable,
+			'row_unreadable' => false,
+		);
+	}
+
+	/**
+	 * Reports one unreadable failed-run row without allowing log-hook re-entry to recurse.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $unreadable_count Rejected child-entry count, or null when the whole row is unreadable.
+	 *
+	 * @return  void
+	 */
+	private function warn_unreadable_row( ?int $unreadable_count = null ): void {
+		// Hook listeners can construct a fresh store for this row, so the guard spans instances.
+		static $warnings_in_flight;
+		if ( ! \is_array( $warnings_in_flight ) ) {
+			$warnings_in_flight = array();
+		}
+
+		$option_name = $this->option_name();
+		if ( isset( $warnings_in_flight[ $option_name ] ) ) {
+			return;
+		}
+
+		$warnings_in_flight[ $option_name ] = true;
+		try {
+			if ( null === $unreadable_count ) {
+				$this->logger->warning(
+					'Failed-run retention for "{identity}" is unreadable at option row "{option_name}"; repair or purge the row.',
+					array(
+						'identity'    => $this->identity,
+						'option_name' => $option_name,
+					)
+				);
+				return;
+			}
+
+			$this->logger->warning(
+				\sprintf(
+					'Failed-run retention for "{identity}" contains {unreadable_count} unreadable %1$s in option row "{option_name}"; this read omits %2$s, so repair or purge the row.',
+					1 === $unreadable_count ? 'entry' : 'entries',
+					1 === $unreadable_count ? 'it' : 'them'
+				),
+				array(
+					'identity'         => $this->identity,
+					'option_name'      => $option_name,
+					'unreadable_count' => $unreadable_count,
+				)
+			);
+		} finally {
+			unset( $warnings_in_flight[ $option_name ] );
+		}
 	}
 
 	/**

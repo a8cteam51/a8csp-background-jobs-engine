@@ -31,7 +31,8 @@ final readonly class RunsCommand {
 	 * heartbeat suffix identifies that condition.
 	 *
 	 * Table, JSON, and YAML include live state plus bounded recent history. CSV includes live state
-	 * only, and count is the number of live runs.
+	 * only, and count is the number of live runs. Every format reports omitted unreadable rows on
+	 * STDERR without adding diagnostic prose to rendered data.
 	 *
 	 * ## OPTIONS
 	 *
@@ -202,6 +203,9 @@ final readonly class RunsCommand {
 	 *     $ wp background-tasks failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *     $ wp background-tasks failed-runs purge consumer-plugin:email-digest
 	 *     $ wp background-tasks failed-runs purge --all
+	 *
+	 * List output excludes unreadable entries or whole option rows and reports one count warning on
+	 * STDERR for every format.
 	 *
 	 * @subcommand failed-runs
 	 *
@@ -483,20 +487,26 @@ final readonly class RunsCommand {
 		 *
 		 * @var \wpdb $wpdb
 		 */
-		$option_rows     = new OptionRows( $wpdb );
-		$logger          = new HookLogger();
-		$entries_by_name = array();
+		$option_rows        = new OptionRows( $wpdb );
+		$logger             = new HookLogger();
+		$entries_by_name    = array();
+		$unreadable_entries = 0;
+		$unreadable_rows    = 0;
 		foreach ( $names as $name ) {
-			$entries = new FailedRunStore( $name, $option_rows, $logger )->all();
-			if ( $entries->is_failure() ) {
+			$inspection = new FailedRunStore( $name, $option_rows, $logger )->inspect();
+			if ( $inspection->is_failure() ) {
 				\WP_CLI::error( \sprintf( 'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.', $name ) );
 				return;
 			}
 
-			$entries_by_name[ $name ] = $entries->value;
+			$entries_by_name[ $name ] = $inspection->value['entries'];
+			$unreadable_entries      += $inspection->value['unreadable'];
+			if ( $inspection->value['row_unreadable'] ) {
+				++$unreadable_rows;
+			}
 		}
 
-		FailedRunOutput::render( $entries_by_name, $owner, $format );
+		FailedRunOutput::render( $entries_by_name, $owner, $format, $unreadable_entries, $unreadable_rows );
 	}
 
 	/**

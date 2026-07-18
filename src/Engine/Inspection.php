@@ -211,23 +211,29 @@ final readonly class Inspection {
 	 *     history: list<HistoryEntry>|null,
 	 *     live_error: 'enumeration_failed'|'read_failed'|null,
 	 *     live_scanned: int,
-	 *     live_uninspected: int
+	 *     live_uninspected: int,
+	 *     live_unreadable: int
 	 * }
 	 *
 	 * @return  array
 	 */
 	public function runs( string $identity ): array {
-		$observed_at = $this->clock->now()->getTimestamp();
-		$run_store   = $this->stores->run_store( $identity );
-		$prefix      = RunIdentity::option_name_prefix( $identity );
-		$page        = $this->option_rows->option_names_page(
+		$observed_at     = $this->clock->now()->getTimestamp();
+		$run_store       = $this->stores->run_store( $identity );
+		$prefix          = RunIdentity::option_name_prefix( $identity );
+		$live_unreadable = 0;
+		$page            = $this->option_rows->option_names_page(
 			$prefix,
 			\strlen( $prefix ) + RunIdentity::LENGTH,
 			self::LIVE_RUN_LIMIT,
-			static function ( string $option_name ) use ( $identity ): bool {
+			static function ( string $option_name ) use ( $identity, &$live_unreadable ): bool {
 				$run_identity = RunIdentity::from_option_name( $option_name );
+				if ( null === $run_identity ) {
+					++$live_unreadable;
+					return false;
+				}
 
-				return null !== $run_identity && $identity === $run_identity['identity'];
+				return $identity === $run_identity['identity'];
 			}
 		);
 		if ( null === $page ) {
@@ -238,6 +244,7 @@ final readonly class Inspection {
 				'live_error'       => 'enumeration_failed',
 				'live_scanned'     => 0,
 				'live_uninspected' => 0,
+				'live_unreadable'  => 0,
 			);
 		}
 
@@ -246,6 +253,7 @@ final readonly class Inspection {
 		foreach ( $page['names'] as $option_name ) {
 			$run_identity = RunIdentity::from_option_name( $option_name );
 			if ( null === $run_identity || $identity !== $run_identity['identity'] ) {
+				// Malformed names are counted where the page filter rejects them; accepted names cannot fail here.
 				continue;
 			}
 
@@ -259,12 +267,21 @@ final readonly class Inspection {
 					'live_error'       => 'read_failed',
 					'live_scanned'     => \count( $page['names'] ),
 					'live_uninspected' => \max( 0, $page['total'] - \count( $page['names'] ) ),
+					'live_unreadable'  => $live_unreadable,
 				);
 			}
 
 			$snapshot = $inspected->value;
-			$state    = $snapshot['state'] ?? null;
-			if ( null === $state || RunStatus::Running !== $state->status ) {
+			if ( null === $snapshot ) {
+				continue;
+			}
+
+			$state = $snapshot['state'];
+			if ( null === $state ) {
+				++$live_unreadable;
+				continue;
+			}
+			if ( RunStatus::Running !== $state->status ) {
 				continue;
 			}
 
@@ -289,6 +306,7 @@ final readonly class Inspection {
 			'live_error'       => null,
 			'live_scanned'     => \count( $page['names'] ),
 			'live_uninspected' => \max( 0, $page['total'] - \count( $page['names'] ) ),
+			'live_unreadable'  => $live_unreadable,
 		);
 	}
 

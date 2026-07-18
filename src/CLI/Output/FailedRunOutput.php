@@ -143,6 +143,39 @@ final readonly class FailedRunOutput {
 	}
 
 	/**
+	 * Returns one CLI warning for unreadable failed-run entries or whole option rows.
+	 *
+	 * @internal Command honesty seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $unreadable_entries Rejected child-entry count.
+	 * @param   int $unreadable_rows    Whole-row unreadable count.
+	 *
+	 * @return  string|null
+	 */
+	public static function unreadable_message( int $unreadable_entries, int $unreadable_rows ): ?string {
+		if ( 1 > $unreadable_entries && 1 > $unreadable_rows ) {
+			return null;
+		}
+		if ( 1 > $unreadable_rows ) {
+			return \sprintf( '%1$d unreadable failed-run %2$s %3$s omitted; repair or purge each affected option row.', $unreadable_entries, 1 === $unreadable_entries ? 'entry' : 'entries', 1 === $unreadable_entries ? 'was' : 'were' );
+		}
+		if ( 1 > $unreadable_entries ) {
+			return \sprintf( '%1$d unreadable failed-run option %2$s %3$s omitted; repair or purge each affected option row.', $unreadable_rows, 1 === $unreadable_rows ? 'row' : 'rows', 1 === $unreadable_rows ? 'was' : 'were' );
+		}
+
+		return \sprintf(
+			'%1$d unreadable failed-run %2$s and %3$d unreadable option %4$s were omitted; repair or purge each affected option row.',
+			$unreadable_entries,
+			1 === $unreadable_entries ? 'entry' : 'entries',
+			$unreadable_rows,
+			1 === $unreadable_rows ? 'row' : 'rows'
+		);
+	}
+
+	/**
 	 * Renders every retained failed run through the requested WP-CLI formatter.
 	 *
 	 * @since   1.0.0
@@ -150,21 +183,27 @@ final readonly class FailedRunOutput {
 	 *
 	 * @phpstan-param array<string, list<FailedRunEntry>> $entries_by_name
 	 *
-	 * @param   array       $entries_by_name Failed runs keyed by composed identity.
-	 * @param   string|null $owner           Exact owner filter, or null for every owner.
-	 * @param   string      $format          WP-CLI output format.
+	 * @param   array       $entries_by_name    Failed runs keyed by composed identity.
+	 * @param   string|null $owner              Exact owner filter, or null for every owner.
+	 * @param   string      $format             WP-CLI output format.
+	 * @param   int         $unreadable_entries Rejected child-entry count.
+	 * @param   int         $unreadable_rows    Whole-row unreadable count.
 	 *
 	 * @return  void
 	 */
-	public static function render( array $entries_by_name, ?string $owner, string $format ): void {
-		$rows = self::rows_from_entries( $entries_by_name, $owner );
-		if ( array() === $rows && 'table' === $format ) {
+	public static function render( array $entries_by_name, ?string $owner, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
+		$rows    = self::rows_from_entries( $entries_by_name, $owner );
+		$warning = self::unreadable_message( $unreadable_entries, $unreadable_rows );
+		if ( array() === $rows && 'table' === $format && null === $warning ) {
 			\WP_CLI::line( 'No failed runs are retained.' );
 			return;
 		}
 
 		$fields = \in_array( $format, array( 'json', 'yaml' ), true ) ? self::STRUCTURED_FIELDS : self::FIELDS;
 		\WP_CLI\Utils\format_items( $format, $rows, $fields );
+		if ( null !== $warning ) {
+			\WP_CLI::warning( $warning );
+		}
 	}
 
 	// endregion

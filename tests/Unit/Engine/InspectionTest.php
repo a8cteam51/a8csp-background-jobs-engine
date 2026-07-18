@@ -265,7 +265,7 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
-	 * Valid run and history fixtures retain kind, queue depth, failure retention, and corrupt-row tolerance.
+	 * Valid run and history fixtures retain their data while unreadable live rows remain counted.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -306,13 +306,14 @@ final class InspectionTest extends TestCase {
 		);
 		$failure = new RunFailure( identity: $identity, run_id: 'run-failed', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
 		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
-		$this->rig->wpdb()->put( 'a8csp_bgte_run_' . $identity . '_' . self::run_id( 99 ), 'corrupt-inline' );
+		$this->put( $fixtures->unreadable_run( self::run_id( 99 ) ) );
 
 		$snapshot = $this->rig->inspection()->runs( $identity );
 
 		self::assertCount( 1, $snapshot['live'] );
 		self::assertSame( 'batch', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
+		self::assertSame( 1, $snapshot['live_unreadable'] );
 		self::assertSame( array( 'run-failed', 'run-completed', $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
 	}
@@ -403,9 +404,8 @@ final class InspectionTest extends TestCase {
 		$foreign   = 'owner:foo_bar';
 		$this->put( StoreFixtureBuilder::for_identity( $requested )->run( self::run_id( 1 ), self::state( 'requested' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $foreign )->run( self::run_id( 2 ), self::state( 'foreign' ) ) );
-		$prefix = 'a8csp_bgte_run_' . $requested . '_';
 		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
-			$this->rig->wpdb()->put( $prefix . \sprintf( '!%039d', $sequence ), 'corrupt-inline' );
+			$this->put( StoreFixtureBuilder::for_identity( $requested )->unreadable_run( \sprintf( '!%039d', $sequence ) ) );
 		}
 
 		$snapshot = $this->rig->inspection()->runs( $requested );
@@ -413,6 +413,7 @@ final class InspectionTest extends TestCase {
 		self::assertSame( array( self::run_id( 1 ) ), \array_column( $snapshot['live'], 'run_id' ) );
 		self::assertSame( 1, $snapshot['live_scanned'] );
 		self::assertSame( 0, $snapshot['live_uninspected'] );
+		self::assertSame( 20, $snapshot['live_unreadable'] );
 	}
 
 	/**
@@ -438,6 +439,7 @@ final class InspectionTest extends TestCase {
 
 		self::assertSame( 20, $snapshot['live_scanned'] );
 		self::assertSame( 4, $snapshot['live_uninspected'] );
+		self::assertSame( 0, $snapshot['live_unreadable'] );
 		self::assertCount( 20, $snapshot['live'] );
 	}
 
@@ -456,17 +458,23 @@ final class InspectionTest extends TestCase {
 				$wpdb->last_error = 'enumeration failed';
 			}
 		);
-		self::assertSame( 'enumeration_failed', $this->rig->inspection()->runs( 'owner:enumeration' )['live_error'] );
+		$enumeration = $this->rig->inspection()->runs( 'owner:enumeration' );
+		self::assertSame( 'enumeration_failed', $enumeration['live_error'] );
+		self::assertSame( array( 0, 0, 0 ), array( $enumeration['live_scanned'], $enumeration['live_uninspected'], $enumeration['live_unreadable'] ) );
 
 		$identity = 'owner:failed-row';
-		$this->put( StoreFixtureBuilder::for_identity( $identity )->run( self::run_id( 1 ), self::state( 'hash' ) ) );
+		$fixtures = StoreFixtureBuilder::for_identity( $identity );
+		$this->put( $fixtures->unreadable_run( \sprintf( '!%039d', 1 ) ) );
+		$this->put( $fixtures->run( self::run_id( 1 ), self::state( 'hash' ) ) );
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
 				$wpdb->last_error = 'row read failed';
 			}
 		);
-		self::assertSame( 'read_failed', $this->rig->inspection()->runs( $identity )['live_error'] );
+		$row = $this->rig->inspection()->runs( $identity );
+		self::assertSame( 'read_failed', $row['live_error'] );
+		self::assertSame( array( 1, 0, 1 ), array( $row['live_scanned'], $row['live_uninspected'], $row['live_unreadable'] ) );
 
 		$this->rig->wpdb()->before_next( 'scan', static function (): void {} );
 		$this->rig->wpdb()->before_next(

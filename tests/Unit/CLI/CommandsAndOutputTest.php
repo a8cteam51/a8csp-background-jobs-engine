@@ -653,6 +653,50 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
+	 * Failed-run JSON retains healthy entries while unreadable members warn only on STDERR.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_failed_runs_json_warns_about_unreadable_entries_without_polluting_output(): void {
+		$identity = 'consumer-plugin:corrupt-listing';
+		$failure  = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$fixture  = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
+		$this->put( StoreFixtureBuilder::failed_runs_with_corrupt_member( $fixture ) );
+
+		$result = CliHarness::run( 'failed-runs', array( 'list' ), array( 'format' => 'json' ) );
+		$rows   = \json_decode( $result->stdout, true, 512, \JSON_THROW_ON_ERROR );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( "Warning: 1 unreadable failed-run entry was omitted; repair or purge each affected option row.\n", $result->stderr );
+		self::assertIsArray( $rows );
+		self::assertSame( array( self::RUN_ID ), \array_column( $rows, 'run_id' ) );
+		self::assertStringNotContainsString( 'unreadable', $result->stdout );
+	}
+
+	/**
+	 * Failed-run JSON reports a whole unreadable option row without adding a synthetic data row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_failed_runs_json_warns_about_a_whole_unreadable_row(): void {
+		$this->put( StoreFixtureBuilder::for_identity( 'consumer-plugin:unreadable-store' )->unreadable_failed_runs() );
+
+		$result = CliHarness::run( 'failed-runs', array( 'list' ), array( 'format' => 'json' ) );
+		$rows   = \json_decode( $result->stdout, true, 512, \JSON_THROW_ON_ERROR );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( "Warning: 1 unreadable failed-run option row was omitted; repair or purge each affected option row.\n", $result->stderr );
+		self::assertSame( array(), $rows );
+		self::assertStringNotContainsString( 'unreadable', $result->stdout );
+	}
+
+	/**
 	 * Every invalid failed-run row exits non-zero with its corrective rendered error.
 	 *
 	 * @since   1.0.0
@@ -812,6 +856,30 @@ final class CommandsAndOutputTest extends TestCase {
 		$truncated = CliHarness::run( 'runs', array( 'list', $many_identity ) );
 		self::assertSame( 0, $truncated->exit_code );
 		self::assertSame( "Warning: Showing first 20 matching run rows; 4 more were not inspected.\n", $truncated->stderr );
+	}
+
+	/**
+	 * Run JSON retains healthy rows while unreadable live rows warn only on STDERR.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_runs_json_warns_about_unreadable_rows_without_polluting_output(): void {
+		$identity = 'honesty:unreadable';
+		$fixtures = StoreFixtureBuilder::for_identity( $identity );
+		$this->put( $fixtures->run( self::run_id( 1 ), self::state( 'healthy' ) ) );
+		$this->put( $fixtures->unreadable_run( self::run_id( 2 ) ) );
+
+		$result = CliHarness::run( 'runs', array( 'list', $identity ), array( 'format' => 'json' ) );
+		$rows   = \json_decode( $result->stdout, true, 512, \JSON_THROW_ON_ERROR );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( "Warning: 1 unreadable live-run row was omitted; maintenance reclaims corrupt state, but repair malformed option names manually.\n", $result->stderr );
+		self::assertIsArray( $rows );
+		self::assertSame( array( self::run_id( 1 ) ), \array_column( $rows, 'run_id' ) );
+		self::assertStringNotContainsString( 'unreadable', $result->stdout );
 	}
 
 	// endregion.
