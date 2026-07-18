@@ -121,6 +121,9 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 		$call = $this->single_run_delivery_call();
 		self::assertSame( 23, $call['args']['priority'] ?? null );
+		$run = \get_option( $this->run_option_name() );
+		self::assertIsArray( $run );
+		self::assertSame( 'Task', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::IDENTITY ) );
 		$this->rig->run_due();

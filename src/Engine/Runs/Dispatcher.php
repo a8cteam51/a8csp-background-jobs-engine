@@ -641,7 +641,7 @@ final readonly class Dispatcher {
 	 * @return  RunState|Failure<EngineError>
 	 */
 	private function create_run_state_and_replace_if_held( string $work_type, string $identity, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, PendingAction $pending ): RunState|Failure {
-		$state = $run_store->create( $run_id, $args, $args_hash, $queue, $pending );
+		$state = $run_store->create( $run_id, $work_type, $args, $args_hash, $queue, $pending );
 		if ( null === $state ) {
 			if ( LockClaimOutcome::Held !== $claim ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );

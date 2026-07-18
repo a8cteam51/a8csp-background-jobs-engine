@@ -118,6 +118,9 @@ final class DispatcherBatchTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame( 23, $this->single_start_call()['args']['priority'] ?? null );
+		$run = \get_option( $this->run_option_name() );
+		self::assertIsArray( $run );
+		self::assertSame( 'Batch', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 
 		$this->rig->run_due();

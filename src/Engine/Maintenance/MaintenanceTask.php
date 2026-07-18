@@ -6,16 +6,18 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\AbstractTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Reconciles engine-wide run state, execution locks, and schedule-cleanup intents.
+ * Reconciles engine-wide run state, execution locks, schedule registries, and cleanup intents.
  *
  * @internal Engine wiring only.
  *
@@ -46,7 +48,7 @@ final class MaintenanceTask extends AbstractTask {
 	private const int LOCK_SWEEP_BUDGET = 500;
 
 	/**
-	 * Maximum run option names inspected per maintenance invocation.
+	 * Maximum run or schedule-registration option names inspected per phase and invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -56,7 +58,7 @@ final class MaintenanceTask extends AbstractTask {
 	private const int RUN_SWEEP_BUDGET = 500;
 
 	/**
-	 * Durable cursor row shared by both maintenance sweep phases.
+	 * Durable cursor row shared by all maintenance sweep phases.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -151,21 +153,25 @@ final class MaintenanceTask extends AbstractTask {
 			return;
 		}
 
-		$cursor_raw   = $selected_cursor->value;
-		$runs_cursor  = null;
-		$locks_cursor = null;
+		$cursor_raw           = $selected_cursor->value;
+		$runs_cursor          = null;
+		$locks_cursor         = null;
+		$registrations_cursor = null;
 		if ( null !== $cursor_raw ) {
 			$decoded_cursor = RawOptionDecoder::decode( $cursor_raw );
 			if (
 				\is_array( $decoded_cursor )
-				&& 2 === \count( $decoded_cursor )
+				&& 3 === \count( $decoded_cursor )
 				&& \array_key_exists( 'runs', $decoded_cursor )
 				&& \array_key_exists( 'locks', $decoded_cursor )
+				&& \array_key_exists( 'registrations', $decoded_cursor )
 				&& ( null === $decoded_cursor['runs'] || \is_string( $decoded_cursor['runs'] ) )
 				&& ( null === $decoded_cursor['locks'] || \is_string( $decoded_cursor['locks'] ) )
+				&& ( null === $decoded_cursor['registrations'] || \is_string( $decoded_cursor['registrations'] ) )
 			) {
-				$runs_cursor  = $decoded_cursor['runs'];
-				$locks_cursor = $decoded_cursor['locks'];
+				$runs_cursor          = $decoded_cursor['runs'];
+				$locks_cursor         = $decoded_cursor['locks'];
+				$registrations_cursor = $decoded_cursor['registrations'];
 			}
 		}
 
@@ -309,11 +315,80 @@ final class MaintenanceTask extends AbstractTask {
 		}
 		$lock_incomplete = null !== $locks_cursor;
 
-		if ( $run_incomplete || $lock_incomplete ) {
+		// Intent convergence must not starve behind a persistently failing registry phase.
+		$this->cleanup_intents->converge_pending_intents();
+
+		$registration_count = 0;
+		while ( $registration_count < self::RUN_SWEEP_BUDGET ) {
+			$registration_page = $this->rows->option_names_after( ScheduleRegistry::OPTION_PREFIX, $registrations_cursor, self::SWEEP_PAGE_SIZE );
+			if ( $registration_page->is_failure() ) {
+				$this->log_sweep_abort(
+					'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.',
+					'registry-enumeration',
+					$registration_page->error
+				);
+
+				return;
+			}
+
+			$registration_count += $registration_page->value['scanned'];
+			foreach ( $registration_page->value['names'] as $option_name ) {
+				if ( null === ScheduleRegistry::owner_from_option_name( $option_name ) ) {
+					continue;
+				}
+
+				$selected = $this->rows->read( $option_name );
+				if ( $selected->is_failure() ) {
+					$this->log_sweep_abort(
+						'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.',
+						'registry-read',
+						$selected->error,
+						array( 'option_name' => $option_name )
+					);
+
+					return;
+				}
+
+				$raw = $selected->value;
+				if ( null === $raw || \is_array( RawOptionDecoder::decode( $raw ) ) ) {
+					continue;
+				}
+
+				$delete = $this->rows->delete_if_value_matches( $option_name, $raw );
+				if ( RowDeleteOutcome::Deleted === $delete ) {
+					$this->logger->warning(
+						'Deleted corrupt schedule registry option during maintenance sweep.',
+						array( 'option_name' => $option_name )
+					);
+					continue;
+				}
+				if ( RowDeleteOutcome::DeleteFailed === $delete ) {
+					$this->logger->warning(
+						'Maintenance schedule-registry sweep aborted while deleting a corrupt registration row; repair WordPress option writes and retry the sweep.',
+						array(
+							'option_name' => $option_name,
+							'phase'       => 'registry-delete',
+							'outcome'     => $delete->value,
+						)
+					);
+
+					return;
+				}
+			}
+
+			$registrations_cursor = $registration_page->value['next_cursor'];
+			if ( null === $registrations_cursor ) {
+				break;
+			}
+		}
+		$registration_incomplete = null !== $registrations_cursor;
+
+		if ( $run_incomplete || $lock_incomplete || $registration_incomplete ) {
 			$replacement_raw = \maybe_serialize(
 				array(
-					'runs'  => $run_incomplete ? $runs_cursor : null,
-					'locks' => $lock_incomplete ? $locks_cursor : null,
+					'runs'          => $run_incomplete ? $runs_cursor : null,
+					'locks'         => $lock_incomplete ? $locks_cursor : null,
+					'registrations' => $registration_incomplete ? $registrations_cursor : null,
 				)
 			);
 			if ( ! \is_string( $replacement_raw ) ) {
@@ -328,8 +403,6 @@ final class MaintenanceTask extends AbstractTask {
 		} elseif ( null !== $cursor_raw ) {
 			$this->rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
 		}
-
-		$this->cleanup_intents->converge_pending_intents();
 	}
 
 	// endregion

@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
@@ -102,7 +103,7 @@ final readonly class StoreFixtureBuilder {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
 				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
-				$created = $store->create( $run_id, $state->start_args, $state->args_hash, $state->queue, $state->pending );
+				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->queue, $state->pending );
 				if ( null === $created ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
 				}
@@ -258,8 +259,8 @@ final readonly class StoreFixtureBuilder {
 	public function schedule_registration( array $owner ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $owner ): array {
-				$registry = new ScheduleRegistry( new OptionRows( $wpdb ) );
-				if ( ! $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
+				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
+				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
@@ -458,6 +459,7 @@ final readonly class StoreFixtureBuilder {
 	private static function same_state( RunState $left, RunState $right ): bool {
 		// Every RunState field is explicit because omitting a new field can falsely classify distinct persisted states as identical.
 		return $left->status === $right->status
+			&& $left->kind === $right->kind
 			&& $left->executing === $right->executing
 			&& $left->start_args === $right->start_args
 			&& $left->args_hash === $right->args_hash

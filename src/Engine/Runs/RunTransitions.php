@@ -114,6 +114,20 @@ final readonly class RunTransitions {
 			return null;
 		}
 
+		if ( $work_type !== $state->kind ) {
+			$this->logger->warning(
+				'Lifecycle action work kind does not match the persisted run kind; the stale or malformed delivery was dropped.',
+				array(
+					'name'           => $identity,
+					'run_id'         => $run_id,
+					'persisted_kind' => $state->kind,
+					'delivered_kind' => $work_type,
+				)
+			);
+
+			return null;
+		}
+
 		if ( $action_seq !== $state->action_seq ) {
 			$this->logger->info(
 				'Stale lifecycle action delivery dropped.',
@@ -302,21 +316,21 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   BatchInterface  $batch      Failed batch.
-	 * @param   string          $batch_name Complete owner-qualified batch identity.
-	 * @param   string          $run_id     Run identifier.
-	 * @param   RunState        $state      Running state.
-	 * @param   RunStore        $run_store  Active-run store.
-	 * @param   EngineError     $error      Failure detail.
-	 * @param   RunFailureStage $stage     Terminalization stage.
-	 * @param   ApiErrorCode    $code       Machine-readable cause classification.
-	 * @param   array|null      $failed_chunk Batch chunk arguments for the failing chunk, or null.
-	 * @param   int|null        $attempts   Attempts consumed before failure, or null to derive the count.
-	 * @param   string|null     $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @param   BatchInterface|null $batch          Failed batch, or null when its implementation is unavailable.
+	 * @param   string              $batch_name     Complete owner-qualified batch identity.
+	 * @param   string              $run_id         Run identifier.
+	 * @param   RunState            $state          Running state.
+	 * @param   RunStore            $run_store      Active-run store.
+	 * @param   EngineError         $error          Failure detail.
+	 * @param   RunFailureStage     $stage          Terminalization stage.
+	 * @param   ApiErrorCode        $code           Machine-readable cause classification.
+	 * @param   array|null          $failed_chunk   Batch chunk arguments for the failing chunk, or null.
+	 * @param   int|null            $attempts       Attempts consumed before failure, or null to derive the count.
+	 * @param   string|null         $expected_raw   Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_batch( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
+	public function fail_batch( ?BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 

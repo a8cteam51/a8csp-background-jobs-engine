@@ -27,16 +27,6 @@ final class ErrorLogSink {
 	 */
 	private const int MAX_CONTEXT_ARRAY_DEPTH = 8;
 
-	/**
-	 * Hexadecimal characters retained from one exception trace digest.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int TRACE_HASH_LENGTH = 16;
-
 	// endregion
 
 	// region METHODS
@@ -119,7 +109,7 @@ final class ErrorLogSink {
 	// region HELPERS
 
 	/**
-	 * Retains only bounded scalar context and projects the reserved exception value safely.
+	 * Retains bounded JSON-safe context, projecting a raw reserved exception value when invoked directly.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -131,9 +121,8 @@ final class ErrorLogSink {
 	private static function normalize_context( array $context ): array {
 		$normalized = array();
 		foreach ( $context as $key => $value ) {
-			// Only the PSR-3 reserved key receives the structured projection; a throwable under any other key collapses to its type.
 			if ( 'exception' === $key && $value instanceof \Throwable ) {
-				$normalized[ $key ] = self::normalize_exception( $value );
+				$normalized[ $key ] = ThrowableContextNormalizer::project( $value );
 				continue;
 			}
 
@@ -151,30 +140,5 @@ final class ErrorLogSink {
 
 		return $normalized;
 	}
-
-	/**
-	 * Returns message-free exception fields for host-log correlation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   \Throwable $throwable Caught exception or error.
-	 *
-	 * @return  array{class: string, code: int|string, file: string, trace_hash: string}
-	 */
-	private static function normalize_exception( \Throwable $throwable ): array {
-		$code = $throwable->getCode();
-		if ( ! \is_int( $code ) && ! \is_string( $code ) ) {
-			$code = \get_debug_type( $code );
-		}
-
-		return array(
-			'class'      => \get_debug_type( $throwable ),
-			'code'       => $code,
-			'file'       => \basename( $throwable->getFile() ) . ':' . $throwable->getLine(),
-			'trace_hash' => \substr( \hash( 'sha256', $throwable->getTraceAsString() ), 0, self::TRACE_HASH_LENGTH ),
-		);
-	}
-
 	// endregion
 }

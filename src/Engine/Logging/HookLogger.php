@@ -58,6 +58,7 @@ final class HookLogger extends AbstractLogger {
 		try {
 			$rendered_level   = (string) $level;
 			$rendered_message = \strtr( (string) $message, $replacements );
+			$rendered_context = ThrowableContextNormalizer::normalize( $context );
 
 			/**
 			 * Fires when the engine emits a log event.
@@ -69,7 +70,7 @@ final class HookLogger extends AbstractLogger {
 			 * @param   string                  $message The interpolated log message.
 			 * @param   array<array-key, mixed> $context The structured context.
 			 */
-			\do_action( 'a8csp_background_tasks/log', $rendered_level, $rendered_message, $context );
+			\do_action( 'a8csp_background_tasks/log', $rendered_level, $rendered_message, $rendered_context );
 		} catch ( \Throwable $throwable ) {
 			try {
 				$breadcrumb = \strtr(

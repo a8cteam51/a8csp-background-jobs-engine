@@ -358,10 +358,11 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		global $wpdb;
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 
-		$rows = new OptionRows( $wpdb );
+		$rows   = new OptionRows( $wpdb );
+		$logger = new HookLogger();
 
 		return new CleanupIntents(
-			new ScheduleRegistry( $rows ),
+			new ScheduleRegistry( $rows, $logger ),
 			new SchedulerFacade(
 				array(
 					new ActionSchedulerBackend(),
@@ -370,7 +371,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			),
 			$rows,
 			new SystemClock(),
-			new HookLogger()
+			$logger
 		);
 	}
 

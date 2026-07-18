@@ -365,6 +365,8 @@ use Psr\Log\LoggerInterface;
 );
 ```
 
+Top-level context throwables arrive pre-redacted as `{class, code, file, trace_hash}` arrays: non-integer codes are reduced to their type, `file` contains only `basename:line`, and `trace_hash` is a 16-character hexadecimal digest. Log-hook listeners never receive raw top-level exception objects.
+
 ## Priority is advisory
 
 Priority is an integer from 0 through 255 and defaults to 10. Action Scheduler receives it; WP-Cron accepts and ignores it because its event store has no priority dimension. Keeping the field in the common API permits transparent backend failover.

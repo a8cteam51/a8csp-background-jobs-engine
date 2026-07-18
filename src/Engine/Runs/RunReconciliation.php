@@ -166,8 +166,8 @@ final readonly class RunReconciliation {
 				? $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness )
 				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
-			$batch     = $this->work->batch( $identity );
-			$work_type = null === $batch ? 'Task' : 'Batch';
+			$work_type = $state->kind;
+			$batch     = 'Batch' === $work_type ? $this->work->batch( $identity ) : null;
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the displaced incumbent is still inside its callback; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
@@ -322,19 +322,8 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		$kind           = $this->work->kind( $identity );
-		$resolved_batch = null;
-		if ( 'batch' === $kind ) {
-			$work_type      = 'Batch';
-			$resolved_batch = $this->work->batch( $identity );
-		} elseif ( 'task' === $kind ) {
-			$work_type = 'Task';
-		} else {
-			// The callback superset lets an unresolved terminal row converge without inventing a persisted work-kind field.
-			$work_type = \in_array( $state->status, array( RunStatus::Completed, RunStatus::Failed ), true )
-				? 'Batch'
-				: 'Task';
-		}
+		$work_type      = $state->kind;
+		$resolved_batch = 'Batch' === $work_type ? $this->work->batch( $identity ) : null;
 
 		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $work_type, $resolved_batch ) ) {
 			$this->logger->warning(
@@ -372,7 +361,7 @@ final readonly class RunReconciliation {
 		$failed_chunk = 'Batch' === $work_type && 'run' === $state->pending?->stage
 			? ( $state->queue[0] ?? null )
 			: null;
-		if ( null !== $batch ) {
+		if ( 'Batch' === $work_type ) {
 			$this->terminal_transitions->fail_batch( $batch, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
 			$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, null, $expected_raw );

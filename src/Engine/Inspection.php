@@ -46,7 +46,7 @@ use Psr\Clock\ClockInterface;
  * }
  * @phpstan-type LiveRunEntry array{
  *     run_id: string,
- *     kind: 'batch'|'task'|'unknown',
+ *     kind: 'batch'|'task',
  *     status: 'running',
  *     executing: bool,
  *     attempts: int,
@@ -84,7 +84,6 @@ final readonly class Inspection {
 	 * @version 1.0.0
 	 *
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
-	 * @param   WorkRegistry     $work         Request-local work registrations.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
 	 * @param   StoreFactory     $stores       Name-bound run stores.
@@ -94,7 +93,6 @@ final readonly class Inspection {
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
-		private WorkRegistry $work,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
 		private StoreFactory $stores,
@@ -226,7 +224,6 @@ final readonly class Inspection {
 			);
 		}
 
-		$kind = $this->work->kind( $identity ) ?? 'unknown';
 		$live = array();
 
 		foreach ( $page['names'] as $option_name ) {
@@ -255,6 +252,7 @@ final readonly class Inspection {
 			}
 
 			$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
+			$kind      = \strtolower( $state->kind );
 			$live[]    = array(
 				'run_id'       => $run_id,
 				'kind'         => $kind,

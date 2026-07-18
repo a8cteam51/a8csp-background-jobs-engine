@@ -307,7 +307,7 @@ final class InspectionTest extends TestCase {
 		$this->rig->client( 'owner' )->batches()->register( new RecordingBatch( 'catalog-sync' ) );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
-		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) ) );
+		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'Batch' ) ) );
 		$this->put(
 			$fixtures->history(
 				array(
@@ -348,33 +348,33 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
-	 * Owner-qualified work kinds preserve task and unknown queue semantics.
+	 * Persisted work kinds survive absent registrations and cross-kind identity reuse.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_work_kind_is_owner_qualified_and_unknown_preserves_queue_depth(): void {
+	public function test_persisted_work_kind_controls_live_run_inspection(): void {
 		$orphaned_identity = 'owner:orphaned';
 		$task_identity     = 'owner-a:shared';
 		$batch_identity    = 'owner-b:shared';
 		$this->rig->client( 'owner-a' )->tasks()->register( new RecordingTask( 'shared' ) );
 		$this->rig->client( 'owner-b' )->batches()->register( new RecordingBatch( 'shared' ) );
-		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ) ) ) );
-		$this->put( StoreFixtureBuilder::for_identity( $task_identity )->run( self::run_id( 2 ), self::state( 'task-hash', array( array( 'page' => 1 ) ) ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'Batch' ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $task_identity )->run( self::run_id( 2 ), self::state( 'task-hash', array( array( 'page' => 1 ) ), 'Batch' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $batch_identity )->run( self::run_id( 3 ), self::state( 'batch-hash', array( array( 'page' => 1 ) ) ) ) );
 
 		$orphaned = $this->rig->inspection()->runs( $orphaned_identity )['live'][0];
 		$task     = $this->rig->inspection()->runs( $task_identity )['live'][0];
 		$batch    = $this->rig->inspection()->runs( $batch_identity )['live'][0];
 
-		self::assertSame( 'unknown', $orphaned['kind'] );
+		self::assertSame( 'batch', $orphaned['kind'] );
 		self::assertSame( 2, $orphaned['queue_depth'] );
-		self::assertSame( 'task', $task['kind'] );
-		self::assertNull( $task['queue_depth'] );
-		self::assertSame( 'batch', $batch['kind'] );
-		self::assertSame( 1, $batch['queue_depth'] );
+		self::assertSame( 'batch', $task['kind'] );
+		self::assertSame( 1, $task['queue_depth'] );
+		self::assertSame( 'task', $batch['kind'] );
+		self::assertNull( $batch['queue_depth'] );
 	}
 
 	/**
@@ -530,13 +530,16 @@ final class InspectionTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param 'Task'|'Batch' $kind
+	 *
 	 * @param   string             $args_hash Persisted arguments hash.
 	 * @param   list<array<mixed>> $queue     Persisted pending queue.
+	 * @param   string             $kind      Persisted work kind.
 	 *
 	 * @return  RunState
 	 */
-	private static function state( string $args_hash, array $queue = array( array() ) ): RunState {
-		return new RunState( status: RunStatus::Running, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+	private static function state( string $args_hash, array $queue = array( array() ), string $kind = 'Task' ): RunState {
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW );
 	}
 
 	/**

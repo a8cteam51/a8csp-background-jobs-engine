@@ -191,6 +191,59 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * An unreadable owner row reports its exact maintenance recovery path.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_registry_row_reports_reclaim_and_redeclaration_recovery(): void {
+		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+		$poison      = 'poison-registry-row';
+		$this->rig->wpdb()->put( $option_name, $poison );
+		$this->rig->backend()->scheduled = true;
+		$this->reset_backend_observations();
+
+		$result = $this->client_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry option row "a8csp_bgte_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertSame(
+			array(
+				'owner'       => 'owner-a',
+				'option_name' => $option_name,
+			),
+			$result->error->context
+		);
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
+	}
+
+	/**
+	 * A read failure during owner replacement keeps the persist-failure recovery contract.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_replacement_read_failure_keeps_persist_failure_guidance(): void {
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted replacement read failure';
+			}
+		);
+
+		$result = $this->client_a->schedules()->sync( array( self::schedule( 'nightly', 300 ) ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
+		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
+		self::assertSame( array(), $this->write_calls() );
+	}
+
+	/**
 	 * A failed change-path clearance retains the old registration without persisting the replacement.
 	 *
 	 * @since   1.0.0

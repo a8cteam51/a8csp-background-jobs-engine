@@ -191,6 +191,50 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( 1, $snapshot['live_scanned'] );
 	}
 
+	/**
+	 * A run row without its persisted work kind is corrupt rather than legacy-compatible state.
+	 *
+	 * @return  void
+	 */
+	public function test_missing_kind_never_hydrates(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		unset( $stored['kind'] );
+		$raw = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
+	}
+
+	/**
+	 * A stored work kind outside the canonical Task/Batch vocabulary is corrupt.
+	 *
+	 * @return  void
+	 */
+	public function test_noncanonical_kind_never_hydrates(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		$stored['kind'] = 'task';
+		$raw            = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
+	}
+
 	// endregion.
 
 	// region KEEP CAS MICRO-SUITE.
@@ -358,6 +402,7 @@ final class RunStoreTest extends TestCase {
 		$raw = \maybe_serialize(
 			array(
 				'status'          => 'running',
+				'kind'            => 'Task',
 				'executing'       => false,
 				'start_args'      => array(),
 				'args_hash'       => 'hash-a',
@@ -543,7 +588,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  RunState
 	 */
 	private function state(): RunState {
-		return new RunState( status: RunStatus::Running, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		return new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 	}
 
 	/**
@@ -585,6 +630,7 @@ final class RunStoreTest extends TestCase {
 	private function put_corrupt_state( array $metadata ): void {
 		$value = array(
 			'status'          => 'failed',
+			'kind'            => 'Task',
 			'executing'       => false,
 			'start_args'      => array(),
 			'args_hash'       => 'hash-a',

@@ -123,6 +123,28 @@ final class SchedulingErrorTest extends TestCase {
 	}
 
 	/**
+	 * Registry corruption names the exact row and its maintenance recovery path.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_corruption_surfaces_as_storage_failure(): void {
+		$option_name = 'a8csp_bgte_schedule_registrations_owner-a';
+		$result      = ApiErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'owner-a', $option_name ) ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry option row "a8csp_bgte_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertSame(
+			array(
+				'owner'       => 'owner-a',
+				'option_name' => $option_name,
+			),
+			$result->error->context
+		);
+	}
+
+	/**
 	 * Each scheduling rejection scenario exposes its stable public classification.
 	 *
 	 * @load-bearing security

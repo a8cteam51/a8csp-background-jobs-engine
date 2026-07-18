@@ -85,18 +85,21 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                        $run_id     Run identifier.
+	 * @phpstan-param 'Task'|'Batch' $kind
+	 *
+	 * @param   string                        $run_id      Run identifier.
+	 * @param   string                        $kind        Admitted work contract type.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
-	 * @param   string                        $args_hash  Stable single-flight identity.
-	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
-	 * @param   PendingAction|null            $pending    Durable successor delivery, or null when none exists.
+	 * @param   string                        $args_hash   Stable single-flight identity.
+	 * @param   list<array<array-key, mixed>> $queue       Initial chunks in processing order.
+	 * @param   PendingAction|null            $pending     Durable successor delivery, or null when none exists.
 	 *
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
-	public function create( string $run_id, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState( status: RunStatus::Running, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
 
 		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
@@ -376,6 +379,7 @@ final readonly class RunStore {
 	 *
 	 * @return  array{
 	 *     status: string,
+	 *     kind: 'Task'|'Batch',
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
@@ -392,6 +396,7 @@ final readonly class RunStore {
 	private static function to_option( RunState $state ): array {
 		$option = array(
 			'status'          => $state->status->value,
+			'kind'            => $state->kind,
 			'executing'       => $state->executing,
 			'start_args'      => $state->start_args,
 			'args_hash'       => $state->args_hash,
@@ -475,7 +480,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_seq: $value['action_seq'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
+		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_seq: $value['action_seq'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
 	}
 
 	/**
@@ -486,6 +491,7 @@ final readonly class RunStore {
 	 *
 	 * @phpstan-assert-if-true array{
 	 *     status: string,
+	 *     kind: 'Task'|'Batch',
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
@@ -507,6 +513,8 @@ final readonly class RunStore {
 		if (
 			! \is_array( $value )
 			|| ! \is_string( $value['status'] ?? null )
+			|| ! \is_string( $value['kind'] ?? null )
+			|| ! \in_array( $value['kind'], RunState::KINDS, true )
 			|| ! \is_bool( $value['executing'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )

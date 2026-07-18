@@ -9,6 +9,9 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
@@ -17,6 +20,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /** Detects unsafe class construction while corrupt registry storage is inspected. */
@@ -36,6 +40,8 @@ final class ScheduleRegistryWakeupProbe {
  * @version 1.0.0
  */
 #[CoversClass( ScheduleRegistry::class )]
+#[CoversClass( OwnerReplacementOutcome::class )]
+#[UsesClass( HookLogger::class )]
 final class ScheduleRegistryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -265,6 +271,133 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( array(), $this->write_queries() );
 	}
 
+	/**
+	 * Owner replacement distinguishes an authoritative read failure from write contention.
+	 *
+	 * @return  void
+	 */
+	public function test_owner_replacement_reports_read_failure(): void {
+		$owner = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted registry read failure';
+			}
+		);
+		$registry = $this->registry();
+
+		$outcome = $registry->replace_owner( 'owner-a', $owner['declarations'], $owner['registrations'] );
+
+		self::assertSame( OwnerReplacementOutcome::ReadFailed, $outcome );
+		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * Owner replacement names an undecodable selected row as corruption.
+	 *
+	 * @return  void
+	 */
+	public function test_owner_replacement_reports_corrupt_row(): void {
+		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+		$poison      = 'poison-registry-row';
+		$this->rig->wpdb()->put( $option_name, $poison );
+		$owner    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$registry = $this->registry();
+
+		$outcome = $registry->replace_owner( 'owner-a', $owner['declarations'], $owner['registrations'] );
+
+		self::assertSame( OwnerReplacementOutcome::Corrupt, $outcome );
+		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
+		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+	}
+
+	/**
+	 * Each listing call reports one warning for an undecodable owner row.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_owner_row_warns_once_per_listing_call(): void {
+		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+		$this->rig->wpdb()->put( $option_name, 'poison-registry-row' );
+		$this->rig->logger()->records = array();
+
+		$registry = $this->registry();
+
+		$owner = $registry->registrations_for( 'owner-a' );
+
+		self::assertInstanceOf( Failure::class, $owner );
+		self::assertInstanceOf( SchedulingError::class, $owner->error );
+		self::assertSame( $option_name, $owner->error->context['option_name'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
+					'context' => array( 'option_name' => $option_name ),
+				),
+			),
+			$this->rig->logger()->records
+		);
+
+		$this->rig->logger()->records = array();
+
+		$all = $registry->all_registrations();
+
+		self::assertInstanceOf( Success::class, $all );
+		self::assertIsArray( $all->value );
+		self::assertSame( array(), \array_filter( \array_keys( $all->value ), static fn ( int|string $identity ): bool => \is_string( $identity ) && \str_starts_with( $identity, 'owner-a:' ) ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
+					'context' => array( 'option_name' => $option_name ),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * A listener inspecting the same corrupt row cannot recursively emit its warning.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_owner_warning_is_guarded_against_reentrant_listeners(): void {
+		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+		$this->rig->wpdb()->put( $option_name, 'poison-registry-row' );
+		$registry       = new ScheduleRegistry( $this->rows, new HookLogger() );
+		$listener_calls = 0;
+		$nested         = null;
+		$callbacks      = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks['a8csp_background_tasks/log']     = static function () use ( $registry, &$listener_calls, &$nested ): void {
+			++$listener_calls;
+			if ( 1 === $listener_calls ) {
+				$nested = $registry->registrations_for( 'owner-a' );
+			}
+		};
+		$GLOBALS['a8csp_bgte_test_action_callbacks'] = $callbacks;
+
+		$outer = $registry->registrations_for( 'owner-a' );
+
+		self::assertInstanceOf( Failure::class, $outer );
+		self::assertInstanceOf( Failure::class, $nested );
+		self::assertSame( 1, $listener_calls );
+		$fired = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
+		self::assertIsArray( $fired );
+		self::assertCount(
+			1,
+			\array_filter(
+				$fired,
+				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_background_tasks/log' === ( $action['hook_name'] ?? null )
+			)
+		);
+	}
+
 	// endregion.
 
 	// region KEEP CAS MICRO-SUITE.
@@ -289,13 +422,13 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertTrue( $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
 		self::assertSame( $this->fixtures->schedule_registration( $owner_a )[1], $this->raw_row() );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
 		$this->put_fixture( $this->fixtures->schedule_registration( $owner_a ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertTrue( $registry->replace_owner( 'owner-a', array(), array() ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', array(), array() ) );
 		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'owner-a' ), $this->rig->wpdb()->rows );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
 	}
@@ -326,11 +459,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $next_b ): void {
-				self::assertTrue( $this->registry()->replace_owner( 'owner-b', $next_b['declarations'], $next_b['registrations'] ) );
+				self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-b', $next_b['declarations'], $next_b['registrations'] ) );
 			}
 		);
 
-		self::assertTrue( $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
 
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( $this->fixtures->schedule_registration( $next_a )[1], $this->raw_row( 'owner-a' ) );
@@ -369,7 +502,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertTrue( $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
 
 		$expected                                     = $replacement;
 		$expected['registrations']['owner-a:nightly'] = $advanced;
@@ -415,7 +548,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertTrue( $registry->replace_owner( 'owner-a', $stale['declarations'], $stale['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $stale['declarations'], $stale['registrations'] ) );
 
 		self::assertSame( array(), $this->write_queries() );
 		self::assertSame( $fixture[1], $this->raw_row() );
@@ -435,7 +568,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
 		$registry = $this->registry();
 
-		self::assertTrue( $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
 
 		$registrations = $registry->registrations_for( 'owner-a' );
 		self::assertInstanceOf( Success::class, $registrations );
@@ -469,7 +602,7 @@ final class ScheduleRegistryTest extends TestCase {
 			}
 		);
 
-		self::assertTrue( $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
 
 		self::assertSame( $this->fixtures->schedule_registration( $next_a )[1], $this->raw_row() );
 		self::assertSame( $owner_b_raw, $this->raw_row( 'owner-b' ) );
@@ -552,7 +685,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 		$registry = $this->registry();
 
-		self::assertFalse( $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
 
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
@@ -589,7 +722,7 @@ final class ScheduleRegistryTest extends TestCase {
 		}
 		$registry = $this->registry();
 
-		self::assertFalse( $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
 		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'DELETE ' ) );
@@ -717,7 +850,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  ScheduleRegistry
 	 */
 	private function registry(): ScheduleRegistry {
-		return new ScheduleRegistry( $this->rows );
+		return new ScheduleRegistry( $this->rows, $this->rig->logger() );
 	}
 
 	/**

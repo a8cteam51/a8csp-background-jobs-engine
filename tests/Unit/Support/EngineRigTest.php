@@ -154,10 +154,11 @@ final class EngineRigTest extends TestCase {
 
 		$args_hash = $fixtures->args_hash( self::ARGS );
 
-		$state = new RunState( status: RunStatus::Running, executing: false, start_args: self::ARGS, args_hash: $args_hash, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $args_hash, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 
 		[ $run_name, $run_raw ] = $fixtures->run( self::RUN_ID, $state );
 		self::assertSame( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID, $run_name );
+		self::assertSame( 'Task', self::decoded( $run_raw )['kind'] ?? null );
 		self::assertSame( self::ARGS, self::decoded( $run_raw )['start_args'] ?? null );
 
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );

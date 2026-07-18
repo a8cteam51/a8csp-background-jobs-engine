@@ -179,8 +179,8 @@ final class Component extends AbstractComponent {
 			 */
 			$option_rows          = new OptionRows( $wpdb );
 			$work                 = new WorkRegistry();
-			$schedules            = new ScheduleRegistry( $option_rows );
 			$logger               = new HookLogger();
+			$schedules            = new ScheduleRegistry( $option_rows, $logger );
 			$clock                = new SystemClock();
 			$randomizer           = new Randomizer();
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
@@ -204,7 +204,7 @@ final class Component extends AbstractComponent {
 			$work->register_task( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
 			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-			$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
+			$inspection           = new Inspection( $schedules, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 			$this->action_deliveries    = $action_deliveries;

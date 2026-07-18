@@ -300,7 +300,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
 		$work                 = new WorkRegistry();
-		$schedule_registry    = new ScheduleRegistry( $rows );
+		$schedule_registry    = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
@@ -322,7 +322,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
 		$this->deterministic_inspection = $inspection;

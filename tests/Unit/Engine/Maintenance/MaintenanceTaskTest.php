@@ -123,7 +123,7 @@ final class MaintenanceTaskTest extends TestCase {
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $this->logger, $terminal_effects );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $backend );
-		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $this->logger );
+		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $this->logger );
 		$this->maintenance    = new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
@@ -145,12 +145,15 @@ final class MaintenanceTaskTest extends TestCase {
 		for ( $index = 0; $index < 501; ++$index ) {
 			$this->wpdb->put( self::lock_name( $index ), $lock_raw );
 		}
+		$this->put_corrupt_registration_names( 501 );
 
 		$this->maintenance->handle( array() );
 
 		self::assertCount( 1, $this->names_under( 'a8csp_bgte_overlap_lock_' ) );
+		self::assertCount( 1, $this->names_under( ScheduleRegistry::OPTION_PREFIX ) );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
 		self::assertSame( self::lock_name( 499 ), $this->cursor_state()['locks'] );
+		self::assertSame( self::registration_name( 499 ), $this->cursor_state()['registrations'] );
 	}
 
 	/**
@@ -194,6 +197,103 @@ final class MaintenanceTaskTest extends TestCase {
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
+	}
+
+	/**
+	 * An unreadable schedule-registry row is reclaimed with its exact option name.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_schedule_registry_row_is_reclaimed(): void {
+		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$this->wpdb->put( $option_name, 'poison-registry-row' );
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Deleted corrupt schedule registry option during maintenance sweep.',
+					'context' => array( 'option_name' => $option_name ),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * Exact deletion cannot remove a registry row replaced after maintenance selected it.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_schedule_registry_reclaim_preserves_a_concurrent_replacement(): void {
+		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$this->wpdb->put( $option_name, 'poison-registry-row' );
+		[ $replacement_name, $replacement ] = StoreFixtureBuilder::for_identity( 'poison-owner:replacement-task' )->schedule_registration(
+			array(
+				'owner'         => 'poison-owner',
+				'declarations'  => array(),
+				'registrations' => array(
+					'poison-owner:replacement' => array(
+						'fingerprint'   => 'replacement-fingerprint',
+						'next_due'      => self::NOW + 300,
+						'last_fired'    => null,
+						'misfire_skips' => 0,
+						'overlap_skips' => 0,
+					),
+				),
+			)
+		);
+		self::assertSame( $option_name, $replacement_name );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( $option_name, $replacement ): void {
+				$wpdb->put( $option_name, $replacement );
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $replacement, $this->wpdb->rows[ $option_name ] ?? null );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A database delete failure aborts without advancing past the corrupt registry row.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_schedule_registry_delete_failure_retries_the_same_row(): void {
+		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$this->wpdb->put( $option_name, 'poison-registry-row' );
+		$this->wpdb->script_result( 'delete', false );
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( 'poison-registry-row', $this->wpdb->rows[ $option_name ] ?? null );
+		self::assertArrayNotHasKey( self::CURSOR_OPTION, $this->wpdb->rows );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Maintenance schedule-registry sweep aborted while deleting a corrupt registration row; repair WordPress option writes and retry the sweep.',
+					'context' => array(
+						'option_name' => $option_name,
+						'phase'       => 'registry-delete',
+						'outcome'     => 'delete_failed',
+					),
+				),
+			),
+			$this->logger->records
+		);
+
+		$this->logger->records = array();
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
+		self::assertSame( 'Deleted corrupt schedule registry option during maintenance sweep.', $this->logger->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -340,7 +440,7 @@ final class MaintenanceTaskTest extends TestCase {
 		$this->wpdb->put( self::CURSOR_OPTION, $cursor_raw );
 		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( 'sweep-tests:read-failure' )->run(
 			self::RUN_ID,
-			new RunState( status: RunStatus::Running, executing: false, start_args: array(), args_hash: self::ARGS_HASH, queue: array(), failed_attempts: 0, action_seq: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+			new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: array(), args_hash: self::ARGS_HASH, queue: array(), failed_attempts: 0, action_seq: 0, created_at: self::NOW, heartbeat_at: self::NOW )
 		);
 		$this->wpdb->put( $run_name, $run_raw );
 		$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $database ): void {} );
@@ -389,6 +489,60 @@ final class MaintenanceTaskTest extends TestCase {
 		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
+	/**
+	 * A failed registry-page read aborts its phase and reports the storage cause.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_enumeration_failure_logs_the_aborted_phase(): void {
+		$this->wpdb->before_next( 'scan', static function (): void {} );
+		$this->wpdb->before_next( 'scan', static function (): void {} );
+		$this->wpdb->before_next( 'scan', static function (): void {} );
+		$this->wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted registry enumeration failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame( 'registry-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
+	}
+
+	/**
+	 * A failed authoritative registry-row read aborts with the exact row in context.
+	 *
+	 * @return  void
+	 */
+	public function test_registry_row_read_failure_logs_the_aborted_phase(): void {
+		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$this->wpdb->put( $option_name, 'poison-registry-row' );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'scripted registry row read failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( 'poison-registry-row', $this->wpdb->rows[ $option_name ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame( 'registry-read', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -406,6 +560,19 @@ final class MaintenanceTaskTest extends TestCase {
 	private function put_hostile_run_names( int $count ): void {
 		for ( $index = 0; $index < $count; ++$index ) {
 			$this->wpdb->put( self::hostile_run_name( $index ), 'hostile-prefix-row' );
+		}
+	}
+
+	/**
+	 * Stores a requested count of canonical unreadable schedule-registration rows.
+	 *
+	 * @param   int $count Number of corrupt rows.
+	 *
+	 * @return  void
+	 */
+	private function put_corrupt_registration_names( int $count ): void {
+		for ( $index = 0; $index < $count; ++$index ) {
+			$this->wpdb->put( self::registration_name( $index ), 'poison-registry-row' );
 		}
 	}
 
@@ -454,6 +621,17 @@ final class MaintenanceTaskTest extends TestCase {
 	}
 
 	/**
+	 * Returns one complete canonical schedule-registration option name.
+	 *
+	 * @param   int $index Stable lexical index.
+	 *
+	 * @return  string
+	 */
+	private static function registration_name( int $index ): string {
+		return ScheduleRegistry::option_name( 'sweep-owner-' . \sprintf( '%03d', $index ) );
+	}
+
+	/**
 	 * Produces exact production-serialized bytes for one stale lock.
 	 *
 	 * @since   1.0.0
@@ -473,16 +651,18 @@ final class MaintenanceTaskTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $runs  Run cursor.
-	 * @param   string|null $locks Lock cursor.
+	 * @param   string|null $runs         Run cursor.
+	 * @param   string|null $locks        Lock cursor.
+	 * @param   string|null $registrations Schedule-registration cursor.
 	 *
 	 * @return  string
 	 */
-	private static function cursor_raw( ?string $runs, ?string $locks ): string {
+	private static function cursor_raw( ?string $runs, ?string $locks, ?string $registrations = null ): string {
 		$raw = \maybe_serialize(
 			array(
-				'runs'  => $runs,
-				'locks' => $locks,
+				'runs'          => $runs,
+				'locks'         => $locks,
+				'registrations' => $registrations,
 			)
 		);
 		self::assertIsString( $raw );
@@ -496,7 +676,7 @@ final class MaintenanceTaskTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{runs: string|null, locks: string|null}
+	 * @return  array{runs: string|null, locks: string|null, registrations: string|null}
 	 */
 	private function cursor_state(): array {
 		$raw = $this->wpdb->rows[ self::CURSOR_OPTION ] ?? null;
@@ -505,10 +685,12 @@ final class MaintenanceTaskTest extends TestCase {
 		self::assertIsArray( $state );
 		self::assertArrayHasKey( 'runs', $state );
 		self::assertArrayHasKey( 'locks', $state );
+		self::assertArrayHasKey( 'registrations', $state );
 
 		return array(
-			'runs'  => \is_string( $state['runs'] ) ? $state['runs'] : null,
-			'locks' => \is_string( $state['locks'] ) ? $state['locks'] : null,
+			'runs'          => \is_string( $state['runs'] ) ? $state['runs'] : null,
+			'locks'         => \is_string( $state['locks'] ) ? $state['locks'] : null,
+			'registrations' => \is_string( $state['registrations'] ) ? $state['registrations'] : null,
 		);
 	}
 

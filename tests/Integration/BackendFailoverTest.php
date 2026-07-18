@@ -180,9 +180,9 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
 		$work                 = new WorkRegistry();
-		$registry             = new ScheduleRegistry( $rows );
 		$clock                = new SystemClock();
 		$logger               = new HookLogger();
+		$registry             = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new Randomizer();
 		$guard                = new OverlapGuard( $clock, $logger, $rows );
 		$stores               = new StoreFactory( $clock, $rows, $logger );

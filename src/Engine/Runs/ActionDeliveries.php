@@ -394,12 +394,12 @@ final readonly class ActionDeliveries {
 	 */
 	private function handle_run_action( string $identity, string $run_id, ?array $chunk_args, int $action_seq ): void {
 		$work_type   = null === $chunk_args ? 'Task' : 'Batch';
-		$task        = $this->work->task( $identity );
-		$batch       = $this->work->batch( $identity );
+		$task        = 'Task' === $work_type ? $this->work->task( $identity ) : null;
+		$batch       = 'Batch' === $work_type ? $this->work->batch( $identity ) : null;
 		$liveness_at = null;
-		if ( null === $chunk_args && null !== $task ) {
+		if ( null !== $task ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $task, $identity, $run_id );
-		} elseif ( null !== $chunk_args && null !== $batch ) {
+		} elseif ( null !== $batch ) {
 			$liveness_at = fn (): int => $this->execution_lease_at( $batch, $identity, $run_id );
 		}
 		$run_store = $this->stores->run_store( $identity );
@@ -408,51 +408,36 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( null !== $task ) {
-			if ( null !== $chunk_args ) {
-				$this->logger->warning(
-					'Task run action carries batch chunk arguments; schedule task runs with the task name, run identifier, and action sequence.',
-					array(
-						'task_name' => $identity,
-						'run_id'    => $run_id,
-					)
-				);
-				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
+		if ( 'Task' === $work_type ) {
+			if ( null !== $task ) {
+				$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
 
 				return;
 			}
 
-			$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
+			$this->logger->warning(
+				'Task run action references an unregistered task; register the task before dispatching its run action.',
+				array(
+					'task_name' => $identity,
+					'run_id'    => $run_id,
+				)
+			);
+			$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		if ( null !== $batch ) {
-			if ( null === $chunk_args ) {
-				$this->logger->warning(
-					'Batch run action is missing chunk arguments; schedule it with the batch name, run identifier, current queue head, and action sequence.',
-					array(
-						'batch_name' => $identity,
-						'run_id'     => $run_id,
-					)
-				);
-				$run_store->replace_if_state_matches( $run_id, $state, $state->with_executing( false ) );
-
-				return;
-			}
-
 			$this->handle_batch_run_action( $batch, $identity, $run_id, $chunk_args, $state, $run_store );
 
 			return;
 		}
 
 		$this->logger->warning(
-			null === $chunk_args
-				? 'Task run action references an unregistered task; register the task before dispatching its run action.'
-				: 'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
+			'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
 			array(
-				( null === $chunk_args ? 'task_name' : 'batch_name' ) => $identity,
-				'run_id' => $run_id,
+				'batch_name' => $identity,
+				'run_id'     => $run_id,
 			)
 		);
 		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );

@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Logging;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ThrowableContextNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\InvalidArgumentException;
@@ -12,6 +13,7 @@ use Psr\Log\InvalidArgumentException;
  *
  */
 #[CoversClass( HookLogger::class )]
+#[CoversClass( ThrowableContextNormalizer::class )]
 final class HookLoggerTest extends TestCase {
 	/**
 	 * Satisfies the production boot guard and loads the recording action stub.
@@ -25,6 +27,7 @@ final class HookLoggerTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
+		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 
 	/**
@@ -78,15 +81,31 @@ final class HookLoggerTest extends TestCase {
 	}
 
 	/**
-	 * Throwable context reaches subscribers unchanged without entering placeholder interpolation.
+	 * Throwable context reaches subscribers projected without entering placeholder interpolation.
 	 *
 	 * @return  void
 	 */
-	public function test_log_passes_throwable_context_without_interpolating_it(): void {
-		$throwable = new \RuntimeException( 'Client token secret.' );
-		$context   = array(
+	public function test_log_projects_throwable_context_without_interpolating_it(): void {
+		$throwable = new class() extends \RuntimeException {
+			/** Creates one throwable with secrets in both message and its non-standard code. */
+			public function __construct() {
+				parent::__construct( 'Client token secret.' );
+
+				$this->code = 'Bearer code secret.';
+			}
+		};
+
+		$context = array(
 			'exception' => $throwable,
+			'failure'   => $throwable,
 			'task'      => 'email-digest',
+		);
+
+		$projection = array(
+			'class'      => \get_debug_type( $throwable ),
+			'code'       => 'string',
+			'file'       => \basename( $throwable->getFile() ) . ':' . $throwable->getLine(),
+			'trace_hash' => \substr( \hash( 'sha256', $throwable->getTraceAsString() ), 0, 16 ),
 		);
 
 		( new HookLogger() )->error( 'Task {task} failed with {exception}.', $context );
@@ -98,13 +117,24 @@ final class HookLoggerTest extends TestCase {
 					'args'      => array(
 						'error',
 						'Task email-digest failed with {exception}.',
-						$context,
+						array(
+							'exception' => $projection,
+							'failure'   => $projection,
+							'task'      => 'email-digest',
+						),
 					),
 				),
 			),
 			$GLOBALS['a8csp_bgte_test_fired_actions']
 		);
-		self::assertSame( $throwable, $GLOBALS['a8csp_bgte_test_fired_actions'][0]['args'][2]['exception'] );
+
+		$subscriber_context = $GLOBALS['a8csp_bgte_test_fired_actions'][0]['args'][2];
+		self::assertNotSame( $throwable, $subscriber_context['exception'] );
+		self::assertNotSame( $throwable, $subscriber_context['failure'] );
+		$subscriber_json = \wp_json_encode( $subscriber_context, \JSON_THROW_ON_ERROR );
+		self::assertIsString( $subscriber_json );
+		self::assertStringNotContainsString( 'Client token secret.', $subscriber_json );
+		self::assertStringNotContainsString( 'Bearer code secret.', $subscriber_json );
 	}
 
 	/**

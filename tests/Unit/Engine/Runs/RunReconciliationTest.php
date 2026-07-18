@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
@@ -152,7 +153,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->lifecycle_deliveries = new ActionDeliveries( $this->work, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
 		$this->dispatcher           = new Dispatcher( $this->work, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->work, $this->backend );
-		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
+		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
@@ -815,6 +816,62 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * A retained Batch run cannot be delivered through a Task that reused its identity.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_batch_redelivery_ignores_a_current_task_with_the_same_identity(): void {
+		$chunk = array( 'page' => 1 );
+		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$this->store_running_state( self::IDENTITY, $state );
+		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
+		$current_task = $this->work->task( self::IDENTITY );
+		self::assertInstanceOf( RecordingTask::class, $current_task );
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, $chunk, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+
+		$this->lifecycle_deliveries->handle_run_chunk_action( self::IDENTITY, self::RUN_ID, $chunk, 1 );
+
+		self::assertSame( array(), $current_task->calls );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		$record = $this->log_record( 'Batch run action references an unregistered batch; register the batch before dispatching its run action.' );
+		self::assertNotNull( $record );
+		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
+	}
+
+	/**
+	 * A retained Task run cannot be delivered through a Batch that reused its identity.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_task_redelivery_ignores_a_current_batch_with_the_same_identity(): void {
+		$name          = self::identity( 'reused-as-batch' );
+		$current_batch = new RecordingBatch( 'reused-as-batch' );
+		$this->work->register_batch( $name, $current_batch );
+		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$this->store_running_state( $name, $state );
+		$this->put_lock( 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( 'a8csp_background_tasks/run_task', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+
+		$this->lifecycle_deliveries->handle_run_task_action( $name, self::RUN_ID, 1 );
+
+		self::assertSame( array(), $current_batch->process_calls );
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $this->options() );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $this->options() );
+		$record = $this->log_record( 'Task run action references an unregistered task; register the task before dispatching its run action.' );
+		self::assertNotNull( $record );
+		self::assertSame( $name, $record['context']['task_name'] ?? null );
+	}
+
+	/**
 	 * A throwing run timing filter leaves its row unchanged without starving a later client.
 	 *
 	 * @return  void
@@ -1017,12 +1074,13 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A stale running run fenced by a replacement records supersession without failure state.
+	 * A retained Batch run keeps Batch supersession routing after its identity is reused by a Task.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_supersedes_a_stale_running_run_whose_lock_has_transferred(): void {
-		$this->create_running_run();
+	public function test_sweep_supersedes_a_stale_persisted_batch_whose_lock_has_transferred(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->store_running_state( self::IDENTITY, $state );
 		$this->clock->timestamp = self::NOW + 901;
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, $this->clock->timestamp );
@@ -1055,6 +1113,10 @@ final class RunReconciliationTest extends TestCase {
 		$lock_row = \maybe_unserialize( $lock );
 		self::assertIsArray( $lock_row );
 		self::assertSame( $replacement_run_id, $lock_row['run_id'] ?? null );
+		$record = $this->log_record( 'Superseded batch run after its ownership fence failed.' );
+		self::assertNotNull( $record );
+		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
+		self::assertArrayNotHasKey( 'task_name', $record['context'] );
 	}
 
 	/**
@@ -1234,6 +1296,35 @@ final class RunReconciliationTest extends TestCase {
 		);
 		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
 		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+	}
+
+	/**
+	 * A retained Batch row keeps Batch crash routing after its identity is reused by a Task.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_routes_a_running_row_by_its_persisted_batch_kind(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
+
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
+
+		$decoded = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $decoded );
+		$options                 = $this->options();
+		$options[ $option_name ] = $decoded;
+
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+
+		$this->maintenance->handle( array() );
+
+		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
+		self::assertIsArray( $failed );
+		$failed_entry = $failed[0] ?? null;
+		self::assertIsArray( $failed_entry );
+		$error = $failed_entry['error'] ?? null;
+		self::assertIsArray( $error );
+		self::assertSame( self::ARGS, $error['failed_chunk'] ?? null );
+		self::assertNotNull( $this->log_record( 'Terminal batch callback was skipped because the batch is not registered in this request.' ) );
 	}
 
 	/**
@@ -1513,7 +1604,8 @@ final class RunReconciliationTest extends TestCase {
 				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
-			3
+			3,
+			'Batch'
 		);
 
 		$this->maintenance->handle( array() );
@@ -1572,7 +1664,7 @@ final class RunReconciliationTest extends TestCase {
 		$name  = self::identity( 'failed-without-detail' );
 		$batch = new RecordingBatch( 'failed-without-detail' );
 		$this->work->register_batch( $name, $batch );
-		$this->store_terminal_run( $name, 'failed', array(), null, 2 );
+		$this->store_terminal_run( $name, 'failed', array(), null, 2, 'Batch' );
 
 		$this->maintenance->handle( array() );
 
@@ -1634,7 +1726,8 @@ final class RunReconciliationTest extends TestCase {
 				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
-			2
+			2,
+			'Batch'
 		);
 
 		$this->maintenance->handle( array() );
@@ -1665,7 +1758,8 @@ final class RunReconciliationTest extends TestCase {
 				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
-			2
+			2,
+			'Batch'
 		);
 		$run_store        = $this->stores->run_store( $name );
 		$rival_started    = false;
@@ -1727,7 +1821,7 @@ final class RunReconciliationTest extends TestCase {
 		$name  = self::identity( 'completed-batch' );
 		$batch = new RecordingBatch( 'completed-batch' );
 		$this->work->register_batch( $name, $batch );
-		$this->store_terminal_run( $name, 'completed' );
+		$this->store_terminal_run( $name, 'completed', kind: 'Batch' );
 
 		$this->maintenance->handle( array() );
 
@@ -1776,13 +1870,27 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * A retained Batch row keeps Batch terminal routing after its identity is reused by a Task.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_routes_a_terminal_row_by_its_persisted_batch_kind(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed', kind: 'Batch' );
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+		self::assertNotNull( $this->log_record( 'Terminal batch callback was skipped because the batch is not registered in this request.' ) );
+	}
+
+	/**
 	 * A deactivated client cannot leave its terminal row permanently unfinished.
 	 *
 	 * @return  void
 	 */
 	public function test_sweep_skips_an_unregistered_batch_callback_and_finishes_the_row(): void {
 		$name = self::identity( 'deactivated-client' );
-		$this->store_terminal_run( $name, 'completed' );
+		$this->store_terminal_run( $name, 'completed', kind: 'Batch' );
 
 		$this->maintenance->handle( array() );
 
@@ -1948,21 +2056,42 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * Stores one production-serialized running state.
+	 *
+	 * @param   string   $name  Complete work identity.
+	 * @param   RunState $state Running state fixture.
+	 *
+	 * @return  void
+	 */
+	private function store_running_state( string $name, RunState $state ): void {
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
+		$decoded               = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $decoded );
+
+		$options                 = $this->options();
+		$options[ $option_name ] = $decoded;
+
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
 	 * Stores one old terminal state whose omitted optional fields exercise decoder defaults.
 	 *
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
+	 * @phpstan-param 'Task'|'Batch' $kind
 	 *
 	 * @param   string     $name            Stable task or batch name.
 	 * @param   string     $status          Terminal status value.
 	 * @param   array      $effects         Completed terminal effect keys.
 	 * @param   array|null $error           Persisted terminal failure detail.
 	 * @param   int        $failed_attempts Attempts consumed by a failed run.
+	 * @param   string     $kind            Persisted work contract type.
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0 ): void {
-		$state = new RunState( status: RunStatus::from( $status ), executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'Task' ): void {
+		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
 

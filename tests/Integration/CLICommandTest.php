@@ -614,7 +614,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( array() );
 		$now       = \time();
-		$state     = new RunState( RunStatus::Running, true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
+		$state     = new RunState( RunStatus::Running, 'Task', true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
 		$fixtures  = array(
 			$builder->run( self::CANONICAL_RUN_ID, $state ),
 			$builder->history(
@@ -1004,7 +1004,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'Task', $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 
@@ -1023,7 +1023,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-completeness-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_BATCH_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'Batch', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 

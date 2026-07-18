@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Logging;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ThrowableContextNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -14,6 +15,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( ErrorLogSink::class )]
 #[UsesClass( PortableArguments::class )]
+#[UsesClass( ThrowableContextNormalizer::class )]
 final class ErrorLogSinkTest extends TestCase {
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording action stub.
@@ -122,6 +124,7 @@ final class ErrorLogSinkTest extends TestCase {
 		$throwable          = new \RuntimeException( "Bearer secret-token\r\nuser@example.com", 401 );
 		$context            = array(
 			'exception' => $throwable,
+			'failure'   => $throwable,
 			'task_id'   => 42,
 		);
 		$normalized_context = \wp_json_encode(
@@ -132,6 +135,7 @@ final class ErrorLogSinkTest extends TestCase {
 					'file'       => \basename( $throwable->getFile() ) . ':' . $throwable->getLine(),
 					'trace_hash' => \substr( \hash( 'sha256', $throwable->getTraceAsString() ), 0, 16 ),
 				),
+				'failure'   => \RuntimeException::class,
 				'task_id'   => 42,
 			),
 			\JSON_THROW_ON_ERROR
@@ -200,6 +204,31 @@ final class ErrorLogSinkTest extends TestCase {
 		$output = $this->capture_error_log( 'error', 'Work failed', array( 'value' => $unencodable_value ) );
 
 		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed {"value":"JsonSerializable@anonymous"}', $output );
+	}
+
+	/**
+	 * A string exception code reduces to its type so vendor codes cannot leak content.
+	 *
+	 * @return  void
+	 */
+	public function test_log_reduces_a_string_exception_code_to_its_type(): void {
+		$exception = new class( 'Upstream driver detail: dsn=secret' ) extends \RuntimeException {
+			/**
+			 * Carries a vendor-style string code the way PDO drivers do.
+			 *
+			 * @param   string $message Exception message.
+			 */
+			public function __construct( string $message ) {
+				parent::__construct( $message );
+				$this->code = 'HY000';
+			}
+		};
+
+		$output = $this->capture_error_log( 'error', 'Storage failed', array( 'exception' => $exception ) );
+
+		self::assertStringContainsString( '"code":"string"', $output );
+		self::assertStringNotContainsString( 'HY000', $output );
+		self::assertStringNotContainsString( 'dsn=secret', $output );
 	}
 
 	/**

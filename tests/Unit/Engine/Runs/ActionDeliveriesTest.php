@@ -402,7 +402,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Batch-shaped task arguments clear the marker so the accepted delivery can still run.
+	 * Batch-shaped task arguments are rejected before claiming the task's execution ownership.
 	 *
 	 * @load-bearing security
 	 * @pin-rationale A malformed scheduler payload is injected through the registered action boundary to prove it cannot strand the execution marker or reach user code.
@@ -417,6 +417,16 @@ final class ActionDeliveriesTest extends TestCase {
 
 		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ), 1 );
 		self::assertSame( array(), $this->task->calls );
+		self::assertSame( 'Lifecycle action work kind does not match the persisted run kind; the stale or malformed delivery was dropped.', $this->rig->logger()->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'name'           => self::IDENTITY,
+				'run_id'         => self::RUN_ID,
+				'persisted_kind' => 'Task',
+				'delivered_kind' => 'Batch',
+			),
+			$this->rig->logger()->records[0]['context'] ?? null
+		);
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
@@ -584,7 +594,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	private function install_replacement_generation(): void {
 		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
-		$state  = new RunState( status: RunStatus::Running, executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: $credit );
+		$state  = new RunState( status: RunStatus::Running, kind: 'Task', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: $credit );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
 	}
@@ -618,7 +628,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_pending_run(): void {
-		$state = new RunState( status: RunStatus::Running, executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
 		$this->put_fixture(

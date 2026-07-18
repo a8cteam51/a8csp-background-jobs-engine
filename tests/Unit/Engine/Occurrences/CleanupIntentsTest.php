@@ -123,7 +123,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->clock    = new FixedClock( self::NOW );
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
-		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ) );
+		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
 		$this->delivery = $this->new_delivery( $this->registry );
 		$this->api      = new Schedules( $this->registry, $this->backend, $this->clock, $this->delivery );
 	}
@@ -148,6 +148,32 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
 		self::assertSame( 'Unknown schedule registration "owner-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.', $this->logger->records[0]['message'] ?? null );
+	}
+
+	/**
+	 * An unreadable registry row preserves its recurring chain and cannot create a cleanup intent.
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_registration_row_is_not_delivered_as_an_unknown_schedule(): void {
+		$option_name = ScheduleRegistry::option_name( self::OWNER );
+		$this->wpdb->put( $option_name, 'poison-registry-row' );
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame(
+			array(
+				'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
+				'Schedule occurrence registration could not be read: {error}',
+			),
+			\array_column( $this->logger->records, 'message' )
+		);
+		self::assertSame(
+			'Schedule registry option row "a8csp_bgte_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
+			$this->logger->records[1]['context']['error'] ?? null
+		);
 	}
 
 	/**

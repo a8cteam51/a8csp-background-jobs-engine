@@ -341,7 +341,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( LockClaimOutcome::Claimed, $claim );
 
 		$run_store = $this->stores->run_store( self::IDENTITY );
-		if ( null === $run_store->create( self::RUN_ID, self::ARGS, self::ARGS_HASH, array() ) ) {
+		if ( null === $run_store->create( self::RUN_ID, 'Task', self::ARGS, self::ARGS_HASH, array() ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture could not create its running row.' );
 		}
 		if ( ! $this->stores->run_history( self::IDENTITY )->record_started( self::RUN_ID, self::ARGS_HASH ) ) {

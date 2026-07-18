@@ -377,7 +377,7 @@ final class EngineRig {
 		// This graph mirrors Component's two phases because the component has no injection seam; wiring changes require lockstep updates here.
 		$rows                 = new OptionRows( $this->wpdb );
 		$work                 = new WorkRegistry();
-		$schedules            = new ScheduleRegistry( $rows );
+		$schedules            = new ScheduleRegistry( $rows, $this->logger );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
 		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
 		$lock_windows         = new LockWindows( $this->clock, $this->logger );
@@ -394,7 +394,7 @@ final class EngineRig {
 		$work->register_task( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$inspection           = new Inspection( $schedules, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );

@@ -9,7 +9,10 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -54,6 +57,13 @@ final class ScheduleRegistry {
 	 */
 	private array $declarations = array();
 
+	/**
+	 * Corrupt-row warnings currently crossing the logger boundary, keyed by exact option name.
+	 *
+	 * @var array<string, true>
+	 */
+	private array $corrupt_warnings_in_flight = array();
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -64,10 +74,12 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OptionRows $rows Authoritative raw registry-row I/O.
+	 * @param   OptionRows      $rows   Authoritative raw registry-row I/O.
+	 * @param   LoggerInterface $logger Log event sink.
 	 */
 	public function __construct(
 		private readonly OptionRows $rows,
+		private readonly LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -82,11 +94,12 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $owner Stable client identifier.
 	 *
-	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError>
+	 * @return  AbstractResult<array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}>, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registrations_for( string $owner ): AbstractResult {
-		$selected = $this->rows->read( self::option_name( $owner ) );
+		$option_name = self::option_name( $owner );
+		$selected    = $this->rows->read( $option_name );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -97,8 +110,13 @@ final class ScheduleRegistry {
 		}
 
 		$stored = RawOptionDecoder::decode( $raw );
+		if ( ! \is_array( $stored ) ) {
+			$this->warn_corrupt_row( $option_name );
 
-		return new Success( \is_array( $stored ) ? self::registrations_from_rows( $owner, $stored ) : array() );
+			return new Failure( SchedulingError::registry_corrupt( $owner, $option_name ) );
+		}
+
+		return new Success( self::registrations_from_rows( $owner, $stored ) );
 	}
 
 	/**
@@ -137,6 +155,7 @@ final class ScheduleRegistry {
 
 			$stored = RawOptionDecoder::decode( $raw );
 			if ( ! \is_array( $stored ) ) {
+				$this->warn_corrupt_row( $option_name );
 				continue;
 			}
 
@@ -161,20 +180,22 @@ final class ScheduleRegistry {
 	 * @param   array  $schedules     Declared schedules keyed by complete identity.
 	 * @param   array  $registrations Persisted owner state keyed by complete identity.
 	 *
-	 * @return  bool True when the requested registry state is confirmed persisted.
+	 * @throws  \InvalidArgumentException When a registration identity is invalid or belongs to another owner.
+	 *
+	 * @return  OwnerReplacementOutcome Classified persistence outcome.
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function replace_owner( string $owner, array $schedules, array $registrations ): bool {
+	public function replace_owner( string $owner, array $schedules, array $registrations ): OwnerReplacementOutcome {
 		$owner_registrations = self::owner_registrations( $owner, $registrations );
 		if ( null === $owner_registrations ) {
-			return false;
+			throw new \InvalidArgumentException( 'Schedule registration identities must be canonical and belong to the bound owner.' );
 		}
 		$option_name = self::option_name( $owner );
 
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $option_name );
 			if ( $read->is_failure() ) {
-				return false;
+				return OwnerReplacementOutcome::ReadFailed;
 			}
 
 			$expected_raw = $read->value;
@@ -182,14 +203,14 @@ final class ScheduleRegistry {
 				if ( array() === $owner_registrations ) {
 					$this->retain_owner( $owner, $schedules );
 
-					return true;
+					return OwnerReplacementOutcome::Persisted;
 				}
 
 				$replacement_raw = self::serialize_registrations( $owner_registrations );
 				if ( $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
-					return true;
+					return OwnerReplacementOutcome::Persisted;
 				}
 
 				continue;
@@ -197,7 +218,7 @@ final class ScheduleRegistry {
 
 			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
-				return false;
+				return OwnerReplacementOutcome::Corrupt;
 			}
 
 			$replacement_registrations = $owner_registrations;
@@ -213,19 +234,19 @@ final class ScheduleRegistry {
 			if ( $replacement_registrations === $stored ) {
 				$this->retain_owner( $owner, $schedules );
 
-				return true;
+				return OwnerReplacementOutcome::Persisted;
 			}
 
 			if ( array() === $owner_registrations ) {
 				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $option_name, $expected_raw ) ) {
 					$this->retain_owner( $owner, $schedules );
 
-					return true;
+					return OwnerReplacementOutcome::Persisted;
 				}
 
 				$current = $this->rows->read( $option_name );
 				if ( $current->is_failure() ) {
-					return false;
+					return OwnerReplacementOutcome::ReadFailed;
 				}
 
 				// A lost delete whose row is already gone means another writer reached the goal state first.
@@ -233,10 +254,10 @@ final class ScheduleRegistry {
 				if ( null === $current_raw ) {
 					$this->retain_owner( $owner, $schedules );
 
-					return true;
+					return OwnerReplacementOutcome::Persisted;
 				}
 				if ( $current_raw === $expected_raw ) {
-					return false;
+					return OwnerReplacementOutcome::CasFailed;
 				}
 
 				continue;
@@ -246,12 +267,12 @@ final class ScheduleRegistry {
 			if ( $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw ) ) {
 				$this->retain_owner( $owner, $schedules );
 
-				return true;
+				return OwnerReplacementOutcome::Persisted;
 			}
 
 			$current = $this->rows->read( $option_name );
 			if ( $current->is_failure() ) {
-				return false;
+				return OwnerReplacementOutcome::ReadFailed;
 			}
 
 			$current_raw = $current->value;
@@ -259,11 +280,11 @@ final class ScheduleRegistry {
 				continue;
 			}
 			if ( $current_raw === $expected_raw ) {
-				return false;
+				return OwnerReplacementOutcome::CasFailed;
 			}
 		}
 
-		return false;
+		return OwnerReplacementOutcome::CasFailed;
 	}
 
 	// endregion
@@ -297,7 +318,7 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  AbstractResult<array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}|null, EngineError>
+	 * @return  AbstractResult<array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int}|null, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registration( string $registration_key ): AbstractResult {
@@ -522,6 +543,8 @@ final class ScheduleRegistry {
 	/**
 	 * Returns the canonical owner encoded by one registration option name.
 	 *
+	 * @internal Engine maintenance only.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -529,7 +552,7 @@ final class ScheduleRegistry {
 	 *
 	 * @return  string|null
 	 */
-	private static function owner_from_option_name( string $option_name ): ?string {
+	public static function owner_from_option_name( string $option_name ): ?string {
 		$owner = \substr( $option_name, \strlen( self::OPTION_PREFIX ) );
 		try {
 			WorkIdentity::validate_owner( $owner, true );
@@ -538,6 +561,32 @@ final class ScheduleRegistry {
 		}
 
 		return self::OPTION_PREFIX . $owner === $option_name ? $owner : null;
+	}
+
+	/**
+	 * Reports one undecodable owner row without treating child-registration validation as row corruption.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Exact persisted option name.
+	 *
+	 * @return  void
+	 */
+	private function warn_corrupt_row( string $option_name ): void {
+		if ( isset( $this->corrupt_warnings_in_flight[ $option_name ] ) ) {
+			return;
+		}
+
+		$this->corrupt_warnings_in_flight[ $option_name ] = true;
+		try {
+			$this->logger->warning(
+				'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
+				array( 'option_name' => $option_name )
+			);
+		} finally {
+			unset( $this->corrupt_warnings_in_flight[ $option_name ] );
+		}
 	}
 
 	/**

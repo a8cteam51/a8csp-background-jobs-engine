@@ -139,6 +139,10 @@ final readonly class Schedules {
 
 		$registrations = $this->registry->registrations_for( $owner );
 		if ( $registrations->is_failure() ) {
+			if ( $registrations->error instanceof SchedulingError ) {
+				return new Failure( $registrations->error );
+			}
+
 			return $this->registry_read_failure( $owner );
 		}
 
@@ -217,8 +221,9 @@ final readonly class Schedules {
 				'misfire_skips' => 0,
 				'overlap_skips' => 0,
 			);
-			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-				return $this->registry_persist_failure( $owner );
+			$replacement                = $this->registry->replace_owner( $owner, $declared, $next );
+			if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
+				return $this->registry_replacement_failure( $owner, $replacement );
 			}
 
 			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority );
@@ -237,13 +242,15 @@ final readonly class Schedules {
 			}
 
 			unset( $next[ $schedule_identity ] );
-			if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-				return $this->registry_persist_failure( $owner );
+			$replacement = $this->registry->replace_owner( $owner, $declared, $next );
+			if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
+				return $this->registry_replacement_failure( $owner, $replacement );
 			}
 		}
 
-		if ( ! $this->registry->replace_owner( $owner, $declared, $next ) ) {
-			return $this->registry_persist_failure( $owner );
+		$replacement = $this->registry->replace_owner( $owner, $declared, $next );
+		if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
+			return $this->registry_replacement_failure( $owner, $replacement );
 		}
 
 		return new Success( true );
@@ -306,16 +313,21 @@ final readonly class Schedules {
 	}
 
 	/**
-	 * Returns a failed registry-persist result for one owner.
+	 * Returns the public failure for one classified owner-row replacement.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client identifier.
+	 * @param   string                  $owner   Stable client identifier.
+	 * @param   OwnerReplacementOutcome $outcome Classified failed replacement.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
-	private function registry_persist_failure( string $owner ): Failure {
+	private function registry_replacement_failure( string $owner, OwnerReplacementOutcome $outcome ): Failure {
+		if ( OwnerReplacementOutcome::Corrupt === $outcome ) {
+			return new Failure( SchedulingError::registry_corrupt( $owner, ScheduleRegistry::option_name( $owner ) ) );
+		}
+
 		return new Failure( SchedulingError::registry_persist_failure( $owner ) );
 	}
 
