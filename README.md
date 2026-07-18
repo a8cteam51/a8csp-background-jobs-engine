@@ -424,8 +424,7 @@ Every targeted `<identity>` argument is a composed `{owner}:{name}` identity. Fa
 
 ```sh
 wp background-tasks failed-runs list
-wp background-tasks failed-runs list --format=json
-wp background-tasks failed-runs list --owner=consumer-plugin
+wp background-tasks failed-runs list --owner=consumer-plugin --format=json
 wp background-tasks failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 wp background-tasks failed-runs purge consumer-plugin:email-digest
 wp background-tasks failed-runs purge --all

@@ -132,10 +132,10 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $task_name Complete owner-qualified task identity.
-	 * @param   array<array-key, mixed> $args      Task arguments.
-	 * @param   OverlapPolicy           $overlap   Schedule overlap policy.
-	 * @param   int                     $priority  Advisory priority from 0 through 255.
+	 * @param   string                  $task_name   Complete owner-qualified task identity.
+	 * @param   array<array-key, mixed> $args        Task arguments.
+	 * @param   OverlapPolicy           $overlap     Schedule overlap policy.
+	 * @param   int                     $priority    Advisory priority from 0 through 255.
 	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
 	 *
 	 * @return  AbstractResult<string|SkippedTaskDispatch, EngineError|SchedulingError>
@@ -146,6 +146,8 @@ final readonly class Dispatcher {
 	}
 
 	/**
+	 * Creates and schedules one run for a registered batch.
+	 *
 	 * Replace takes over a fresh matching incumbent's lock, and the incumbent stops at its next
 	 * fence. Reject refuses admission while that lock is held. A crash between takeover and
 	 * enqueueing converges through the staleness-reclaim model.
@@ -454,13 +456,13 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $task_name     Complete owner-qualified task identity.
-	 * @param   array<array-key, mixed> $args          Task arguments.
-	 * @param   int                     $delay         Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key     Client deduplication key whose hash replaces the argument hash.
-	 * @param   int                     $priority      Advisory priority from 0 through 255.
-	 * @param   OverlapPolicy           $overlap       Execution-overlap policy.
-	 * @param   \Closure|null           $on_accepted   Internal callback after backend acceptance and before started hooks.
+	 * @param   string                  $task_name   Complete owner-qualified task identity.
+	 * @param   array<array-key, mixed> $args        Task arguments.
+	 * @param   int                     $delay       Scheduling delay in seconds.
+	 * @param   string|null             $dedup_key   Client deduplication key whose hash replaces the argument hash.
+	 * @param   int                     $priority    Advisory priority from 0 through 255.
+	 * @param   OverlapPolicy           $overlap     Execution-overlap policy.
+	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
 	 *
 	 * @return  AbstractResult<string|SkippedTaskDispatch, EngineError|SchedulingError>
 	 */

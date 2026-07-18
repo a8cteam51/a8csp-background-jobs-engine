@@ -16,6 +16,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error;
  * @version 1.0.0
  */
 enum SchedulingErrorReason: string {
+	// region FIELDS AND CONSTANTS
+
 	case BackendNotReady  = 'backend_not_ready';
 	case UnsupportedGroup = 'unsupported_group';
 
@@ -37,4 +39,6 @@ enum SchedulingErrorReason: string {
 
 	case ScheduleFailed = 'schedule_failed';
 	case StorageFailure = 'storage_failure';
+
+	// endregion
 }

@@ -36,10 +36,10 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BackendInterface    $scheduler           Scheduling facade boundary.
-	 * @param   ClockInterface      $clock               Timestamp source.
-	 * @param   RandomizerInterface $randomizer          Retry-delay randomness.
-	 * @param   LoggerInterface     $logger              Log event sink.
+	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
+	 * @param   ClockInterface      $clock                Timestamp source.
+	 * @param   RandomizerInterface $randomizer           Retry-delay randomness.
+	 * @param   LoggerInterface     $logger               Log event sink.
 	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
 	 */
 	public function __construct(
@@ -99,7 +99,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'               $work_type Work contract type selected by the typed delivery path.
+	 * @param   'Task'|'Batch'               $work_type  Work contract type selected by the typed delivery path.
 	 * @param   TaskInterface|BatchInterface $contract   Failed work contract.
 	 * @param   string                       $identity   Complete owner-qualified work identity.
 	 * @param   string                       $run_id     Run identifier.
@@ -169,7 +169,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'               $work_type    Work contract type selected by the typed delivery path.
+	 * @param   'Task'|'Batch'               $work_type     Work contract type selected by the typed delivery path.
 	 * @param   TaskInterface|BatchInterface $contract      Failed work contract.
 	 * @param   string                       $identity      Complete owner-qualified work identity.
 	 * @param   string                       $run_id        Run identifier.

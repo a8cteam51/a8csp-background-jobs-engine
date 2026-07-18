@@ -1,8 +1,6 @@
 # Architecture
 
-This is the map of the plugin: what each file owns, how the pieces boot, and where the
-load-bearing machinery lives. It ships with the repository so the map survives for every future
-maintainer.
+This maps the plugin's major components, boot sequence, and load-bearing machinery.
 
 ## The component model
 
@@ -47,23 +45,20 @@ every surviving component is initialized before any hook can fire.
   bounded batches across a network.
 - `tests/` contains the automated test suite; see `tests/README.md` for the suite matrix and
   local workflow.
-- `.github/workflows/` contains the quality, test, audit, mutation, and release workflows; the
-  release pipeline builds, smoke-tests the artifact through the shared reusable workflow, and
-  publishes prereleases off the stable update channel.
+- `.github/workflows/` includes quality, test, audit, CodeQL, workflow-checks, mutation, and
+  release automation; the release pipeline builds, smoke-tests the artifact through the shared
+  reusable workflow, and publishes prereleases off the stable update channel.
 
 ## Delivery and degradation
 
-The engine prefers Action Scheduler and falls back to WP-Cron with documented best-effort
-semantics; the degraded CI environment proves the WP-Cron-only path with Action Scheduler
-absent. Delivery is at-least-once for terminal lifecycle hooks; concurrency control rides
-option-row CAS fences (overlap locks, occurrence leases, run generations) proven by the
-suite's pinned concurrency evidence.
+The engine writes through the first ready backend in preference order, with Action Scheduler
+before WP-Cron; WP-Cron provides the documented best-effort fallback. Delivery is at-least-once
+for terminal lifecycle hooks. Overlap locks, occurrence leases, and run generations use
+option-row compare-and-swap fences for concurrency control.
 
 ## Multisite
 
-Options are per-site, so the uninstall sweep visits every site of a network in bounded batches
-while the requirements gate reports through `all_admin_notices` on site and network admin
-screens alike. The request-global graph deliberately fails loud across `switch_to_blog()`;
-per-site operation happens through each site's own requests. The multisite wp-env fixture
-converts itself into a network and `composer test:multisite` proves the network sweep against
-it.
+Options are per-site, so network uninstall pages through site IDs, switches into each site,
+runs the per-site cleanup, and restores the prior site. The requirements gate reports through
+`all_admin_notices` on site and network admin screens alike. The request-global graph deliberately
+fails loud across `switch_to_blog()`; per-site operation happens through each site's own requests.

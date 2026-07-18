@@ -87,12 +87,12 @@ final readonly class RunStore {
 	 *
 	 * @phpstan-param 'Task'|'Batch' $kind
 	 *
-	 * @param   string                        $run_id      Run identifier.
-	 * @param   string                        $kind        Admitted work contract type.
+	 * @param   string                        $run_id     Run identifier.
+	 * @param   string                        $kind       Admitted work contract type.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
-	 * @param   string                        $args_hash   Stable single-flight identity.
-	 * @param   list<array<array-key, mixed>> $queue       Initial chunks in processing order.
-	 * @param   PendingAction|null            $pending     Durable successor delivery, or null when none exists.
+	 * @param   string                        $args_hash  Stable single-flight identity.
+	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
+	 * @param   PendingAction|null            $pending    Durable successor delivery, or null when none exists.
 	 *
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
@@ -178,9 +178,9 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $run_id      Run identifier.
+	 * @param   string   $run_id       Run identifier.
 	 * @param   string   $expected_raw Exact observed state.
-	 * @param   RunState $replacement Replacement state.
+	 * @param   RunState $replacement  Replacement state.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
@@ -233,14 +233,14 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $run_id      Run identifier.
-	 * @param   RunState $expected    Typed state decoded from the supplied raw snapshot.
+	 * @param   string   $run_id       Run identifier.
+	 * @param   RunState $expected     Typed state decoded from the supplied raw snapshot.
 	 * @param   string   $expected_raw Exact observed state.
-	 * @param   string   $effect      Non-empty terminal effect key.
+	 * @param   string   $effect       Non-empty terminal effect key.
 	 *
 	 * @throws  \InvalidArgumentException When the effect key is empty.
 	 * @throws  \LogicException           When the current site differs from the bound site or WordPress
-	 *                                     does not serialize the run state to a string.
+	 *                                    does not serialize the run state to a string.
 	 *
 	 * @return  array{raw: string, state: RunState}|null Caller-supplied snapshot when it already contains the key, which can omit concurrent effects; otherwise a persisted snapshot containing the key, or null when the row is absent, invalid, unreadable, or remains contended.
 	 */
@@ -299,7 +299,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $run_id      Run identifier.
+	 * @param   string $run_id       Run identifier.
 	 * @param   string $expected_raw Exact terminal or corrupt snapshot.
 	 *
 	 * @return  bool Whether this caller deleted the exact row.
@@ -563,8 +563,8 @@ final readonly class RunStore {
 		}
 
 		// The acceptance set is exactly PendingAction's six factory combinations: async pairs with every
-		// guard-permitted stage, while single pairs only with run and continue — no writer has ever
-		// produced another pairing, so anything else is a corrupt row rather than a hydratable state.
+		// guard-permitted stage, while single pairs only with run and continue. PendingAction's factories
+		// are the only writers, so anything else is a corrupt row.
 		return 'async' === $value['mode']
 			? null === $value['fire_at']
 			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'run', 'continue' ), true );

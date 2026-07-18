@@ -32,7 +32,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * The guard accepts only portable arguments whose JSON form fits the incumbent-proven 8000-byte ceiling.
+	 * The guard accepts only portable arguments whose JSON form is no larger than 8,000 bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

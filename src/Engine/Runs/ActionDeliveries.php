@@ -151,7 +151,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   string $batch_name Complete owner-qualified batch identity.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
@@ -253,7 +253,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   string $batch_name Complete owner-qualified batch identity.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
@@ -321,7 +321,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   string $batch_name Complete owner-qualified batch identity.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
@@ -342,7 +342,7 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   string $batch_name Complete owner-qualified batch identity.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
@@ -659,8 +659,8 @@ final readonly class ActionDeliveries {
 	 * @version 1.0.0
 	 *
 	 * @param   string $batch_name Complete owner-qualified batch identity.
-	 * @param   string $run_id    Run identifier.
-	 * @param   string $stage     Internal batch stage.
+	 * @param   string $run_id     Run identifier.
+	 * @param   string $stage      Internal batch stage.
 	 *
 	 * @return  BatchInterface|null
 	 */

@@ -14,9 +14,9 @@ final class WorkIdentity {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Client-owner ceiling chosen with the name ceiling so the longest composed identity leaves
-	 * the 24-byte overlap-lock prefix, separator, and 64-byte single-flight hash inside WordPress's 191-character
-	 * `option_name` boundary.
+	 * Client-owner ceiling paired with `NAME_MAX_BYTES` so the longest composed identity leaves the
+	 * 24-byte overlap-lock prefix, separator, and 64-byte single-flight hash inside WordPress's
+	 * 191-character `option_name` boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -26,9 +26,7 @@ final class WorkIdentity {
 	public const int OWNER_MAX_BYTES = 32;
 
 	/**
-	 * Local-name ceiling chosen with the owner ceiling so the longest composed identity leaves the
-	 * 24-byte overlap-lock prefix, separator, and 64-byte single-flight hash inside WordPress's 191-character
-	 * `option_name` boundary.
+	 * Local-name ceiling paired with `OWNER_MAX_BYTES` under the same WordPress `option_name` limit.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -67,8 +65,8 @@ final class WorkIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                Client or engine owner.
-	 * @param   string $name                 Owner-local work name.
+	 * @param   string $owner                 Client or engine owner.
+	 * @param   string $name                  Owner-local work name.
 	 * @param   bool   $allow_engine_reserved Whether the engine-reserved namespace is accepted.
 	 *
 	 * @throws  \InvalidArgumentException When the owner or name violates the canonical grammar.
@@ -93,7 +91,7 @@ final class WorkIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                Client or engine owner.
+	 * @param   string $owner                 Client or engine owner.
 	 * @param   bool   $allow_engine_reserved Whether the engine-reserved namespace is accepted.
 	 *
 	 * @throws  \InvalidArgumentException When the owner violates the canonical grammar.

@@ -13,8 +13,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
  * @version 1.0.0
  */
 enum MaintenanceFenceOutcome: string {
+	// region FIELDS AND CONSTANTS
+
 	case Owned         = 'owned';
 	case Abandoned     = 'abandoned';
 	case Transferred   = 'transferred';
 	case Indeterminate = 'indeterminate';
+
+	// endregion
 }

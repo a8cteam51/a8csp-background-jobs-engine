@@ -13,8 +13,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
  * @version 1.0.0
  */
 enum RegistrationUpdateOutcome: string {
+	// region FIELDS AND CONSTANTS
+
 	case Updated    = 'updated';
 	case Pruned     = 'pruned';
 	case Superseded = 'superseded';
 	case Failed     = 'failed';
+
+	// endregion
 }

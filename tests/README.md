@@ -73,11 +73,10 @@ npm run wp-env:multisite:stop
 
 ## Why plain `TestCase`, not `WP_UnitTestCase`
 
-WordPress core's own PHPUnit scaffold still caps at PHPUnit <=9, and core's migration plan
-(#62004) only targets PHPUnit 11.1+ over several future releases — there is no core-provided
-`WP_UnitTestCase` path onto a current PHPUnit today. This rig runs PHPUnit 13 directly, against
-plain `TestCase`, inside wp-env, rather than waiting on that migration or pinning to an old
-PHPUnit.
+WordPress core's PHPUnit scaffold supports PHPUnit through version 9; open ticket
+[#62004](https://core.trac.wordpress.org/ticket/62004) tracks compatibility work for PHPUnit 11
+and later. This rig runs PHPUnit 13 directly against plain `TestCase` inside wp-env, without
+depending on `WP_UnitTestCase` or core's PHPUnit compatibility range.
 
 That trade gives up `$this->factory` fixture helpers, `go_to()` routing simulation, and
 `WP_UnitTestCase`'s per-test transaction rollback. The WordPress-backed configurations create

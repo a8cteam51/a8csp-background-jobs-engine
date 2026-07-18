@@ -20,6 +20,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
  * @version 1.0.0
  */
 interface BackendInterface {
+	// region METHODS
+
 	/**
 	 * Schedules a recurring hook.
 	 *
@@ -168,4 +170,6 @@ interface BackendInterface {
 	 * @return  void
 	 */
 	public function register_hooks(): void;
+
+	// endregion
 }

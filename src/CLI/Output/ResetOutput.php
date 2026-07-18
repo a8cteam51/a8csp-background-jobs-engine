@@ -35,7 +35,7 @@ final readonly class ResetOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $option_rows    Deleted engine option rows.
+	 * @param   int $option_rows     Deleted engine option rows.
 	 * @param   int $pending_actions Unscheduled pending backend actions.
 	 *
 	 * @return  void

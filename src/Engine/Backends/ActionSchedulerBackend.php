@@ -407,10 +407,10 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int              $action_id    Positive action ID, or a non-positive rejection value.
-	 * @param   string           $hook         Hook being scheduled.
-	 * @param   list<mixed>      $args         Hook arguments.
-	 * @param   string           $group        Action group.
+	 * @param   int              $action_id     Positive action ID, or a non-positive rejection value.
+	 * @param   string           $hook          Hook being scheduled.
+	 * @param   list<mixed>      $args          Hook arguments.
+	 * @param   string           $group         Action group.
 	 * @param   non-empty-string $function_name Procedural function called.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
@@ -439,8 +439,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int                                                                                                        $action_id    Positive action ID, or a non-positive rejection value.
-	 * @param   string                                                                                                     $hook         Hook being scheduled.
+	 * @param   int                                                                                                        $action_id     Positive action ID, or a non-positive rejection value.
+	 * @param   string                                                                                                     $hook          Hook being scheduled.
 	 * @param   non-empty-string                                                                                           $function_name Procedural function called.
 	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
 	 * @param   non-empty-string|null                                                                                      $failure_cause Known rejection cause.

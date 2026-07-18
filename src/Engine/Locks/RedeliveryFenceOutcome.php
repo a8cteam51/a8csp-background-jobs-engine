@@ -13,8 +13,12 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
  * @version 1.0.0
  */
 enum RedeliveryFenceOutcome: string {
+	// region FIELDS AND CONSTANTS
+
 	case Ready         = 'ready';
 	case Live          = 'live';
 	case Transferred   = 'transferred';
 	case Indeterminate = 'indeterminate';
+
+	// endregion
 }

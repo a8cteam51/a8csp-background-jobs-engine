@@ -26,14 +26,16 @@ final class RawOptionDecoder {
 	 * @return  mixed
 	 */
 	public static function decode( string $raw ): mixed {
-		\call_user_func( 'set_error_handler', static fn (): bool => true );
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Malformed persisted rows must decode without emitting PHP warnings.
+		\set_error_handler( static fn (): bool => true );
 
 		try {
-			return \call_user_func( 'unserialize', $raw, array( 'allowed_classes' => false ) );
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- WordPress options use PHP serialization and class construction is disabled here.
+			return \unserialize( $raw, array( 'allowed_classes' => false ) );
 		} catch ( \Throwable ) {
 			return null;
 		} finally {
-			\call_user_func( 'restore_error_handler' );
+			\restore_error_handler();
 		}
 	}
 

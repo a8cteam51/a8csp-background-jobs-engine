@@ -319,17 +319,17 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   BatchInterface|null $batch          Failed batch, or null when its implementation is unavailable.
-	 * @param   string              $batch_name     Complete owner-qualified batch identity.
-	 * @param   string              $run_id         Run identifier.
-	 * @param   RunState            $state          Running state.
-	 * @param   RunStore            $run_store      Active-run store.
-	 * @param   EngineError         $error          Failure detail.
-	 * @param   RunFailureStage     $stage          Terminalization stage.
-	 * @param   ApiErrorCode        $code           Machine-readable cause classification.
-	 * @param   array|null          $failed_chunk   Batch chunk arguments for the failing chunk, or null.
-	 * @param   int|null            $attempts       Attempts consumed before failure, or null to derive the count.
-	 * @param   string|null         $expected_raw   Exact maintenance snapshot, or null for a live transition.
+	 * @param   BatchInterface|null $batch        Failed batch, or null when its implementation is unavailable.
+	 * @param   string              $batch_name   Complete owner-qualified batch identity.
+	 * @param   string              $run_id       Run identifier.
+	 * @param   RunState            $state        Running state.
+	 * @param   RunStore            $run_store    Active-run store.
+	 * @param   EngineError         $error        Failure detail.
+	 * @param   RunFailureStage     $stage        Terminalization stage.
+	 * @param   ApiErrorCode        $code         Machine-readable cause classification.
+	 * @param   array|null          $failed_chunk Batch chunk arguments for the failing chunk, or null.
+	 * @param   int|null            $attempts     Attempts consumed before failure, or null to derive the count.
+	 * @param   string|null         $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
@@ -350,14 +350,14 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   string          $task_name    Complete owner-qualified task identity.
-	 * @param   string          $run_id       Run identifier.
-	 * @param   RunState        $state        Running state.
-	 * @param   RunStore        $run_store    Active-run store.
+	 * @param   string          $task_name     Complete owner-qualified task identity.
+	 * @param   string          $run_id        Run identifier.
+	 * @param   RunState        $state         Running state.
+	 * @param   RunStore        $run_store     Active-run store.
 	 * @param   EngineError     $error         Task failure detail.
 	 * @param   int             $attempts_used Attempts consumed by the invocation.
-	 * @param   RunFailureStage $stage        Terminalization stage.
-	 * @param   ApiErrorCode    $code         Machine-readable cause classification.
+	 * @param   RunFailureStage $stage         Terminalization stage.
+	 * @param   ApiErrorCode    $code          Machine-readable cause classification.
 	 * @param   array|null      $failed_chunk  Batch chunk arguments for the failing chunk, or null for a task.
 	 * @param   string|null     $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
@@ -501,10 +501,10 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $run_id      Run identifier.
-	 * @param   RunState    $expected    Complete state observed by the terminalizing path.
-	 * @param   RunState    $replacement Terminal replacement state.
-	 * @param   RunStore    $run_store   Active-run store.
+	 * @param   string      $run_id       Run identifier.
+	 * @param   RunState    $expected     Complete state observed by the terminalizing path.
+	 * @param   RunState    $replacement  Terminal replacement state.
+	 * @param   RunStore    $run_store    Active-run store.
 	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
 	 *
 	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.

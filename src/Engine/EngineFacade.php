@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Client facade for task, schedule, and batch background work.
+ * Internal facade for schedule operations and retained-run inspection, retry, and cancellation.
  *
  * @internal
  *
