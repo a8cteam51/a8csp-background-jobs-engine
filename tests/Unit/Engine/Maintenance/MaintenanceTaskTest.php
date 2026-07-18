@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
@@ -43,6 +44,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( RunReconciliation::class )]
+#[UsesClass( RunHistory::class )]
 #[UsesClass( RunTransitions::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( StoreFactory::class )]
@@ -353,6 +355,39 @@ final class MaintenanceTaskTest extends TestCase {
 
 		self::assertArrayHasKey( $later, $this->wpdb->rows );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
+	}
+
+	/**
+	 * A run-history row does not consume the active-run scan budget.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale A saturated active-run prefix must still reach later active runs without unrelated history rows consuming its raw-name budget.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_history_row_does_not_consume_the_active_run_budget(): void {
+		$this->put_hostile_run_names( 499 );
+		[ $history_name, $history_raw ] = StoreFixtureBuilder::for_identity( 'sweep-tests:history' )->history(
+			array(
+				array(
+					'run_id'    => self::RUN_ID,
+					'args_hash' => self::ARGS_HASH,
+				),
+			),
+		);
+
+		$later = RunStore::OPTION_PREFIX . 'sweep-tests:later_' . self::RUN_ID;
+		$this->wpdb->put( $history_name, $history_raw );
+		$this->wpdb->put( $later, 'schema-invalid-run' );
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $later, $this->wpdb->rows );
+		self::assertSame( $history_raw, $this->wpdb->rows[ $history_name ] ?? null );
 	}
 
 	/**

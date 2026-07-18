@@ -390,7 +390,7 @@ final class LifecycleEffectsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_run_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
 		);
 	}
 

@@ -336,14 +336,14 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_run_history_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
 			'History must retain the exhausted run and successful manual retry in lifecycle order'
 		);
 		self::assertSame(
 			array(
 				'a8csp_bgte_failed_runs_' . self::IDENTITY,
+				'a8csp_bgte_history_' . self::IDENTITY,
 				'a8csp_bgte_latest_run_' . self::IDENTITY,
-				'a8csp_bgte_run_history_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Retry round-trip state must retain only the empty failed store, history ring, and latest pointer'

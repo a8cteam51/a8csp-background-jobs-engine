@@ -184,7 +184,7 @@ final class EngineRigTest extends TestCase {
 				),
 			)
 		);
-		self::assertSame( 'a8csp_bgte_run_history_' . self::IDENTITY, $history_name );
+		self::assertSame( 'a8csp_bgte_history_' . self::IDENTITY, $history_name );
 		$terminal = self::decoded( $history_raw )['terminal'] ?? null;
 		self::assertIsArray( $terminal );
 		$terminal_entry = $terminal[0] ?? null;

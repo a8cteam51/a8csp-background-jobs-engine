@@ -328,7 +328,7 @@ final class RunTransitionsTest extends TestCase {
 		$state            = $before_snapshot['state'];
 		$expected_run_raw = $before_snapshot['raw'];
 		$expected_lock    = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		$expected_history = $this->option( 'a8csp_bgte_run_history_' . self::IDENTITY );
+		$expected_history = $this->option( 'a8csp_bgte_history_' . self::IDENTITY );
 		self::assertIsString( $expected_lock );
 
 		$this->logger->records                       = array();
@@ -357,7 +357,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( RunStatus::Running, $after_state->status );
 		self::assertSame( self::NOW, $after_state->heartbeat_at );
 		self::assertSame( $expected_lock, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
-		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_run_history_' . self::IDENTITY ) );
+		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_history_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		foreach ( $this->wpdb->recorded_queries as $query ) {
@@ -964,7 +964,7 @@ final class RunTransitionsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_run_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
 		);
 	}
 
@@ -1080,7 +1080,7 @@ final class RunTransitionsTest extends TestCase {
 					$labels[] = 'failed-store';
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_run_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'history';
 					continue;
 				}
@@ -1124,7 +1124,7 @@ final class RunTransitionsTest extends TestCase {
 				$labels[] = self::run_state_label( $value );
 			} elseif ( 'a8csp_bgte_failed_runs_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_run_history_' . self::IDENTITY === $option_name ) {
+			} elseif ( 'a8csp_bgte_history_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'history';
 			}
 		}

@@ -26,7 +26,7 @@ final class MultisiteTest extends IntegrationTestCase {
 		'a8csp_bgte_run_multisite-%d:task_run-1',
 		'a8csp_bgte_failed_runs_multisite-%d:task',
 		'a8csp_bgte_latest_run_multisite-%d:task',
-		'a8csp_bgte_run_history_multisite-%d:task',
+		'a8csp_bgte_history_multisite-%d:task',
 		'a8csp_bgte_overlap_lock_multisite-%d:task_args-hash',
 		'a8csp_bgte_occurrence_lease_multisite-%d-registration-hash',
 		'a8csp_bgte_cleanup_intent_multisite-%d-registration-hash',

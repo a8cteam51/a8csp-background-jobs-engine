@@ -103,7 +103,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_run_history_' . self::SKIP_IDENTITY, null ),
+			\get_option( 'a8csp_bgte_history_' . self::SKIP_IDENTITY, null ),
 			'A rejected start must not create a second history entry'
 		);
 
@@ -131,8 +131,8 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::SKIP_IDENTITY . '_' . $run_a, false ) );
 		self::assertSame(
 			array(
+				'a8csp_bgte_history_' . self::SKIP_IDENTITY,
 				'a8csp_bgte_latest_run_' . self::SKIP_IDENTITY,
-				'a8csp_bgte_run_history_' . self::SKIP_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reject-policy completion must retain only history and latest pointer state'
@@ -296,13 +296,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_run_history_' . self::RECLAIM_IDENTITY, null ),
+			\get_option( 'a8csp_bgte_history_' . self::RECLAIM_IDENTITY, null ),
 			'Reclaim history must retain the superseded orphan and completed replacement'
 		);
 		self::assertSame(
 			array(
+				'a8csp_bgte_history_' . self::RECLAIM_IDENTITY,
 				'a8csp_bgte_latest_run_' . self::RECLAIM_IDENTITY,
-				'a8csp_bgte_run_history_' . self::RECLAIM_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reclaim completion must retain only history and latest pointer state'

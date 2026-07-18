@@ -328,7 +328,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		self::assertSame( array( $args_b ), $task->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
-		$history = \get_option( 'a8csp_bgte_run_history_' . self::SIBLING_IDENTITY, null );
+		$history = \get_option( 'a8csp_bgte_history_' . self::SIBLING_IDENTITY, null );
 		self::assertIsArray( $history );
 		self::assertSame( array( $run_a, $run_b ), $history['started'] ?? null );
 		self::assertSame(
@@ -438,8 +438,8 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assert_run_storage_cleared( self::DEGRADED_IDENTITY, $run_id, $args );
 		self::assertSame(
 			array(
+				'a8csp_bgte_history_' . self::DEGRADED_IDENTITY,
 				'a8csp_bgte_latest_run_' . self::DEGRADED_IDENTITY,
-				'a8csp_bgte_run_history_' . self::DEGRADED_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Cancelled degraded state must retain only history and the latest pointer'
@@ -500,7 +500,7 @@ final class CancellationTest extends IntegrationTestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private static function terminal_entries( string $name ): array {
-		$history = \get_option( 'a8csp_bgte_run_history_' . $name, null );
+		$history = \get_option( 'a8csp_bgte_history_' . $name, null );
 		self::assertIsArray( $history );
 		$entries = $history['terminal'] ?? null;
 		self::assertIsArray( $entries );

@@ -49,7 +49,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_run_history_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_history_';
 
 	/**
 	 * Distinct single-flight identities are evicted least-recently-recorded past this count; without

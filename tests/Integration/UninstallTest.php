@@ -43,7 +43,7 @@ final class UninstallTest extends IntegrationTestCase {
 		'a8csp_bgte_run_uninstall-test:task_run-1',
 		'a8csp_bgte_failed_runs_uninstall-test:task',
 		'a8csp_bgte_latest_run_uninstall-test',
-		'a8csp_bgte_run_history_uninstall-test',
+		'a8csp_bgte_history_uninstall-test',
 		'a8csp_bgte_overlap_lock_uninstall-test_args-hash',
 		'a8csp_bgte_occurrence_lease_registration-hash',
 		'a8csp_bgte_cleanup_intent_registration-hash',

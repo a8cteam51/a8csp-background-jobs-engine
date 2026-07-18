@@ -271,13 +271,13 @@ final class SupersededRunTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_run_history_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
 			'History must retain the superseded incumbent and completed replacement in lifecycle order'
 		);
 		self::assertSame(
 			array(
+				'a8csp_bgte_history_' . self::IDENTITY,
 				'a8csp_bgte_latest_run_' . self::IDENTITY,
-				'a8csp_bgte_run_history_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Replacement completion must retain only history and latest pointer state'
