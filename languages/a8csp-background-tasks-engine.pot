@@ -9,56 +9,56 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-07-17T00:43:36+00:00\n"
+"POT-Creation-Date: 2026-07-18T09:17:49+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: a8csp-background-tasks-engine\n"
 
 #. Plugin Name of the plugin
-#: a8csp-background-tasks-engine.php:14
+#: a8csp-background-tasks-engine.php:18
 msgid "A8CSP Background Tasks Engine"
 msgstr ""
 
 #. Plugin URI of the plugin
 #. Author URI of the plugin
-#: a8csp-background-tasks-engine.php:15
-#: a8csp-background-tasks-engine.php:23
+#: a8csp-background-tasks-engine.php:19
+#: a8csp-background-tasks-engine.php:27
 msgid "https://specialprojects.automattic.com"
 msgstr ""
 
 #. Description of the plugin
-#: a8csp-background-tasks-engine.php:17
+#: a8csp-background-tasks-engine.php:21
 msgid "A background-work engine for WordPress sites: Tasks, Schedules, and Batches using Action Scheduler when available, with a documented best-effort WP-Cron fallback."
 msgstr ""
 
 #. Author of the plugin
-#: a8csp-background-tasks-engine.php:22
+#: a8csp-background-tasks-engine.php:26
 msgid "A8C Special Projects"
 msgstr ""
 
 #. translators: 1: Plugin name, 2: Plugin version
-#: functions-bootstrap.php:278
+#: functions-bootstrap.php:291
 #, php-format
 msgid "<strong>%1$s (version %2$s)</strong> could not be initialized."
 msgstr ""
 
-#: functions-bootstrap.php:284
+#: functions-bootstrap.php:297
 msgid "Your environment does not meet all the system requirements listed below:"
 msgstr ""
 
 #. translators: 1: Current WP version, 2: Minimum WP version
-#: functions-bootstrap.php:302
+#: functions-bootstrap.php:315
 #, php-format
 msgid "Current <em>WordPress version (%1$s)</em> does not meet minimum required version of %2$s."
 msgstr ""
 
 #. translators: 1: Current PHP version, 2: Minimum PHP version
-#: functions-bootstrap.php:310
+#: functions-bootstrap.php:323
 #, php-format
 msgid "Current <em>PHP version (%1$s)</em> does not meet minimum required version of %2$s."
 msgstr ""
 
-#: functions-bootstrap.php:316
+#: functions-bootstrap.php:329
 msgid "The autoloader file is missing. Please run <code>composer install</code> to generate it."
 msgstr ""
 
