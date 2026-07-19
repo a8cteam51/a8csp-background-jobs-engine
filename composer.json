@@ -1,8 +1,8 @@
 {
-  "name": "a8cteam51/a8csp-background-tasks-engine",
+  "name": "a8csp/background-tasks-engine",
   "type": "wordpress-plugin",
 
-  "description": "A background-work engine for WordPress sites: Tasks, Schedules, and Batches on pluggable scheduling backends.",
+  "description": "A background-work engine for WordPress sites: Tasks, Schedules, and Batches using Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
   "homepage": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
   "license": "GPL-2.0-or-later",
   "authors": [
@@ -27,7 +27,7 @@
     }
   ],
   "require": {
-    "php": "^8.5",
+    "php": ">=8.5",
     "ext-json": "*",
     "psr/clock": "^1",
     "psr/log": "^3"
@@ -60,11 +60,11 @@
   },
 
   "scripts": {
-    "generate-autoloader": "@composer dump-autoload --ignore-platform-reqs -o",
-    "packages-install": "@composer install --ignore-platform-reqs --no-interaction",
+    "generate-autoloader": "@composer dump-autoload -o",
+    "packages-install": "@composer install --ignore-platform-req=php+ --no-interaction",
     "packages-update": [
       "@composer clear-cache",
-      "@composer update --prefer-stable --ignore-platform-reqs --no-interaction"
+      "@composer update --prefer-stable --ignore-platform-req=php+ --no-interaction"
     ],
 
     "format:php": "phpcbf --standard=./.phpcs.xml --basepath=. ./ -v",
@@ -94,6 +94,7 @@
     "test:integration": "npm --prefix=. run test:integration",
     "test:requirements": "npm --prefix=. run test:requirements",
     "test:degraded": "npm --prefix=. run test:degraded",
+    "test:multisite": "npm --prefix=. run test:multisite",
 
     "quality-check": [
       "@composer validate --strict",
@@ -115,7 +116,8 @@
       "dealerdirect/phpcodesniffer-composer-installer": true,
       "phpstan/extension-installer": true,
       "infection/extension-installer": true
-    }
+    },
+    "platform-check": false
   },
 
   "extra": {

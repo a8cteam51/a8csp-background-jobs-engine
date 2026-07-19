@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
 
 /**
  * Returns one deterministic integer while recording requested boundaries.
@@ -20,7 +20,9 @@ final class RecordingRandomizer implements RandomizerInterface {
 	 *
 	 * @param   int $value Deterministic result.
 	 */
-	public function __construct( public int $value ) {}
+	public function __construct(
+		public int $value,
+	) {}
 
 	/**
 	 * Returns the deterministic result within the requested boundaries.

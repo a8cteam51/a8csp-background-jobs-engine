@@ -2,14 +2,18 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Provides live-WordPress integration isolation and a one-action Action Scheduler runner drive.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 abstract class IntegrationTestCase extends TestCase {
 	// region TRAITS.
@@ -26,6 +30,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Captures request hooks before clearing persistent engine and scheduler state.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	protected function setUp(): void {
@@ -39,6 +46,9 @@ abstract class IntegrationTestCase extends TestCase {
 
 	/**
 	 * Detects engine leaks before restoring clean persistent and request-local state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -68,21 +78,19 @@ abstract class IntegrationTestCase extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Builds the live facade in engine declaration order with a controllable Action Scheduler probe.
+	 * Builds the live facade in engine declaration order with controlled Action Scheduler readiness.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param callable(): bool $readiness_probe
-	 *
-	 * @param   callable $readiness_probe Action Scheduler readiness predicate.
+	 * @param   ReadinessControlledBackend $backend Readiness-controlled Action Scheduler backend.
 	 *
 	 * @return  SchedulerFacade
 	 */
-	protected function scheduler_facade_with_action_scheduler_probe( callable $readiness_probe ): SchedulerFacade {
+	protected function scheduler_facade_with_controllable_action_scheduler( ReadinessControlledBackend $backend ): SchedulerFacade {
 		$scheduler = new SchedulerFacade(
 			array(
-				new ActionSchedulerBackend( $readiness_probe ),
+				$backend,
 				new WPCronBackend(),
 			)
 		);
@@ -108,6 +116,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Runs at most one due action through Action Scheduler's initialized queue runner singleton.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  int Number of actions processed.
 	 */
 	protected function run_next_due_action(): int {
@@ -132,6 +143,9 @@ abstract class IntegrationTestCase extends TestCase {
 
 	/**
 	 * Runs at most one due Action Scheduler action accepted by a hook-and-arguments predicate.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @phpstan-param callable(string, array<array-key, mixed>): bool $matches
 	 *
@@ -180,6 +194,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Returns Action Scheduler's initialized custom-table store.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  \ActionScheduler_Store
 	 */
 	protected function action_scheduler_store(): \ActionScheduler_Store {
@@ -192,6 +209,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Asserts and returns the sole pending engine run action for a task.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $name   Stable task name.
 	 * @param   string $run_id Run identifier.
 	 * @param   string $group  Per-run Action Scheduler group.
@@ -202,7 +222,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_background_tasks/run',
+				'hook'     => 'a8csp_background_tasks/run_task',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -217,7 +237,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_background_tasks/run', $action->get_hook() );
+		self::assertSame( 'a8csp_background_tasks/run_task', $action->get_hook() );
 		self::assertSame( array( $name, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
@@ -228,6 +248,9 @@ abstract class IntegrationTestCase extends TestCase {
 	/**
 	 * Asserts and returns one pending batch chunk action.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string                  $name           Stable batch name.
 	 * @param   string                  $run_id         Run identifier.
 	 * @param   string                  $group          Per-run Action Scheduler group.
@@ -235,16 +258,19 @@ abstract class IntegrationTestCase extends TestCase {
 	 *
 	 * @return  string
 	 */
-	protected function assert_pending_chunk_action(
-		string $name,
-		string $run_id,
-		string $group,
-		array $expected_chunk
-	): string {
+	protected function assert_pending_chunk_action( string $name, string $run_id, string $group, array $expected_chunk ): string {
+		$run_state = \get_option( 'a8csp_bgte_run_' . $name . '_' . $run_id, null );
+		self::assertIsArray( $run_state, 'A pending chunk action must retain its authoritative run row' );
+		$queue = $run_state['queue'] ?? null;
+		self::assertIsArray( $queue, 'A pending chunk action must retain its authoritative queue' );
+		self::assertSame( $expected_chunk, $queue[0] ?? null, 'The expected chunk must be the authoritative queue head' );
+		$action_seq = $run_state['action_seq'] ?? null;
+		self::assertIsInt( $action_seq, 'A pending chunk action must retain its lifecycle sequence token' );
+
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_background_tasks/run',
+				'hook'     => 'a8csp_background_tasks/run_chunk',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -259,29 +285,48 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_background_tasks/run', $action->get_hook() );
+		self::assertSame( 'a8csp_background_tasks/run_chunk', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
-		$action_args = $action->get_args();
-		self::assertIsArray( $action_args );
-		self::assertSame( array( $name, $run_id, $expected_chunk ), \array_slice( $action_args, 0, 3 ) );
-		self::assertIsInt( $action_args[3] ?? null, 'A chunk action must carry its lifecycle sequence token' );
+		self::assertSame( array( $name, $run_id, $action_seq ), $action->get_args(), 'A chunk action must carry only its fenced delivery token' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
 
 		return $action_id;
 	}
 
 	/**
-	 * Returns the engine's insertion-ordered argument identity for a scalar tree.
+	 * Returns the engine's insertion-ordered identity for portable arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $args Start arguments.
 	 *
 	 * @return  string
 	 */
 	protected static function args_hash( array $args ): string {
-		$encoded = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		self::assertIsString( $encoded );
+		$hash = PortableArguments::hash( $args );
+		self::assertIsString( $hash );
 
-		return \hash( 'sha256', $encoded );
+		return $hash;
+	}
+
+	/**
+	 * Returns the read-only inspection service published by the initialized production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @throws  \LogicException When the integration plugin graph is unavailable.
+	 *
+	 * @return  Inspection
+	 */
+	protected function inspection(): Inspection {
+		$inspection = Component::get_inspection();
+		if ( null === $inspection ) {
+			throw new \LogicException( 'Integration inspection is unavailable before the engine graph is initialized.' );
+		}
+
+		return $inspection;
 	}
 
 	// endregion.

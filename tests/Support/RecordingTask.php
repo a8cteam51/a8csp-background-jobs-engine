@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
 /**
  * Records task invocations with an optional observation callback and failure.
@@ -29,12 +29,20 @@ final class RecordingTask implements TaskInterface {
 	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
+	/** Declared ceiling for one handler invocation. */
+	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
+
+	/** Throwable raised by max_callback_runtime(), or null to return the configured ceiling. */
+	public ?\Throwable $max_callback_runtime_throwable = null;
+
 	/**
 	 * Constructor.
 	 *
 	 * @param   string $name Stable task name.
 	 */
-	public function __construct( private readonly string $name ) {
+	public function __construct(
+		private readonly string $name,
+	) {
 		$this->retry_policy = new RetryPolicy();
 	}
 
@@ -42,6 +50,16 @@ final class RecordingTask implements TaskInterface {
 	#[\Override]
 	public function get_name(): string {
 		return $this->name;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function max_callback_runtime(): int {
+		if ( null !== $this->max_callback_runtime_throwable ) {
+			throw $this->max_callback_runtime_throwable;
+		}
+
+		return $this->max_callback_runtime;
 	}
 
 	/**

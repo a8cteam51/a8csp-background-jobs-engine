@@ -152,10 +152,7 @@ if ( ! \function_exists( 'a8csp_bgte_test_filtered_cron_schedules' ) ) {
 	function a8csp_bgte_test_filtered_cron_schedules(): array {
 		/** @var list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}> $registrations */
 		$registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? array();
-		\usort(
-			$registrations,
-			static fn ( array $left, array $right ): int => $left['priority'] <=> $right['priority']
-		);
+		\usort( $registrations, static fn ( array $left, array $right ): int => $left['priority'] <=> $right['priority'] );
 
 		$schedules = array();
 		foreach ( $registrations as $registration ) {

@@ -2,18 +2,20 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -25,11 +27,36 @@ use Psr\Log\LoggerInterface;
  * Fresh execution markers exclude same-sequence redelivery; stale crash recovery remains at-least-once
  * and relies on task and batch idempotency.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
 final readonly class ActionDeliveries {
 	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Maximum encoded JSON bytes accepted for one generated or filtered batch chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_CHUNK_BYTES = 8_192;
+
+	/**
+	 * Maximum persisted serialization bytes accepted for one materialized batch queue.
+	 *
+	 * This bounds the queue stored in the wp_options run-state row; the JSON chunk cap separately
+	 * bounds the portable payload contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_QUEUE_BYTES = 1_048_576;
 
 	/**
 	 * Internal hook that resumes a batch after its inter-chunk delay.
@@ -39,7 +66,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const CONTINUE_HOOK = 'a8csp_background_tasks/continue';
+	public const string CONTINUE_HOOK = 'a8csp_background_tasks/continue_batch';
 
 	/**
 	 * Internal hook that reconciles a terminal batch run.
@@ -49,17 +76,27 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const CLEANUP_HOOK = 'a8csp_background_tasks/cleanup';
+	public const string CLEANUP_HOOK = 'a8csp_background_tasks/cleanup_batch';
 
 	/**
-	 * Internal hook that executes task work or one batch chunk.
+	 * Internal hook that executes task work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	private const RUN_HOOK = 'a8csp_background_tasks/run';
+	public const string RUN_TASK_HOOK = 'a8csp_background_tasks/run_task';
+
+	/**
+	 * Internal hook that executes one batch chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	public const string RUN_CHUNK_HOOK = 'a8csp_background_tasks/run_chunk';
 
 	/**
 	 * Internal hook that generates and starts a batch queue.
@@ -69,7 +106,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	private const START_HOOK = 'a8csp_background_tasks/start';
+	public const string START_HOOK = 'a8csp_background_tasks/start_batch';
 
 	// endregion
 
@@ -81,25 +118,25 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskRegistry        $tasks                Registered task instances.
-	 * @param   BatchRegistry       $batches              Registered batch instances.
-	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
-	 * @param   StoreFactory        $stores               Name-bound store factory.
-	 * @param   LoggerInterface     $logger               Log event sink.
-	 * @param   ClockInterface      $clock                Timestamp source.
-	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
-	 * @param   TerminalTransitions $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   FailureLifecycle    $failure_lifecycle    Retry adjudication coordinator.
+	 * @param   WorkRegistry     $work                 Registered task and batch instances.
+	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
+	 * @param   StoreFactory     $stores               Name-bound store factory.
+	 * @param   LoggerInterface  $logger               Log event sink.
+	 * @param   ClockInterface   $clock                Timestamp source.
+	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
+	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects $terminal_effects     Client lifecycle-effect executor.
+	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private TaskRegistry $tasks,
-		private BatchRegistry $batches,
+		private WorkRegistry $work,
 		private BackendInterface $scheduler,
 		private StoreFactory $stores,
 		private LoggerInterface $logger,
 		private ClockInterface $clock,
 		private LockWindows $lock_windows,
-		private TerminalTransitions $terminal_transitions,
+		private RunTransitions $terminal_transitions,
+		private LifecycleEffects $terminal_effects,
 		private FailureLifecycle $failure_lifecycle,
 	) {}
 
@@ -113,15 +150,19 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
 	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$registered_batch = $this->work->batch( $batch_name );
+		$liveness_at      = null !== $registered_batch
+			? fn (): int => $this->execution_lease_at( $registered_batch, $batch_name, $run_id )
+			: null;
+		$run_store        = $this->stores->run_store( $batch_name );
+		$state            = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
@@ -135,85 +176,72 @@ final readonly class ActionDeliveries {
 
 		try {
 			$queue = $this->materialize_queue( $batch->generate_queue( $state->start_args ) );
-			$queue = $this->materialize_filtered_queue(
-				\apply_filters(
-					'a8csp_background_tasks/queue/' . $batch_name,
-					$queue,
-					$state->start_args,
-					$run_id
-				)
-			);
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
-				return;
-			}
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
 
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::from_throwable( $throwable )
-			);
+			return;
+		}
+		if ( $queue instanceof EngineError ) {
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		try {
+			/**
+			 * Filters the generated chunk queue for a batch.
+			 *
+			 * The dynamic portion of the hook name, `$batch_name`, refers to the owner-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   list<array<array-key, mixed>> $queue      Complete list of chunk argument arrays.
+			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
+			 * @param   string                        $run_id     Run identifier.
+			 */
+			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_background_tasks/queue/' . $batch_name, $queue, $state->start_args, $run_id ) );
+		} catch ( \Throwable $throwable ) {
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
+
+			return;
+		}
+		if ( $queue instanceof EngineError ) {
+			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
+
 			return;
 		}
 
-		$replacement = $state
-			->with_queue( $queue )
-			->with_action_seq( $state->action_seq + 1 );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+		$reset_at = $this->clock->now()->getTimestamp();
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+			return;
+		}
+
+		$replacement = $state->with_queue( $queue )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state = $replacement;
 		try {
-			$this->terminal_transitions->fire_started( $batch_name, $run_id, $state->start_args );
+			$this->terminal_effects->fire_started( $batch_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::from_throwable( $throwable )
-			);
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
-		$scheduled = $this->scheduler->enqueue_async(
-			self::CONTINUE_HOOK,
-			array( $batch_name, $run_id, $state->action_seq ),
-			$batch_name . '|' . $run_id
-		);
+		$scheduled = $this->scheduler->enqueue_async( self::CONTINUE_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
-			);
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 
-			return;
-		}
-
-		$replacement = $state->with_executing( false );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
 			return;
 		}
 	}
@@ -224,15 +252,15 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
 	public function handle_continue_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -245,164 +273,83 @@ final readonly class ActionDeliveries {
 		}
 
 		if ( array() === $state->queue ) {
-			$replacement = $state
-				->with_action_seq( $state->action_seq + 1 )
-				->with_executing( false );
-			if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+			$replacement = $state->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
+			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 				return;
 			}
 			$state     = $replacement;
-			$scheduled = $this->scheduler->enqueue_async(
-				self::CLEANUP_HOOK,
-				array( $batch_name, $run_id, $state->action_seq ),
-				$batch_name . '|' . $run_id
-			);
+			$scheduled = $this->scheduler->enqueue_async( self::CLEANUP_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
 			if ( $scheduled->is_failure() ) {
-				$this->terminal_transitions->fail_batch(
-					$batch,
-					$batch_name,
-					$run_id,
-					$state,
-					$run_store,
-					EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error )
-				);
+				$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 			}
 
 			return;
 		}
 
 		$chunk_args  = $state->queue[0];
-		$replacement = $state
-			->with_action_seq( $state->action_seq + 1 )
-			->with_executing( false );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
+		$replacement = $state->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'run', 10 ) );
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state     = $replacement;
-		$scheduled = $this->scheduler->enqueue_async(
-			self::RUN_HOOK,
-			array( $batch_name, $run_id, $chunk_args, $state->action_seq ),
-			$batch_name . '|' . $run_id
-		);
+		$scheduled = $this->scheduler->enqueue_async( self::RUN_CHUNK_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error )
-			);
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
 		}
 	}
 
 	/**
-	 * Dispatches one scheduled run action to its registered task or batch.
+	 * Handles one scheduled task run action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                      $name                     Stable task or batch name.
-	 * @param   string                      $run_id                   Run identifier.
-	 * @param   array<array-key, mixed>|int $chunk_args_or_action_seq Batch chunk arguments or a task action sequence.
-	 * @param   int|null                    $action_seq               Batch action sequence, or null for a task action.
+	 * @param   string $task_name  Complete owner-qualified task identity.
+	 * @param   string $run_id     Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_run_action( string $name, string $run_id, array|int $chunk_args_or_action_seq, ?int $action_seq = null ): void {
-		$chunk_args   = \is_int( $chunk_args_or_action_seq ) ? null : $chunk_args_or_action_seq;
-		$received_seq = \is_int( $chunk_args_or_action_seq ) ? $chunk_args_or_action_seq : $action_seq;
-		$work_type    = null === $chunk_args ? 'Task' : 'Batch';
-		$run_store    = $this->stores->run_store( $name );
-		$state        = $this->terminal_transitions->active_run_state( $work_type, $name, $run_id, $received_seq, $run_store );
-		if ( null === $state ) {
-			return;
-		}
-
-		$task  = $this->tasks->get( $name );
-		$batch = $this->batches->get( $name );
-		if ( null !== $task && null !== $batch ) {
-			$this->logger->warning(
-				'Run action name is registered as both a task and a batch; rename one registration before dispatching the action.',
-				array(
-					'name'   => $name,
-					'run_id' => $run_id,
-				)
-			);
-			$this->fail_orphaned_run( $work_type, $name, $run_id, $state, $run_store );
-
-			return;
-		}
-
-		if ( null !== $task ) {
-			if ( null !== $chunk_args ) {
-				$this->logger->warning(
-					'Task run action carries batch chunk arguments; schedule task runs with only the task name and run identifier.',
-					array(
-						'task_name' => $name,
-						'run_id'    => $run_id,
-					)
-				);
-				$run_store->transition_state( $run_id, $state, $state->with_executing( false ) );
-
-				return;
-			}
-
-			$this->handle_task_run_action( $task, $name, $run_id, $state, $run_store );
-
-			return;
-		}
-
-		if ( null !== $batch ) {
-			if ( null === $chunk_args ) {
-				$this->logger->warning(
-					'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
-					array(
-						'batch_name' => $name,
-						'run_id'     => $run_id,
-					)
-				);
-				$run_store->transition_state( $run_id, $state, $state->with_executing( false ) );
-
-				return;
-			}
-
-			$this->handle_batch_run_action( $batch, $name, $run_id, $chunk_args, $state, $run_store );
-
-			return;
-		}
-
-		$this->logger->warning(
-			null === $chunk_args
-				? 'Task run action references an unregistered task; register the task before dispatching its run action.'
-				: 'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
-			array(
-				( null === $chunk_args ? 'task_name' : 'batch_name' ) => $name,
-				'run_id' => $run_id,
-			)
-		);
-		$this->fail_orphaned_run( $work_type, $name, $run_id, $state, $run_store );
+	public function handle_run_task_action( string $task_name, string $run_id, int $action_seq ): void {
+		$this->handle_run_action( $task_name, $run_id, $action_seq );
 	}
 
 	/**
-	 * Handles terminal success for one drained batch run.
-	 *
-	 * Once success handling begins, every remaining write touches only this run's rows, and lock release
-	 * self-guards against a new owner. The outcome remains Completed regardless of current lock ownership;
-	 * recording another outcome would lie.
+	 * Handles one scheduled batch-chunk run action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
+	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $run_id     Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 *
+	 * @return  void
+	 */
+	public function handle_run_chunk_action( string $batch_name, string $run_id, int $action_seq ): void {
+		$this->handle_run_action( $batch_name, $run_id, $action_seq );
+	}
+
+	/**
+	 * Handles terminal completion for one drained batch run.
+	 *
+	 * Once completion handling begins, remaining writes are exact-CAS or owner-guarded. The identity-shared
+	 * run-history row is CAS-guarded and idempotent, and lock release self-guards against a new owner, so
+	 * skipping the fence recheck remains safe. The outcome remains Completed regardless of current lock
+	 * ownership; recording another outcome would lie.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $run_id     Run identifier.
 	 * @param   int    $action_seq Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
 	public function handle_cleanup_action( string $batch_name, string $run_id, int $action_seq ): void {
 		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->active_run_state( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -415,52 +362,12 @@ final readonly class ActionDeliveries {
 		}
 
 		if ( array() !== $state->queue ) {
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				new EngineError(
-					\sprintf(
-						'Batch "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.',
-						$batch_name
-					)
-				)
-			);
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Batch "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $batch_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
 
 			return;
 		}
 
-		$terminal_state = $state
-			->with_status( RunStatus::Completed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-
-		// Completed listeners observe the terminal snapshot before exact cleanup deletes it and appends history.
-		$this->terminal_transitions->execute_terminal_transition(
-			$batch_name,
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			function () use ( $batch, $batch_name, $run_id, $state ): void {
-				try {
-					$batch->on_success( $run_id, $state->start_args );
-				} catch ( \Throwable $throwable ) {
-					$this->logger->error(
-						'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
-						array(
-							'batch_name'        => $batch_name,
-							'run_id'            => $run_id,
-							'exception_class'   => $throwable::class,
-							'exception_message' => $throwable->getMessage(),
-						)
-					);
-				}
-			},
-			true,
-			'completed'
-		);
+		$this->terminal_transitions->complete_batch( $batch, $batch_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -474,7 +381,8 @@ final readonly class ActionDeliveries {
 	public function register_hooks(): void {
 		\add_action( self::START_HOOK, array( $this, 'handle_start_action' ), 10, 3 );
 		\add_action( self::CONTINUE_HOOK, array( $this, 'handle_continue_action' ), 10, 3 );
-		\add_action( self::RUN_HOOK, array( $this, 'handle_run_action' ), 10, 4 );
+		\add_action( self::RUN_TASK_HOOK, array( $this, 'handle_run_task_action' ), 10, 3 );
+		\add_action( self::RUN_CHUNK_HOOK, array( $this, 'handle_run_chunk_action' ), 10, 3 );
 		\add_action( self::CLEANUP_HOOK, array( $this, 'handle_cleanup_action' ), 10, 3 );
 	}
 
@@ -483,13 +391,108 @@ final readonly class ActionDeliveries {
 	// region HELPERS
 
 	/**
-	 * Executes one task run after shared-hook dispatch.
+	 * Dispatches one run delivery according to its persisted work kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity   Complete owner-qualified task or batch identity.
+	 * @param   string $run_id     Run identifier.
+	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 *
+	 * @return  void
+	 */
+	private function handle_run_action( string $identity, string $run_id, int $action_seq ): void {
+		$liveness_at = function ( RunState $persisted_state ) use ( $identity, $run_id ): int {
+			$contract = 'Task' === $persisted_state->kind
+				? $this->work->task( $identity )
+				: $this->work->batch( $identity );
+
+			return null !== $contract
+				? $this->execution_lease_at( $contract, $identity, $run_id )
+				: $this->clock->now()->getTimestamp();
+		};
+		$run_store   = $this->stores->run_store( $identity );
+		$state       = $this->terminal_transitions->claim_delivery_ownership( null, $identity, $run_id, $action_seq, $run_store, $liveness_at );
+		if ( null === $state ) {
+			return;
+		}
+
+		$work_type = $state->kind;
+		if ( 'Task' === $work_type ) {
+			$task = $this->work->task( $identity );
+			if ( null !== $task ) {
+				$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
+
+				return;
+			}
+
+			$this->logger->warning(
+				'Task run action references an unregistered task; register the task before dispatching its run action.',
+				array(
+					'task_name' => $identity,
+					'run_id'    => $run_id,
+				)
+			);
+			$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
+
+			return;
+		}
+
+		$batch = $this->work->batch( $identity );
+		if ( null !== $batch ) {
+			$this->handle_batch_run_action( $batch, $identity, $run_id, $state, $run_store );
+
+			return;
+		}
+
+		$this->logger->warning(
+			'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
+			array(
+				'batch_name' => $identity,
+				'run_id'     => $run_id,
+			)
+		);
+		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
+	}
+
+	/**
+	 * Fails batch startup after preserving its post-callback liveness fence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   BatchInterface $batch      Registered batch.
+	 * @param   string         $batch_name Complete owner-qualified batch identity.
+	 * @param   string         $run_id     Run identifier.
+	 * @param   RunState       $state      Fenced running state.
+	 * @param   RunStore       $run_store  Active-run store.
+	 * @param   EngineError    $error      Terminal failure detail.
+	 * @param   ApiErrorCode   $code       Machine-readable cause classification.
+	 *
+	 * @return  void
+	 */
+	private function fail_batch_start_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
+		$reset_at = $this->clock->now()->getTimestamp();
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+			return;
+		}
+		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
+		if ( null === $state ) {
+			return;
+		}
+
+		$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, $error, RunFailureStage::QueueGeneration, $code );
+	}
+
+	/**
+	 * Executes one task run after shared delivery admission.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   TaskInterface $task      Registered task.
-	 * @param   string        $task_name Stable task name.
+	 * @param   string        $task_name Complete owner-qualified task identity.
 	 * @param   string        $run_id    Run identifier.
 	 * @param   RunState      $state     Fenced running state.
 	 * @param   RunStore      $run_store Active-run store.
@@ -500,34 +503,16 @@ final readonly class ActionDeliveries {
 		try {
 			$task->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failed_attempt(
-				'Task',
-				$task_name,
-				$run_id,
-				$state,
-				$run_store,
-				$throwable,
-				static fn (): RetryPolicy => $task->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $task_name, $run_id, $run_store ): void {
-					$this->terminal_transitions->fail_run(
-						$task_name,
-						$run_id,
-						$failure_state,
-						$run_store,
-						$error,
-						$attempts_used
-					);
-				}
-			);
+			$this->failure_lifecycle->handle_task_failure( $task, $task_name, $run_id, $state, $run_store, $throwable );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Task', $task_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Task', $task_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
 			return;
 		}
 
-		$this->terminal_transitions->complete_run( $task_name, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_task( $task_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -536,146 +521,151 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface          $batch      Registered batch.
-	 * @param   string                  $batch_name Stable batch name.
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $chunk_args Chunk arguments.
-	 * @param   RunState                $state      Fenced running state.
-	 * @param   RunStore                $run_store  Active-run store.
+	 * @param   BatchInterface $batch      Registered batch.
+	 * @param   string         $batch_name Complete owner-qualified batch identity.
+	 * @param   string         $run_id     Run identifier.
+	 * @param   RunState       $state      Fenced running state.
+	 * @param   RunStore       $run_store  Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function handle_batch_run_action( BatchInterface $batch, string $batch_name, string $run_id, array $chunk_args, RunState $state, RunStore $run_store ): void {
+	private function handle_batch_run_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store ): void {
+		$chunk_args = $state->queue[0] ?? null;
+		if ( ! \is_array( $chunk_args ) ) {
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Batch "%s" reached chunk execution without a queued chunk; schedule run only while the authoritative queue has a head.', $batch_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
+
+			return;
+		}
+
 		$context = new BatchContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
 		try {
 			$batch->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failed_attempt(
-				'Batch',
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				$throwable,
-				static fn (): RetryPolicy => $batch->get_retry_policy(),
-				function ( RunState $failure_state, EngineError $error, int $attempts_used ) use ( $batch, $batch_name, $run_id, $run_store ): void {
-					$this->terminal_transitions->fail_batch(
-						$batch,
-						$batch_name,
-						$run_id,
-						$failure_state,
-						$run_store,
-						$error,
-						$attempts_used
-					);
-				},
-				$chunk_args
-			);
+			$this->failure_lifecycle->handle_batch_failure( $batch, $batch_name, $run_id, $state, $run_store, $throwable, $chunk_args );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		$reset_at = $this->clock->now()->getTimestamp();
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
-
-		$replacement = $state
-			->with_queue( $context->get_queue() )
-			->with_chunk_retries( 0 )
-			->with_action_seq( $state->action_seq + 1 )
-			->with_executing( false );
-		if ( null === $run_store->transition_state( $run_id, $state, $replacement ) ) {
-			return;
-		}
-		$state = $replacement;
 
 		try {
 			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
 
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::from_throwable( $throwable )
-			);
+			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->supersede_if_fence_lost( 'Batch', $batch_name, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 			return;
 		}
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				new EngineError(
-					\sprintf(
-						'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.',
-						$batch_name
-					)
-				)
-			);
+			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $batch_name ) ), RunFailureStage::Scheduling, ApiErrorCode::BackendRejected );
 
 			return;
 		}
+		$fire_at     = $now + $delay;
+		$replacement = $state->with_queue( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+			return;
+		}
+		$state = $replacement;
 
-		$scheduled = $this->scheduler->schedule_single(
-			self::CONTINUE_HOOK,
-			$now + $delay,
-			array( $batch_name, $run_id, $state->action_seq ),
-			$batch_name . '|' . $run_id,
-			10
-		);
+		$scheduled = $this->scheduler->schedule_single( self::CONTINUE_HOOK, $fire_at, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, 10 );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch(
-				$batch,
-				$batch_name,
-				$run_id,
-				$state,
-				$run_store,
-				EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error )
-			);
+			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
 	}
 
 	/**
-	 * Returns a batch only when one internal action resolves unambiguously.
+	 * Commits processed queue state without a successor before terminal failure.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Stable batch name.
-	 * @param   string $run_id    Run identifier.
-	 * @param   string $stage     Internal batch stage.
+	 * @param   BatchInterface                $batch      Registered batch.
+	 * @param   string                        $batch_name Complete owner-qualified batch identity.
+	 * @param   string                        $run_id     Run identifier.
+	 * @param   RunState                      $state      Fenced running state.
+	 * @param   RunStore                      $run_store  Active-run store.
+	 * @param   list<array<array-key, mixed>> $queue      Committed queue after the processed chunk.
+	 * @param   int                           $reset_at   Post-callback liveness timestamp.
+	 * @param   EngineError                   $error      Terminal failure detail.
+	 * @param   RunFailureStage               $stage      Terminalization stage.
+	 * @param   ApiErrorCode                  $code       Machine-readable cause classification.
+	 *
+	 * @return  void
+	 */
+	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ApiErrorCode $code ): void {
+		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( null );
+		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+			return;
+		}
+
+		$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $replacement, $run_store, $error, $stage, $code );
+	}
+
+	/**
+	 * Resolves the bounded future liveness timestamp for one contract callback.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   TaskInterface|BatchInterface $contract Registered work contract.
+	 * @param   string                       $identity Complete owner-qualified task or batch identity.
+	 * @param   string                       $run_id   Run identifier.
+	 *
+	 * @return  int
+	 */
+	private function execution_lease_at( TaskInterface|BatchInterface $contract, string $identity, string $run_id ): int {
+		try {
+			$declared = $contract->max_callback_runtime();
+		} catch ( \Throwable $throwable ) {
+			// An unusable declaration falls back to the default lease instead of escaping the delivery unfenced.
+			$this->logger->warning(
+				'The work contract threw while declaring its maximum callback runtime; the default runtime was applied. Fix max_callback_runtime() before the next delivery.',
+				array(
+					'name'            => $identity,
+					'run_id'          => $run_id,
+					'exception_class' => \get_debug_type( $throwable ),
+					'default_runtime' => WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME,
+				)
+			);
+			$declared = null;
+		}
+
+		$lease = $this->lock_windows->execution_lease( $declared );
+		$now   = $this->clock->now()->getTimestamp();
+		if ( $now > \PHP_INT_MAX - $lease ) {
+			return \PHP_INT_MAX;
+		}
+
+		return $now + $lease;
+	}
+
+	/**
+	 * Returns the batch recorded for one internal action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $run_id     Run identifier.
+	 * @param   string $stage      Internal batch stage.
 	 *
 	 * @return  BatchInterface|null
 	 */
 	private function batch_for_action( string $batch_name, string $run_id, string $stage ): ?BatchInterface {
-		$batch = $this->batches->get( $batch_name );
-		if ( null !== $batch && null !== $this->tasks->get( $batch_name ) ) {
-			$this->logger->warning(
-				'Batch action name is registered as both a task and a batch; rename one registration before dispatching the action.',
-				array(
-					'batch_name' => $batch_name,
-					'run_id'     => $run_id,
-					'stage'      => $stage,
-				)
-			);
-
-			return null;
-		}
+		$batch = $this->work->batch( $batch_name );
 
 		if ( null === $batch ) {
 			$this->logger->warning(
@@ -692,54 +682,23 @@ final readonly class ActionDeliveries {
 	}
 
 	/**
-	 * Fails a live run whose task or batch registration no longer resolves unambiguously.
+	 * Fails a live run whose required task or batch is no longer registered.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $name      Stable task or batch name.
+	 * @param   string         $identity  Complete owner-qualified task or batch identity.
 	 * @param   string         $run_id    Run identifier.
 	 * @param   RunState       $state     Fenced running state.
 	 * @param   RunStore       $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function fail_orphaned_run( string $work_type, string $name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$error = new EngineError(
-			\sprintf(
-				'%1$s name "%2$s" is no longer registered unambiguously for run "%3$s"; re-register exactly one %4$s under that name or purge the run.',
-				$work_type,
-				$name,
-				$run_id,
-				\strtolower( $work_type )
-			)
-		);
+	private function fail_orphaned_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type, $identity, $run_id, \strtolower( $work_type ) ) );
 
-		$terminal_state = $state
-			->with_status( RunStatus::Failed )
-			->with_heartbeat_at( $this->clock->now()->getTimestamp() );
-
-		$this->terminal_transitions->execute_terminal_transition(
-			$name,
-			$run_id,
-			$state,
-			$terminal_state,
-			$run_store,
-			function () use ( $error, $name, $run_id, $state ): void {
-				$this->stores->failed_run_store( $name )->record(
-					$run_id,
-					$this->clock->now()->getTimestamp(),
-					$state->start_args,
-					RunState::increment_attempts_safely( $state->chunk_retries ),
-					$error
-				);
-			},
-			false,
-			'failed',
-			null,
-			$error
-		);
+		$this->terminal_transitions->fail_unregistered_run( $work_type, $identity, $run_id, $state, $run_store, $error );
 	}
 
 	/**
@@ -750,15 +709,11 @@ final readonly class ActionDeliveries {
 	 *
 	 * @param   mixed $chunks Filtered queue value.
 	 *
-	 * @throws  \UnexpectedValueException When the filter does not return an array.
-	 *
-	 * @return  list<array<array-key, mixed>>
+	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
-	private function materialize_filtered_queue( mixed $chunks ): array {
+	private function materialize_filtered_queue( mixed $chunks ): array|EngineError {
 		if ( ! \is_array( $chunks ) ) {
-			throw new \UnexpectedValueException(
-				'Batch queue filter returned a non-array value; return one argument array per chunk.'
-			);
+			return new EngineError( 'Batch queue filter returned a non-array value; return one argument array per chunk.', \UnexpectedValueException::class );
 		}
 
 		return $this->materialize_queue( $chunks );
@@ -772,20 +727,43 @@ final readonly class ActionDeliveries {
 	 *
 	 * @param   iterable<mixed> $chunks Generated or filtered chunks.
 	 *
-	 * @throws  \UnexpectedValueException When one chunk is not an argument array.
+	 * @throws  \Throwable When the iterable fails during traversal.
 	 *
-	 * @return  list<array<array-key, mixed>>
+	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
-	private function materialize_queue( iterable $chunks ): array {
+	private function materialize_queue( iterable $chunks ): array|EngineError {
 		$queue = array();
 		foreach ( $chunks as $chunk_args ) {
+			$index = \count( $queue );
 			if ( ! \is_array( $chunk_args ) ) {
-				throw new \UnexpectedValueException(
-					'Batch queue contains a non-array chunk; generate and filter one argument array per chunk.'
-				);
+				return new EngineError( \sprintf( 'Batch queue chunk at index %d must be an argument array.', $index ), \UnexpectedValueException::class );
+			}
+			if ( ! PortableArguments::is_valid( $chunk_args ) ) {
+				return new EngineError( \sprintf( 'Batch queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
+			}
+			try {
+				$encoded_chunk = \wp_json_encode( $chunk_args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+			} catch ( \JsonException ) {
+				$encoded_chunk = false;
+			}
+			if ( ! \is_string( $encoded_chunk ) ) {
+				return new EngineError( \sprintf( 'Batch queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
 			}
 
-			$queue[] = $chunk_args;
+			$chunk_bytes = \strlen( $encoded_chunk );
+			if ( self::MAX_CHUNK_BYTES < $chunk_bytes ) {
+				return new EngineError( \sprintf( 'Batch queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, self::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
+			}
+
+			$queue[]          = $chunk_args;
+			$serialized_queue = \maybe_serialize( $queue );
+			if ( ! \is_string( $serialized_queue ) ) {
+				return new EngineError( 'Batch queue could not be serialized for persistence.', \UnexpectedValueException::class );
+			}
+			$queue_bytes = \strlen( $serialized_queue );
+			if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
+				return new EngineError( \sprintf( 'Batch queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
+			}
 		}
 
 		return $queue;

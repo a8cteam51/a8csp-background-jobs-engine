@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
@@ -40,9 +40,9 @@ final class RecordingBackendTest extends TestCase {
 	public function test_write_verbs_record_calls_and_default_to_success(): void {
 		$backend = new RecordingBackend();
 		$results = array(
-			$backend->schedule_recurring( 'recurring', 300, array( 'a' ), 1_700_000_000, 'reports', true, 20 ),
+			$backend->schedule_recurring( 'recurring', 300, array( 'a' ), 1_700_000_000, 'reports', 20 ),
 			$backend->schedule_single( 'single', 1_700_000_100, array( 'b' ), 'imports', 30 ),
-			$backend->enqueue_async( 'async', array( 'c' ), 'exports', true, 40 ),
+			$backend->enqueue_async( 'async', array( 'c' ), 'exports', 40 ),
 			$backend->unschedule( 'clear', array( 'd' ), 'cleanup' ),
 		);
 
@@ -61,7 +61,6 @@ final class RecordingBackendTest extends TestCase {
 						'args'                => array( 'a' ),
 						'first_run_timestamp' => 1_700_000_000,
 						'group'               => 'reports',
-						'unique'              => true,
 						'priority'            => 20,
 					),
 				),
@@ -81,7 +80,6 @@ final class RecordingBackendTest extends TestCase {
 						'hook'     => 'async',
 						'args'     => array( 'c' ),
 						'group'    => 'exports',
-						'unique'   => true,
 						'priority' => 40,
 					),
 				),
@@ -105,16 +103,10 @@ final class RecordingBackendTest extends TestCase {
 	 */
 	public function test_write_results_are_scripted_independently(): void {
 		$backend   = new RecordingBackend();
-		$recurring = new Failure(
-			new SchedulingError( SchedulingErrorReason::InvalidInterval, 'Use a positive interval.' )
-		);
-		$single    = new Failure(
-			new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' )
-		);
+		$recurring = new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use a positive interval.' ) );
+		$single    = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' ) );
 		$async     = new Success( true );
-		$clear     = new Failure(
-			new SchedulingError( SchedulingErrorReason::UnsupportedGroup, 'Drop the unsupported group.' )
-		);
+		$clear     = new Failure( new SchedulingError( SchedulingErrorReason::UnsupportedGroup, 'Drop the unsupported group.' ) );
 
 		$backend->results = array(
 			'schedule_recurring' => $recurring,
@@ -166,16 +158,13 @@ final class RecordingBackendTest extends TestCase {
 			'schedule_single',
 			'enqueue_async',
 			'unschedule',
+			'unschedule_hooks',
 		);
 
 		foreach ( $types as $type ) {
 			$reflection = new \ReflectionClass( $type );
 			foreach ( $verbs as $verb ) {
-				self::assertCount(
-					1,
-					$reflection->getMethod( $verb )->getAttributes( \NoDiscard::class ),
-					\sprintf( '%s::%s() must declare NoDiscard directly.', $type, $verb )
-				);
+				self::assertCount( 1, $reflection->getMethod( $verb )->getAttributes( \NoDiscard::class ), \sprintf( '%s::%s() must declare NoDiscard directly.', $type, $verb ) );
 			}
 		}
 	}
@@ -190,16 +179,37 @@ final class RecordingBackendTest extends TestCase {
 		$backend->scheduled      = true;
 		$backend->next_scheduled = 1_700_000_000;
 		$backend->ready          = false;
-		$backend->cron_supported = true;
 
+		self::assertSame( 0, $backend->scheduled_count( 'count', array( 'pending' ), 'reports' ) );
+		self::assertSame(
+			array(
+				'first'  => 0,
+				'second' => 0,
+			),
+			$backend->scheduled_counts( 'counts', array( 'first', 'second' ) )
+		);
 		self::assertTrue( $backend->is_scheduled( 'query', array( 'a' ), 'reports' ) );
 		self::assertSame( 1_700_000_000, $backend->get_next_scheduled( 'next', array( 'b' ), 'imports' ) );
 		self::assertFalse( $backend->is_ready() );
-		self::assertTrue( $backend->supports_cron_expressions() );
 		$backend->register_hooks();
 
 		self::assertSame(
 			array(
+				array(
+					'verb' => 'scheduled_count',
+					'args' => array(
+						'hook'  => 'count',
+						'args'  => array( 'pending' ),
+						'group' => 'reports',
+					),
+				),
+				array(
+					'verb' => 'scheduled_counts',
+					'args' => array(
+						'hook'       => 'counts',
+						'identities' => array( 'first', 'second' ),
+					),
+				),
 				array(
 					'verb' => 'is_scheduled',
 					'args' => array(
@@ -218,10 +228,6 @@ final class RecordingBackendTest extends TestCase {
 				),
 				array(
 					'verb' => 'is_ready',
-					'args' => array(),
-				),
-				array(
-					'verb' => 'supports_cron_expressions',
 					'args' => array(),
 				),
 				array(

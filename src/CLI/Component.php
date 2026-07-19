@@ -2,17 +2,22 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Component as ComponentContract;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\RunsCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\SchedulesCommand;
+use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Registers the background-task commands only inside WP-CLI.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
-final class Component implements ComponentContract {
+final class Component extends AbstractComponent {
 	// region INHERITED METHODS
 
 	/**
@@ -24,7 +29,7 @@ final class Component implements ComponentContract {
 	 * @return  bool
 	 */
 	#[\Override]
-	public function is_needed(): bool {
+	public static function should_load(): bool {
 		return \defined( 'WP_CLI' ) && true === \constant( 'WP_CLI' );
 	}
 
@@ -37,8 +42,11 @@ final class Component implements ComponentContract {
 	 * @return  void
 	 */
 	#[\Override]
-	public function initialize(): void {
-		\WP_CLI::add_command( 'background-tasks', BackgroundTasksCommand::class );
+	public function register_hooks(): void {
+		// The last registration supplies the namespace description, so the inspection surface registers last.
+		\WP_CLI::add_command( 'background-tasks', SchedulesCommand::class );
+		\WP_CLI::add_command( 'background-tasks', ResetCommand::class );
+		\WP_CLI::add_command( 'background-tasks', RunsCommand::class );
 	}
 
 	// endregion

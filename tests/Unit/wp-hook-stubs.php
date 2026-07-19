@@ -151,6 +151,15 @@ if ( ! \function_exists( 'add_filter' ) ) {
 		$GLOBALS['a8csp_bgte_test_hooks']                = $hooks;
 		$GLOBALS['a8csp_bgte_test_filter_registrations'] = $filter_registrations;
 
+		$registration_callbacks = $GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] ?? array();
+		if ( ! \is_array( $registration_callbacks ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test filter-registration callback map as an array.' );
+		}
+		$registration_callback = $registration_callbacks[ $hook_name ] ?? null;
+		if ( \is_callable( $registration_callback ) ) {
+			$registration_callback();
+		}
+
 		return true;
 	}
 }
@@ -176,6 +185,18 @@ if ( ! \function_exists( 'do_action' ) ) {
 		);
 
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = $actions;
+
+		$observers = $GLOBALS['a8csp_bgte_test_action_observers'] ?? array();
+		if ( ! \is_array( $observers ) ) {
+			throw new \UnexpectedValueException( 'Initialize the action-observer test ledger as an array.' );
+		}
+		foreach ( $observers as $observer ) {
+			if ( ! \is_callable( $observer ) ) {
+				throw new \UnexpectedValueException( 'Action observers must be callable.' );
+			}
+
+			$observer( $hook_name, $args );
+		}
 
 		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
 		if ( \is_array( $lifecycle_events ) ) {
@@ -223,12 +244,38 @@ if ( ! \function_exists( 'apply_filters' ) ) {
 	function apply_filters( $hook_name, $value, ...$args ) {
 		/** @var array<string, mixed> $filter_values */
 		$filter_values = $GLOBALS['a8csp_bgte_test_filter_values'] ?? array();
-		if ( ! \array_key_exists( $hook_name, $filter_values ) ) {
-			return $value;
+		if ( \array_key_exists( $hook_name, $filter_values ) ) {
+			$filter = $filter_values[ $hook_name ];
+
+			return \is_callable( $filter ) ? $filter( $value, ...$args ) : $filter;
 		}
 
-		$filter = $filter_values[ $hook_name ];
+		$registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? null;
+		if ( ! \is_array( $registrations ) ) {
+			throw new \UnexpectedValueException( 'Initialize the test filter ledger before applying a filter.' );
+		}
+		\usort(
+			$registrations,
+			static function ( mixed $left, mixed $right ): int {
+				$left_priority  = \is_array( $left ) && \is_int( $left['priority'] ?? null ) ? $left['priority'] : 10;
+				$right_priority = \is_array( $right ) && \is_int( $right['priority'] ?? null ) ? $right['priority'] : 10;
 
-		return \is_callable( $filter ) ? $filter( $value, ...$args ) : $filter;
+				return $left_priority <=> $right_priority;
+			}
+		);
+		foreach ( $registrations as $registration ) {
+			if ( ! \is_array( $registration ) ) {
+				throw new \UnexpectedValueException( 'The test filter ledger contains a malformed entry.' );
+			}
+			$callback = $registration['callback'] ?? null;
+			if ( ( $registration['hook_name'] ?? null ) !== $hook_name || ! \is_callable( $callback ) ) {
+				continue;
+			}
+
+			$accepted = $registration['accepted_args'] ?? 1;
+			$value    = $callback( ...\array_slice( array( $value, ...$args ), 0, \is_int( $accepted ) ? $accepted : 1 ) );
+		}
+
+		return $value;
 	}
 }

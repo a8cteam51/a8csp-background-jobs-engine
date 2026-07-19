@@ -2,19 +2,23 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 /**
- * Verifies the real `uninstall.php` end-to-end: every option and user-meta key its inline
- * footprint lists is gone after it runs, scheduled engine work is reclaimed, and a sentinel key
- * NOT in the footprint survives — proving the file deletes what it owns and nothing else.
+ * Verifies the real `uninstall.php` end-to-end through the documented option-prefix and lifecycle-
+ * hook contracts: engine rows and scheduled work are reclaimed while an outside canary survives.
  *
  * `uninstall.php` guards on `defined( 'WP_UNINSTALL_PLUGIN' )`, a constant WordPress itself
  * only defines during a real plugin-delete request. This test defines it by hand, so the one
  * test method runs `#[RunInSeparateProcess]` — the constant must not leak into the rest of
  * the suite, where its presence would be indistinguishable from an actual uninstall.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class UninstallTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
@@ -24,34 +28,42 @@ final class UninstallTest extends IntegrationTestCase {
 	 * exercises "delete only what's owned" rather than "delete everything".
 	 *
 	 */
-	private const CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
+	private const string LIKE_CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
+
+	/** A case-distinct canary that may match the prefix query under a case-insensitive collation. */
+	private const string BYTE_CANARY_OPTION = 'A8CSP_BGTE_test_uninstall_canary';
 
 	/**
-	 * Representative dynamically named option rows owned by orchestration stores.
+	 * One sentinel from every option family documented for operators.
 	 *
 	 * @var list<string>
 	 */
-	private const DYNAMIC_OPTIONS = array(
-		'a8csp_bgte_run_uninstall-test_run-1',
-		'a8csp_bgte_latest_uninstall-test',
+	private const array DOCUMENTED_OPTIONS = array(
+		'a8csp_bgte_schedule_registrations_uninstall-test',
+		'a8csp_bgte_run_uninstall-test:task_run-1',
+		'a8csp_bgte_failed_runs_uninstall-test:task',
+		'a8csp_bgte_latest_run_uninstall-test',
 		'a8csp_bgte_history_uninstall-test',
-		'a8csp_bgte_lock_uninstall-test_args-hash',
-		'a8csp_bgte_failed_uninstall-test',
+		'a8csp_bgte_overlap_lock_uninstall-test_args-hash',
+		'a8csp_bgte_occurrence_lease_registration-hash',
+		'a8csp_bgte_cleanup_intent_registration-hash',
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const LIFECYCLE_HOOKS = array(
-		'a8csp_background_tasks/start',
-		'a8csp_background_tasks/continue',
-		'a8csp_background_tasks/run',
-		'a8csp_background_tasks/cleanup',
+	private const array LIFECYCLE_HOOKS = array(
+		'a8csp_background_tasks/start_batch',
+		'a8csp_background_tasks/continue_batch',
+		'a8csp_background_tasks/run_task',
+		'a8csp_background_tasks/run_chunk',
+		'a8csp_background_tasks/cleanup_batch',
+		'a8csp_background_tasks/schedule_due',
 	);
 
 	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */
-	private const SCHEDULE_ARGS = array( 'uninstall-test', 'run-1', 1 );
+	private const array SCHEDULE_ARGS = array( 'uninstall-test', 'run-1', 1 );
 
 	/** Runtime groups prove Action Scheduler cleanup reaches work outside its empty group. */
-	private const SCHEDULE_GROUP = 'uninstall-test|run-1';
+	private const string SCHEDULE_GROUP = 'uninstall-test|run-1';
 
 	// endregion.
 
@@ -61,13 +73,17 @@ final class UninstallTest extends IntegrationTestCase {
 	 * Removes options and scheduled work regardless of how the test finished, since this suite
 	 * runs against a persistent wp-env database with no per-test transaction rollback.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	protected function tearDown(): void {
 		try {
 			self::clear_scheduled_work();
-			delete_option( self::CANARY_OPTION );
-			foreach ( self::DYNAMIC_OPTIONS as $option ) {
+			delete_option( self::LIKE_CANARY_OPTION );
+			delete_option( self::BYTE_CANARY_OPTION );
+			foreach ( self::DOCUMENTED_OPTIONS as $option ) {
 				delete_option( $option );
 			}
 		} finally {
@@ -80,80 +96,48 @@ final class UninstallTest extends IntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * Seeds a sentinel for every key the real footprint lists plus the canary, runs the real
-	 * `uninstall.php`, then asserts the footprint's keys are gone and the canary survived.
-	 * Dynamic rows are seeded separately because their runtime suffixes cannot appear in the fixed
-	 * footprint list. It also seeds every lifecycle hook in both scheduler stores. The canary
-	 * resembles the prefix but replaces its underscores, proving the cleanup query treats those
-	 * underscores literally rather than as SQL LIKE wildcards.
+	 * Seeds every documented option family plus two canaries, then runs the real `uninstall.php`.
+	 * It also seeds every lifecycle hook in both scheduler stores. One canary replaces the prefix
+	 * underscores to exercise LIKE escaping; the other differs only by case to exercise the
+	 * byte-exact deletion boundary under a case-insensitive option-name collation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[RunInSeparateProcess]
 	public function test_uninstall_deletes_only_its_own_footprint(): void {
-		$footprint = self::read_inline_footprint();
-		$user_id   = self::an_existing_user_id();
 		self::clear_scheduled_work();
 
-		foreach ( $footprint['options'] as $option ) {
-			update_option( $option, 'sentinel' );
+		foreach ( self::DOCUMENTED_OPTIONS as $option ) {
+			self::assertTrue( update_option( $option, 'sentinel', false ), "The '{$option}' option-family sentinel must be persisted before uninstall" );
 		}
 
-		foreach ( $footprint['user_meta'] as $meta_key ) {
-			update_user_meta( $user_id, $meta_key, 'sentinel' );
-		}
-		foreach ( self::DYNAMIC_OPTIONS as $option ) {
-			update_option( $option, 'sentinel' );
-		}
+		self::assertTrue( update_option( self::LIKE_CANARY_OPTION, 'sentinel', false ), 'The outside-prefix canary must be persisted before uninstall' );
+		self::assertTrue( update_option( self::BYTE_CANARY_OPTION, 'sentinel', false ), 'The case-distinct canary must be persisted before uninstall' );
 
-		update_option( self::CANARY_OPTION, 'sentinel' );
-
-		$scheduled_at = \time() + \HOUR_IN_SECONDS;
+		$scheduled_at     = \time() + \HOUR_IN_SECONDS;
+		$wp_cron          = new WPCronBackend();
+		$action_scheduler = new ActionSchedulerBackend();
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			self::assertTrue(
-				\wp_schedule_single_event( $scheduled_at, $hook, self::SCHEDULE_ARGS, true ),
-				"wp-env must seed a WP-Cron event for '{$hook}'"
-			);
-
-			$action_id = \as_schedule_single_action(
-				$scheduled_at,
-				$hook,
-				self::SCHEDULE_ARGS,
-				self::SCHEDULE_GROUP
-			);
-			self::assertGreaterThan( 0, $action_id, "wp-env must seed an Action Scheduler action for '{$hook}'" );
-			self::assertSame( $scheduled_at, \wp_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
-			self::assertIsInt(
-				\as_next_scheduled_action( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ),
-				"Action Scheduler must retain the seeded '{$hook}' action before uninstall"
-			);
+			self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS ) );
+			self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );
+			self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
+			self::assertSame( $scheduled_at, $action_scheduler->get_next_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );
 		}
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
-		foreach ( $footprint['options'] as $option ) {
-			self::assertFalse( get_option( $option ), "uninstall.php must delete the '{$option}' option" );
-		}
-
-		foreach ( $footprint['user_meta'] as $meta_key ) {
-			self::assertSame( '', get_user_meta( $user_id, $meta_key, true ), "uninstall.php must delete the '{$meta_key}' user-meta key" );
-		}
-		foreach ( self::DYNAMIC_OPTIONS as $option ) {
-			self::assertFalse( get_option( $option ), "uninstall.php must delete the dynamically named '{$option}' option" );
-		}
+		self::assertSame( array(), self::engine_option_names(), 'uninstall.php must leave no option inside the documented a8csp_bgte_ ownership prefix' );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			self::assertFalse(
-				\wp_next_scheduled( $hook, self::SCHEDULE_ARGS ),
-				"uninstall.php must remove every WP-Cron event for '{$hook}'"
-			);
-			self::assertFalse(
-				\as_next_scheduled_action( $hook ),
-				"uninstall.php must remove every pending Action Scheduler action for '{$hook}'"
-			);
+			self::assertFalse( $wp_cron->is_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
+			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
 		}
 
-		self::assertSame( 'sentinel', get_option( self::CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
+		self::assertSame( 'sentinel', get_option( self::LIKE_CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
+		self::assertSame( 'sentinel', get_option( self::BYTE_CANARY_OPTION ), 'uninstall.php must preserve byte-distinct option names selected by a case-insensitive collation' );
 	}
 
 	// endregion.
@@ -162,6 +146,9 @@ final class UninstallTest extends IntegrationTestCase {
 
 	/**
 	 * Clears scheduler state that may persist across interrupted integration runs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -175,92 +162,22 @@ final class UninstallTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Returns an existing user's ID to seed and verify user-meta deletion against. wp-env's
-	 * fixture always provisions the default admin (ID 1); querying for one keeps the test
-	 * independent of that assumption instead of hard-coding it.
+	 * Returns every option inside the documented engine ownership prefix in lexical order.
 	 *
-	 * @return  int
-	 */
-	private static function an_existing_user_id(): int {
-		$users = get_users(
-			array(
-				'number' => 1,
-				'fields' => 'ID',
-			)
-		);
-
-		self::assertNotEmpty( $users, 'wp-env must provision at least one user to seed user-meta against' );
-		$user_id = $users[0] ?? null;
-		self::assertIsNumeric( $user_id, 'get_users() must return a numeric ID when queried for the ID field' );
-
-		return (int) $user_id;
-	}
-
-	/**
-	 * Extracts `$a8csp_bgte_footprint` from the real `uninstall.php` source without
-	 * requiring the file. Requiring it exits unless `WP_UNINSTALL_PLUGIN` is already defined,
-	 * and defining that just to read the array would run the delete loops before this test has
-	 * seeded anything for them to delete. Locates the array literal by balancing parens from
-	 * its own `array(` so the nested `options`/`user_meta` arrays don't confuse the match, then
-	 * evaluates only that expression — never uninstall.php's guard or its delete loops.
-	 * This eval is safe only because it parses this repository's own version-controlled
-	 * `uninstall.php` and must never be generalized to evaluate user input, remote data,
-	 * another file, or anything else from outside this repository; if the footprint's shape
-	 * grows complex enough that this string-slicing extraction becomes fragile, use a
-	 * `token_get_all()`-based reader as the eval-free alternative instead of trying to make
-	 * the eval safer.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  array{options: list<string>, user_meta: list<string>}
+	 * @return  list<string>
 	 */
-	private static function read_inline_footprint(): array {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local filesystem read of a tracked source file, not a remote resource.
-		$source = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/uninstall.php' );
+	private static function engine_option_names(): array {
+		global $wpdb;
 
-		$needle = '$a8csp_bgte_footprint';
-		$assign = \strpos( $source, $needle );
-		self::assertIsInt( $assign, "uninstall.php must declare {$needle} inline" );
+		self::assertInstanceOf( \wpdb::class, $wpdb );
+		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
+		self::assertIsArray( $names );
+		self::assertContainsOnlyString( $names );
 
-		$array_start = \strpos( $source, 'array(', $assign );
-		self::assertIsInt( $array_start, "could not find the {$needle} array literal" );
-
-		$depth  = 0;
-		$end    = null;
-		$length = \strlen( $source );
-
-		for ( $i = $array_start; $i < $length; $i++ ) {
-			if ( '(' === $source[ $i ] ) {
-				++$depth;
-			} elseif ( ')' === $source[ $i ] ) {
-				--$depth;
-
-				if ( 0 === $depth ) {
-					$end = $i;
-					break;
-				}
-			}
-		}
-
-		self::assertIsInt( $end, "could not find the end of the {$needle} array literal" );
-
-		$expression = \substr( $source, $array_start, $end - $array_start + 1 );
-		$footprint  = eval( "return {$expression};" ); // phpcs:ignore Squiz.PHP.Eval -- evaluates a version-controlled array literal parsed out of this repo's own uninstall.php, never external input.
-
-		self::assertIsArray( $footprint );
-		self::assertArrayHasKey( 'options', $footprint );
-		self::assertArrayHasKey( 'user_meta', $footprint );
-
-		$options = $footprint['options'];
-		self::assertIsList( $options );
-		self::assertContainsOnlyString( $options );
-
-		$user_meta = $footprint['user_meta'];
-		self::assertIsList( $user_meta );
-		self::assertContainsOnlyString( $user_meta );
-
-		return array(
-			'options'   => $options,
-			'user_meta' => $user_meta,
-		);
+		return \array_values( \array_filter( $names, static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
 	}
 
 	// endregion.

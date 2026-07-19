@@ -4,14 +4,17 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Constructs the stores bound to one task or batch name.
+ * Constructs the stores bound to one task or batch identity.
  *
- * A single factory keeps name binding at the orchestration boundary without exposing four
+ * A single factory keeps identity binding at the orchestration boundary without exposing four
  * untyped closure dependencies.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -25,12 +28,14 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ClockInterface $clock Run timestamp source.
-	 * @param   OptionRows     $rows  Authoritative raw option-row I/O.
+	 * @param   ClockInterface  $clock  Run timestamp source.
+	 * @param   OptionRows      $rows   Authoritative raw option-row I/O.
+	 * @param   LoggerInterface $logger Engine diagnostic sink.
 	 */
 	public function __construct(
 		private ClockInterface $clock,
 		private OptionRows $rows,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -38,59 +43,59 @@ final readonly class StoreFactory {
 	// region METHODS
 
 	/**
-	 * Constructs the active-run store for a task or batch name.
+	 * Constructs the active-run store for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  RunStore
 	 */
-	public function run_store( string $name ): RunStore {
-		return new RunStore( $name, $this->clock, $this->rows );
+	public function run_store( string $identity ): RunStore {
+		return new RunStore( $identity, $this->clock, $this->rows );
 	}
 
 	/**
-	 * Constructs the latest-run pointer for a task or batch name.
+	 * Constructs the latest-run pointer for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  LatestRunPointer
 	 */
-	public function latest_run_pointer( string $name ): LatestRunPointer {
-		return new LatestRunPointer( $name );
+	public function latest_run_pointer( string $identity ): LatestRunPointer {
+		return new LatestRunPointer( $identity, $this->rows );
 	}
 
 	/**
-	 * Constructs the run history for a task or batch name.
+	 * Constructs the run history for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  RunHistory
 	 */
-	public function run_history( string $name ): RunHistory {
-		return new RunHistory( $name, $this->rows );
+	public function run_history( string $identity ): RunHistory {
+		return new RunHistory( $identity, $this->rows, $this->logger );
 	}
 
 	/**
-	 * Constructs the failed-run store for a task or batch name.
+	 * Constructs the failed-run store for a task or batch identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $identity Complete owner-qualified task or batch identity.
 	 *
 	 * @return  FailedRunStore
 	 */
-	public function failed_run_store( string $name ): FailedRunStore {
-		return new FailedRunStore( $name, $this->rows );
+	public function failed_run_store( string $identity ): FailedRunStore {
+		return new FailedRunStore( $identity, $this->rows, $this->logger );
 	}
 
 	// endregion

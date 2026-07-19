@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
 /**
  * Records batch lifecycle invocations with optional observation callbacks and failures.
@@ -33,34 +33,47 @@ final class RecordingBatch implements BatchInterface {
 	public array $process_calls = array();
 
 	/**
-	 * Successful-run callback payloads in call order.
+	 * Completed-run callback payloads in call order.
 	 *
 	 * @var list<array{run_id: string, start_args: array<array-key, mixed>}>
 	 */
-	public array $success_calls = array();
+	public array $completed_calls = array();
 
 	/**
 	 * Failed-run callback payloads in call order.
 	 *
-	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: EngineError}>
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: RunFailure}>
 	 */
-	public array $failure_calls = array();
+	public array $failed_calls = array();
 
 	/** Throwable raised after queue generation is recorded and observed. */
 	public ?\Throwable $generate_throwable = null;
 
+	/** @var (\Closure(): iterable<array-key, array<array-key, mixed>>)|null Lazy generated queue factory. */
+	public ?\Closure $generate_queue_factory = null;
+
 	/** Throwable raised after chunk processing is recorded and observed. */
 	public ?\Throwable $process_throwable = null;
 
-	/** Throwable raised after successful-run handling is recorded. */
-	public ?\Throwable $success_throwable = null;
+	/** Throwable raised after completed-run handling is recorded. */
+	public ?\Throwable $completed_throwable = null;
+
+	/** Throwable raised after failed-run handling is recorded. */
+	public ?\Throwable $failed_throwable = null;
 
 	/**
-	 * Observation run after recording successful-run handling and before an optional failure.
+	 * Observation run after recording completed-run handling and before an optional failure.
 	 *
 	 * @var (\Closure(string, array<array-key, mixed>): void)|null
 	 */
-	public ?\Closure $on_success = null;
+	public ?\Closure $on_completed = null;
+
+	/**
+	 * Observation run after recording failed-run handling and before an optional failure.
+	 *
+	 * @var (\Closure(string, array<array-key, mixed>, RunFailure): void)|null
+	 */
+	public ?\Closure $on_failed = null;
 
 	/**
 	 * Observation run after recording queue generation and before an optional failure.
@@ -79,12 +92,17 @@ final class RecordingBatch implements BatchInterface {
 	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
+	/** Declared ceiling for one queue generation or chunk invocation. */
+	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
+
 	/**
 	 * Constructor.
 	 *
 	 * @param   string $name Stable batch name.
 	 */
-	public function __construct( private readonly string $name ) {
+	public function __construct(
+		private readonly string $name,
+	) {
 		$this->retry_policy = new RetryPolicy();
 	}
 
@@ -92,6 +110,12 @@ final class RecordingBatch implements BatchInterface {
 	#[\Override]
 	public function get_name(): string {
 		return $this->name;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function max_callback_runtime(): int {
+		return $this->max_callback_runtime;
 	}
 
 	/**
@@ -112,6 +136,9 @@ final class RecordingBatch implements BatchInterface {
 
 		if ( null !== $this->generate_throwable ) {
 			throw $this->generate_throwable;
+		}
+		if ( null !== $this->generate_queue_factory ) {
+			return ( $this->generate_queue_factory )();
 		}
 
 		return $this->queue;
@@ -143,7 +170,7 @@ final class RecordingBatch implements BatchInterface {
 	}
 
 	/**
-	 * Records one successful-run callback.
+	 * Records one completed-run callback.
 	 *
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
@@ -151,19 +178,19 @@ final class RecordingBatch implements BatchInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_success( string $run_id, array $start_args ): void {
-		$this->success_calls[] = array(
+	public function on_completed( string $run_id, array $start_args ): void {
+		$this->completed_calls[] = array(
 			'run_id'     => $run_id,
 			'start_args' => $start_args,
 		);
-		$this->record_lifecycle_event( 'success' );
+		$this->record_lifecycle_event( 'completed' );
 
-		if ( null !== $this->on_success ) {
-			( $this->on_success )( $run_id, $start_args );
+		if ( null !== $this->on_completed ) {
+			( $this->on_completed )( $run_id, $start_args );
 		}
 
-		if ( null !== $this->success_throwable ) {
-			throw $this->success_throwable;
+		if ( null !== $this->completed_throwable ) {
+			throw $this->completed_throwable;
 		}
 	}
 
@@ -172,18 +199,26 @@ final class RecordingBatch implements BatchInterface {
 	 *
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   EngineError             $error      Persisted failure detail.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_failure( string $run_id, array $start_args, EngineError $error ): void {
-		$this->failure_calls[] = array(
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+		$this->failed_calls[] = array(
 			'run_id'     => $run_id,
 			'start_args' => $start_args,
-			'error'      => $error,
+			'error'      => $failure,
 		);
-		$this->record_lifecycle_event( 'failure' );
+		$this->record_lifecycle_event( 'failed' );
+
+		if ( null !== $this->on_failed ) {
+			( $this->on_failed )( $run_id, $start_args, $failure );
+		}
+
+		if ( null !== $this->failed_throwable ) {
+			throw $this->failed_throwable;
+		}
 	}
 
 	/** {@inheritDoc} */

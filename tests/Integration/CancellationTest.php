@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -13,24 +13,45 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies cancellation fences live deliveries and isolates per-run scheduler groups.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class CancellationTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Client owner isolated to cancellation coverage. */
+	private const string OWNER = 'integration-cancellation';
+
 	/** Task identity isolated to the executing-refusal race. */
-	private const EXECUTING_NAME = 'integration-cancel-executing-refusal';
+	private const string EXECUTING_NAME = 'integration-cancel-executing-refusal';
+
+	/** Owner-qualified task identity isolated to the executing-refusal race. */
+	private const string EXECUTING_IDENTITY = self::OWNER . ':' . self::EXECUTING_NAME;
 
 	/** Task identity isolated to retry-backoff cancellation. */
-	private const BACKOFF_NAME = 'integration-cancel-backoff';
+	private const string BACKOFF_NAME = 'integration-cancel-backoff';
+
+	/** Owner-qualified task identity isolated to retry-backoff cancellation. */
+	private const string BACKOFF_IDENTITY = self::OWNER . ':' . self::BACKOFF_NAME;
 
 	/** Batch identity isolated to between-chunks cancellation. */
-	private const BATCH_NAME = 'integration-cancel-between-chunks';
+	private const string BATCH_NAME = 'integration-cancel-between-chunks';
+
+	/** Owner-qualified batch identity isolated to between-chunks cancellation. */
+	private const string BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
 
 	/** Task identity isolated to sibling-group cancellation. */
-	private const SIBLING_NAME = 'integration-cancel-sibling-isolation';
+	private const string SIBLING_NAME = 'integration-cancel-sibling-isolation';
+
+	/** Owner-qualified task identity isolated to sibling-group cancellation. */
+	private const string SIBLING_IDENTITY = self::OWNER . ':' . self::SIBLING_NAME;
 
 	/** Task identity isolated to the degraded WP-Cron survivor. */
-	private const DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
+	private const string DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
+
+	/** Owner-qualified task identity isolated to the degraded WP-Cron survivor. */
+	private const string DEGRADED_IDENTITY = self::OWNER . ':' . self::DEGRADED_NAME;
 
 	// endregion.
 
@@ -39,47 +60,41 @@ final class CancellationTest extends IntegrationTestCase {
 	/**
 	 * Cancellation refuses an admitted task while the runner completes it normally.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Cancellation is invoked from inside an admitted real Action Scheduler delivery; the public result cannot prove the executing marker and scheduler-running state overlapped at the refusal instant.
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_refuses_an_executing_task_and_the_run_completes(): void {
 		$args = array( 'account_id' => 41 );
 		$task = new RecordingTask( self::EXECUTING_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::EXECUTING_NAME );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::EXECUTING_IDENTITY );
 
-		$enqueued = \a8csp_bgte_enqueue_task( self::EXECUTING_NAME, $args );
+		$enqueued = $client->tasks()->enqueue( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id    = $enqueued->value;
-		$group     = self::EXECUTING_NAME . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::EXECUTING_NAME, $run_id, $group );
+		$group     = self::EXECUTING_IDENTITY . '|' . $run_id;
+		$action_id = $this->assert_pending_task_action( self::EXECUTING_IDENTITY, $run_id, $group );
 		$store     = $this->action_scheduler_store();
 
 		$observed_status = null;
 		$observed_state  = null;
 		$cancel_result   = null;
-		$task->on_handle = static function ( array $received_args ) use (
-			$action_id,
-			$engine,
-			$run_id,
-			$store,
-			&$cancel_result,
-			&$observed_state,
-			&$observed_status
-		): void {
+		$task->on_handle = static function ( array $received_args ) use ( $action_id, $client, $run_id, $store, &$cancel_result, &$observed_state, &$observed_status ): void {
 			$observed_status = $store->get_status( $action_id );
-			$observed_state  = \get_option( 'a8csp_bgte_run_' . self::EXECUTING_NAME . '_' . $run_id, null );
-			$cancel_result   = $engine->cancel( self::EXECUTING_NAME, $run_id );
+			$observed_state  = \get_option( 'a8csp_bgte_run_' . self::EXECUTING_IDENTITY . '_' . $run_id, null );
+			$cancel_result   = $client->runs()->cancel( self::EXECUTING_NAME, $run_id );
 		};
 
 		$completed_action_ids = array();
-		$completed_hook       = static function ( int $completed_action_id ) use (
-			$action_id,
-			&$completed_action_ids
-		): void {
+		$completed_hook       = static function ( int $completed_action_id ) use ( $action_id, &$completed_action_ids ): void {
 			if ( (int) $action_id === $completed_action_id ) {
 				$completed_action_ids[] = $completed_action_id;
 			}
@@ -93,11 +108,8 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertIsArray( $observed_state );
 		self::assertTrue( $observed_state['executing'] ?? false, 'The admitted delivery must persist its executing marker' );
 		self::assertInstanceOf( Failure::class, $cancel_result );
-		self::assertInstanceOf( EngineError::class, $cancel_result->error );
-		self::assertSame(
-			\sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ),
-			$cancel_result->error->message
-		);
+		self::assertInstanceOf( ApiError::class, $cancel_result->error );
+		self::assertSame( \sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ), $cancel_result->error->message );
 		self::assertSame( array( $args ), $task->calls, 'Refusal must leave the admitted task invocation intact' );
 		self::assertSame( array( (int) $action_id ), $completed_action_ids );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_id ) );
@@ -108,56 +120,53 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'completed',
 				),
 			),
-			self::terminal_entries( self::EXECUTING_NAME )
+			self::terminal_entries( self::EXECUTING_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::EXECUTING_NAME, $run_id, $args );
+		self::assert_run_storage_cleared( self::EXECUTING_IDENTITY, $run_id, $args );
 	}
 
 	/**
 	 * A failed attempt can be cancelled while its retry waits in backoff.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Cancellation races a retained run against its staged retry delivery; public history cannot prove the exact retry row was pending and then cleared before execution.
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_during_backoff_clears_the_retry_and_records_cancelled_history(): void {
+		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
 		$args               = array( 'account_id' => 42 );
 		$task               = new RecordingTask( self::BACKOFF_NAME );
 		$task->throwable    = new \RuntimeException( 'Retry after the upstream recovers.' );
-		$task->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 300,
-			multiplier: 1,
-			max_delay: 300
-		);
+		$task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BACKOFF_NAME );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BACKOFF_IDENTITY );
 
-		$enqueued = \a8csp_bgte_enqueue_task( self::BACKOFF_NAME, $args );
+		$enqueued = $client->tasks()->enqueue( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id            = $enqueued->value;
-		$group             = self::BACKOFF_NAME . '|' . $run_id;
-		$initial_action_id = $this->assert_pending_task_action( self::BACKOFF_NAME, $run_id, $group );
+		$group             = self::BACKOFF_IDENTITY . '|' . $run_id;
+		$initial_action_id = $this->assert_pending_task_action( self::BACKOFF_IDENTITY, $run_id, $group );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute only the first failed attempt' );
 
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ) );
-		$retry_action_id = $this->assert_sole_pending_action(
-			'a8csp_background_tasks/run',
-			$group,
-			array( self::BACKOFF_NAME, $run_id, 2 )
-		);
-		$run_state       = \get_option( 'a8csp_bgte_run_' . self::BACKOFF_NAME . '_' . $run_id, null );
+		$retry_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/run_task', $group, array( self::BACKOFF_IDENTITY, $run_id, 2 ) );
+		$run_state       = \get_option( 'a8csp_bgte_run_' . self::BACKOFF_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
-		self::assertSame( 1, $run_state['chunk_retries'] ?? null );
+		self::assertSame( 1, $run_state['failed_attempts'] ?? null );
 		self::assertSame( 2, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The persisted backoff window must be cancellable' );
 
-		$cancelled = $engine->cancel( self::BACKOFF_NAME, $run_id );
+		$cancelled = $client->runs()->cancel( self::BACKOFF_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -181,13 +190,19 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			self::terminal_entries( self::BACKOFF_NAME )
+			self::terminal_entries( self::BACKOFF_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::BACKOFF_NAME, $run_id, $args );
+		self::assert_run_storage_cleared( self::BACKOFF_IDENTITY, $run_id, $args );
 	}
 
 	/**
 	 * A batch remains cancellable after one chunk and before its next queue advance.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Cancellation is staged between a processed chunk and the next real queue-advance delivery; public callbacks cannot expose the retained queue head and pending continuation at that instant.
 	 *
 	 * @return  void
 	 */
@@ -198,51 +213,42 @@ final class CancellationTest extends IntegrationTestCase {
 		$batch        = new RecordingBatch( self::BATCH_NAME );
 		$batch->queue = array( $first_chunk, $next_chunk );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->batches()->register( $batch );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_NAME );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->batches()->register( $batch );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BATCH_IDENTITY );
 
-		$started = \a8csp_bgte_start_batch( self::BATCH_NAME, $start_args );
+		$started = $client->batches()->start( self::BATCH_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
 		self::assertIsString( $started->value );
 		$run_id = $started->value;
-		$group  = self::BATCH_NAME . '|' . $run_id;
+		$group  = self::BATCH_IDENTITY . '|' . $run_id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the batch queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the first retained queue head' );
 
-		$pre_run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_NAME . '_' . $run_id, null );
+		$pre_run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $pre_run_state );
 		self::assertSame( array( $first_chunk, $next_chunk ), $pre_run_state['queue'] ?? null );
 		self::assertSame( 3, $pre_run_state['action_seq'] ?? null );
 		self::assertFalse( $pre_run_state['executing'] ?? true, 'The queued RUN must retain a cancellable head' );
-		$this->assert_sole_pending_action(
-			'a8csp_background_tasks/run',
-			$group,
-			array( self::BATCH_NAME, $run_id, $first_chunk, 3 )
-		);
+		$this->assert_sole_pending_action( 'a8csp_background_tasks/run_chunk', $group, array( self::BATCH_IDENTITY, $run_id, 3 ) );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk' );
 
-		$run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_NAME . '_' . $run_id, null );
+		$run_state = \get_option( 'a8csp_bgte_run_' . self::BATCH_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
 		self::assertSame( 4, $run_state['action_seq'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
-		$continue_action_id = $this->assert_sole_pending_action(
-			'a8csp_background_tasks/continue',
-			$group,
-			array( self::BATCH_NAME, $run_id, 4 )
-		);
+		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_background_tasks/continue_batch', $group, array( self::BATCH_IDENTITY, $run_id, 4 ) );
 
-		$cancelled = $engine->cancel( self::BATCH_NAME, $run_id );
+		$cancelled = $client->runs()->cancel( self::BATCH_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 		self::assertSame( array( $first_chunk ), \array_column( $batch->process_calls, 'chunk_args' ) );
-		self::assertSame( array(), $batch->success_calls, 'Cancellation must not invoke the batch success callback' );
-		self::assertSame( array(), $batch->failure_calls, 'Cancellation must not invoke the batch failure callback' );
+		self::assertSame( array(), $batch->completed_calls, 'Cancellation must not invoke the batch on_completed() callback' );
+		self::assertSame( array(), $batch->failed_calls, 'Cancellation must not invoke the batch on_failed() callback' );
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $continue_action_id ) );
 		self::assertSame(
@@ -262,13 +268,19 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			self::terminal_entries( self::BATCH_NAME )
+			self::terminal_entries( self::BATCH_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::BATCH_NAME, $run_id, $start_args );
+		self::assert_run_storage_cleared( self::BATCH_IDENTITY, $run_id, $start_args );
 	}
 
 	/**
 	 * Clearing one run group leaves a sibling run of the same task executable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Two sibling deliveries are pending concurrently and cancellation must clear only one real scheduler group; public terminal outcomes cannot prove the sibling row survived the group clear.
 	 *
 	 * @return  void
 	 */
@@ -277,25 +289,24 @@ final class CancellationTest extends IntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$task   = new RecordingTask( self::SIBLING_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SIBLING_NAME );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SIBLING_IDENTITY );
 
-		$enqueued_a = \a8csp_bgte_enqueue_task( self::SIBLING_NAME, $args_a );
-		$enqueued_b = \a8csp_bgte_enqueue_task( self::SIBLING_NAME, $args_b );
+		$enqueued_a = $client->tasks()->enqueue( self::SIBLING_NAME, $args_a );
+		$enqueued_b = $client->tasks()->enqueue( self::SIBLING_NAME, $args_b );
 		self::assertInstanceOf( Success::class, $enqueued_a );
 		self::assertInstanceOf( Success::class, $enqueued_b );
 		self::assertIsString( $enqueued_a->value );
 		self::assertIsString( $enqueued_b->value );
 		$run_a    = $enqueued_a->value;
 		$run_b    = $enqueued_b->value;
-		$group_a  = self::SIBLING_NAME . '|' . $run_a;
-		$group_b  = self::SIBLING_NAME . '|' . $run_b;
-		$action_a = $this->assert_pending_task_action( self::SIBLING_NAME, $run_a, $group_a );
-		$action_b = $this->assert_pending_task_action( self::SIBLING_NAME, $run_b, $group_b );
+		$group_a  = self::SIBLING_IDENTITY . '|' . $run_a;
+		$group_b  = self::SIBLING_IDENTITY . '|' . $run_b;
+		$action_a = $this->assert_pending_task_action( self::SIBLING_IDENTITY, $run_a, $group_a );
+		$action_b = $this->assert_pending_task_action( self::SIBLING_IDENTITY, $run_b, $group_b );
 
-		$cancelled = $engine->cancel( self::SIBLING_NAME, $run_a );
+		$cancelled = $client->runs()->cancel( self::SIBLING_NAME, $run_a );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_a, $cancelled->value );
@@ -313,19 +324,11 @@ final class CancellationTest extends IntegrationTestCase {
 			),
 			'The sibling group must retain its pending action'
 		);
-		self::assertSame(
-			1,
-			$this->run_matching_due_action(
-				static fn ( string $hook, array $action_args ): bool =>
-					'a8csp_background_tasks/run' === $hook
-					&& ( $action_args[1] ?? null ) === $run_b
-			),
-			'Action Scheduler must execute the surviving sibling'
-		);
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_background_tasks/run_task' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
 
 		self::assertSame( array( $args_b ), $task->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
-		$history = \get_option( 'a8csp_bgte_history_' . self::SIBLING_NAME, null );
+		$history = \get_option( 'a8csp_bgte_history_' . self::SIBLING_IDENTITY, null );
 		self::assertIsArray( $history );
 		self::assertSame( array( $run_a, $run_b ), $history['started'] ?? null );
 		self::assertSame(
@@ -339,7 +342,7 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'completed',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		self::assertSame(
 			array(
@@ -349,37 +352,42 @@ final class CancellationTest extends IntegrationTestCase {
 					self::args_hash( $args_b ) => $run_b,
 				),
 			),
-			\get_option( 'a8csp_bgte_latest_' . self::SIBLING_NAME, null )
+			\get_option( 'a8csp_bgte_latest_run_' . self::SIBLING_IDENTITY, null )
 		);
-		self::assert_run_storage_cleared( self::SIBLING_NAME, $run_a, $args_a );
-		self::assert_run_storage_cleared( self::SIBLING_NAME, $run_b, $args_b );
+		self::assert_run_storage_cleared( self::SIBLING_IDENTITY, $run_a, $args_a );
+		self::assert_run_storage_cleared( self::SIBLING_IDENTITY, $run_b, $args_b );
 	}
 
 	/**
 	 * WP-Cron's group-clear no-op leaves one delivery that the run-admission gate drops.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale WP-Cron cannot express per-run groups, leaving a staged cancelled-run delivery for the admission fence; public cancellation results cannot prove that survivor existed before it was dropped.
 	 *
 	 * @return  void
 	 */
 	#[Group( 'degraded' )]
 	public function test_wp_cron_group_clear_survivor_dies_at_the_run_admission_gate(): void {
 		// A WP-Cron single survives the group-clear no-op only where Action Scheduler is absent;
-		// its delivery for the deleted run then reports the generic missing-state warning.
+		// its delivery for the deleted run is then dropped as a stale delivery for a finished run.
 		if ( ! \function_exists( 'as_schedule_single_action' ) ) {
-			$this->expectOutputRegex( '/Task run state is missing or corrupt; allow the reconciliation sweep/' );
+			$this->expectOutputRegex( '/Stale delivery for a finished or cancelled run was dropped/' );
 		}
 		$args = array( 'account_id' => 46 );
 		$task = new RecordingTask( self::DEGRADED_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before cancellation races run' );
-		$engine->tasks()->register( $task );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::DEGRADED_NAME );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::DEGRADED_IDENTITY );
 
 		$raw_deliveries = array();
 		\add_action(
-			'a8csp_background_tasks/run',
+			'a8csp_background_tasks/run_task',
 			static function ( string $name, string $run_id, int $action_seq ) use ( &$raw_deliveries ): void {
-				if ( self::DEGRADED_NAME === $name ) {
+				if ( self::DEGRADED_IDENTITY === $name ) {
 					$raw_deliveries[] = array( $name, $run_id, $action_seq );
 				}
 			},
@@ -387,52 +395,34 @@ final class CancellationTest extends IntegrationTestCase {
 			3
 		);
 
-		$enqueued = \a8csp_bgte_enqueue_task( self::DEGRADED_NAME, $args );
+		$enqueued = $client->tasks()->enqueue( self::DEGRADED_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id      = $enqueued->value;
-		$group       = self::DEGRADED_NAME . '|' . $run_id;
-		$action_args = array( self::DEGRADED_NAME, $run_id, 1 );
+		$group       = self::DEGRADED_IDENTITY . '|' . $run_id;
+		$action_args = array( self::DEGRADED_IDENTITY, $run_id, 1 );
 		$action_id   = null;
 		$cron_before = array();
 		if ( \class_exists( \ActionScheduler::class ) ) {
-			$action_id = $this->assert_pending_task_action( self::DEGRADED_NAME, $run_id, $group );
+			$action_id = $this->assert_pending_task_action( self::DEGRADED_IDENTITY, $run_id, $group );
 		} else {
-			$cron_before = $this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args );
+			$cron_before = $this->wordpress_cron_events( 'a8csp_background_tasks/run_task', $action_args );
 			self::assertCount( 1, $cron_before, 'The degraded backend must retain one pending WP-Cron single' );
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
 
-		$cancelled = $engine->cancel( self::DEGRADED_NAME, $run_id );
+		$cancelled = $client->runs()->cancel( self::DEGRADED_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 
 		if ( null !== $action_id ) {
-			self::assertSame(
-				\ActionScheduler_Store::STATUS_CANCELED,
-				$this->action_scheduler_store()->get_status( $action_id )
-			);
+			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id ) );
 			self::assertSame( array(), $raw_deliveries );
 		} else {
-			self::assertSame(
-				$cron_before,
-				$this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args ),
-				'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation'
-			);
-			self::assertSame(
-				1,
-				$this->run_matching_due_cron_event(
-					static fn ( string $hook, array $event_args ): bool =>
-						'a8csp_background_tasks/run' === $hook
-						&& $event_args === $action_args
-				),
-				'The surviving WP-Cron single must reach the shared run-admission hook once'
-			);
+			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_background_tasks/run_task', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
+			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_background_tasks/run_task' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the task run-admission hook once' );
 			self::assertSame( array( $action_args ), $raw_deliveries );
-			self::assertSame(
-				array(),
-				$this->wordpress_cron_events( 'a8csp_background_tasks/run', $action_args )
-			);
+			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_background_tasks/run_task', $action_args ) );
 		}
 
 		self::assertSame( array(), $task->calls, 'A surviving backend delivery must not invoke cancelled user work' );
@@ -443,13 +433,13 @@ final class CancellationTest extends IntegrationTestCase {
 					'status' => 'cancelled',
 				),
 			),
-			self::terminal_entries( self::DEGRADED_NAME )
+			self::terminal_entries( self::DEGRADED_IDENTITY )
 		);
-		self::assert_run_storage_cleared( self::DEGRADED_NAME, $run_id, $args );
+		self::assert_run_storage_cleared( self::DEGRADED_IDENTITY, $run_id, $args );
 		self::assertSame(
 			array(
-				'a8csp_bgte_history_' . self::DEGRADED_NAME,
-				'a8csp_bgte_latest_' . self::DEGRADED_NAME,
+				'a8csp_bgte_history_' . self::DEGRADED_IDENTITY,
+				'a8csp_bgte_latest_run_' . self::DEGRADED_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Cancelled degraded state must retain only history and the latest pointer'
@@ -462,6 +452,9 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * Asserts and returns the sole pending Action Scheduler row for one exact hook and group.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string                  $hook          Action hook.
 	 * @param   string                  $group         Per-run action group.
@@ -499,6 +492,9 @@ final class CancellationTest extends IntegrationTestCase {
 	/**
 	 * Returns the terminal entries for one background-work history.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  array<array-key, mixed>
@@ -506,7 +502,7 @@ final class CancellationTest extends IntegrationTestCase {
 	private static function terminal_entries( string $name ): array {
 		$history = \get_option( 'a8csp_bgte_history_' . $name, null );
 		self::assertIsArray( $history );
-		$entries = $history['completed'] ?? null;
+		$entries = $history['terminal'] ?? null;
 		self::assertIsArray( $entries );
 
 		return $entries;
@@ -514,6 +510,9 @@ final class CancellationTest extends IntegrationTestCase {
 
 	/**
 	 * Asserts that a terminal run leaves no active, lock, or failed-run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string                  $name     Stable task or batch name.
 	 * @param   string                  $run_id   Run identifier.
@@ -523,8 +522,8 @@ final class CancellationTest extends IntegrationTestCase {
 	 */
 	private static function assert_run_storage_cleared( string $name, string $run_id, array $args ): void {
 		self::assertFalse( \get_option( 'a8csp_bgte_run_' . $name . '_' . $run_id, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_lock_' . $name . '_' . self::args_hash( $args ), false ) );
-		self::assertFalse( \get_option( 'a8csp_bgte_failed_' . $name, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . $name . '_' . self::args_hash( $args ), false ) );
+		self::assertFalse( \get_option( 'a8csp_bgte_failed_runs_' . $name, false ) );
 	}
 
 	// endregion.

@@ -11,11 +11,6 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		$engine = \a8csp_bgte_engine();
-		if ( null === $engine ) {
-			return;
-		}
-
-		$engine->batches()->register( new RecordingBatch( 'integration-cli-command-cancel-batch' ) );
+		\a8csp_bgte( 'integration-cli-command' )->batches()->register( new RecordingBatch( 'integration-cli-command-cancel-batch' ) );
 	}
 );

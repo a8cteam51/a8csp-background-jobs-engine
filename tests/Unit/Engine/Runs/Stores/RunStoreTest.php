@@ -2,46 +2,81 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
+/** Detects unsafe class construction while corrupt run storage is inspected. */
+final class RunStoreWakeupProbe {
+	public static int $wakeups = 0;
+
+	/** Records an unsafe native object construction. */
+	public function __wakeup(): void {
+		++self::$wakeups;
+	}
+}
+
 /**
- * Pins consolidated run-option persistence and typed read-modify-write state.
+ * Exercises live run state through lifecycle inspection and retains exact-row CAS proofs.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( RunStore::class )]
-#[UsesClass( RunState::class )]
-#[UsesClass( RunStatus::class )]
-#[UsesClass( RawOptionDecoder::class )]
 final class RunStoreTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
+	private const array ARGS      = array(
+		'scope'   => 'all',
+		'site_id' => 7,
+	);
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string NAME     = 'reports';
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'runs-tests';
+	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
+
+	private Client $client;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private OptionRows $rows;
-	private WpdbLockSpy $wpdb;
+	private RecordingTask $task;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress option functions before the store is autoloaded.
+	 * Loads guarded production files before the graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 3 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 3 ) . '/wp-lock-stubs.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets request-local option state.
+	 * Boots one registered task against deterministic interface fakes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -49,512 +84,612 @@ final class RunStoreTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']         = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
-		$GLOBALS['a8csp_bgte_test_cache']           = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
-		$this->wpdb                                 = new WpdbLockSpy();
-		$this->rows                                 = new OptionRows( $this->wpdb );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->client->tasks()->register( $this->task );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
 
 	/**
-	 * Creation persists the exact schema and hydrates every typed field unchanged.
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_create_get_round_trip_pins_schema_key_and_clock_stamps(): void {
-		$clock = new FixedClock( 1_700_000_100 );
-		$store = new RunStore( 'email-digest', $clock, $this->rows );
-		$state = $store->create(
-			run_id: 'run-123',
-			start_args: array( 'site_id' => 7 ),
-			args_hash: 'hash-a',
-			queue: array(
-				array( 'page' => 1 ),
-				array( 'page' => 2 ),
-			),
-		);
-		self::assertNotNull( $state );
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
+	}
 
-		$stored = $store->get( 'run-123' );
+	// endregion.
 
-		self::assertNotNull( $stored );
-		self::assert_state_same( $state, $stored );
-		self::assertSame( RunStatus::Running, $stored->status );
-		self::assertFalse( $stored->executing );
-		self::assertSame( 1, $stored->action_seq );
-		self::assertSame( 1_700_000_100, $stored->created_at );
-		self::assertSame( 1_700_000_100, $stored->heartbeat_at );
-		self::assertSame(
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array( 'site_id' => 7 ),
-				'args_hash'     => 'hash-a',
-				'queue'         => array(
-					array( 'page' => 1 ),
-					array( 'page' => 2 ),
-				),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1_700_000_100,
-				'heartbeat_at'  => 1_700_000_100,
-			),
-			$this->option( 'a8csp_bgte_run_email-digest_run-123' )
-		);
-		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_run_email-digest_run-123' ) );
+	// region BEHAVIOR.
 
-		$add_calls = $this->option_calls( 'add_option' );
-		self::assertCount( 1, $add_calls );
-		self::assertSame( 'a8csp_bgte_run_email-digest_run-123', $add_calls[0]['args'][0] );
-		self::assertSame( '', $add_calls[0]['args'][2] );
-		self::assertSame( false, $add_calls[0]['args'][3] );
+	/**
+	 * Enqueue, callback admission, and completion expose the real live-state lifecycle.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_live_state_is_visible_while_running_and_disappears_after_completion(): void {
+		$during_callback       = null;
+		$this->task->on_handle = function () use ( &$during_callback ): void {
+			$during_callback = $this->single_live_run();
+		};
+		$result                = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+
+		$queued = $this->single_live_run();
+		self::assertSame( self::RUN_ID, $queued['run_id'] );
+		self::assertFalse( $queued['executing'] );
+		self::assertSame( 0, $queued['attempts'] );
+		self::assertSame( self::NOW, $queued['heartbeat_at'] );
+
+		$this->rig->run_due();
+
+		self::assertIsArray( $during_callback );
+		self::assertTrue( $during_callback['executing'] );
+		self::assertGreaterThanOrEqual( self::NOW, $during_callback['heartbeat_at'] );
+		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		self::assertSame( array(), $snapshot['live'] );
+		self::assertSame( 'completed', $snapshot['history'][0]['outcome'] ?? null );
+		self::assertSame( self::RUN_ID, $snapshot['history'][0]['run_id'] ?? null );
 	}
 
 	/**
-	 * Creation failure leaves an existing run option untouched and returns no state.
+	 * A retry transition exposes the consumed attempt and clears callback ownership between deliveries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_create_reports_failure_without_overwriting_an_existing_option(): void {
-		$clock = new FixedClock( 123 );
+	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
+		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
+		$this->task->throwable          = new \RuntimeException( 'Transient failure.' );
+		$this->rig->randomizer()->value = 7;
+		$result                         = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
 
-		$key = 'a8csp_bgte_run_reports_run-existing';
+		$this->rig->run_due();
 
-		$GLOBALS['a8csp_bgte_test_options'] = array( $key => 'existing value' );
-
-		$store = new RunStore( 'reports', $clock, $this->rows );
-
-		$state = $store->create( 'run-existing', array(), 'hash', array() );
-
-		self::assertNull( $state );
-		self::assertSame( 'existing value', $this->option( $key ) );
-		self::assertSame( false, $this->option_calls( 'add_option' )[0]['args'][3] );
+		$retrying = $this->single_live_run();
+		self::assertSame( 1, $retrying['attempts'] );
+		self::assertFalse( $retrying['executing'] );
+		self::assertGreaterThanOrEqual( self::NOW, $retrying['heartbeat_at'] );
+		$this->rig->run_due();
+		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
 	}
 
 	/**
-	 * Queue, retry, status, execution, and heartbeat copies remain observable after every exact state transition.
+	 * Missing, corrupt, and legacy live rows are skipped instead of becoming fatal inspection data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_state_transitions_round_trip_every_read_modify_write_mutation(): void {
-		$clock = new FixedClock( 100 );
-		$store = new RunStore( 'reports', $clock, $this->rows );
-		$state = $store->create(
-			'run-rmw',
-			array( 'scope' => 'all' ),
-			'hash-rmw',
-			array( array( 'page' => 1 ), array( 'page' => 2 ) ),
-		);
-		self::assertNotNull( $state );
+	public function test_malformed_live_rows_are_tolerated_by_inspection(): void {
+		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		$this->rig->wpdb()->put( $this->run_option_name(), 'legacy-corrupt-run-row' );
 
-		$replacement = $state->with_queue( \array_slice( $state->queue, 1 ) );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame( array( array( 'page' => 2 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
+		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
 
-		$queue       = $state->queue;
-		$queue[]     = array( 'page' => 3 );
-		$replacement = $state->with_queue( $queue );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame( array( array( 'page' => 2 ), array( 'page' => 3 ) ), $this->stored_state( $store, 'run-rmw' )->queue );
-
-		$queue = $state->queue;
-		\array_unshift( $queue, array( 'page' => 0 ) );
-		$replacement = $state->with_queue( $queue );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame(
-			array( array( 'page' => 0 ), array( 'page' => 2 ), array( 'page' => 3 ) ),
-			$this->stored_state( $store, 'run-rmw' )->queue
-		);
-
-		$replacement = $state->with_chunk_retries( $state->chunk_retries + 1 );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame( 1, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
-
-		$replacement = $state->with_chunk_retries( 0 );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame( 0, $this->stored_state( $store, 'run-rmw' )->chunk_retries );
-
-		$replacement = $state->with_action_seq( 2 );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame( 2, $this->stored_state( $store, 'run-rmw' )->action_seq );
-
-		$replacement = $state->with_executing( true );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertTrue( $this->stored_state( $store, 'run-rmw' )->executing );
-
-		$replacement = $state->with_executing( false );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertFalse( $this->stored_state( $store, 'run-rmw' )->executing );
-
-		$replacement = $state->with_status( RunStatus::Failed );
-		self::assertIsString( $store->transition_state( 'run-rmw', $state, $replacement ) );
-		$state = $replacement;
-		self::assertSame( RunStatus::Failed, $this->stored_state( $store, 'run-rmw' )->status );
-
-		$clock->timestamp = 200;
-		$state            = $store->refresh_heartbeat( 'run-rmw', $state );
-		self::assertNotNull( $state );
-		self::assertTrue( $this->stored_state( $store, 'run-rmw' )->executing );
-		self::assertSame( 200, $this->stored_state( $store, 'run-rmw' )->heartbeat_at );
-		self::assertSame( 100, $this->stored_state( $store, 'run-rmw' )->created_at );
-
-		self::assertSame( array(), $this->option_calls( 'update_option' ) );
-	}
-
-	/** A stale live-state writer loses after an exact transition or terminal deletion. */
-	public function test_state_transition_never_recreates_or_overwrites_a_lost_snapshot(): void {
-		$store = new RunStore( 'fenced-live', new FixedClock( 200 ), $this->rows );
-		$state = $store->create( 'run-live', array(), 'hash', array() );
-		self::assertNotNull( $state );
-
-		$newer = $state->with_action_seq( 2 );
-		self::assertIsString( $store->transition_state( 'run-live', $state, $newer ) );
-		self::assertNull( $store->transition_state( 'run-live', $state, $state->with_action_seq( 3 ) ) );
-		self::assertSame( 2, $store->get( 'run-live' )?->action_seq );
-
-		$snapshot = $store->inspect( 'run-live' );
-		self::assertNotNull( $snapshot );
-		self::assertTrue( $store->delete_exact( 'run-live', $snapshot['raw'] ) );
-		self::assertNull( $store->transition_state( 'run-live', $newer, $newer->with_action_seq( 3 ) ) );
-		self::assertNull( $store->get( 'run-live' ) );
+		self::assertSame( array(), $snapshot['live'] );
+		self::assertNull( $snapshot['live_error'] );
+		self::assertSame( 1, $snapshot['live_scanned'] );
 	}
 
 	/**
-	 * Heartbeat refresh leaves missing and corrupted options untouched.
+	 * A run row without its persisted work kind is corrupt rather than legacy-compatible state.
 	 *
 	 * @return  void
 	 */
-	public function test_refresh_heartbeat_does_not_recreate_unrecoverable_runs(): void {
-		$clock = new FixedClock( 200 );
-		$store = new RunStore( 'heartbeat', $clock, $this->rows );
+	public function test_missing_kind_never_hydrates(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		unset( $stored['kind'] );
+		$raw = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
 
-		self::assertNull( $store->refresh_heartbeat( 'missing' ) );
-		self::assertSame( 0, $clock->calls );
-		self::assertSame( array(), $this->all_option_calls() );
+		$inspected = $this->store()->inspect( self::RUN_ID );
 
-		$key = 'a8csp_bgte_run_heartbeat_corrupted';
-
-		$GLOBALS['a8csp_bgte_test_options'] = array( $key => 'corrupted' );
-
-		self::assertNull( $store->refresh_heartbeat( 'corrupted' ) );
-		self::assertSame( 0, $clock->calls );
-		self::assertSame( array(), $this->all_option_calls() );
-		self::assertSame( 'corrupted', $this->option( $key ) );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
 	}
 
 	/**
-	 * Deletion removes the exact run option and later reads report absence.
+	 * A stored work kind outside the canonical Task/Batch vocabulary is corrupt.
 	 *
 	 * @return  void
 	 */
-	public function test_delete_removes_the_run_option(): void {
-		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'cleanup', $clock, $this->rows );
-		$store->create( 'run-delete', array(), 'hash', array() );
+	public function test_noncanonical_kind_never_hydrates(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		$stored['kind'] = 'task';
+		$raw            = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
 
-		$store->delete( 'run-delete' );
+		$inspected = $this->store()->inspect( self::RUN_ID );
 
-		self::assertNull( $store->get( 'run-delete' ) );
-		self::assertArrayNotHasKey( 'a8csp_bgte_run_cleanup_run-delete', $this->options() );
-		self::assertSame(
-			array( 'a8csp_bgte_run_cleanup_run-delete' ),
-			$this->option_calls( 'delete_option' )[0]['args']
-		);
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
 	}
 
-	/** Terminal transitions and cleanup win only against the exact observed raw snapshots. */
-	public function test_transition_and_exact_delete_are_value_conditioned(): void {
-		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'fenced', $clock, $this->rows );
-		$state = $store->create( 'run-fenced', array(), 'hash', array() );
-		self::assertNotNull( $state );
+	// endregion.
 
-		$running = $store->inspect( 'run-fenced' );
-		self::assertNotNull( $running );
-		self::assertNotNull( $running['state'] );
+	// region KEEP CAS MICRO-SUITE.
 
-		$terminal     = $state->with_status( RunStatus::Completed );
-		$terminal_raw = $store->transition( 'run-fenced', $running['raw'], $terminal );
-		self::assertIsString( $terminal_raw );
-		self::assertSame( RunStatus::Completed, $store->get( 'run-fenced' )?->status );
-		self::assertNull( $store->transition( 'run-fenced', $running['raw'], $terminal ) );
-		self::assertTrue( $store->delete_exact( 'run-fenced', $terminal_raw ) );
-		self::assertFalse( $store->delete_exact( 'run-fenced', $terminal_raw ) );
-		self::assertNull( $store->transition( 'run-fenced', $terminal_raw, $terminal ) );
-		self::assertNull( $store->get( 'run-fenced' ) );
-	}
+	/**
+	 * Exact terminal replacement and deletion accept only the observed raw generation.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built running and terminal rows prove both transitions compare binary option bytes and reject stale replays after the generation changes.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_exact_raw_transition_and_delete_are_generation_conditioned(): void {
+		$running  = $this->state();
+		$terminal = $running->with_status( RunStatus::Completed );
+		$before   = $this->fixtures->run( self::RUN_ID, $running );
+		$after    = $this->fixtures->run( self::RUN_ID, $terminal );
+		$this->put_fixture( $before );
+		$this->rig->wpdb()->recorded_queries = array();
+		$store                               = $this->store();
 
-	/** Raw inspection retains corrupt bytes so maintenance can exact-delete only that snapshot. */
-	public function test_inspect_exposes_a_corrupt_raw_snapshot_for_exact_deletion(): void {
-		$key                                = 'a8csp_bgte_run_corruption_run-corrupt';
-		$options                            = $this->options();
-		$options[ $key ]                    = 'corrupt-raw';
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
-		$store                              = new RunStore( 'corruption', new FixedClock( 123 ), $this->rows );
-
-		$snapshot = $store->inspect( 'run-corrupt' );
-
-		self::assertNotNull( $snapshot );
-		self::assertSame( 'corrupt-raw', $snapshot['raw'] );
-		self::assertNull( $snapshot['state'] );
-		self::assertTrue( $store->delete_exact( 'run-corrupt', $snapshot['raw'] ) );
-		self::assertNull( $store->inspect( 'run-corrupt' ) );
+		self::assertSame( $after[1], $store->replace_if_raw_matches( self::RUN_ID, $before[1], $terminal ) );
+		self::assertSame( $after[1], $this->raw_row() );
+		self::assertNull( $store->replace_if_raw_matches( self::RUN_ID, $before[1], $terminal ) );
+		self::assertTrue( $store->delete_exact( self::RUN_ID, $after[1] ) );
+		self::assertFalse( $store->delete_exact( self::RUN_ID, $after[1] ) );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
 	}
 
 	/**
-	 * Missing and malformed option values cannot hydrate a typed run.
+	 * A stale state writer cannot overwrite an interleaved newer generation.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The rival bytes are produced by RunStore serialization and installed at the exact update boundary, so a null result proves lost-CAS fencing rather than a scripted pass-through.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_get_returns_null_for_missing_and_malformed_options(): void {
-		$clock = new FixedClock( 123 );
-		$store = new RunStore( 'corruption', $clock, $this->rows );
-		$key   = 'a8csp_bgte_run_corruption_run-bad';
+	public function test_lost_state_cas_preserves_the_fixture_built_rival_generation(): void {
+		$running = $this->state();
+		$rival   = $running->with_action_seq( 2 );
+		$caller  = $running->with_action_seq( 3 );
+		$before  = $this->fixtures->run( self::RUN_ID, $running );
+		$winner  = $this->fixtures->run( self::RUN_ID, $rival );
+		$this->put_fixture( $before );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $winner ): void {
+				$wpdb->put( $winner[0], $winner[1] );
+			}
+		);
 
-		self::assertNull( $store->get( 'run-bad' ) );
+		self::assertNull( $this->store()->replace_if_state_matches( self::RUN_ID, $running, $caller ) );
+		self::assertSame( $winner[1], $this->raw_row() );
+	}
 
-		$malformed_values = array(
-			'not an array',
-			array( 'status' => 'running' ),
+	/**
+	 * Different interleaved terminal effects converge in append order on one exact snapshot.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The rival append executes real production logic at the outer CAS boundary, proving retry merges monotonic effect progress instead of replacing it.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_interleaved_terminal_effects_converge_on_one_exact_snapshot(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+		$expected = $this->fixtures->run( self::RUN_ID, $terminal->with_effects( array( 'callbacks', 'hooks' ) ) );
+		$this->put_fixture( $fixture );
+		$store = $this->store();
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function () use ( $fixture, $store, $terminal ): void {
+				self::assertNotNull( $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'callbacks' ) );
+			}
+		);
+
+		$appended = $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'hooks' );
+
+		self::assertNotNull( $appended );
+		self::assertSame( array( 'callbacks', 'hooks' ), $appended['state']->effects );
+		self::assertSame( $expected[1], $appended['raw'] );
+		self::assertSame( $expected[1], $this->raw_row() );
+	}
+
+	/**
+	 * Terminal-effect persistence stops after five consecutive comparison losses.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The exact five-attempt bound (TERMINAL_EFFECT_ATTEMPTS=5) is the liveness contract; an unbounded loop under permanent contention would hang delivery.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_effect_append_stops_after_five_consecutive_cas_losses(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+
+		$last_rival = $fixture;
+		for ( $action_seq = 2; $action_seq <= 6; ++$action_seq ) {
+			$rival      = $this->fixtures->run( self::RUN_ID, $terminal->with_action_seq( $action_seq ) );
+			$last_rival = $rival;
+			$this->rig->wpdb()->before_next(
+				'update',
+				static function ( WpdbLockSpy $wpdb ) use ( $rival ): void {
+					$wpdb->put( $rival[0], $rival[1] );
+				}
+			);
+		}
+		$store = $this->store();
+
+		self::assertNull( $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'hooks' ) );
+		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
+		self::assertSame( $last_rival[1], $this->raw_row() );
+		$persisted = $store->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $persisted );
+		self::assertIsArray( $persisted->value );
+		self::assertInstanceOf( RunState::class, $persisted->value['state'] );
+		self::assertSame( array(), $persisted->value['state']->effects );
+	}
+
+	/**
+	 * Terminal-effect keys must be non-empty.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_effect_append_rejects_an_empty_effect_key(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'A terminal effect key cannot be empty.' );
+
+		(void) $this->store()->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], '' );
+	}
+
+	/**
+	 * Corrupt object-bearing rows remain raw evidence without constructing their classes.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The deliberately corrupt serialized row bypasses the fixture builder so hardened inspection can prove it rejects nested objects before PHP wakeup hooks run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_object_bearing_rows_are_skipped_without_constructing_classes(): void {
+		$raw = \maybe_serialize(
 			array(
-				'status'        => 'unknown',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'status'          => 'running',
+				'kind'            => 'Task',
+				'executing'       => false,
+				'start_args'      => array(),
+				'args_hash'       => 'hash-a',
+				'queue'           => array( array( 'payload' => new RunStoreWakeupProbe() ) ),
+				'failed_attempts' => 0,
+				'action_seq'      => 1,
+				'created_at'      => self::NOW,
+				'heartbeat_at'    => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $this->run_option_name(), $raw );
+		RunStoreWakeupProbe::$wakeups = 0;
+
+		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( 0, RunStoreWakeupProbe::$wakeups );
+		$inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
+		self::assertSame( 0, RunStoreWakeupProbe::$wakeups );
+	}
+
+	/**
+	 * Pending descriptors accept only the canonical stage/mode/fire-time pairings and field set.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Inline corrupt rows cover the invalid pairings that production serialization cannot emit, preventing legacy or injected shapes from becoming executable pending actions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_noncanonical_pending_descriptors_never_become_live_runs(): void {
+		$invalid = array(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'later',
+				'fire_at'  => 2,
+				'priority' => 10,
 			),
 			array(
-				'status'        => 'running',
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => 2,
+				'priority' => 10,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => 'false',
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'stage'    => 'run',
+				'mode'     => 'single',
+				'fire_at'  => null,
+				'priority' => 10,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array( 'not-a-list' => array() ),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => '10',
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array( 'not-an-array' ),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 10,
+				'extra'    => true,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => 'not-an-array',
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'stage'    => 'start',
+				'mode'     => 'single',
+				'fire_at'  => 2,
+				'priority' => 10,
 			),
 			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => false,
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
-			),
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => '0',
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
-			),
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1.0,
-				'heartbeat_at'  => 1,
-			),
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => 1,
-				'heartbeat_at'  => '1',
-			),
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => array(),
-				'args_hash'     => 'hash',
-				'queue'         => array(),
-				'chunk_retries' => 0,
-				'action_seq'    => '1',
-				'created_at'    => 1,
-				'heartbeat_at'  => 1,
+				'stage'    => 'cleanup',
+				'mode'     => 'single',
+				'fire_at'  => 2,
+				'priority' => 10,
 			),
 		);
 
-		foreach ( $malformed_values as $value ) {
-			$GLOBALS['a8csp_bgte_test_options'] = array( $key => $value );
-
-			self::assertNull( $store->get( 'run-bad' ) );
+		foreach ( $invalid as $pending ) {
+			$this->put_corrupt_state( array( 'pending' => $pending ) );
+			self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
 		}
 	}
 
 	/**
-	 * Asserts every persisted RunState field independently.
+	 * Optional terminal error and effect metadata accept only their canonical nested shapes.
 	 *
-	 * @param   RunState $expected Expected state.
-	 * @param   RunState $actual   Actual state.
+	 * @load-bearing security
+	 * @pin-rationale Inline malformed metadata cannot be produced by StoreFixtureBuilder and proves persisted data cannot smuggle ambiguous errors or replayable duplicate effect keys into terminal recovery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	private static function assert_state_same( RunState $expected, RunState $actual ): void {
-		self::assertSame( $expected->status, $actual->status );
-		self::assertSame( $expected->executing, $actual->executing );
-		self::assertSame( $expected->start_args, $actual->start_args );
-		self::assertSame( $expected->args_hash, $actual->args_hash );
-		self::assertSame( $expected->queue, $actual->queue );
-		self::assertSame( $expected->chunk_retries, $actual->chunk_retries );
-		self::assertSame( $expected->action_seq, $actual->action_seq );
-		self::assertSame( $expected->created_at, $actual->created_at );
-		self::assertSame( $expected->heartbeat_at, $actual->heartbeat_at );
+	public function test_noncanonical_terminal_metadata_never_hydrates(): void {
+		$invalid = array(
+			array( 'error' => null ),
+			array( 'error' => array( 'message' => 'Failure.' ) ),
+			array(
+				'error' => array(
+					'class'   => false,
+					'message' => 'Failure.',
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => false,
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'extra'   => true,
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'stage'   => 'unknown',
+					'code'    => ApiErrorCode::ExecutionFailed->value,
+				),
+			),
+			array( 'effects' => array() ),
+			array( 'effects' => array( 'key' => 'hooks' ) ),
+			array( 'effects' => array( 1 ) ),
+			array( 'effects' => array( '' ) ),
+			array( 'effects' => array( 'hooks', 'hooks' ) ),
+			array(
+				'status'  => 'running',
+				'effects' => array( 'hooks' ),
+			),
+			array(
+				'status' => 'completed',
+				'error'  => array(
+					'class'   => null,
+					'message' => 'Failure.',
+				),
+			),
+		);
+
+		foreach ( $invalid as $metadata ) {
+			$this->put_corrupt_state( $metadata );
+			$inspected = $this->store()->inspect( self::RUN_ID );
+			self::assertInstanceOf( Success::class, $inspected );
+			self::assertIsArray( $inspected->value );
+			self::assertNull( $inspected->value['state'] ?? null );
+		}
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
-	 * Returns one stored option value.
+	 * Returns the only inspected live run.
 	 *
-	 * @param   string $option_name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  mixed
+	 * @return  array{run_id: string, kind: string, status: string, executing: bool, attempts: int, queue_depth: int|null, heartbeat_at: int, stale: bool}
 	 */
-	private function option( string $option_name ): mixed {
-		$options = $this->options();
+	private function single_live_run(): array {
+		$live = $this->rig->inspection()->runs( self::IDENTITY )['live'];
+		self::assertCount( 1, $live );
 
-		return $options[ $option_name ] ?? null;
+		return $live[0];
 	}
 
 	/**
-	 * Returns the recorded autoload flag for one option.
+	 * Returns the shared valid fixture state.
 	 *
-	 * @param   string $option_name Option name.
-	 *
-	 * @return  mixed
-	 */
-	private function autoload_flag( string $option_name ): mixed {
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? null;
-		self::assertIsArray( $autoload_flags );
-
-		return $autoload_flags[ $option_name ] ?? null;
-	}
-
-	/**
-	 * Returns the current option ledger.
-	 *
-	 * @return  array<array-key, mixed>
-	 */
-	private function options(): array {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-
-		return $options;
-	}
-
-	/**
-	 * Returns one run state after asserting that it remains recoverable.
-	 *
-	 * @param   RunStore $store  Run store.
-	 * @param   string   $run_id Run identifier.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  RunState
 	 */
-	private function stored_state( RunStore $store, string $run_id ): RunState {
-		$state = $store->get( $run_id );
-		self::assertNotNull( $state );
-
-		return $state;
+	private function state(): RunState {
+		return new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 	}
 
 	/**
-	 * Returns calls for one option function in recording order.
+	 * Returns a run store bound to the active authoritative rows.
 	 *
-	 * @param   string $function_name Function name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
+	 * @return  RunStore
 	 */
-	private function option_calls( string $function_name ): array {
-		return \array_values(
-			\array_filter(
-				$this->all_option_calls(),
-				static fn ( array $call ): bool => $function_name === $call['function']
-			)
+	private function store(): RunStore {
+		return new RunStore( self::IDENTITY, $this->rig->clock(), $this->rows );
+	}
+
+	/**
+	 * Stores one production-built raw fixture in the active database.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
+	 *
+	 * @return  void
+	 */
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+	}
+
+	/**
+	 * Stores one deliberately corrupt terminal state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $metadata Invalid fields under test.
+	 *
+	 * @return  void
+	 */
+	private function put_corrupt_state( array $metadata ): void {
+		$value = array(
+			'status'          => 'failed',
+			'kind'            => 'Task',
+			'executing'       => false,
+			'start_args'      => array(),
+			'args_hash'       => 'hash-a',
+			'queue'           => array(),
+			'failed_attempts' => 0,
+			'action_seq'      => 1,
+			'created_at'      => self::NOW,
+			'heartbeat_at'    => self::NOW,
+			...$metadata,
 		);
+		$raw   = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $this->run_option_name(), $raw );
 	}
 
 	/**
-	 * Returns every recorded option-function call.
+	 * Returns the active run's authoritative raw bytes.
 	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
 	 */
-	private function all_option_calls(): array {
-		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
+	private function raw_row(): string {
+		$raw = $this->rig->wpdb()->rows[ $this->run_option_name() ] ?? null;
+		self::assertIsString( $raw );
 
-		return $calls;
+		return $raw;
 	}
+
+	/**
+	 * Returns the deterministic active-run option name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	private function run_option_name(): string {
+		return RunIdentity::option_name( self::IDENTITY, self::RUN_ID );
+	}
+
+	/**
+	 * Returns recorded statements carrying one literal prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $prefix Statement prefix.
+	 *
+	 * @return  list<string>
+	 */
+	private function queries_starting_with( string $prefix ): array {
+		return \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, $prefix ) ) );
+	}
+
+	// endregion.
 }

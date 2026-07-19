@@ -2,6 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use wpdb;
 
 \defined( 'ABSPATH' ) || exit;
@@ -11,6 +16,8 @@ use wpdb;
  *
  * Each instance is bound to the current site because WordPress rebinds wpdb's per-site table
  * properties during a blog switch.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -41,7 +48,7 @@ final readonly class OptionRows {
 	 * @param   wpdb $wpdb Site-bound WordPress database connection.
 	 */
 	public function __construct(
-		private wpdb $wpdb
+		private wpdb $wpdb,
 	) {
 		$this->site_id = \get_current_blog_id();
 	}
@@ -61,27 +68,24 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  bool
+	 * @return  RowWriteOutcome Exact insert classification.
 	 */
-	public function insert( string $key, string $raw ): bool {
+	public function insert_if_absent( string $key, string $raw ): RowWriteOutcome {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$result = $wpdb->query(
-			$wpdb->prepare(
-				"INSERT IGNORE INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'off') /* LOCK */",
-				$wpdb->options,
-				$key,
-				$raw
-			) ?? ''
-		);
+		$result = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO %i (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'off') /* LOCK */", $wpdb->options, $key, $raw ) ?? '' );
 		$this->purge_cache( $key );
 
-		return 1 === $result;
+		return match ( $result ) {
+			1       => RowWriteOutcome::Won,
+			0       => RowWriteOutcome::Lost,
+			default => RowWriteOutcome::WriteFailed,
+		};
 	}
 
 	/**
-	 * Selects the exact raw option value directly from the authoritative site table.
+	 * Reads the exact raw option value directly from the authoritative site table.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -90,25 +94,31 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  string|null
+	 * @return  AbstractResult<string|null, EngineError>
 	 */
-	public function select( string $key ): ?string {
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function read( string $key ): AbstractResult {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$row = $wpdb->get_row(
-			$wpdb->prepare(
-				'SELECT `option_value` FROM %i WHERE `option_name` = %s LIMIT 1',
-				$wpdb->options,
-				$key
-			),
-			\ARRAY_A
-		);
+		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s LIMIT 1', $wpdb->options, $key ), \ARRAY_A );
+		if ( $this->last_read_failed() ) {
+			return new Failure(
+				new EngineError(
+					'Authoritative option-row read failed; repair WordPress option reads and retry.',
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'option_name'   => $key,
+						'storage_error' => $wpdb->last_error,
+					),
+				)
+			);
+		}
 		if ( ! \is_array( $row ) || ! \is_string( $row['option_value'] ?? null ) ) {
-			return null;
+			return new Success( null );
 		}
 
-		return $row['option_value'];
+		return new Success( $row['option_value'] );
 	}
 
 	/**
@@ -121,18 +131,16 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  list<string>
+	 * @return  AbstractResult<list<string>, EngineError>
 	 */
-	public function option_names( string $prefix ): array {
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function option_names( string $prefix ): AbstractResult {
 		$this->assert_site();
 		$wpdb  = $this->wpdb;
-		$names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC',
-				$wpdb->options,
-				$wpdb->esc_like( $prefix ) . '%'
-			)
-		);
+		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ) );
+		if ( $this->last_read_failed() ) {
+			return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+		}
 
 		$typed = array();
 		foreach ( $names as $name ) {
@@ -141,90 +149,139 @@ final readonly class OptionRows {
 			}
 		}
 
-		return $typed;
+		return new Success( $typed );
 	}
 
 	/**
-	 * Returns one bounded page and the complete candidate count for an exact option-name length.
+	 * Returns one bounded option-name page strictly after an optional bytewise cursor.
+	 *
+	 * @internal Engine maintenance only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $prefix       Literal option-name prefix.
-	 * @param   int    $total_length Required complete option-name length.
-	 * @param   int    $limit        Positive maximum number of names returned.
+	 * @param   string      $prefix     Literal option-name prefix.
+	 * @param   string|null $after_name Exclusive option-name cursor, or null for the prefix start.
+	 * @param   int         $limit      Positive maximum number of names returned.
+	 *
+	 * @throws  \InvalidArgumentException When the limit is non-positive.
+	 * @throws  \LogicException           When the current site differs from the bound site.
+	 *
+	 * @return  AbstractResult<array{names: list<string>, next_cursor: string|null, scanned: int}, EngineError>
+	 */
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function option_names_after( string $prefix, ?string $after_name, int $limit ): AbstractResult {
+		if ( 1 > $limit ) {
+			throw new \InvalidArgumentException( 'An option-name cursor page requires a positive limit.' );
+		}
+
+		$this->assert_site();
+		$wpdb       = $this->wpdb;
+		$pattern    = $wpdb->esc_like( $prefix ) . '%';
+		$candidates = null === $after_name
+			? $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $limit ) )
+			: $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $after_name, $limit ) );
+		if ( $this->last_read_failed() ) {
+			return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+		}
+
+		$scanned     = \count( $candidates );
+		$next_cursor = null;
+		if ( $scanned === $limit ) {
+			$next_cursor = $candidates[ $scanned - 1 ] ?? null;
+			if ( ! \is_string( $next_cursor ) || ( null !== $after_name && 0 >= \strcmp( $next_cursor, $after_name ) ) ) {
+				return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+			}
+		}
+
+		$typed = array();
+		foreach ( $candidates as $name ) {
+			if ( \is_string( $name ) && \str_starts_with( $name, $prefix ) && ( null === $after_name || 0 < \strcmp( $name, $after_name ) ) ) {
+				$typed[] = $name;
+			}
+		}
+
+		return new Success(
+			array(
+				'names'       => $typed,
+				'next_cursor' => $next_cursor,
+				'scanned'     => $scanned,
+			)
+		);
+	}
+
+	/**
+	 * Returns one bounded page and the complete accepted count for an exact option-name byte length.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                 $prefix       Literal option-name prefix.
+	 * @param   int                    $total_length Required complete option-name byte length.
+	 * @param   int                    $limit        Positive maximum number of names returned.
+	 * @param   callable(string): bool $is_valid     Complete-name validity predicate.
 	 *
 	 * @throws  \InvalidArgumentException When the length or limit is invalid.
 	 * @throws  \LogicException           When the current site differs from the bound site.
 	 *
 	 * @return  array{names: list<string>, total: int}|null Null when either authoritative read fails.
 	 */
-	public function option_names_page( string $prefix, int $total_length, int $limit ): ?array {
+	public function option_names_page( string $prefix, int $total_length, int $limit, callable $is_valid ): ?array {
 		if ( \strlen( $prefix ) > $total_length || 1 > $limit ) {
 			throw new \InvalidArgumentException( 'An option-name page requires a complete length at least as long as its prefix and a positive limit.' );
 		}
 
 		$this->assert_site();
-		$wpdb    = $this->wpdb;
-		$pattern = $wpdb->esc_like( $prefix ) . '%';
-		$count   = $wpdb->get_var(
-			$wpdb->prepare(
-				'SELECT COUNT(*) FROM %i WHERE `option_name` LIKE %s AND CHAR_LENGTH(`option_name`) = %d',
-				$wpdb->options,
-				$pattern,
-				$total_length
-			)
-		);
-		if (
-			$this->last_select_failed()
-			|| ! \is_string( $count )
-			|| 1 !== \preg_match( '/\A\d+\z/', $count )
-		) {
-			return null;
-		}
+		$wpdb     = $this->wpdb;
+		$pattern  = $wpdb->esc_like( $prefix ) . '%';
+		$accepted = array();
+		$total    = 0;
+		$cursor   = null;
 
-		$names = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND CHAR_LENGTH(`option_name`) = %d ORDER BY `option_name` ASC LIMIT %d',
-				$wpdb->options,
-				$pattern,
-				$total_length,
-				$limit
-			)
-		);
-		if ( $this->last_select_failed() ) {
-			return null;
-		}
-
-		$typed = array();
-		foreach ( $names as $name ) {
-			if (
-				\is_string( $name )
-				&& \strlen( $name ) === $total_length
-				&& \str_starts_with( $name, $prefix )
-			) {
-				$typed[] = $name;
+		do {
+			$candidates = null === $cursor
+				? $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $limit ) )
+				: $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $cursor, $limit ) );
+			if ( $this->last_read_failed() ) {
+				return null;
 			}
-		}
+
+			$candidate_count = \count( $candidates );
+			if ( 0 === $candidate_count ) {
+				break;
+			}
+
+			$next_cursor = $candidates[ $candidate_count - 1 ] ?? null;
+			if (
+				! \is_string( $next_cursor )
+				|| ( null !== $cursor && 0 >= \strcmp( $next_cursor, $cursor ) )
+			) {
+				return null;
+			}
+
+			foreach ( $candidates as $name ) {
+				if (
+					! \is_string( $name )
+					|| \strlen( $name ) !== $total_length
+					|| ! \str_starts_with( $name, $prefix )
+					|| ! $is_valid( $name )
+				) {
+					continue;
+				}
+
+				++$total;
+				if ( $total <= $limit ) {
+					$accepted[] = $name;
+				}
+			}
+
+			$cursor = $next_cursor;
+		} while ( $candidate_count === $limit );
 
 		return array(
-			'names' => $typed,
-			'total' => \max( (int) $count, \count( $typed ) ),
+			'names' => $accepted,
+			'total' => $total,
 		);
-	}
-
-	/**
-	 * Returns whether the immediately preceding authoritative select failed at the database boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 *
-	 * @phpstan-impure
-	 */
-	public function last_select_failed(): bool {
-		return '' !== $this->wpdb->last_error;
 	}
 
 	/**
@@ -242,30 +299,35 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  bool
+	 * @return  RowWriteOutcome Exact replacement classification.
 	 */
-	public function replace( string $key, string $expected_raw, string $replacement_raw ): bool {
+	public function compare_and_swap( string $key, string $expected_raw, string $replacement_raw ): RowWriteOutcome {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$result = $wpdb->query(
-			$wpdb->prepare(
-				'UPDATE %i SET `option_value` = %s WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s',
-				$wpdb->options,
-				$replacement_raw,
-				$key,
-				$expected_raw
-			) ?? ''
-		);
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `option_value` = %s WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s', $wpdb->options, $replacement_raw, $key, $expected_raw ) ?? '' );
 		$this->purge_cache( $key );
 		if ( 1 === $result ) {
-			return true;
+			return RowWriteOutcome::Won;
+		}
+
+		if ( 0 !== $result ) {
+			return RowWriteOutcome::WriteFailed;
+		}
+
+		if ( $expected_raw !== $replacement_raw ) {
+			return RowWriteOutcome::Lost;
 		}
 
 		// MySQL reports zero for an unchanged update, so the raw row distinguishes success from a lost CAS.
-		return 0 === $result
-			&& $expected_raw === $replacement_raw
-			&& $replacement_raw === $this->select( $key );
+		$selected = $this->read( $key );
+		if ( $selected->is_failure() ) {
+			return RowWriteOutcome::WriteFailed;
+		}
+
+		return $replacement_raw === $selected->value
+			? RowWriteOutcome::Won
+			: RowWriteOutcome::Lost;
 	}
 
 	/**
@@ -279,40 +341,39 @@ final readonly class OptionRows {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  bool
+	 * @return  RowDeleteOutcome Exact delete classification.
 	 */
-	public function delete( string $key, string $expected_raw ): bool {
+	public function delete_if_value_matches( string $key, string $expected_raw ): RowDeleteOutcome {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$result = $wpdb->query(
-			$wpdb->prepare(
-				'DELETE FROM %i WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s',
-				$wpdb->options,
-				$key,
-				$expected_raw
-			) ?? ''
-		);
+		$result = $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` = %s AND BINARY `option_value` = BINARY %s', $wpdb->options, $key, $expected_raw ) ?? '' );
 		$this->purge_cache( $key );
 
-		return 1 === $result;
-	}
-
-	/**
-	 * Returns whether the immediately preceding authoritative delete failed at the database boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 */
-	public function last_delete_failed(): bool {
-		return '' !== $this->wpdb->last_error;
+		return match ( $result ) {
+			1       => RowDeleteOutcome::Deleted,
+			0       => RowDeleteOutcome::ValueMismatch,
+			default => RowDeleteOutcome::DeleteFailed,
+		};
 	}
 
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns whether the immediately preceding authoritative read failed at the database boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 *
+	 * @phpstan-impure
+	 */
+	private function last_read_failed(): bool {
+		return '' !== $this->wpdb->last_error;
+	}
 
 	/**
 	 * Throws when a blog switch makes the injected wpdb point at a different site's tables.
@@ -329,9 +390,7 @@ final readonly class OptionRows {
 			return;
 		}
 
-		throw new \LogicException(
-			'Do not reuse OptionRows after switch_to_blog(); construct a new site-bound instance after switching.'
-		);
+		throw new \LogicException( 'Do not reuse OptionRows after switch_to_blog(); construct a new site-bound instance after switching.' );
 	}
 
 	/**

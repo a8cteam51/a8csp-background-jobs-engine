@@ -17,6 +17,7 @@ jobs:
   mutation:
     name: Mutation tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -37,11 +38,10 @@ jobs:
 
       - name: Guard against a vacuously-green zero-mutant run
         run: |
-          # Infection 0.34.0 has been observed to exit 0 with zero mutants generated on PHP 8.5
-          # (upstream bug, under investigation). When zero mutants are produced it also skips
-          # writing any log/report at all -- so a missing summary file is itself the failure
-          # signal, not just a zero count in it. A green mutation job that tested nothing is
-          # not a pass, so this fails closed rather than trusting the exit code alone.
+          # Infection can exit 0 having generated zero mutants, writing no log or report at
+          # all -- so a missing summary file is itself the failure signal, not just a zero
+          # count in it. A green mutation job that tested nothing is not a pass, so this
+          # fails closed rather than trusting the exit code alone.
           summary=build/infection/infection-summary.json
           if [ ! -s "$summary" ]; then
             echo "::error::Infection produced no summary report at $summary -- zero mutants were generated (or the run aborted before reporting). A green mutation job with zero mutants is not a pass."
@@ -59,3 +59,12 @@ jobs:
           fi
 
           echo "Infection generated $count mutants."
+
+      # Local Infection runs are unreliable (macOS tmpdir coverage race), so CI is authoritative --
+      # keep the report even when the run or the guard above fails, to diagnose from.
+      - name: Upload Infection logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: infection-logs
+          path: build/infection/

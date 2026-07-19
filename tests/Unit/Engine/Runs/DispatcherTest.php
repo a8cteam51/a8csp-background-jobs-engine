@@ -2,106 +2,75 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins single-task admission and manual retry across scheduling, storage, hooks, locks, and logs.
+ * Exercises task admission and failed-run retry through owner-bound facades.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( Dispatcher::class )]
-#[UsesClass( EngineError::class )]
-#[UsesClass( FailedRunStore::class )]
-#[UsesClass( LatestRunPointer::class )]
-#[UsesClass( LockRows::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( Randomizer::class )]
-#[UsesClass( RetryPolicy::class )]
-#[UsesClass( RunHistory::class )]
-#[UsesClass( RunState::class )]
-#[UsesClass( RunStatus::class )]
-#[UsesClass( RunStore::class )]
-#[UsesClass( SchedulerFacade::class )]
-#[UsesClass( StoreFactory::class )]
-#[UsesClass( BatchRegistry::class )]
-#[UsesClass( TaskRegistry::class )]
 final class DispatcherTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS = array(
+	private const array ARGS              = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
+	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string NAME             = 'email-digest';
+	private const int NOW                 = 1_700_000_000;
+	private const string OTHER_RUN_ID     = '00000000001700000001-0000000000000000043';
+	private const string OWNER            = 'runs-tests';
+	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
+	private const string UNKNOWN_NAME     = 'unknown';
+	private const string UNKNOWN_IDENTITY = self::OWNER . ':' . self::UNKNOWN_NAME;
 
-	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const NAME      = 'email-digest';
-	private const NOW       = 1_700_000_000;
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
-
-	private FixedClock $clock;
-	private RecordingBackend $backend;
-	private RecordingLogger $logger;
-	private RecordingRandomizer $randomizer;
+	private Client $client;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private RecordingTask $task;
-	private TaskRegistry $registry;
-	private WpdbLockSpy $wpdb;
-	private Dispatcher $dispatcher;
 
 	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress functions before orchestration classes are instantiated.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Scheduling/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets every observable boundary and constructs one registered task lifecycle.
+	 * Boots one registered task against deterministic interface fakes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -109,269 +78,228 @@ final class DispatcherTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->client->tasks()->register( $this->task );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->reset_observations();
+	}
 
-		$this->clock      = new FixedClock( self::NOW );
-		$this->backend    = new RecordingBackend();
-		$this->logger     = new RecordingLogger();
-		$this->randomizer = new RecordingRandomizer( 42 );
-		$this->task       = new RecordingTask( self::NAME );
-		$this->registry   = new TaskRegistry();
-		$this->registry->register( $this->task );
-		$this->wpdb           = new WpdbLockSpy();
-		$batches              = new BatchRegistry();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$this->dispatcher     = new Dispatcher(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+	/**
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
 
 	// region TESTS.
-	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/**
-	 * A fresh enqueue persists the run, records fencing and history, fires hooks, and queues one action.
+	 * A null key dispatches the original arguments with the requested priority.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_creates_and_dispatches_a_running_task(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: 23 );
+	public function test_enqueue_with_null_dedup_key_dispatches_the_original_arguments(): void {
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: null, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
-		self::assertSame(
-			array(
-				array(
-					'min' => 0,
-					'max' => \PHP_INT_MAX,
-				),
-			),
-			$this->randomizer->calls
-		);
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::NAME, self::RUN_ID, 1 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
-						'unique'   => false,
-						'priority' => 23,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-		self::assertSame(
-			array(
-				'status'        => 'running',
-				'executing'     => false,
-				'start_args'    => self::ARGS,
-				'args_hash'     => self::ARGS_HASH,
-				'queue'         => array( self::ARGS ),
-				'chunk_retries' => 0,
-				'action_seq'    => 1,
-				'created_at'    => self::NOW,
-				'heartbeat_at'  => self::NOW,
-			),
-			$this->option( $this->run_option_name() )
-		);
-		self::assertSame(
-			array(
-				'all'     => self::RUN_ID,
-				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
-			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
-		);
-		self::assertSame(
-			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array(),
-				'by_hash'   => array(
-					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array(),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
-		);
-		self::assertSame(
-			array(
-				'run_id'       => self::RUN_ID,
-				'claimed_at'   => self::NOW,
-				'heartbeat_at' => self::NOW,
-			),
-			$this->lock()
-		);
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/started/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/started',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
-			),
-			$this->fired_actions()
-		);
+		$call = $this->single_run_delivery_call();
+		self::assertSame( 23, $call['args']['priority'] ?? null );
+		$run = \get_option( $this->run_option_name() );
+		self::assertIsArray( $run );
+		self::assertSame( 'Task', $run['kind'] ?? null );
+		$this->rig->backend()->assert_scheduled( self::IDENTITY );
+		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::IDENTITY ) );
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->task->calls );
 	}
 
 	/**
-	 * Cancellation wraps a raw backend before issuing its group-only clear.
+	 * An opaque key cannot alias the canonical argument identity with the same bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_wraps_a_recording_backend_for_group_clearance(): void {
-		$enqueued = $this->dispatcher->enqueue( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $enqueued );
-		$this->backend->calls = array();
+	public function test_dedup_key_cannot_collide_with_the_argument_identity_domain(): void {
+		$argument_identity = $this->client->tasks()->enqueue( self::NAME );
+		self::assertInstanceOf( Success::class, $argument_identity );
+		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$cancelled = $this->dispatcher->cancel( self::NAME, self::RUN_ID );
+		$dedup_identity = $this->client->tasks()->enqueue( self::NAME, dedup_key: '[]' );
 
-		self::assertInstanceOf( Success::class, $cancelled );
-		self::assertSame( self::RUN_ID, $cancelled->value );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'is_ready',
-					'args' => array(),
-				),
-				array(
-					'verb' => 'unschedule',
-					'args' => array(
-						'hook'  => '',
-						'args'  => array(),
-						'group' => self::NAME . '|' . self::RUN_ID,
-					),
-				),
-			),
-			$this->backend->calls
-		);
+		self::assertInstanceOf( Success::class, $dedup_identity );
+		self::assertNotSame( $argument_identity->value, $dedup_identity->value );
+		self::assertCount( 2, $this->run_delivery_calls() );
 	}
 
 	/**
-	 * A throwing task started listener fails and cleans the already-scheduled run.
+	 * Different opaque keys admit independent runs even when their arguments match.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_terminalizes_when_a_task_started_listener_throws(): void {
-		$GLOBALS['a8csp_bgte_test_action_throwables'] = array(
-			'a8csp_background_tasks/started/' . self::NAME => new \RuntimeException(
-				'Started listener exploded.'
-			),
-		);
+	public function test_enqueue_treats_different_dedup_keys_as_distinct_single_flight_identities(): void {
+		$first = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: 'site-7-full' );
+		self::assertInstanceOf( Success::class, $first );
+		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$second = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: 'site-8-full' );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Task "email-digest" started listener failed: Started listener exploded. Fix the started-hook listener before enqueueing the task again.',
-			$result->error->message
-		);
-		self::assertCount( 1, $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		$stored_error = $failed_run['error'] ?? null;
-		self::assertIsArray( $stored_error );
-		self::assertSame( $result->error->message, $stored_error['message'] ?? null );
+		self::assertInstanceOf( Success::class, $second );
+		self::assertNotSame( $first->value, $second->value );
+		self::assertCount( 2, $this->run_delivery_calls() );
+	}
+
+	/**
+	 * Cancellation clears only the accepted run's scheduler group.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_clears_the_run_scheduler_group(): void {
+		$run_id = $this->enqueue_task();
+		$this->reset_observations();
+
+		$result = $this->client->runs()->cancel( self::NAME, $run_id );
+
+		self::assertInstanceOf( Success::class, $result );
+		$unschedule = $this->backend_calls( 'unschedule' );
+		self::assertCount( 1, $unschedule );
+		self::assertSame( self::IDENTITY . '|' . $run_id, $unschedule[0]['args']['group'] ?? null );
+	}
+
+	/**
+	 * A throwing started listener fails the accepted run through public hooks and Results.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_terminalizes_when_a_started_listener_throws(): void {
+		$GLOBALS['a8csp_bgte_test_action_throwables'] = array( 'a8csp_background_tasks/started/' . self::IDENTITY => new \RuntimeException( 'Started listener exploded.' ) );
+
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ApiErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::NAME,
+				'a8csp_background_tasks/started/' . self::IDENTITY,
 				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			$this->rig->hooks()->sequence()
 		);
 	}
 
 	/**
-	 * Real lock outcomes pin the default, filtered, and continue-delay-floored windows.
+	 * Real lock outcomes preserve every default, filtered, and delay-floored boundary.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Production-built foreign lock bytes distinguish the exact fresh/stale edge that controls whether admission may replace an incumbent.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $staleness_filter Filtered staleness window.
+	 * @param   int|null $continue_filter  Filtered continuation delay.
+	 * @param   int      $heartbeat_age    Incumbent heartbeat age.
+	 * @param   bool     $is_reclaimed     Whether admission should reclaim.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'lock_window_boundaries' )]
-	public function test_enqueue_resolves_the_exact_lock_staleness_window(
-		?int $staleness_filter,
-		?int $continue_filter,
-		int $heartbeat_age,
-		bool $is_reclaimed
-	): void {
+	public function test_enqueue_resolves_the_exact_lock_staleness_window( ?int $staleness_filter, ?int $continue_filter, int $heartbeat_age, bool $is_reclaimed ): void {
 		if ( null !== $staleness_filter ) {
-			$this->set_filter_value(
-				'a8csp_background_tasks/lock_staleness/' . self::NAME,
-				$staleness_filter
-			);
+			$this->set_filter_value( 'a8csp_background_tasks/lock_staleness/' . self::IDENTITY, $staleness_filter );
 		}
 		if ( null !== $continue_filter ) {
 			$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $continue_filter );
 		}
-
 		$this->seed_running_lock( $heartbeat_age );
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 
 		if ( $is_reclaimed ) {
 			self::assertInstanceOf( Success::class, $result );
 			self::assertSame( self::RUN_ID, $result->value );
-			self::assertSame( true, $this->backend->calls[0]['args']['unique'] );
+			$this->rig->backend()->assert_scheduled( self::IDENTITY );
 			return;
 		}
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Task "email-digest" is already running as run "run-running"; wait for that run to finish before dispatching the same arguments.',
-			$result->error->message
-		);
-		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
+		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
+		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
 	/**
-	 * The name-specific lock-staleness filter receives its complete documented payload.
+	 * A failed contended-owner read refuses admission without changing any persisted byte.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The second authoritative lock read fails after the held claim, so exact row equality proves the refusal is fail-closed and write-free.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_passes_all_documented_arguments_to_the_lock_staleness_filter(): void {
+	public function test_enqueue_fails_closed_when_the_contended_owner_read_fails(): void {
+		$this->seed_running_lock( 0 );
+		$before = $this->rig->wpdb()->rows;
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient owner read failure';
+			}
+		);
+
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * The identity-specific lock-staleness filter receives its documented payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_passes_the_documented_lock_staleness_filter_arguments(): void {
 		$filter_args = null;
 		$this->set_filter_value(
-			'a8csp_background_tasks/lock_staleness/' . self::NAME,
+			'a8csp_background_tasks/lock_staleness/' . self::IDENTITY,
 			static function ( int $default_staleness ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -382,7 +310,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -395,9 +323,444 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Supplies fresh and stale edges for all three staleness-resolution paths.
+	 * Positive delay selects single scheduling at the clock-relative timestamp.
 	 *
-	 * @return  array<string, array{staleness_filter: int|null, continue_filter: int|null, heartbeat_age: int, is_reclaimed: bool}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_with_delay_routes_to_single_scheduling(): void {
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 120, priority: 31 );
+
+		self::assertInstanceOf( Success::class, $result );
+		$calls = $this->backend_calls( 'schedule_single' );
+		self::assertCount( 1, $calls );
+		self::assertSame( 'a8csp_background_tasks/run_task', $calls[0]['args']['hook'] ?? null );
+		self::assertSame( self::NOW + 120, $calls[0]['args']['timestamp'] ?? null );
+		self::assertSame( 31, $calls[0]['args']['priority'] ?? null );
+		$this->rig->run_due();
+		self::assertSame( self::NOW + 120, $this->rig->clock()->timestamp );
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+	}
+
+	/**
+	 * A failed delayed-heartbeat write releases the provisional lock and run.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A storage write error occurs after provisional state exists; a second public enqueue proves compensation released both fences.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_write_fails(): void {
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$failed = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
+		self::assertSame( array(), $this->run_delivery_calls() );
+
+		$retried = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $retried );
+	}
+
+	/**
+	 * An indeterminate delayed heartbeat aborts scheduling and removes provisional state.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An authoritative read fails after lock claim and run creation; successful re-admission proves the fail-closed cleanup left no fence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_with_delay_aborts_when_heartbeat_read_is_indeterminate(): void {
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient heartbeat read failure';
+			}
+		);
+
+		$failed = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
+		self::assertSame( array(), $this->run_delivery_calls() );
+
+		$retried = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $retried );
+	}
+
+	/**
+	 * A failed delayed-state transition releases an explicit key for immediate reuse.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The second run-state write fails after the lock heartbeat; reusing the opaque key proves both provisional generations were compensated.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_with_delay_releases_dedup_key_when_state_transition_fails(): void {
+		$dedup_key = 'delayed-site-digest';
+		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
+		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
+
+		$failed = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 120, dedup_key: $dedup_key );
+		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
+		self::assertSame( array(), $this->run_delivery_calls() );
+
+		$this->rig->clock()->timestamp = self::NOW + 1;
+		$reused                        = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 120, dedup_key: $dedup_key );
+		self::assertInstanceOf( Success::class, $reused );
+	}
+
+	/**
+	 * One opaque key supplies the single-flight identity across differing arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_uses_the_dedup_key_as_the_single_flight_identity(): void {
+		$dedup_key = "logical-account\0\xFF";
+		$first     = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
+		self::assertInstanceOf( Success::class, $first );
+		$this->rig->clock()->timestamp = self::NOW + 1;
+
+		$duplicate = $this->client->tasks()->enqueue( self::NAME, array( 'site_id' => 8 ), dedup_key: $dedup_key );
+
+		$error = $this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
+		self::assertSame( $first->value, $error->context['run_id'] ?? null );
+		self::assertCount( 1, $this->run_delivery_calls() );
+	}
+
+	/**
+	 * An unknown task fails before scheduling or lifecycle hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_rejects_an_unknown_task_without_boundary_effects(): void {
+		$before = $this->public_effects_snapshot();
+
+		$result = $this->client->tasks()->enqueue( self::UNKNOWN_NAME, self::ARGS );
+
+		$error = $this->assert_failure_code( $result, ApiErrorCode::UnknownWork );
+		self::assertSame( self::UNKNOWN_IDENTITY, $error->context['name'] ?? null );
+		self::assertSame( $before, $this->public_effects_snapshot() );
+	}
+
+	/**
+	 * Public priority validation rejects values before an engine boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $priority Invalid priority.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_priorities' )]
+	public function test_enqueue_rejects_priority_outside_the_public_range( int $priority ): void {
+		$before = $this->public_effects_snapshot();
+
+		try {
+			(void) $this->client->tasks()->enqueue( self::NAME, self::ARGS, priority: $priority );
+			self::fail( 'Invalid priority must throw before dispatch.' );
+		} catch ( \InvalidArgumentException ) {
+			self::assertSame( $before, $this->public_effects_snapshot() );
+		}
+	}
+
+	/**
+	 * A scheduling failure is mapped and active admission is compensated.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_maps_backend_failure_and_allows_readmission(): void {
+		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
+
+		$failed = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		unset( $this->rig->backend()->results['enqueue_async'] );
+
+		$retried = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $retried );
+	}
+
+	/**
+	 * An incomplete scheduling rollback warns that maintenance may redeliver its retained row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $failure Incomplete rollback boundary.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'incomplete_scheduling_rollback_failures' )]
+	public function test_enqueue_warns_when_scheduling_rollback_cannot_be_confirmed( string $failure ): void {
+		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
+		$this->script_scheduling_rollback_failure( $failure );
+
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
+		$record = $this->scheduling_rollback_warning();
+		self::assertSame( 'warning', $record['level'] ?? null );
+		self::assertSame( self::IDENTITY, $record['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $record['context']['run_id'] ?? null );
+		self::assertSame( 'lock_release' !== $failure, $record['context']['lock_release_confirmed'] ?? null );
+		self::assertSame( 'run_delete' !== $failure, $record['context']['run_deleted'] ?? null );
+	}
+
+	/**
+	 * Returns incomplete scheduling-rollback boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function incomplete_scheduling_rollback_failures(): array {
+		return array(
+			'lock release' => array( 'lock_release' ),
+			'run delete'   => array( 'run_delete' ),
+		);
+	}
+
+	/**
+	 * Non-portable input reaches no clock, randomizer, storage, hook, or scheduler boundary.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The opaque object is rejected by the public payload validator; exact boundary equality proves it cannot be serialized, logged, or passed to a backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_rejects_non_portable_input_before_every_boundary(): void {
+		$before = $this->security_boundary_snapshot();
+
+		try {
+			(void) $this->client->tasks()->enqueue( self::NAME, array( 'private-payload' => new \stdClass() ), dedup_key: 'non-portable-payload' );
+			self::fail( 'Non-portable payload must throw before dispatch.' );
+		} catch ( \InvalidArgumentException ) {
+			self::assertSame( $before, $this->security_boundary_snapshot() );
+		}
+	}
+
+	/**
+	 * Delay overflow returns a typed public payload rejection without scheduling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_rejects_a_delay_that_overflows_unix_seconds(): void {
+		$this->rig->clock()->timestamp = \PHP_INT_MAX - 5;
+
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS, delay: 10 );
+
+		$this->assert_failure_code( $result, ApiErrorCode::PayloadRejected );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * The public enqueue contract declares its Result non-discardable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_declares_no_discard_on_the_public_facade(): void {
+		$method = new \ReflectionMethod( Tasks::class, 'enqueue' );
+
+		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
+	}
+
+	/**
+	 * Failed-run retry rejects a malformed run identifier at the engine boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_malformed_run_identifier(): void {
+		try {
+			(void) $this->client->runs()->retry_failed( self::NAME, 'malformed_run_id' );
+			self::fail( 'A malformed retry identifier must be rejected before storage lookup.' );
+		} catch ( \InvalidArgumentException $exception ) {
+			self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $exception->getMessage() );
+		}
+	}
+
+	/**
+	 * Manual retry schedules the failed task's original arguments and consumes the entry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_reenqueues_original_arguments_and_consumes_the_entry(): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		$consumed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
+	}
+
+	/**
+	 * A failed retained-entry removal leaves a successful retry and keeps the entry retryable.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The failed-run store's exact removal write fails after the fresh run is accepted; cancelling that run and retrying again proves the source entry was not consumed.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_keeps_the_entry_when_consumption_cas_fails(): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$first = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Success::class, $first );
+		self::assertIsString( $first->value );
+		$cancelled = $this->client->runs()->cancel( self::NAME, $first->value );
+		self::assertInstanceOf( Success::class, $cancelled );
+		$this->rig->clock()->timestamp = self::NOW + 101;
+
+		$second = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Success::class, $second );
+	}
+
+	/**
+	 * A deliberately duplicated retained identifier retries the first stored payload.
+	 * Production failed-run recording deduplicates run IDs, so this corrupt row cannot be builder-produced.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_uses_the_first_payload_for_a_corrupt_duplicate_identifier(): void {
+		$raw = \maybe_serialize(
+			array(
+				$this->failed_entry( self::RUN_ID, array( 'ordinal' => 'first' ), 2, self::NOW - 2 ),
+				$this->failed_entry( self::RUN_ID, array( 'ordinal' => 'second' ), 2, self::NOW - 1 ),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $raw );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		$this->rig->run_due();
+		self::assertSame( array( array( 'ordinal' => 'first' ) ), $this->task->calls );
+	}
+
+	/**
+	 * An unreadable failed-run store rejects retry before fresh admission.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The authoritative failed-store read fails before dispatch; unchanged fixture bytes and an empty backend ledger prove fail-closed behavior.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_an_authoritative_store_read_failure(): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+		$before = $this->rig->wpdb()->rows;
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted retry store read failure';
+			}
+		);
+
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+
+		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A missing identifier is refused while an actually retained run remains retryable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_missing_entry_without_consuming_existing_work(): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+
+		$missing = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+		$error   = $this->assert_failure_code( $missing, ApiErrorCode::RunNotRetained );
+		self::assertSame( self::OTHER_RUN_ID, $error->context['run_id'] ?? null );
+
+		$retained = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Success::class, $retained );
+	}
+
+	/**
+	 * A delegated scheduling failure leaves the failed task entry retryable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_retains_the_entry_when_enqueue_fails(): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
+
+		$failed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		unset( $this->rig->backend()->results['enqueue_async'] );
+		$this->rig->clock()->timestamp = self::NOW + 1;
+
+		$retried = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Success::class, $retried );
+	}
+
+	/**
+	 * Supplies fresh and stale edges for every staleness-resolution path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{staleness_filter: int|null, continue_filter: int|null, heartbeat_age: int, is_reclaimed: bool}>
 	 */
 	public static function lock_window_boundaries(): array {
 		return array(
@@ -465,105 +828,12 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Positive delay selects single scheduling at the clock-relative timestamp.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_with_delay_routes_to_single_scheduling(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120, unique: true, priority: 31 );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'schedule_single',
-					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run',
-						'timestamp' => self::NOW + 120,
-						'args'      => array( self::NAME, self::RUN_ID, 1 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
-						'priority'  => 31,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-		$state = $this->option( $this->run_option_name() );
-		self::assertIsArray( $state );
-		self::assertSame( self::NOW + 120, $state['heartbeat_at'] ?? null );
-		self::assertSame( self::NOW + 120, $this->lock()['heartbeat_at'] ?? null );
-	}
-
-	/**
-	 * A failed delayed heartbeat releases any lock still owned by the provisional run.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_fails(): void {
-		$this->wpdb->script_result( 'update', false );
-
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 120 );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame( array(), $this->backend->calls );
-	}
-
-	/**
-	 * Unique async enqueue reaches the scheduling seam unchanged.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_passes_unique_to_async_scheduling(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, unique: true );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertTrue( $this->backend->calls[0]['args']['unique'] );
-	}
-
-	/**
-	 * An unknown task fails before clocks, randomness, persistence, locks, hooks, or scheduling.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_rejects_an_unknown_task_without_touching_boundaries(): void {
-		$result = $this->dispatcher->enqueue( 'unknown', self::ARGS );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Task "unknown" is not registered; register it before enqueueing.',
-			$result->error->message
-		);
-		$this->assert_enqueue_boundaries_untouched();
-	}
-
-	/**
-	 * Priority validation names the complete engine range before touching any boundary.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'invalid_priorities' )]
-	public function test_enqueue_rejects_priority_outside_the_engine_range( int $priority ): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, priority: $priority );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			\sprintf(
-				'Task "email-digest" priority %d is invalid; pass a value from 0 through 255.',
-				$priority
-			),
-			$result->error->message
-		);
-		$this->assert_enqueue_boundaries_untouched();
-	}
-
-	/**
 	 * Supplies values immediately outside both inclusive priority boundaries.
 	 *
-	 * @return  array<string, array{priority: int}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{priority: int}>
 	 */
 	public static function invalid_priorities(): array {
 		return array(
@@ -572,386 +842,311 @@ final class DispatcherTest extends TestCase {
 		);
 	}
 
-	/**
-	 * A scheduling failure is returned unchanged after active run state is compensated.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_surfaces_facade_failure_and_removes_active_state(): void {
-		$failure = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduling backend before enqueueing the task.'
-			)
-		);
-
-		$this->backend->results['enqueue_async'] = $failure;
-
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
-
-		self::assertSame( $failure, $result );
-		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_history_' . self::NAME ) );
-		self::assertSame( array(), $this->fired_actions() );
-		self::assertSame(
-			array(
-				'all'     => self::RUN_ID,
-				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
-			),
-			$this->option( 'a8csp_bgte_latest_' . self::NAME )
-		);
-	}
-
-	/**
-	 * Enqueue rejects values that cannot remain portable through JSON and option storage.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_rejects_non_scalar_argument_trees_before_claiming_a_lock(): void {
-		$result = $this->dispatcher->enqueue(
-			self::NAME,
-			array(
-				'callback' => static function (): void {},
-			)
-		);
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Task "email-digest" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.',
-			$result->error->message
-		);
-		$this->assert_enqueue_boundaries_untouched();
-	}
-
-	/**
-	 * Delay overflow fails before randomness, locking, persistence, hooks, or scheduling.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_rejects_a_delay_that_overflows_unix_seconds(): void {
-		$this->clock->timestamp = \PHP_INT_MAX - 5;
-
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS, delay: 10 );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Task "email-digest" delay 10 exceeds supported Unix seconds; pass a smaller delay.',
-			$result->error->message
-		);
-		self::assertSame( 1, $this->clock->calls );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertSame( array(), $this->fired_actions() );
-	}
-
-	/**
-	 * Enqueue declares its result non-discardable at the engine boundary.
-	 *
-	 * @return  void
-	 */
-	public function test_enqueue_declares_no_discard_directly(): void {
-		$method = new \ReflectionMethod( Dispatcher::class, 'enqueue' );
-
-		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
-	}
-
-	/**
-	 * Manual retry enqueues a fresh task run and removes the consumed failed entry.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_reenqueues_a_task_and_removes_the_failed_entry(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
-		);
-		$this->backend->calls    = array();
-		$this->randomizer->calls = array();
-		$this->randomizer->value = 43;
-		$this->clock->timestamp  = self::NOW + 100;
-		$new_run_id              = '00000000001700000100-0000000000000000043';
-
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( $new_run_id, $result->value );
-		self::assertSame( array(), $store->all() );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::NAME, $new_run_id, 1 ),
-						'group'    => self::NAME . '|' . $new_run_id,
-						'unique'   => false,
-						'priority' => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
-		self::assertIsArray( $new_state );
-		self::assertSame( self::ARGS, $new_state['start_args'] ?? null );
-		self::assertSame( 0, $new_state['chunk_retries'] ?? null );
-	}
-
-	/**
-	 * Manual retry consumes the first retained entry when duplicates share a run identifier.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_uses_the_first_entry_matching_the_run_identifier(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 2,
-			array( 'ordinal' => 'first' ),
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
-		);
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			array( 'ordinal' => 'second' ),
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
-		);
-		$this->backend->calls    = array();
-		$this->randomizer->calls = array();
-		$this->randomizer->value = 43;
-		$this->clock->timestamp  = self::NOW + 100;
-		$new_run_id              = '00000000001700000100-0000000000000000043';
-
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( $new_run_id, $result->value );
-		$new_state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $new_run_id );
-		self::assertIsArray( $new_state );
-		self::assertSame( array( 'ordinal' => 'first' ), $new_state['start_args'] ?? null );
-	}
-
-	/**
-	 * A missing failed entry names the retained run identifier that can be retried.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_rejects_a_missing_entry_and_names_what_exists(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'retained-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
-		);
-		$this->backend->calls    = array();
-		$this->randomizer->calls = array();
-
-		$result = $this->dispatcher->retry_failed( self::NAME, 'missing-run' );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame(
-			'Failed run "missing-run" for background-work "email-digest" is not retained; retry one of the retained run identifiers: "retained-run".',
-			$result->error->message
-		);
-		self::assertCount( 1, $store->all() );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-	}
-
-	/**
-	 * A delegated enqueue failure leaves the original failed task entry retryable.
-	 *
-	 * @return  void
-	 */
-	public function test_retry_failed_retains_the_task_entry_when_enqueue_fails(): void {
-		$store = new FailedRunStore( self::NAME, new OptionRows( $this->wpdb ) );
-		$store->record(
-			'failed-run',
-			self::NOW - 1,
-			self::ARGS,
-			2,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
-		);
-		$expected_entries = $store->all();
-		$failure          = new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before retrying the task.'
-			)
-		);
-
-		$this->backend->calls                    = array();
-		$this->backend->results['enqueue_async'] = $failure;
-		$this->randomizer->value                 = 43;
-		$this->clock->timestamp                  = self::NOW + 100;
-
-		$result = $this->dispatcher->retry_failed( self::NAME, 'failed-run' );
-
-		self::assertSame( $failure, $result );
-		self::assertSame( $expected_entries, $store->all() );
-	}
-
-	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
 	// endregion.
 
 	// region HELPERS.
 
 	/**
-	 * Returns the internal run option name for the deterministic enqueue.
+	 * Enqueues the deterministic task and returns its run identifier.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+	private function enqueue_task(): string {
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+
+		return $result->value;
 	}
 
 	/**
-	 * Returns the argument-identity lock option name.
+	 * Stores a production-built foreign lock and latest pointer.
 	 *
-	 * @return  string
-	 */
-	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
-	}
-
-	/**
-	 * Stores a foreign running lock and its latest-run pointer.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @param   int $heartbeat_age Existing heartbeat age in seconds.
+	 * @param   int $heartbeat_age Existing heartbeat age.
 	 *
 	 * @return  void
 	 */
 	private function seed_running_lock( int $heartbeat_age ): void {
-		$raw_lock = \maybe_serialize(
-			array(
-				'run_id'       => 'run-running',
-				'claimed_at'   => self::NOW - $heartbeat_age,
-				'heartbeat_at' => self::NOW - $heartbeat_age,
+		$heartbeat = self::NOW - $heartbeat_age;
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', $heartbeat, $heartbeat ) );
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => 'run-running',
+						'args_hash' => $this->args_hash(),
+					),
+				)
 			)
 		);
-		self::assertIsString( $raw_lock );
-		$this->wpdb->put(
-			$this->lock_option_name(),
-			$raw_lock
-		);
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-		$options[ 'a8csp_bgte_latest_' . self::NAME ] = array(
-			'all'     => 'run-running',
-			'by_hash' => array( self::ARGS_HASH => 'run-running' ),
-		);
-
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$this->reset_observations();
 	}
 
 	/**
-	 * Returns the decoded lock row for the deterministic argument identity.
+	 * Stores one production-built retained failure.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id     Failed run identifier.
+	 * @param   array<array-key, mixed> $start_args Original arguments.
+	 * @param   int                     $attempts   Attempts consumed.
+	 *
+	 * @return  void
 	 */
-	private function lock(): ?array {
-		$raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		if ( ! \is_string( $raw ) ) {
-			return null;
+	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: $attempts, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
+		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
+		$this->reset_observations();
+	}
+
+	/**
+	 * Returns one deliberately duplicated failed-store entry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id     Failed run identifier.
+	 * @param   array<array-key, mixed> $start_args Original arguments.
+	 * @param   int                     $attempts   Attempts consumed.
+	 * @param   int                     $failed_at  Failure timestamp.
+	 *
+	 * @return array{run_id: string, failed_at: int, start_args: array<array-key, mixed>, attempts: int, error: array{class: null, message: string, stage: string, code: string}}
+	 */
+	private function failed_entry( string $run_id, array $start_args, int $attempts, int $failed_at ): array {
+		return array(
+			'run_id'     => $run_id,
+			'failed_at'  => $failed_at,
+			'start_args' => $start_args,
+			'attempts'   => $attempts,
+			'error'      => array(
+				'class'   => null,
+				'message' => 'Database unavailable.',
+				'stage'   => RunFailureStage::Execution->value,
+				'code'    => ApiErrorCode::ExecutionFailed->value,
+			),
+		);
+	}
+
+	/**
+	 * Stores one production-built raw fixture.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
+	 *
+	 * @return  void
+	 */
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+	}
+
+	/**
+	 * Returns the canonical argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	private function args_hash(): string {
+		return $this->fixtures->args_hash( self::ARGS );
+	}
+
+	/**
+	 * Scripts one incomplete scheduling-rollback boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $failure Incomplete rollback boundary.
+	 *
+	 * @return  void
+	 */
+	private function script_scheduling_rollback_failure( string $failure ): void {
+		if ( 'lock_release' === $failure ) {
+			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+			$this->rig->wpdb()->before_next(
+				'select',
+				static function ( WpdbLockSpy $wpdb ): void {
+					$wpdb->last_error = 'scripted rollback lock read failure';
+				}
+			);
+
+			return;
 		}
 
-		$value = \maybe_unserialize( $raw );
-		if (
-			! \is_array( $value )
-			|| ! \is_string( $value['run_id'] ?? null )
-			|| ! \is_int( $value['claimed_at'] ?? null )
-			|| ! \is_int( $value['heartbeat_at'] ?? null )
-		) {
-			return null;
+		if ( 'run_delete' !== $failure ) {
+			throw new \InvalidArgumentException( 'Unknown scheduling rollback failure.' );
 		}
+
+		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array( $this->run_option_name() => false );
+	}
+
+	/**
+	 * Returns the active run option for the deterministic admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	private function run_option_name(): string {
+		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns the scheduling-rollback diagnostic by its outcome context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array{level: mixed, message: string, context: array<array-key, mixed>}
+	 */
+	private function scheduling_rollback_warning(): array {
+		foreach ( $this->rig->logger()->records as $record ) {
+			if ( \array_key_exists( 'lock_release_confirmed', $record['context'] ) && \array_key_exists( 'run_deleted', $record['context'] ) ) {
+				return $record;
+			}
+		}
+
+		throw new \LogicException( 'Expected a scheduling rollback warning.' );
+	}
+
+	/**
+	 * Returns the only accepted task-run call.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array{verb: string, args: array<string, mixed>}
+	 */
+	private function single_run_delivery_call(): array {
+		$calls = $this->run_delivery_calls();
+		self::assertCount( 1, $calls );
+
+		return $calls[0];
+	}
+
+	/**
+	 * Returns accepted task-run backend calls.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
+	 */
+	private function run_delivery_calls(): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true ) && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
+	}
+
+	/**
+	 * Returns backend calls for one verb.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $verb Backend verb.
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
+	 */
+	private function backend_calls( string $verb ): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => $verb === $call['verb'] ) );
+	}
+
+	/**
+	 * Captures the public effects visible to ordinary admission refusals.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array{backend: array<array-key, mixed>, hooks: array<array-key, mixed>}
+	 */
+	private function public_effects_snapshot(): array {
+		return array(
+			'backend' => $this->rig->backend()->calls,
+			'hooks'   => $this->rig->hooks()->sequence(),
+		);
+	}
+
+	/**
+	 * Captures every boundary that must reject a non-portable payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array{backend: array<array-key, mixed>, rows: array<array-key, mixed>, queries: array<array-key, mixed>, hooks: array<array-key, mixed>, options: array<array-key, mixed>}
+	 */
+	private function security_boundary_snapshot(): array {
+		$options = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		self::assertIsArray( $options );
 
 		return array(
-			'run_id'       => $value['run_id'],
-			'claimed_at'   => $value['claimed_at'],
-			'heartbeat_at' => $value['heartbeat_at'],
+			'backend' => $this->rig->backend()->calls,
+			'rows'    => $this->rig->wpdb()->rows,
+			'queries' => $this->rig->wpdb()->recorded_queries,
+			'hooks'   => $this->rig->hooks()->sequence(),
+			'options' => $options,
 		);
 	}
 
 	/**
-	 * Returns one persisted option value.
+	 * Clears observations without changing retained state or backend outcomes.
 	 *
-	 * @param   string $name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  mixed
+	 * @return  void
 	 */
-	private function option( string $name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-
-		return $options[ $name ] ?? null;
+	private function reset_observations(): void {
+		$this->rig->backend()->calls             = array();
+		$this->rig->wpdb()->recorded_queries     = array();
+		$GLOBALS['a8csp_bgte_test_option_calls'] = array();
 	}
 
 	/**
-	 * Returns fired lifecycle actions.
+	 * Asserts one mapped facade failure code.
 	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed        $result Facade result.
+	 * @param   ApiErrorCode $code   Expected public code.
+	 *
+	 * @return  ApiError
 	 */
-	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
-		self::assertIsArray( $actions );
-		$typed_actions = array();
-		foreach ( $actions as $action ) {
-			self::assertIsArray( $action );
-			$hook_name = $action['hook_name'] ?? null;
-			$args      = $action['args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsArray( $args );
-			$typed_actions[] = array(
-				'hook_name' => $hook_name,
-				'args'      => \array_values( $args ),
-			);
-		}
+	private function assert_failure_code( mixed $result, ApiErrorCode $code ): ApiError {
+		self::assertInstanceOf( Failure::class, $result );
+		$error = $result->error;
+		self::assertInstanceOf( ApiError::class, $error );
+		self::assertSame( $code, $error->code );
 
-		return $typed_actions;
+		return $error;
 	}
 
 	/**
-	 * Scripts one WordPress filter value through a typed global boundary.
+	 * Scripts one legitimate WordPress filter seam.
 	 *
-	 * @param   string $hook_name Hook name.
-	 * @param   mixed  $value     Scripted value.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook_name Filter hook name.
+	 * @param   mixed  $value     Filter value or callback.
 	 *
 	 * @return  void
 	 */
 	private function set_filter_value( string $hook_name, mixed $value ): void {
 		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
-		$filters[ $hook_name ] = $value;
-
+		$filters[ $hook_name ]                    = $value;
 		$GLOBALS['a8csp_bgte_test_filter_values'] = $filters;
-	}
-
-	/**
-	 * Asserts that validation returned before every observable enqueue boundary.
-	 *
-	 * @return  void
-	 */
-	private function assert_enqueue_boundaries_untouched(): void {
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->randomizer->calls );
-		self::assertSame( 0, $this->clock->calls );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertSame( array(), $this->fired_actions() );
 	}
 
 	// endregion.

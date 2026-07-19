@@ -2,55 +2,77 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
-/** Detects whether history decoding constructs a serialized class. */
+/** Detects unsafe class construction while corrupt history storage is inspected. */
 final class RunHistoryWakeupProbe {
-	public static bool $woke = false;
+	public static int $wakeups = 0;
 
-	/** Records an unsafe object construction during unserialization. */
+	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
-		self::$woke = true;
+		++self::$wakeups;
 	}
 }
 
 /**
- * Pins global and per-hash run-history buffers.
+ * Exercises retained lifecycle history through inspection and keeps its exact-row CAS proofs.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( RunHistory::class )]
-#[UsesClass( OptionRows::class )]
-#[UsesClass( RawOptionDecoder::class )]
 final class RunHistoryTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string NAME     = 'reports';
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'runs-tests';
+
+	private RecordingBatch $batch;
+	private Client $client;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private OptionRows $rows;
-	private WpdbLockSpy $wpdb;
+	private RecordingTask $task;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress option and filter functions before the history is autoloaded.
+	 * Loads guarded production files before the graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 3 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 3 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 3 ) . '/wp-lock-stubs.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets request-local option and filter state.
+	 * Boots registered task and batch contracts against deterministic interfaces.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -58,298 +80,64 @@ final class RunHistoryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']         = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']   = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
-		$GLOBALS['a8csp_bgte_test_cache']           = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
-		$this->wpdb                                 = new WpdbLockSpy();
-		$this->rows                                 = new OptionRows( $this->wpdb );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->batch  = new RecordingBatch( self::NAME . '-batch' );
+		$this->client->tasks()->register( $this->task );
+		$this->client->batches()->register( $this->batch );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
 
 	/**
-	 * Started and terminal writes persist the mirrored by-hash schema under the literal key.
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_records_started_and_terminal_with_the_literal_option_key(): void {
-		$history = new RunHistory( 'reports' );
-
-		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
-
-		self::assertSame(
-			array(
-				'started'   => array( 'run-a' ),
-				'completed' => array(
-					array(
-						'run_id' => 'run-a',
-						'status' => 'completed',
-					),
-				),
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array( 'run-a' ),
-						'completed' => array(
-							array(
-								'run_id' => 'run-a',
-								'status' => 'completed',
-							),
-						),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_reports' )
-		);
-		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_history_reports' ) );
-	}
-
-	/**
-	 * Repeated lifecycle writes do not duplicate run IDs in mirrored buffers.
-	 *
-	 * @return  void
-	 */
-	public function test_repeated_writes_are_idempotent_in_global_and_per_hash_buffers(): void {
-		$history = new RunHistory( 'reports' );
-
-		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_started( 'run-a', 'hash-a' );
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Completed );
-
-		self::assertSame(
-			array(
-				'started'   => array( 'run-a' ),
-				'completed' => array(
-					array(
-						'run_id' => 'run-a',
-						'status' => 'completed',
-					),
-				),
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array( 'run-a' ),
-						'completed' => array(
-							array(
-								'run_id' => 'run-a',
-								'status' => 'completed',
-							),
-						),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_reports' )
-		);
-	}
-
-	/**
-	 * Global and per-hash buffers retain the newest thirty entries.
-	 *
-	 * @return  void
-	 */
-	public function test_ring_buffers_evict_the_oldest_entry_past_thirty(): void {
-		$history = new RunHistory( 'exports' );
-
-		for ( $index = 0; $index <= 30; ++$index ) {
-			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
-			$history->record_started( 'started-' . $suffix, 'hash-a' );
-			$history->record_terminal( 'completed-' . $suffix, 'hash-a', RunStatus::Completed );
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
 		}
-
-		$expected_started   = \array_map(
-			static fn ( int $index ): string => 'started-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-			\range( 1, 30 )
-		);
-		$expected_completed = \array_map(
-			static fn ( int $index ): array => array(
-				'run_id' => 'completed-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-				'status' => 'completed',
-			),
-			\range( 1, 30 )
-		);
-
-		self::assertSame(
-			array(
-				'started'   => $expected_started,
-				'completed' => $expected_completed,
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => $expected_started,
-						'completed' => $expected_completed,
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_exports' )
-		);
-
-		$this->assert_all_option_writes_disable_autoload();
 	}
 
+	// endregion.
+
+	// region BEHAVIOR.
+
 	/**
-	 * A smaller filtered cap truncates existing buffers on the write that observes it.
+	 * Every terminal lifecycle outcome appears through read-only run inspection.
 	 *
-	 * @return  void
-	 */
-	public function test_history_size_filter_is_applied_at_write(): void {
-		$history = new RunHistory( 'imports' );
-
-		for ( $index = 0; $index < 3; ++$index ) {
-			$history->record_started( 'started-a' . $index, 'hash-a' );
-			$history->record_started( 'started-b' . $index, 'hash-b' );
-			$history->record_terminal( 'completed-a' . $index, 'hash-a', RunStatus::Completed );
-			$history->record_terminal( 'completed-b' . $index, 'hash-b', RunStatus::Completed );
-		}
-
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array( 'a8csp_background_tasks/history_size' => 2 );
-		$history->record_started( 'started-a3', 'hash-a' );
-
-		$option = $this->option( 'a8csp_bgte_history_imports' );
-		self::assertSame(
-			array(
-				'started'   => array( 'started-b2', 'started-a3' ),
-				'completed' => array(
-					array(
-						'run_id' => 'completed-a2',
-						'status' => 'completed',
-					),
-					array(
-						'run_id' => 'completed-b2',
-						'status' => 'completed',
-					),
-				),
-				// by_hash keys are ordered by recording recency (the LRU eviction order);
-				// the final write re-inserted hash-a at the tail.
-				'by_hash'   => array(
-					'hash-b' => array(
-						'started'   => array( 'started-b1', 'started-b2' ),
-						'completed' => array(
-							array(
-								'run_id' => 'completed-b1',
-								'status' => 'completed',
-							),
-							array(
-								'run_id' => 'completed-b2',
-								'status' => 'completed',
-							),
-						),
-					),
-					'hash-a' => array(
-						'started'   => array( 'started-a2', 'started-a3' ),
-						'completed' => array(
-							array(
-								'run_id' => 'completed-a1',
-								'status' => 'completed',
-							),
-							array(
-								'run_id' => 'completed-a2',
-								'status' => 'completed',
-							),
-						),
-					),
-				),
-			),
-			$option
-		);
-	}
-
-	/**
-	 * Per-hash buffers retain only runs recorded for their own argument identity.
-	 *
-	 * @return  void
-	 */
-	public function test_by_hash_buffers_are_isolated_and_newest_last(): void {
-		$history = new RunHistory( 'isolation' );
-
-		$history->record_started( 'started-a1', 'hash-a' );
-		$history->record_started( 'started-b1', 'hash-b' );
-		$history->record_started( 'started-a2', 'hash-a' );
-		$history->record_terminal( 'completed-b1', 'hash-b', RunStatus::Failed );
-		$history->record_terminal( 'completed-a1', 'hash-a', RunStatus::Superseded );
-		$history->record_terminal( 'completed-b2', 'hash-b', RunStatus::Cancelled );
-
-		self::assertSame(
-			array(
-				'started'   => array( 'started-a1', 'started-b1', 'started-a2' ),
-				'completed' => array(
-					array(
-						'run_id' => 'completed-b1',
-						'status' => 'failed',
-					),
-					array(
-						'run_id' => 'completed-a1',
-						'status' => 'superseded',
-					),
-					array(
-						'run_id' => 'completed-b2',
-						'status' => 'cancelled',
-					),
-				),
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array( 'started-a1', 'started-a2' ),
-						'completed' => array(
-							array(
-								'run_id' => 'completed-a1',
-								'status' => 'superseded',
-							),
-						),
-					),
-					'hash-b' => array(
-						'started'   => array( 'started-b1' ),
-						'completed' => array(
-							array(
-								'run_id' => 'completed-b1',
-								'status' => 'failed',
-							),
-							array(
-								'run_id' => 'completed-b2',
-								'status' => 'cancelled',
-							),
-						),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_isolation' )
-		);
-	}
-
-	/**
-	 * Every terminal status persists its backed value in both terminal buffers.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $status Terminal status under test.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'terminal_statuses' )]
-	public function test_record_terminal_persists_every_terminal_status( string $status ): void {
-		$name    = 'status-' . $status;
-		$history = new RunHistory( $name );
+	public function test_every_terminal_status_is_exposed_through_inspection( string $status ): void {
+		[ $identity, $run_id ] = $this->produce_terminal_outcome( $status );
 
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::from( $status ) );
-
-		$entry = array(
-			'run_id' => 'run-a',
-			'status' => $status,
-		);
-		self::assertSame(
-			array(
-				'started'   => array(),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array(),
-						'completed' => array( $entry ),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_' . $name )
-		);
+		$history = $this->rig->inspection()->runs( $identity )['history'];
+		self::assertNotNull( $history );
+		$entry = \array_find( $history, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
+		self::assertNotNull( $entry );
+		self::assertSame( $status, $entry['outcome'] );
+		self::assertSame( 'failed' === $status, $entry['failed_store'] );
 	}
 
 	/**
-	 * Supplies every terminal status.
+	 * Supplies every terminal status retained by production history.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array<string, array{status: string}>
 	 */
@@ -363,300 +151,459 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
-	 * A running status cannot enter the terminal history.
+	 * Default and filtered global history windows retain only their newest visible outcomes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_record_terminal_rejects_a_running_status(): void {
-		$history = new RunHistory( 'running' );
+	public function test_history_retention_is_thirty_by_default_and_honors_a_positive_filter(): void {
+		$run_ids = $this->complete_tasks( 31 );
+		$history = $this->history();
+		self::assertCount( 30, $history );
+		self::assertNotContains( $run_ids[0], \array_column( $history, 'run_id' ) );
+		self::assertSame( $run_ids[30], $history[0]['run_id'] );
 
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Run history records only terminal outcomes.' );
-
-		$history->record_terminal( 'run-a', 'hash-a', RunStatus::Running );
+		$this->set_history_size( 2 );
+		$filtered = $this->complete_tasks( 3, 100 );
+		$history  = $this->history();
+		self::assertCount( 2, $history );
+		self::assertSame( array( $filtered[2], $filtered[1] ), \array_column( $history, 'run_id' ) );
 	}
 
 	/**
-	 * Read-only exposures reuse the validated global decoders and perform no option writes.
+	 * An invalid history-size filter result reports the affected identity and applied default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_read_exposures_skip_malformed_rows_without_writing(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_history_inspection' => array(
-				'started'   => array( 'started-a', 42, 'started-b', false ),
-				'completed' => array(
+	public function test_invalid_history_size_filter_result_logs_a_warning(): void {
+		$this->set_history_size( '30' );
+
+		self::assertTrue( $this->store()->record_started( 'run-invalid-filter', 'hash-a' ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
+		self::assertSame( 30, $this->rig->logger()->records[0]['context']['default_size'] ?? null );
+	}
+
+	/**
+	 * Distinct argument-history buckets retain a twenty-identity LRU footprint.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_argument_history_footprint_is_a_twenty_identity_lru(): void {
+		$entries = self::started_entries( 0, 19 );
+		$this->put_fixture( $this->fixtures->history( $entries ) );
+		$history = $this->store();
+		self::assertTrue( $history->record_started( 'run-refreshed', self::hash( 0 ) ) );
+		self::assertTrue( $history->record_started( 'run-20', self::hash( 20 ) ) );
+
+		$decoded = RawOptionDecoder::decode( $this->raw_row() );
+		self::assertIsArray( $decoded );
+		$by_hash = $decoded['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		self::assertCount( 20, $by_hash );
+		self::assertArrayHasKey( self::hash( 0 ), $by_hash );
+		self::assertArrayNotHasKey( self::hash( 1 ), $by_hash );
+		self::assertArrayHasKey( self::hash( 20 ), $by_hash );
+	}
+
+	/**
+	 * Inspection keeps valid rows, skips malformed rows, and never constructs serialized classes.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The deliberately corrupt row mixes valid lifecycle data with an object payload, proving inspection uses the hardened raw decoder without losing safe neighbors.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_history_is_tolerated_without_constructing_classes(): void {
+		$raw = \maybe_serialize(
+			array(
+				'started'  => array( 'started-safe', 42, new RunHistoryWakeupProbe() ),
+				'terminal' => array(
 					array(
-						'run_id' => 'failed-a',
+						'run_id' => 'failed-safe',
 						'status' => 'failed',
 					),
 					array(
-						'run_id' => 'running-a',
+						'run_id' => 'running-invalid',
 						'status' => 'running',
-					),
-					array(
-						'run_id' => 42,
-						'status' => 'completed',
-					),
-					array( 'run_id' => 'missing-status' ),
-				),
-				'by_hash'   => array(),
-			),
-		);
-
-		$history = new RunHistory( 'inspection', $this->rows );
-
-		self::assertSame( array( 'started-a', 'started-b' ), $history->started_entries() );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => 'failed-a',
-					'status' => 'failed',
-				),
-			),
-			$history->terminal_entries()
-		);
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-	}
-
-	/**
-	 * Started-entry inspection decodes the raw row without constructing nested serialized classes.
-	 *
-	 * @return  void
-	 */
-	public function test_started_entries_reads_raw_rows_without_constructing_serialized_classes(): void {
-		RunHistoryWakeupProbe::$woke = false;
-		$raw                         = \maybe_serialize(
-			array(
-				'started'   => array( 'started-safe', new RunHistoryWakeupProbe() ),
-				'completed' => array(),
-				'by_hash'   => array(),
-			)
-		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_history_started-raw', $raw );
-
-		$history = new RunHistory( 'started-raw', $this->rows );
-
-		self::assertSame( array( 'started-safe' ), $history->started_entries() );
-		self::assertFalse( RunHistoryWakeupProbe::$woke );
-	}
-
-	/**
-	 * Terminal-entry inspection decodes the raw row without constructing nested serialized classes.
-	 *
-	 * @return  void
-	 */
-	public function test_terminal_entries_reads_raw_rows_without_constructing_serialized_classes(): void {
-		RunHistoryWakeupProbe::$woke = false;
-		$raw                         = \maybe_serialize(
-			array(
-				'started'   => array(),
-				'completed' => array(
-					array(
-						'run_id' => 'terminal-safe',
-						'status' => 'failed',
 					),
 					new RunHistoryWakeupProbe(),
 				),
-				'by_hash'   => array(),
+				'by_hash'  => array( 'legacy' => 'not-a-buffer' ),
 			)
 		);
 		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_history_terminal-raw', $raw );
+		$this->rig->wpdb()->put( RunHistory::OPTION_PREFIX . self::IDENTITY, $raw );
+		RunHistoryWakeupProbe::$wakeups = 0;
 
-		$history = new RunHistory( 'terminal-raw', $this->rows );
+		$history = $this->history();
 
-		self::assertSame(
+		self::assertSame( array( 'failed-safe', 'started-safe' ), \array_column( $history, 'run_id' ) );
+		self::assertSame( array( 'failed', 'started' ), \array_column( $history, 'outcome' ) );
+		self::assertSame( 0, RunHistoryWakeupProbe::$wakeups );
+	}
+
+	// endregion.
+
+	// region KEEP CAS MICRO-SUITE.
+
+	/**
+	 * Interleaved appends retain both writers while capping exact history bytes.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built before/after rows prove the caller retries the rival generation and caps both the global and per-argument buffers.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_interleaved_appends_preserve_both_writers_in_exact_capped_bytes(): void {
+		$initial  = self::same_hash_entries( 0, 29 );
+		$expected = array(
+			...$initial,
+			array(
+				'run_id'    => 'run-rival',
+				'args_hash' => 'hash-a',
+			),
+			array(
+				'run_id'    => 'run-caller',
+				'args_hash' => 'hash-a',
+			),
+		);
+		$this->put_fixture( $this->fixtures->history( $initial ) );
+		$this->rig->wpdb()->before_next(
+			'update',
+			function (): void {
+				self::assertTrue( $this->store()->record_started( 'run-rival', 'hash-a' ) );
+			}
+		);
+
+		self::assertTrue( $this->store()->record_started( 'run-caller', 'hash-a' ) );
+
+		self::assertSame( $this->fixtures->history( $expected )[1], $this->raw_row() );
+	}
+
+	/**
+	 * A lost exact update retries from fresh rival bytes without dropping its append.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Production serialization supplies every generation, including a rival identifier with null bytes that exposes normalization or stale-overwrite shortcuts.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_lost_cas_preserves_fixture_built_rival_bytes(): void {
+		$initial  = array(
+			array(
+				'run_id'    => 'run-existing',
+				'args_hash' => 'hash-a',
+			),
+		);
+		$rival    = array(
+			...$initial,
+			array(
+				'run_id'    => "run-rival-\0bytes",
+				'args_hash' => 'hash-rival',
+			),
+		);
+		$expected = array(
+			...$rival,
+			array(
+				'run_id'    => 'run-caller',
+				'args_hash' => 'hash-a',
+			),
+		);
+		$this->put_fixture( $this->fixtures->history( $initial ) );
+		$rival_fixture = $this->fixtures->history( $rival );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+			}
+		);
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertTrue( $this->store()->record_started( 'run-caller', 'hash-a' ) );
+
+		self::assertSame( $this->fixtures->history( $expected )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * Failed authority reads and unchanged failed writes never mutate history.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The no-write branches preserve the last confirmed generation when storage cannot establish whether a competing writer exists.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_authority_failures_leave_exact_history_bytes_untouched(): void {
+		$fixture = $this->fixtures->history(
 			array(
 				array(
-					'run_id' => 'terminal-safe',
-					'status' => 'failed',
+					'run_id'    => 'run-existing',
+					'args_hash' => 'hash-a',
 				),
-			),
-			$history->terminal_entries()
+			)
 		);
-		self::assertFalse( RunHistoryWakeupProbe::$woke );
-	}
-
-	/**
-	 * Persisted terminal rows accept only complete terminal shapes and terminal backed values.
-	 *
-	 * @return  void
-	 */
-	public function test_malformed_and_non_terminal_persisted_rows_are_skipped(): void {
-		$terminal_entries = array(
-			array(
-				'run_id' => 'completed-run',
-				'status' => 'completed',
-			),
-			array(
-				'run_id' => 'failed-run',
-				'status' => 'failed',
-			),
-			array(
-				'run_id' => 'cancelled-run',
-				'status' => 'cancelled',
-			),
-			array(
-				'run_id' => 'superseded-run',
-				'status' => 'superseded',
-			),
-		);
-
-		$persisted_entries = array(
-			...$terminal_entries,
-			array(
-				'run_id' => 'running-run',
-				'status' => 'running',
-			),
-			array(
-				'run_id' => 'foreign-run',
-				'status' => 'foreign',
-			),
-			array( 'run_id' => 'missing-status' ),
-			array(
-				'run_id' => 42,
-				'status' => 'completed',
-			),
-			'legacy-run',
-		);
-
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_history_decode' => array(
-				'started'   => array( 'existing-run', 42 ),
-				'completed' => $persisted_entries,
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array( 'existing-run', false ),
-						'completed' => $persisted_entries,
-					),
-					'broken' => 'not-a-buffer',
-				),
-			),
-		);
-
-		$history = new RunHistory( 'decode' );
-
-		$history->record_started( 'new-run', 'hash-a' );
-
-		self::assertSame(
-			array(
-				'started'   => array( 'existing-run', 'new-run' ),
-				'completed' => $terminal_entries,
-				'by_hash'   => array(
-					'hash-a' => array(
-						'started'   => array( 'existing-run', 'new-run' ),
-						'completed' => $terminal_entries,
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_decode' )
-		);
-	}
-
-	/**
-	 * Distinct argument identities are LRU-evicted past twenty buckets, and re-recording an
-	 * existing identity refreshes its recency.
-	 *
-	 * @return  void
-	 */
-	public function test_hash_buckets_evict_the_least_recently_recorded_identity_past_twenty(): void {
-		$history = new RunHistory( 'sync' );
-
-		foreach ( \range( 1, 20 ) as $index ) {
-			$history->record_started( "run-{$index}", "hash-{$index}" );
-		}
-
-		// Re-record the oldest identity so eviction targets hash-2, not hash-1.
-		$history->record_started( 'run-1b', 'hash-1' );
-		$history->record_started( 'run-21', 'hash-21' );
-
-		$expected_by_hash = array();
-		foreach ( \range( 3, 20 ) as $index ) {
-			$expected_by_hash[ "hash-{$index}" ] = array(
-				'started'   => array( "run-{$index}" ),
-				'completed' => array(),
-			);
-		}
-		$expected_by_hash['hash-1']  = array(
-			'started'   => array( 'run-1', 'run-1b' ),
-			'completed' => array(),
-		);
-		$expected_by_hash['hash-21'] = array(
-			'started'   => array( 'run-21' ),
-			'completed' => array(),
-		);
-
-		self::assertSame(
-			array(
-				'started'   => array(
-					...\array_map(
-						static fn ( int $index ): string => "run-{$index}",
-						\range( 1, 20 )
-					),
-					'run-1b',
-					'run-21',
-				),
-				'completed' => array(),
-				'by_hash'   => $expected_by_hash,
-			),
-			$this->option( 'a8csp_bgte_history_sync' )
-		);
-	}
-
-	/**
-	 * Returns one stored option value.
-	 *
-	 * @param   string $option_name Option name.
-	 *
-	 * @return  mixed
-	 */
-	private function option( string $option_name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
-
-		return $options[ $option_name ] ?? null;
-	}
-
-	/**
-	 * Returns the recorded autoload flag for one option.
-	 *
-	 * @param   string $option_name Option name.
-	 *
-	 * @return  mixed
-	 */
-	private function autoload_flag( string $option_name ): mixed {
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? null;
-		self::assertIsArray( $autoload_flags );
-
-		return $autoload_flags[ $option_name ] ?? null;
-	}
-
-	/**
-	 * Asserts that every option write explicitly disables autoload.
-	 *
-	 * @return  void
-	 */
-	private function assert_all_option_writes_disable_autoload(): void {
-		foreach ( $this->option_calls() as $call ) {
-			if ( 'add_option' === $call['function'] ) {
-				self::assertSame( false, $call['args'][3] );
-			} elseif ( 'update_option' === $call['function'] ) {
-				self::assertSame( false, $call['args'][2] );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted history read failure';
 			}
+		);
+
+		self::assertFalse( $this->store()->record_started( 'run-new', 'hash-a' ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'update', false );
+		self::assertFalse( $this->store()->record_started( 'run-new', 'hash-a' ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Produces one terminal outcome through public task or batch operations.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $status Terminal status.
+	 *
+	 * @return  array{string, string} Work identity and terminal run identifier.
+	 */
+	private function produce_terminal_outcome( string $status ): array {
+		$this->rig->randomizer()->value = 7;
+		if ( 'superseded' === $status ) {
+			$name     = self::NAME . '-batch';
+			$identity = self::OWNER . ':' . $name;
+			$first    = $this->client->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			self::assertInstanceOf( Success::class, $first );
+			self::assertIsString( $first->value );
+			$this->rig->randomizer()->value = 8;
+			$second                         = $this->client->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			self::assertInstanceOf( Success::class, $second );
+			$this->rig->run_due();
+
+			return array( $identity, $first->value );
 		}
+
+		if ( 'failed' === $status ) {
+			$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
+			$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		}
+		$result = $this->client->tasks()->enqueue( self::NAME, array( 'scope' => $status ) );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+		if ( 'cancelled' === $status ) {
+			$cancelled = $this->client->runs()->cancel( self::NAME, $result->value );
+			self::assertInstanceOf( Success::class, $cancelled );
+		} else {
+			$this->rig->run_due();
+		}
+
+		return array( self::IDENTITY, $result->value );
 	}
 
 	/**
-	 * Returns every recorded option-function call.
+	 * Completes deterministic task runs and returns their identifiers in start order.
 	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $count  Number of runs.
+	 * @param   int $offset Run-id entropy offset.
+	 *
+	 * @return  list<string>
 	 */
-	private function option_calls(): array {
-		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
+	private function complete_tasks( int $count, int $offset = 0 ): array {
+		$run_ids = array();
+		foreach ( \range( 1, $count ) as $index ) {
+			$this->rig->randomizer()->value = $offset + $index;
+			$result                         = $this->client->tasks()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
+			self::assertInstanceOf( Success::class, $result );
+			self::assertIsString( $result->value );
+			$run_ids[] = $result->value;
+			$this->rig->run_due();
+		}
 
-		return $calls;
+		return $run_ids;
 	}
+
+	/**
+	 * Returns visible history for the primary identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{run_id: string, outcome: string, failed_store: bool}>
+	 */
+	private function history(): array {
+		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		self::assertNotNull( $history );
+
+		return $history;
+	}
+
+	/**
+	 * Sets the legitimate history-retention filter seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $size Scripted history size.
+	 *
+	 * @return  void
+	 */
+	private function set_history_size( mixed $size ): void {
+		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
+		self::assertIsArray( $filters );
+		$filters['a8csp_background_tasks/history_size'] = $size;
+		$GLOBALS['a8csp_bgte_test_filter_values']       = $filters;
+	}
+
+	/**
+	 * Returns a history store bound to the active authoritative rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  RunHistory
+	 */
+	private function store(): RunHistory {
+		return new RunHistory( self::IDENTITY, $this->rows, $this->rig->logger() );
+	}
+
+	/**
+	 * Stores one production-built raw fixture in the active database.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
+	 *
+	 * @return  void
+	 */
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+	}
+
+	/**
+	 * Returns the active history's authoritative raw bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	private function raw_row(): string {
+		$raw = $this->rig->wpdb()->rows[ RunHistory::OPTION_PREFIX . self::IDENTITY ] ?? null;
+		self::assertIsString( $raw );
+
+		return $raw;
+	}
+
+	/**
+	 * Returns started fixture entries for one inclusive index range.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $first First fixture index.
+	 * @param   int $last  Last fixture index.
+	 *
+	 * @return  list<array{run_id: string, args_hash: string}>
+	 */
+	private static function started_entries( int $first, int $last ): array {
+		return \array_map(
+			static fn ( int $index ): array => array(
+				'run_id'    => 'run-' . $index,
+				'args_hash' => self::hash( $index ),
+			),
+			\range( $first, $last )
+		);
+	}
+
+	/**
+	 * Returns started fixture entries sharing one argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $first First fixture index.
+	 * @param   int $last  Last fixture index.
+	 *
+	 * @return  list<array{run_id: string, args_hash: string}>
+	 */
+	private static function same_hash_entries( int $first, int $last ): array {
+		return \array_map(
+			static fn ( int $index ): array => array(
+				'run_id'    => 'run-' . $index,
+				'args_hash' => 'hash-a',
+			),
+			\range( $first, $last )
+		);
+	}
+
+	/**
+	 * Returns one deterministic argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $index Fixture index.
+	 *
+	 * @return  string
+	 */
+	private static function hash( int $index ): string {
+		return 'hash-' . \str_pad( (string) $index, 2, '0', \STR_PAD_LEFT );
+	}
+
+	/**
+	 * Returns recorded statements carrying one literal prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $prefix Statement prefix.
+	 *
+	 * @return  list<string>
+	 */
+	private function queries_starting_with( string $prefix ): array {
+		return \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, $prefix ) ) );
+	}
+
+	// endregion.
 }

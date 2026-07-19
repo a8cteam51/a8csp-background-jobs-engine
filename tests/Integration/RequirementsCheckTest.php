@@ -10,6 +10,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
  * Runs in both matrix entries: at-floor it must pass, below-floor (WP 6.9.4)
  * it must yield a WP_Error without loading the plugin proper.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class RequirementsCheckTest extends IntegrationTestCase {
 	// region TESTS.
@@ -17,10 +19,13 @@ final class RequirementsCheckTest extends IntegrationTestCase {
 	/**
 	 * The requirements constant reflects the runtime it booted on.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_requirements_gate_matches_runtime(): void {
-		$requirements = \constant( 'A8CSP_BGTE_REQUIREMENTS' );
+		$requirements = \constant( 'A8CSP_BGTE_REQUIREMENTS_RESULT' );
 		$wp_version   = \get_bloginfo( 'version' );
 
 		if ( \version_compare( $wp_version, '7.0', '<' ) ) {

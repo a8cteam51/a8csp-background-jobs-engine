@@ -2,114 +2,79 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContext;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins batch lifecycle deliveries across scheduling, storage, hooks, locks, and callbacks.
+ * Exercises batch deliveries through the registered production action graph.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( ActionDeliveries::class )]
-#[UsesClass( BatchContext::class )]
-#[UsesClass( BatchRegistry::class )]
-#[UsesClass( EngineError::class )]
-#[UsesClass( FailedRunStore::class )]
-#[UsesClass( LatestRunPointer::class )]
-#[UsesClass( Dispatcher::class )]
-#[UsesClass( LockRows::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( Randomizer::class )]
-#[UsesClass( RetryPolicy::class )]
-#[UsesClass( RunHistory::class )]
-#[UsesClass( RunState::class )]
-#[UsesClass( RunStatus::class )]
-#[UsesClass( RunStore::class )]
-#[UsesClass( StoreFactory::class )]
-#[UsesClass( TaskRegistry::class )]
 final class ActionDeliveriesBatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS = array(
+	private const array ARGS      = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string NAME     = 'catalog-sync';
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'runs-tests';
+	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const NAME      = 'catalog-sync';
-	private const NOW       = 1_700_000_000;
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
-
-	private FixedClock $clock;
-	private RecordingBackend $backend;
 	private RecordingBatch $batch;
-	private ActionDeliveries $lifecycle_deliveries;
-	private RecordingLogger $logger;
-	private RecordingRandomizer $randomizer;
-	private BatchRegistry $batches;
-	private TaskRegistry $tasks;
-	private WpdbLockSpy $wpdb;
-	private Dispatcher $dispatcher;
+	private Client $client;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 
 	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress functions before orchestration classes are instantiated.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Scheduling/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets every observable boundary and constructs one registered batch lifecycle.
+	 * Boots one registered batch against deterministic interface fakes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -117,672 +82,936 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->batch  = new RecordingBatch( self::NAME );
+		$this->client->batches()->register( $this->batch );
+		$this->fixtures              = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rig->backend()->calls = array();
+	}
 
-		$this->clock          = new FixedClock( self::NOW );
-		$this->backend        = new RecordingBackend();
-		$this->batch          = new RecordingBatch( self::NAME );
-		$this->logger         = new RecordingLogger();
-		$this->randomizer     = new RecordingRandomizer( 42 );
-		$this->batches        = new BatchRegistry();
-		$this->tasks          = new TaskRegistry();
-		$this->wpdb           = new WpdbLockSpy();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-
-		$this->lifecycle_deliveries = new ActionDeliveries(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-
-		$this->batches->register( $this->batch );
-		$this->dispatcher = new Dispatcher(
-			$this->tasks,
-			$this->batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+	/**
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
 
 	// region TESTS.
 
-	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 	/**
-	 * Hook registration exposes each backend-isolated batch stage and one shared run dispatcher.
+	 * The registered start, continue, run, and cleanup actions complete one real batch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_register_hooks_wires_all_internal_batch_actions(): void {
-		$this->lifecycle_deliveries->register_hooks();
+		$this->batch->queue = array( array( 'chunk' => 'only' ) );
+		$this->start_batch();
 
-		self::assertSame(
-			array(
-				array(
-					'hook_name'     => 'a8csp_background_tasks/start',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_start_action' ),
-					'priority'      => 10,
-					'accepted_args' => 3,
-				),
-				array(
-					'hook_name'     => 'a8csp_background_tasks/continue',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_continue_action' ),
-					'priority'      => 10,
-					'accepted_args' => 3,
-				),
-				array(
-					'hook_name'     => 'a8csp_background_tasks/run',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_run_action' ),
-					'priority'      => 10,
-					'accepted_args' => 4,
-				),
-				array(
-					'hook_name'     => 'a8csp_background_tasks/cleanup',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_cleanup_action' ),
-					'priority'      => 10,
-					'accepted_args' => 3,
-				),
-			),
-			$this->action_registrations()
-		);
+		for ( $delivery = 0; $delivery < 5; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
+		self::assertSame( array( 'chunk' => 'only' ), $this->batch->process_calls[0]['chunk_args'] ?? null );
+		self::assertCount( 1, $this->batch->completed_calls );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * The start action materializes and filters the queue before exposing the started lifecycle.
+	 * Queue generation and the documented filter payload determine the retained real queue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_persists_the_filtered_queue_and_schedules_continue(): void {
-		$this->batch->queue       = array(
-			'first-key'  => array( 'chunk' => 'first' ),
-			'second-key' => array( 'chunk' => 'second' ),
+		$this->batch->queue = array(
+			'first'  => array( 'chunk' => 'first' ),
+			'second' => array( 'chunk' => 'second' ),
 		);
-		$filter_call              = null;
-		$generate_executing       = null;
-		$this->batch->on_generate = function ( array $start_args ) use ( &$generate_executing ): void {
-			$generate_executing = $this->run_state()['executing'];
-		};
+		$filter_args        = null;
 		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
-			static function ( array $queue, array $start_args, string $run_id ) use ( &$filter_call ): array {
-				$filter_call = array(
-					'arity' => \func_num_args(),
-					'args'  => \func_get_args(),
-				);
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
+			static function ( array $queue, array $start_args, string $run_id ) use ( &$filter_args ): array {
+				$filter_args = \func_get_args();
 
-				return array(
-					array( 'chunk' => 'filtered-first' ),
-					...$queue,
-					array( 'chunk' => 'filtered-last' ),
-				);
+				return array( array( 'chunk' => 'filtered-first' ), ...$queue, array( 'chunk' => 'filtered-last' ) );
 			}
 		);
 		$this->start_batch();
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
-		self::assertTrue( $generate_executing );
-		self::assertSame(
-			array(
-				'arity' => 3,
-				'args'  => array(
-					array(
-						array( 'chunk' => 'first' ),
-						array( 'chunk' => 'second' ),
-					),
-					self::ARGS,
-					self::RUN_ID,
-				),
-			),
-			$filter_call
-		);
-		$state = $this->run_state();
-		self::assertSame(
-			array(
-				array( 'chunk' => 'filtered-first' ),
-				array( 'chunk' => 'first' ),
-				array( 'chunk' => 'second' ),
-				array( 'chunk' => 'filtered-last' ),
-			),
-			$state['queue']
-		);
-		self::assertFalse( $state['executing'] );
-		self::assertSame( self::NOW + 30, $state['heartbeat_at'] );
-		self::assertSame( 2, $state['action_seq'] );
-		self::assertSame(
-			array( true, true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
-		self::assertSame( self::NOW + 30, $this->lock()['heartbeat_at'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/continue',
-						'args'     => array( self::NAME, self::RUN_ID, 2 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
-						'unique'   => false,
-						'priority' => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/started/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/started',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
-			),
-			$this->fired_actions()
-		);
+		self::assertSame( array( array( 'chunk' => 'first' ), array( 'chunk' => 'second' ) ), $filter_args[0] ?? null );
+		self::assertSame( self::ARGS, $filter_args[1] ?? null );
+		self::assertSame( self::RUN_ID, $filter_args[2] ?? null );
+		self::assertSame( array( array( 'chunk' => 'filtered-first' ), array( 'chunk' => 'first' ), array( 'chunk' => 'second' ), array( 'chunk' => 'filtered-last' ) ), $this->run_state()['queue'] ?? null );
+		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 	}
 
 	/**
-	 * A throwing started listener terminalizes the run before its first continue is scheduled.
+	 * A continuation delivered before enqueue confirmation advances the first chunk once.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The registered continuation re-enters before its scheduling write resolves, preserving the at-least-once chunk contract at the admission race.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_admits_continue_before_enqueue_confirmation(): void {
+		$first              = array( 'chunk' => 'first' );
+		$this->batch->queue = array( $first, array( 'chunk' => 'second' ) );
+		$this->start_batch();
+		$this->rig->backend()->before_next(
+			'enqueue_async',
+			static function (): void {
+				\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
+			}
+		);
+
+		$this->rig->run_due();
+		\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+
+		self::assertCount( 1, $this->batch->process_calls );
+		self::assertSame( $first, $this->batch->process_calls[0]['chunk_args'] );
+		self::assertSame( array( array( 'chunk' => 'second' ) ), $this->run_state()['queue'] ?? null );
+	}
+
+	/**
+	 * A throwing started listener terminalizes before the first continuation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_when_a_started_listener_throws(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
+		$this->set_action_throwable( 'a8csp_background_tasks/started/' . self::IDENTITY, new \RuntimeException( 'Started listener exploded.' ) );
 		$this->start_batch();
-		$this->backend->calls = array();
-		$this->set_action_throwable(
-			'a8csp_background_tasks/started/' . self::NAME,
-			new \RuntimeException( 'Started listener exploded.' )
-		);
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( 'Started listener exploded.', $error->message );
-		self::assertSame( \RuntimeException::class, $error->exception_class );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/started/' . self::NAME,
-				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/failed/' . self::NAME,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_terminal_history( RunStatus::Failed );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
+		self::assertCount( 1, $this->batch->failed_calls );
+		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * A queue-generation throwable fails the run without exposing a partial started lifecycle.
+	 * A queue generation throwable fails without exposing a started lifecycle.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_when_queue_generation_throws(): void {
 		$this->batch->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
 		$this->start_batch();
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		$this->assert_terminal_start_error( 'Queue generation exploded.', \RuntimeException::class );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started' ) );
 	}
 
 	/**
-	 * A non-array queue-filter result fails the run before scheduling continue.
+	 * A lazy queue throwable discards every yielded chunk before failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_fails_terminally_when_lazy_queue_iteration_throws(): void {
+		$this->batch->generate_queue_factory = static function (): iterable {
+			yield array( 'chunk' => 'must-not-persist' );
+
+			throw new \RuntimeException( 'Lazy queue token secret.' );
+		};
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		self::assertStringNotContainsString( 'token secret', $failure->summary );
+	}
+
+	/**
+	 * Generated chunks reject every non-portable leaf without exposing it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $invalid_value Invalid chunk leaf.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_generated_chunk_values' )]
+	public function test_handle_start_action_fails_terminally_for_an_invalid_generated_chunk( mixed $invalid_value ): void {
+		$this->batch->queue = array( array( 'chunk' => 'valid' ), array( 'private-payload-must-not-leak' => $invalid_value ) );
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		self::assertStringNotContainsString( 'private-payload-must-not-leak', $failure->summary );
+	}
+
+	/**
+	 * Supplies both object-bearing generated chunk leaves.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{invalid_value: mixed}>
+	 */
+	public static function invalid_generated_chunk_values(): array {
+		return array(
+			'object'  => array( 'invalid_value' => new \stdClass() ),
+			'closure' => array( 'invalid_value' => static fn (): null => null ),
+		);
+	}
+
+	/**
+	 * Valid portable chunks survive generation and filtering byte-for-byte.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_preserves_valid_portable_argument_chunks(): void {
+		$queue              = array(
+			array(
+				'nested' => array(
+					'integer' => 7,
+					'string'  => 'value',
+					'boolean' => true,
+					'nothing' => null,
+					'list'    => array( 1, 'two', false, null ),
+				),
+			),
+		);
+		$this->batch->queue = $queue;
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		self::assertSame( $queue, $this->run_state()['queue'] ?? null );
+		self::assertSame( array(), $this->batch->failed_calls );
+	}
+
+	/**
+	 * Generated chunks accept the byte ceiling and reject its adjacent overflow through failure hooks.
+	 *
+	 * @param   int  $json_bytes Exact encoded chunk size.
+	 * @param   bool $accepted   Whether queue generation succeeds.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_chunk_bytes' )]
+	public function test_generated_chunks_observe_the_json_byte_ceiling( int $json_bytes, bool $accepted ): void {
+		$chunk              = self::chunk_with_json_bytes( $json_bytes );
+		$this->batch->queue = array( $chunk );
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		if ( $accepted ) {
+			self::assertSame( array( $chunk ), $this->run_state()['queue'] ?? null );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		self::assertSame( 'Batch queue chunk at index 0 contains 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
+	}
+
+	/**
+	 * Supplies both sides of the persisted chunk byte boundary.
+	 *
+	 * @return  array<string, array{json_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_chunk_bytes(): array {
+		return array(
+			'at limit'   => array(
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'over limit' => array(
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+		);
+	}
+
+	/**
+	 * Materialized queues accept the byte ceiling and reject its adjacent overflow through failure hooks.
+	 *
+	 * @param   int  $persisted_bytes Exact persisted queue size.
+	 * @param   bool $accepted        Whether queue generation succeeds.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_queue_bytes' )]
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_materialized_queues_observe_the_persisted_byte_ceiling( int $persisted_bytes, bool $accepted ): void {
+		$this->batch->queue = self::queue_with_persisted_bytes( $persisted_bytes );
+		$this->start_batch();
+
+		$this->rig->run_due();
+		$this->batch->queue                  = array();
+		$this->rig->wpdb()->recorded_queries = array();
+
+		if ( $accepted ) {
+			$serialized_queue = \maybe_serialize( $this->run_state()['queue'] ?? null );
+			self::assertIsString( $serialized_queue );
+			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		self::assertSame( 'Batch queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', $failure->summary );
+	}
+
+	/**
+	 * Supplies both sides of the persisted aggregate-queue byte boundary.
+	 *
+	 * @return  array<string, array{persisted_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_queue_bytes(): array {
+		return array(
+			'at limit'   => array(
+				'persisted_bytes' => 1_048_576,
+				'accepted'        => true,
+			),
+			'over limit' => array(
+				'persisted_bytes' => 1_048_577,
+				'accepted'        => false,
+			),
+		);
+	}
+
+	/**
+	 * A non-array queue-filter result fails before scheduling continue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_for_a_non_array_filtered_queue(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
-		$this->set_filter_value( 'a8csp_background_tasks/queue/' . self::NAME, 'invalid queue' );
+		$this->set_filter_value( 'a8csp_background_tasks/queue/' . self::IDENTITY, 'invalid queue' );
 		$this->start_batch();
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		$this->assert_terminal_start_error(
-			'Batch queue filter returned a non-array value; return one argument array per chunk.',
-			\UnexpectedValueException::class
-		);
+		$this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 	}
 
 	/**
-	 * Ownership loss during queue generation supersedes the incumbent without touching the replacement.
+	 * A throwing queue filter discards the generated queue before failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_fails_terminally_when_queue_filter_throws(): void {
+		$this->batch->queue = array( array( 'chunk' => 'must-not-persist' ) );
+		$this->set_filter_value(
+			'a8csp_background_tasks/queue/' . self::IDENTITY,
+			static function (): never {
+				throw new \DomainException( 'Queue filter credential secret.' );
+			}
+		);
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		self::assertStringNotContainsString( 'credential secret', $failure->summary );
+	}
+
+	/**
+	 * Filter-derived chunks cross the same portable-arguments boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_fails_terminally_for_an_invalid_filtered_chunk(): void {
+		$this->batch->queue = array( array( 'chunk' => 'generated' ) );
+		$this->set_filter_value( 'a8csp_background_tasks/queue/' . self::IDENTITY, array( array( 'chunk' => 'valid' ), array( 'filtered-private-payload' => new \stdClass() ) ) );
+		$this->start_batch();
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		self::assertStringNotContainsString( 'filtered-private-payload', $failure->summary );
+	}
+
+	/**
+	 * Ownership loss during queue generation supersedes without touching the foreign owner.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built foreign lock and pointer generations replace authority inside the real queue callback before post-callback fencing.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_supersedes_after_queue_generation_loses_ownership(): void {
-		$this->batch->queue = array( array( 'chunk' => 'generated' ) );
-		$this->start_batch();
-		$this->backend->calls     = array();
-		$this->clock->timestamp   = self::NOW + 30;
-		$observed_state           = null;
-		$this->batch->on_generate = function ( array $start_args ) use ( &$observed_state ): void {
-			$observed_state = $this->option( $this->run_option_name() );
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
+		$this->batch->queue       = array( array( 'chunk' => 'generated' ) );
+		$this->batch->on_generate = function (): void {
+			$this->install_foreign_generation( self::NOW );
 		};
+		$this->start_batch();
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
-		self::assertIsArray( $observed_state );
-		self::assertSame( array(), $observed_state['queue'] ?? null );
-		self::assertSame( 1, $observed_state['action_seq'] ?? null );
-		self::assertSame( self::NOW + 30, $observed_state['heartbeat_at'] ?? null );
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_quiet_superseded_run();
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * A throwing queue generator that loses ownership supersedes instead of recording failure.
+	 * A throwing generator that loses ownership supersedes instead of failing.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The foreign generation wins inside the throwing callback, so failure adjudication must fence the expired delivery before retention.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_supersedes_when_throwing_queue_generation_loses_ownership(): void {
 		$this->batch->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
-		$this->batch->on_generate        = function ( array $start_args ): void {
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-			$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
+		$this->batch->on_generate        = function (): void {
+			$this->install_foreign_generation( self::NOW );
 		};
 		$this->start_batch();
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array( self::ARGS ), $this->batch->generate_calls );
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_quiet_superseded_run();
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * Ownership loss in a started listener supersedes before the first continuation is scheduled.
+	 * Ownership loss in the started listener fences the first continuation.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The legitimate started-hook boundary installs a fixture-built foreign generation before delivery schedules its successor.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_supersedes_when_started_listener_loses_ownership(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
-		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
-			function ( array $queue ): array {
-				$this->wpdb->before_next( 'update', static function ( WpdbLockSpy $wpdb ): void {} );
-				$this->wpdb->before_next(
-					'update',
-					function ( WpdbLockSpy $wpdb ): void {
-						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
-					}
-				);
-
-				return $queue;
+		$this->observe_action(
+			'a8csp_background_tasks/started/' . self::IDENTITY,
+			function (): void {
+				$this->install_foreign_generation( self::NOW );
 			}
 		);
 		$this->start_batch();
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/started/' . self::NAME,
-				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/superseded/' . self::NAME,
-				'a8csp_background_tasks/superseded',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_terminal_history( RunStatus::Superseded );
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * A throwing started listener that loses ownership supersedes instead of recording failure.
+	 * A throwing started listener still respects the foreign generation fence.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Foreign ownership is installed before the listener throws, distinguishing supersession from terminal failure after the same hook.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_supersedes_when_throwing_started_listener_loses_ownership(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
-		$this->set_filter_value(
-			'a8csp_background_tasks/queue/' . self::NAME,
-			function ( array $queue ): array {
-				$this->wpdb->before_next( 'update', static function ( WpdbLockSpy $wpdb ): void {} );
-				$this->wpdb->before_next(
-					'update',
-					function ( WpdbLockSpy $wpdb ): void {
-						( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-						$this->replace_lock_owner( 'run-newer', self::NOW + 30 );
-					}
-				);
-
-				return $queue;
+		$this->observe_action(
+			'a8csp_background_tasks/started/' . self::IDENTITY,
+			function (): void {
+				$this->install_foreign_generation( self::NOW );
 			}
 		);
+		$this->set_action_throwable( 'a8csp_background_tasks/started/' . self::IDENTITY, new \RuntimeException( 'Started listener exploded.' ) );
 		$this->start_batch();
-		$this->backend->calls = array();
-		$this->set_action_throwable(
-			'a8csp_background_tasks/started/' . self::NAME,
-			new \RuntimeException( 'Started listener exploded.' )
-		);
-		$this->clock->timestamp = self::NOW + 30;
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/started/' . self::NAME,
-				'a8csp_background_tasks/started',
-				'a8csp_background_tasks/superseded/' . self::NAME,
-				'a8csp_background_tasks/superseded',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_terminal_history( RunStatus::Superseded );
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * Continue retains the current queue head while carrying it into a distinct run action.
+	 * Continue retains the current head while scheduling its distinct run delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_retains_one_chunk_and_schedules_run(): void {
-		$first  = array( 'chunk' => 'first' );
-		$second = array( 'chunk' => 'second' );
-		$this->prepare_started_batch( array( $first, $second ) );
-		$this->clock->timestamp = self::NOW + 90;
+		$queue = array( array( 'chunk' => 'first' ), array( 'chunk' => 'second' ) );
+		$this->prepare_started_batch( $queue );
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		$state = $this->run_state();
-		self::assertSame( array( $first, $second ), $state['queue'] );
-		self::assertFalse( $state['executing'] );
-		self::assertSame( 3, $state['action_seq'] );
-		self::assertSame( self::NOW + 90, $state['heartbeat_at'] );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
-		self::assertSame( self::NOW + 90, $this->lock()['heartbeat_at'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/run',
-						'args'     => array( self::NAME, self::RUN_ID, $first, 3 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
-						'unique'   => false,
-						'priority' => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
+		self::assertSame( $queue, $this->run_state()['queue'] ?? null );
 		self::assertSame( array(), $this->batch->process_calls );
+		self::assertCount( 1, $this->calls_for_hook( 'a8csp_background_tasks/run_chunk' ) );
 	}
 
 	/**
-	 * Continue sends a drained run to cleanup without creating a run action.
+	 * A chunk is delivered from its byte-faithful persisted queue through token-only backend arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_delivers_a_persisted_float_chunk_with_token_only_backend_args(): void {
+		$this->prepare_started_batch( array( array( 'value' => 1.0 ) ) );
+		$queue = $this->run_state()['queue'] ?? null;
+		self::assertIsArray( $queue );
+		$persisted_chunk = $queue[0] ?? null;
+		self::assertIsArray( $persisted_chunk );
+		self::assertIsFloat( $persisted_chunk['value'] ?? null );
+		self::assertSame( 1.0, $persisted_chunk['value'] );
+
+		$this->rig->run_due();
+
+		$run_call = $this->single_call_for_hook( 'a8csp_background_tasks/run_chunk' );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 3 ), $run_call['args']['args'] ?? null );
+
+		$this->rig->run_due();
+
+		self::assertCount( 1, $this->batch->process_calls );
+		$delivered_chunk = $this->batch->process_calls[0]['chunk_args'] ?? null;
+		self::assertIsArray( $delivered_chunk );
+		self::assertIsFloat( $delivered_chunk['value'] ?? null );
+		self::assertSame( $persisted_chunk, $delivered_chunk );
+	}
+
+	/**
+	 * Continue sends a drained queue to cleanup without invoking chunk work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_schedules_cleanup_for_an_empty_queue(): void {
 		$this->prepare_started_batch( array() );
-		$this->clock->timestamp = self::NOW + 90;
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		$state = $this->run_state();
-		self::assertSame( array(), $state['queue'] );
-		self::assertFalse( $state['executing'] );
-		self::assertSame( 3, $state['action_seq'] );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'enqueue_async',
-					'args' => array(
-						'hook'     => 'a8csp_background_tasks/cleanup',
-						'args'     => array( self::NAME, self::RUN_ID, 3 ),
-						'group'    => self::NAME . '|' . self::RUN_ID,
-						'unique'   => false,
-						'priority' => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
+		self::assertSame( array(), $this->batch->process_calls );
+		self::assertCount( 1, $this->calls_for_hook( 'a8csp_background_tasks/cleanup_batch' ) );
 	}
 
 	/**
-	 * A normal chunk return commits buffered mutations and delays the next continue action.
+	 * A normal chunk commits real context mutations and delays continue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_commits_context_mutations_and_schedules_delayed_continue(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$remaining  = array( 'chunk' => 'remaining' );
-		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
-		$filter_call = null;
-		$this->set_filter_value(
-			'a8csp_background_tasks/continue_delay',
-			static function ( int $default_delay, string $name, string $run_id ) use ( &$filter_call ): int {
-				$filter_call = array(
-					'arity' => \func_num_args(),
-					'args'  => \func_get_args(),
-				);
-
-				return 75;
-			}
-		);
-		$this->batch->on_process = function (
-			array $processed_args,
-			BatchContextInterface $context
-		) use ( $chunk_args ): void {
-			self::assertSame( $chunk_args, $processed_args );
+		$current = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
+		$this->set_filter_value( 'a8csp_background_tasks/continue_delay', 75 );
+		$this->batch->on_process       = static function ( array $chunk, BatchContextInterface $context ) use ( $current ): void {
+			self::assertSame( $current, $chunk );
 			self::assertSame( self::RUN_ID, $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
-			self::assertTrue( $this->run_state()['executing'] );
 			$context->enqueue( array( 'chunk' => 'appended' ) );
 			$context->prepend( array( 'chunk' => 'prepended-1' ) );
 			$context->prepend( array( 'chunk' => 'prepended-2' ) );
 		};
-		$this->clock->timestamp  = self::NOW + 120;
+		$this->rig->clock()->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertCount( 1, $this->batch->process_calls );
-		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
-		self::assertInstanceOf( BatchContext::class, $this->batch->process_calls[0]['context'] );
-		$state = $this->run_state();
-		self::assertSame(
-			array(
-				array( 'chunk' => 'prepended-2' ),
-				array( 'chunk' => 'prepended-1' ),
-				$remaining,
-				array( 'chunk' => 'appended' ),
-			),
-			$state['queue']
-		);
-		self::assertFalse( $state['executing'] );
-		self::assertSame( 0, $state['chunk_retries'] );
-		self::assertSame( 4, $state['action_seq'] );
-		self::assertSame( self::NOW + 120, $state['heartbeat_at'] );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
-		self::assertSame(
-			array(
-				'arity' => 3,
-				'args'  => array( 60, self::NAME, self::RUN_ID ),
-			),
-			$filter_call
-		);
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'schedule_single',
-					'args' => array(
-						'hook'      => 'a8csp_background_tasks/continue',
-						'timestamp' => self::NOW + 195,
-						'args'      => array( self::NAME, self::RUN_ID, 4 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
-						'priority'  => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-		self::assertSame( array(), $this->batch->success_calls );
-		self::assertSame( array(), $this->batch->failure_calls );
+		self::assertInstanceOf( BatchContextInterface::class, $this->batch->process_calls[0]['context'] ?? null );
+		self::assertSame( array( array( 'chunk' => 'prepended-2' ), array( 'chunk' => 'prepended-1' ), array( 'chunk' => 'remaining' ), array( 'chunk' => 'appended' ) ), $this->run_state()['queue'] ?? null );
+		self::assertSame( self::NOW + 195, $this->single_call_for_hook( 'a8csp_background_tasks/continue_batch' )['args']['timestamp'] ?? null );
 	}
 
 	/**
-	 * Missing chunk arguments on a batch delivery clear its marker for the correctly shaped redelivery.
+	 * Invalid real-context mutations fail transactionally in both directions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $mutation      Context mutation method.
+	 * @param   mixed  $invalid_value Invalid chunk leaf.
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_clears_the_batch_marker_after_missing_argument_misdelivery(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
-		$action_seq = $this->action_seq();
+	#[DataProvider( 'invalid_context_mutations' )]
+	public function test_handle_run_action_rejects_invalid_context_mutations_transactionally( string $mutation, mixed $invalid_value ): void {
+		$current                   = array( 'chunk' => 'current' );
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
+		$this->batch->on_process = static function ( array $chunk, BatchContextInterface $context ) use ( $invalid_value, $mutation ): void {
+			if ( 'enqueue' === $mutation ) {
+				$context->enqueue( array( 'callback-private-payload' => $invalid_value ) );
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+				return;
+			}
 
-		$state = $this->run_state();
-		self::assertSame( 'running', $state['status'] );
-		self::assertFalse( $state['executing'] );
-		self::assertSame( $action_seq, $state['action_seq'] );
-		self::assertSame( array( $chunk_args ), $state['queue'] );
-		self::assertSame( array(), $this->batch->process_calls );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->fired_actions() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Batch run action is missing chunk arguments; schedule it with the current queue head as the third argument.',
-					'context' => array(
-						'batch_name' => self::NAME,
-						'run_id'     => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+			$context->prepend( array( 'callback-private-payload' => $invalid_value ) );
+		};
 
-		$this->clear_action_observations();
-		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
-			self::RUN_ID,
-			$chunk_args,
-			$action_seq
-		);
+		$this->rig->run_due();
 
-		self::assertCount( 1, $this->batch->process_calls );
-		self::assertSame( $chunk_args, $this->batch->process_calls[0]['chunk_args'] );
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		self::assertStringNotContainsString( 'callback-private-payload', $failure->summary );
+		self::assertCount( 1, $this->batch->failed_calls );
 	}
 
 	/**
-	 * Continue-delay filter values resolve to their exact scheduling offsets.
+	 * Context mutations accept bounded chunks and reject adjacent overflow through failure hooks.
+	 *
+	 * @param   string $mutation  Context mutation method.
+	 * @param   int    $json_bytes Exact encoded chunk size.
+	 * @param   bool   $accepted  Whether the mutation persists.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_context_chunks' )]
+	public function test_context_mutation_chunks_observe_the_json_byte_ceiling( string $mutation, int $json_bytes, bool $accepted ): void {
+		$current                   = array( 'chunk' => 'current' );
+		$chunk                     = self::chunk_with_json_bytes( $json_bytes );
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->prepare_scheduled_chunk( array( $current ) );
+		$this->batch->on_process = static function ( array $chunk_args, BatchContextInterface $context ) use ( $chunk, $mutation ): void {
+			if ( 'enqueue' === $mutation ) {
+				$context->enqueue( $chunk );
+
+				return;
+			}
+
+			$context->prepend( $chunk );
+		};
+
+		$this->rig->run_due();
+
+		if ( $accepted ) {
+			self::assertSame( array( $chunk ), $this->run_state()['queue'] ?? null );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+	}
+
+	/**
+	 * Supplies both context directions on both sides of the chunk byte boundary.
+	 *
+	 * @return  array<string, array{mutation: 'enqueue'|'prepend', json_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_context_chunks(): array {
+		return array(
+			'enqueue at limit'   => array(
+				'mutation'   => 'enqueue',
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'enqueue over limit' => array(
+				'mutation'   => 'enqueue',
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+			'prepend at limit'   => array(
+				'mutation'   => 'prepend',
+				'json_bytes' => 8_192,
+				'accepted'   => true,
+			),
+			'prepend over limit' => array(
+				'mutation'   => 'prepend',
+				'json_bytes' => 8_193,
+				'accepted'   => false,
+			),
+		);
+	}
+
+	/**
+	 * Context mutations accept the persisted queue ceiling and reject its adjacent overflow.
+	 *
+	 * @param   string $mutation        Context mutation method.
+	 * @param   int    $persisted_bytes Exact persisted candidate-queue size.
+	 * @param   bool   $accepted        Whether the mutation persists.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_context_queue_bytes' )]
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_context_mutations_observe_the_persisted_queue_byte_ceiling( string $mutation, int $persisted_bytes, bool $accepted ): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( $persisted_bytes );
+		$mutation_chunk = 'prepend' === $mutation ? \array_shift( $candidate ) : \array_pop( $candidate );
+		self::assertIsArray( $mutation_chunk );
+
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->prepare_scheduled_chunk( array( $current, ...$candidate ) );
+		$this->batch->queue                  = array();
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->batch->on_process             = static function ( array $chunk_args, BatchContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
+			if ( 'enqueue' === $mutation ) {
+				$context->enqueue( $mutation_chunk );
+
+				return;
+			}
+
+			$context->prepend( $mutation_chunk );
+		};
+
+		$this->rig->run_due();
+
+		if ( $accepted ) {
+			$serialized_queue = \maybe_serialize( $this->run_state()['queue'] ?? null );
+			self::assertIsString( $serialized_queue );
+			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+
+			return;
+		}
+
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+	}
+
+	/**
+	 * Supplies both context directions on both sides of the persisted queue byte boundary.
+	 *
+	 * @return  array<string, array{mutation: 'enqueue'|'prepend', persisted_bytes: int, accepted: bool}>
+	 */
+	public static function bounded_context_queue_bytes(): array {
+		return array(
+			'enqueue at limit'   => array(
+				'mutation'        => 'enqueue',
+				'persisted_bytes' => 1_048_576,
+				'accepted'        => true,
+			),
+			'enqueue over limit' => array(
+				'mutation'        => 'enqueue',
+				'persisted_bytes' => 1_048_577,
+				'accepted'        => false,
+			),
+			'prepend at limit'   => array(
+				'mutation'        => 'prepend',
+				'persisted_bytes' => 1_048_576,
+				'accepted'        => true,
+			),
+			'prepend over limit' => array(
+				'mutation'        => 'prepend',
+				'persisted_bytes' => 1_048_577,
+				'accepted'        => false,
+			),
+		);
+	}
+
+	/**
+	 * Supplies both context mutation directions with invalid leaves.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{mutation: 'enqueue'|'prepend', invalid_value: mixed}>
+	 */
+	public static function invalid_context_mutations(): array {
+		return array(
+			'enqueue closure' => array(
+				'mutation'      => 'enqueue',
+				'invalid_value' => static fn (): null => null,
+			),
+			'prepend object'  => array(
+				'mutation'      => 'prepend',
+				'invalid_value' => new \stdClass(),
+			),
+		);
+	}
+
+	/**
+	 * A fixed-token task hook delivered against a batch run routes by the persisted kind and processes the current chunk.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, processing the run-row chunk exactly once.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_task_hook_delivery_routes_a_batch_run_by_its_persisted_kind(): void {
+		$current = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $current ) );
+		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
+
+		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 3 );
+		self::assertCount( 1, $this->batch->process_calls );
+		self::assertSame( $current, $this->batch->process_calls[0]['chunk_args'] );
+
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+
+		self::assertCount( 1, $this->batch->process_calls );
+	}
+
+	/**
+	 * A chunk-hook payload without its sequence is rejected before admission.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Direct registered-hook delivery proves the typed chunk boundary rejects an incomplete payload without mutating authoritative run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_chunk_handler_rejects_a_missing_sequence_before_admission(): void {
+		$current = array( 'chunk' => 'current' );
+		$this->prepare_scheduled_chunk( array( $current ) );
+		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
+		$before = $this->run_state();
+		$thrown = null;
+
+		try {
+			\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID );
+		} catch ( \ArgumentCountError $error ) {
+			$thrown = $error;
+		}
+
+		self::assertInstanceOf( \ArgumentCountError::class, $thrown );
+		self::assertSame( $before, $this->run_state() );
+		self::assertSame( array(), $this->batch->process_calls );
+	}
+
+	/**
+	 * A pending chunk delivery without an authoritative queue head fails instead of stranding the run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_chunk_handler_terminalizes_a_pending_run_without_a_queue_head(): void {
+		$state = new RunState(
+			status: RunStatus::Running,
+			kind: 'Batch',
+			executing: false,
+			start_args: self::ARGS,
+			args_hash: $this->args_hash(),
+			queue: array(),
+			failed_attempts: 0,
+			action_seq: 3,
+			created_at: self::NOW,
+			heartbeat_at: self::NOW,
+			pending: PendingAction::async( 'run', 10 ),
+		);
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+		$this->put_fixture(
+			$this->fixtures->history(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+
+		self::assertSame( array(), $this->batch->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+		$this->assert_failure( ApiErrorCode::UnsupportedOperation, RunFailureStage::Execution, null );
+		self::assertNull( $this->run_state() );
+	}
+
+	/**
+	 * Continue-delay filter rows retain their exact scheduling offsets.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $filtered_delay Filter result.
+	 * @param   int   $expected_delay Expected scheduling offset.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'continue_delay_filter_values' )]
-	public function test_handle_run_action_resolves_continue_delay_filter_values(
-		mixed $filtered_delay,
-		int $expected_delay
-	): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+	public function test_handle_run_action_resolves_continue_delay_filter_values( mixed $filtered_delay, int $expected_delay ): void {
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->set_filter_value( 'a8csp_background_tasks/continue_delay', $filtered_delay );
-		$this->clock->timestamp = self::NOW + 120;
+		$this->rig->clock()->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'schedule_single',
-					'args' => array(
-						'hook'      => 'a8csp_background_tasks/continue',
-						'timestamp' => self::NOW + 120 + $expected_delay,
-						'args'      => array( self::NAME, self::RUN_ID, 4 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
-						'priority'  => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
+		self::assertSame( self::NOW + 120 + $expected_delay, $this->single_call_for_hook( 'a8csp_background_tasks/continue_batch' )['args']['timestamp'] ?? null );
 	}
 
 	/**
 	 * Supplies accepted and invalid continue-delay filter values.
 	 *
-	 * @return  array<string, array{filtered_delay: int|string, expected_delay: int}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{filtered_delay: int|string, expected_delay: int}>
 	 */
 	public static function continue_delay_filter_values(): array {
 		return array(
@@ -802,272 +1031,187 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	}
 
 	/**
-	 * Ownership loss during chunk work supersedes the incumbent without committing buffered mutations.
+	 * Ownership loss during chunk work supersedes without committing context mutations.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The real context buffers a mutation while fixture-built foreign ownership replaces the executing delivery before commit.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_after_chunk_work_loses_ownership(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$remaining  = array( 'chunk' => 'remaining' );
-		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
-		$this->clock->timestamp  = self::NOW + 120;
-		$observed_state          = null;
-		$this->batch->on_process = function (
-			array $processed_args,
-			BatchContextInterface $context
-		) use ( &$observed_state ): void {
-			$observed_state = $this->option( $this->run_option_name() );
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
+		$this->batch->on_process = function ( array $chunk, BatchContextInterface $context ): void {
 			$context->enqueue( array( 'chunk' => 'discarded' ) );
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+			$this->install_foreign_generation( self::NOW );
 		};
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
-			self::RUN_ID,
-			$chunk_args,
-			$this->action_seq()
-		);
+		$this->rig->run_due();
 
+		$this->assert_foreign_superseded();
 		self::assertCount( 1, $this->batch->process_calls );
-		self::assertIsArray( $observed_state );
-		self::assertSame( array( $chunk_args, $remaining ), $observed_state['queue'] ?? null );
-		self::assertTrue( $observed_state['executing'] ?? null );
-		self::assertSame( 3, $observed_state['action_seq'] ?? null );
-		self::assertSame( self::NOW + 120, $observed_state['heartbeat_at'] ?? null );
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_quiet_superseded_run();
 	}
 
 	/**
-	 * A throwing chunk that loses ownership supersedes before the retry decision ladder.
+	 * A throwing chunk that loses ownership supersedes before retry adjudication.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The foreign generation is installed inside the throwing real callback, so no retry or failure may target the expired owner.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_when_throwing_chunk_loses_ownership(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk exploded.' );
-		$this->batch->on_process        = function (
-			array $processed_args,
-			BatchContextInterface $context
-		): void {
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-			$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+		$this->batch->on_process        = function (): void {
+			$this->install_foreign_generation( self::NOW );
 		};
-		$this->clock->timestamp         = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertCount( 1, $this->batch->process_calls );
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_quiet_superseded_run();
+		$this->assert_foreign_superseded();
+		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * A failed delayed-continue schedule terminalizes the committed successful chunk.
+	 * A failed delayed-continue schedule terminalizes the committed chunk.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The failed continuation write occurs after real chunk commit; an empty delivery boundary proves no successor can replay or stall the queue.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_when_continue_scheduling_fails(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$remaining  = array( 'chunk' => 'remaining' );
-		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
-		$this->batch->on_process                   = static function (
-			array $processed_args,
-			BatchContextInterface $context
-		): void {
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
+		$this->batch->on_process                          = static function ( array $chunk, BatchContextInterface $context ): void {
 			$context->prepend( array( 'chunk' => 'committed-front' ) );
 			$context->enqueue( array( 'chunk' => 'committed-back' ) );
 		};
-		$this->backend->results['schedule_single'] = $this->scheduling_failure_result();
-		$this->clock->timestamp                    = self::NOW + 120;
+		$this->rig->backend()->results['schedule_single'] = $this->scheduling_failure_result();
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame(
-			array(
-				array( 'chunk' => 'committed-front' ),
-				$remaining,
-				array( 'chunk' => 'committed-back' ),
-			),
-			$this->failed_run_state()['queue']
-		);
-		$this->assert_terminal_scheduling_failure(
-			'continue',
-			array(
-				'verb' => 'schedule_single',
-				'args' => array(
-					'hook'      => 'a8csp_background_tasks/continue',
-					'timestamp' => self::NOW + 180,
-					'args'      => array( self::NAME, self::RUN_ID, 4 ),
-					'group'     => self::NAME . '|' . self::RUN_ID,
-					'priority'  => 10,
-				),
-			)
-		);
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		self::assertCount( 1, $this->batch->failed_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
-	 * A throwing continue-delay filter terminalizes the committed chunk instead of stalling it.
+	 * A throwing continue-delay filter terminalizes the committed chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_when_continue_delay_filter_throws(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
-		$this->batch->on_process = static function (
-			array $processed_args,
-			BatchContextInterface $context
-		): void {
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
+		$this->batch->on_process = static function ( array $chunk, BatchContextInterface $context ): void {
 			$context->enqueue( array( 'chunk' => 'committed' ) );
 		};
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
-			static function ( int $default_delay, string $name, string $run_id ): int {
+			static function (): never {
 				throw new \DomainException( 'Continue-delay filter exploded.' );
 			}
 		);
-		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame(
-			array( array( 'chunk' => 'committed' ) ),
-			$this->failed_run_state()['queue']
-		);
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( 'Continue-delay filter exploded.', $error->message );
-		self::assertSame( \DomainException::class, $error->exception_class );
-		$this->assert_terminal_history( RunStatus::Failed );
+		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
+		self::assertCount( 1, $this->batch->failed_calls );
 	}
 
 	/**
-	 * Ownership loss in a continue-delay filter supersedes before scheduling the continuation.
+	 * Ownership loss in the continue-delay filter prevents successor scheduling.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The filter installs a fixture-built foreign generation after chunk commit but before the next delivery write.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_when_continue_delay_filter_loses_ownership(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
-			function ( int $default_delay, string $name, string $run_id ): int {
-				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+			function (): int {
+				$this->install_foreign_generation( self::NOW );
 
 				return 30;
 			}
 		);
-		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_quiet_superseded_run();
+		$this->assert_foreign_superseded();
+		self::assertSame( array(), $this->calls_for_hook( 'a8csp_background_tasks/continue_batch' ) );
 	}
 
 	/**
-	 * A throwing continue-delay filter that loses ownership supersedes instead of recording failure.
+	 * A throwing continue-delay filter still respects the foreign generation.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The same filter boundary both transfers authority and throws, proving supersession wins over terminal error retention.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_when_throwing_continue_delay_filter_loses_ownership(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->set_filter_value(
 			'a8csp_background_tasks/continue_delay',
-			function ( int $default_delay, string $name, string $run_id ): int {
-				( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-				$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
+			function (): never {
+				$this->install_foreign_generation( self::NOW );
 
 				throw new \DomainException( 'Continue-delay filter exploded.' );
 			}
 		);
-		$this->clock->timestamp = self::NOW + 120;
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_quiet_superseded_run();
+		$this->assert_foreign_superseded();
 	}
 
 	/**
-	 * A throwing chunk discards buffered mutations before rescheduling the same chunk.
+	 * A throwing chunk discards real-context mutations and retries the same chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_discards_context_mutations_and_reschedules_the_chunk(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$remaining  = array( 'chunk' => 'remaining' );
-
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
-		$this->prepare_scheduled_chunk( array( $chunk_args, $remaining ) );
-		$this->batch->on_process        = static function (
-			array $processed_args,
-			BatchContextInterface $context
-		): void {
+		$current                   = array( 'chunk' => 'current' );
+		$this->batch->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
+		$this->batch->on_process        = static function ( array $chunk, BatchContextInterface $context ): void {
 			$context->prepend( array( 'chunk' => 'discarded-front' ) );
 			$context->enqueue( array( 'chunk' => 'discarded-back' ) );
 		};
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
-		$this->clock->timestamp         = self::NOW + 120;
-		$this->randomizer->value        = 11;
-		$this->randomizer->calls        = array();
+		$this->rig->randomizer()->value = 11;
+		$this->rig->randomizer()->calls = array();
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		$state = $this->run_state();
-		self::assertSame( 'running', $state['status'] );
-		self::assertFalse( $state['executing'] );
-		self::assertSame( array( $chunk_args, $remaining ), $state['queue'] );
-		self::assertSame( 1, $state['chunk_retries'] );
-		self::assertSame( 4, $state['action_seq'] );
-		self::assertSame( self::NOW + 131, $state['heartbeat_at'] );
-		self::assertSame(
-			array( true, false ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
-		self::assertSame( self::NOW + 131, $this->lock()['heartbeat_at'] ?? null );
-		self::assertSame( array(), $this->batch->success_calls );
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertSame(
-			array(
-				array(
-					'verb' => 'schedule_single',
-					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run',
-						'timestamp' => self::NOW + 131,
-						'args'      => array( self::NAME, self::RUN_ID, $chunk_args, 4 ),
-						'group'     => self::NAME . '|' . self::RUN_ID,
-						'priority'  => 10,
-					),
-				),
-			),
-			$this->backend->calls
-		);
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/retrying/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS, 1, 11 ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/retrying',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, 1, 11 ),
-				),
-			),
-			$this->fired_actions()
-		);
+		self::assertSame( array( $current, array( 'chunk' => 'remaining' ) ), $this->run_state()['queue'] ?? null );
 		self::assertSame(
 			array(
 				array(
@@ -1075,947 +1219,436 @@ final class ActionDeliveriesBatchTest extends TestCase {
 					'max' => 30,
 				),
 			),
-			$this->randomizer->calls
+			$this->rig->randomizer()->calls
 		);
+		$this->rig->assert_retry_scheduled();
+		$retry_call = $this->single_call_for_hook( 'a8csp_background_tasks/run_chunk' );
+		self::assertSame( 'schedule_single', $retry_call['verb'] );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 4 ), $retry_call['args']['args'] ?? null );
+		self::assertSame( array(), $this->batch->failed_calls );
 	}
 
 	/**
-	 * A retry-advanced sequence drops an older continue delivery without touching state or scheduling.
+	 * A retry-advanced sequence drops an older continue delivery without a successor.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Exact production rows and an empty backend ledger prove the stale generation performs only its authoritative read and creates no successor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_stale_continue_after_retry_advances_sequence_is_side_effect_free(): void {
-		$chunk_args                = array( 'chunk' => 'current' );
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+	public function test_stale_continue_after_retry_advances_sequence_only_reads_authoritative_state(): void {
+		$current                        = array( 'chunk' => 'current' );
+		$this->batch->retry_policy      = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
-		$this->clock->timestamp         = self::NOW + 120;
-		$this->randomizer->value        = 11;
+		$this->prepare_scheduled_chunk( array( $current ) );
+		$this->rig->randomizer()->value = 11;
+		$this->rig->run_due();
+		$before                              = $this->rig->wpdb()->rows;
+		$this->rig->backend()->calls         = array();
+		$this->rig->wpdb()->recorded_queries = array();
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
-			self::RUN_ID,
-			$chunk_args,
-			$this->action_seq()
-		);
+		\do_action( 'a8csp_background_tasks/continue_batch', self::IDENTITY, self::RUN_ID, 2 );
 
-		$expected_state = $this->run_state();
-		$expected_lock  = $this->lock();
-		self::assertSame( 4, $expected_state['action_seq'] );
-		$this->clear_action_observations();
-
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, 2 );
-
-		self::assertSame( $expected_state, $this->run_state() );
-		self::assertSame( $expected_lock, $this->lock() );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->wpdb->recorded_queries );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'info',
-					'message' => 'Stale lifecycle action delivery dropped.',
-					'context' => array(
-						'expected' => 4,
-						'received' => 2,
-						'run_id'   => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->wpdb()->recorded_queries );
 	}
 
 	/**
-	 * A successful retry resets the counter before the next chunk executes.
+	 * A successful retry restores a fresh retry budget for the next chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_retries_before_the_next_chunk(): void {
-		$chunk_a = array( 'chunk' => 'a' );
-		$chunk_b = array( 'chunk' => 'b' );
-
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
-		$this->prepare_scheduled_chunk( array( $chunk_a, $chunk_b ) );
+		$chunk_a                        = array( 'chunk' => 'a' );
+		$chunk_b                        = array( 'chunk' => 'b' );
+		$this->batch->retry_policy      = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk A failed once.' );
-		$this->randomizer->value        = 5;
-		$this->randomizer->calls        = array();
-		$this->clock->timestamp         = self::NOW + 120;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_a, $this->action_seq() );
+		$this->prepare_scheduled_chunk( array( $chunk_a, $chunk_b ) );
+		$this->rig->randomizer()->value = 5;
 
-		$observed_retries = array();
-
+		$this->rig->run_due();
 		$this->batch->process_throwable = null;
-		$this->batch->on_process        = function (
-			array $chunk_args,
-			BatchContextInterface $context
-		) use ( &$observed_retries ): void {
-			$chunk_name = $chunk_args['chunk'] ?? null;
-			self::assertIsString( $chunk_name );
-			$observed_retries[ $chunk_name ] = $this->run_state()['chunk_retries'];
+		$this->batch->on_process        = static function ( array $chunk ): void {
+			if ( 'b' === ( $chunk['chunk'] ?? null ) ) {
+				throw new \RuntimeException( 'Chunk B failed once.' );
+			}
 		};
+		$this->rig->run_due();
+		$this->rig->run_due();
+		$this->rig->run_due();
 
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 125;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_a, $this->action_seq() );
-
-		self::assertSame( 0, $this->run_state()['chunk_retries'] );
-		self::assertSame( array( $chunk_b ), $this->run_state()['queue'] );
-		self::assertFalse( $this->run_state()['executing'] );
-
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 185;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
-		$this->backend->calls   = array();
-		$this->clock->timestamp = self::NOW + 190;
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_b, $this->action_seq() );
-
-		self::assertSame(
-			array(
-				'a' => 1,
-				'b' => 0,
-			),
-			$observed_retries
-		);
-		self::assertSame(
-			array( $chunk_a, $chunk_a, $chunk_b ),
-			\array_column( $this->batch->process_calls, 'chunk_args' )
-		);
+		self::assertSame( array( $chunk_a, $chunk_a, $chunk_b ), \array_column( $this->batch->process_calls, 'chunk_args' ) );
+		self::assertCount( 2, $this->rig->hooks()->fired( 'a8csp_background_tasks/retry_scheduled' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 
 	/**
-	 * A failed retry schedule terminalizes the batch at the consumed-attempt count.
+	 * A failed retry schedule terminalizes at the consumed-attempt count.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The retry-scheduled hooks fire before the rejected write; an empty delivery boundary proves no delayed copy survives terminalization.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_chunk_retry_schedule_failure(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-
-		$this->batch->retry_policy = new RetryPolicy(
-			max_attempts: 2,
-			base_delay: 30,
-			max_delay: 120
-		);
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+		$current                        = array( 'chunk' => 'current' );
+		$this->batch->retry_policy      = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->batch->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
+		$this->prepare_scheduled_chunk( array( $current ) );
+		$this->rig->randomizer()->value                   = 7;
+		$this->rig->backend()->results['schedule_single'] = $this->scheduling_failure_result();
 
-		$this->randomizer->value = 7;
-		$this->randomizer->calls = array();
+		$this->rig->run_due();
 
-		$this->backend->results['schedule_single'] = $this->scheduling_failure_result();
-
-		$this->clock->timestamp = self::NOW + 120;
-
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
-
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertCount( 1, $this->batch->failure_calls );
-		self::assertSame(
-			'Batch "catalog-sync" could not schedule the retry action: Restore the scheduler before retrying this batch.',
-			$this->batch->failure_calls[0]['error']->message
-		);
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/retrying/' . self::NAME,
-				'a8csp_background_tasks/retrying',
-				'a8csp_background_tasks/failed/' . self::NAME,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
+		$failure = $this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
+		self::assertSame( 1, $failure->attempts );
+		self::assertCount( 1, $this->batch->failed_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
-	 * A non-retryable chunk failure bypasses the policy on its first attempt.
+	 * A non-retryable chunk bypasses policy on its first attempt.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_non_retryable_chunk_without_rescheduling(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
-		$this->batch->process_throwable = new NonRetryableTaskException( 'Chunk input is permanently invalid.' );
-		$this->clock->timestamp         = self::NOW + 120;
+		$current                        = array( 'chunk' => 'current' );
+		$this->batch->process_throwable = new NonRetryableException( 'Chunk input is permanently invalid.' );
+		$this->prepare_scheduled_chunk( array( $current ) );
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->backend->calls );
-		self::assertCount( 1, $this->batch->failure_calls );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/failed/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS, $error ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/failed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS, $error ),
-				),
-			),
-			$this->fired_actions()
-		);
+		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		self::assertSame( 1, $failure->attempts );
+		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * A throwing named failed listener still permits its generic companion and terminal cleanup.
+	 * A throwing named failed listener still permits its generic companion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_failed_named_listener_throw_still_fires_generic_hook_and_cleans_up(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-
-		$this->batch->retry_policy = new RetryPolicy( max_attempts: 1 );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
+	public function test_failed_named_listener_throw_still_fires_generic_hook_and_retains_terminal_row(): void {
+		$this->batch->retry_policy      = new RetryPolicy( max_attempts: 1 );
 		$this->batch->process_throwable = new \DomainException( 'Chunk failed.' );
-		$listener_throwable             = new \RuntimeException( 'Failed listener exploded.' );
-		$this->set_action_throwable(
-			'a8csp_background_tasks/failed/' . self::NAME,
-			$listener_throwable
-		);
-		$this->clock->timestamp = self::NOW + 120;
-		$caught                 = null;
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
+		$listener = new \RuntimeException( 'Failed listener exploded.' );
+		$this->set_action_throwable( 'a8csp_background_tasks/failed/' . self::IDENTITY, $listener );
 
+		$caught = null;
 		try {
-			$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+			$this->rig->run_due();
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
 
-		self::assertSame( $listener_throwable, $caught );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertCount( 1, $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_terminal_history( RunStatus::Failed );
+		self::assertSame( $listener, $caught );
+		self::assertCount( 1, $this->batch->failed_calls );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
 	}
 
 	/**
-	 * Cleanup fences terminal success before the callback and preserves hook ordering.
+	 * Cleanup fences terminal completion before the callback and public hooks.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Callback-time production state is the only evidence that cleanup publishes its terminal generation before invoking consumer completion code.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_cleanup_action_fences_before_callback_and_preserves_hook_order(): void {
-		$this->prepare_started_batch( array() );
-		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
-		$this->clear_action_observations();
-		$this->clock->timestamp  = self::NOW + 120;
-		$observed_state          = null;
-		$this->batch->on_success = function ( string $run_id, array $start_args ) use ( &$observed_state ): void {
-			$observed_state = $this->option( $this->run_option_name() );
+		$this->prepare_cleanup_delivery();
+		$observed                  = null;
+		$this->batch->on_completed = function () use ( &$observed ): void {
+			$observed = $this->run_state();
 		};
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertIsArray( $observed_state );
-		self::assertSame( 'completed', $observed_state['status'] ?? null );
-		self::assertTrue( $observed_state['executing'] ?? null );
-		self::assertSame(
-			array(
-				array(
-					'run_id'     => self::RUN_ID,
-					'start_args' => self::ARGS,
-				),
-			),
-			$this->batch->success_calls
-		);
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/completed/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/completed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
-			),
-			$this->fired_actions()
-		);
-		self::assertSame(
-			array(
-				'lock:update',
-				'run:running',
-				'run:completed',
-				'batch:success',
-				'hook:completed/' . self::NAME,
-				'hook:completed',
-				'lock:delete',
-				'run:delete',
-				'history',
-			),
-			$this->lifecycle_labels()
-		);
-		self::assertSame(
-			array( true, true ),
-			\array_column( $this->recorded_run_states(), 'executing' )
-		);
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		$this->assert_terminal_history( RunStatus::Completed );
+		self::assertSame( 'completed', $observed['status'] ?? null );
+		self::assertTrue( $observed['executing'] ?? false );
+		self::assertCount( 1, $this->batch->completed_calls );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A success-callback throwable is logged without changing the completed run outcome.
+	 * An `on_completed()` throwable cannot change the completed outcome.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_completes_and_logs_when_success_callback_throws(): void {
-		$this->prepare_started_batch( array() );
-		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
-		$this->clear_action_observations();
-		$this->clock->timestamp = self::NOW + 120;
-		// An Error carrying the non-retryable marker pins the catch to \Throwable with no marker special-casing.
-		$success_throwable              = new class( 'Success callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
-		$this->batch->success_throwable = $success_throwable;
+	public function test_handle_cleanup_action_completes_and_logs_when_on_completed_throws(): void {
+		$this->prepare_cleanup_delivery();
+		$this->batch->completed_throwable = new class( 'on_completed callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame(
-			array(
-				array(
-					'run_id'     => self::RUN_ID,
-					'start_args' => self::ARGS,
-				),
-			),
-			$this->batch->success_calls
-		);
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'error',
-					'message' => 'Batch success callback failed after all chunks completed; fix the batch on_success callback.',
-					'context' => array(
-						'batch_name'        => self::NAME,
-						'run_id'            => self::RUN_ID,
-						'exception_class'   => $success_throwable::class,
-						'exception_message' => 'Success callback exploded.',
-					),
-				),
-			),
-			$this->logger->records
-		);
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/completed/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/completed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
-			),
-			$this->fired_actions()
-		);
-		self::assertSame(
-			array(
-				'lock:update',
-				'run:running',
-				'run:completed',
-				'batch:success',
-				'hook:completed/' . self::NAME,
-				'hook:completed',
-				'lock:delete',
-				'run:delete',
-				'history',
-			),
-			$this->lifecycle_labels()
-		);
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		$this->assert_terminal_history( RunStatus::Completed );
+		self::assertCount( 1, $this->batch->completed_calls );
+		self::assertSame( array(), $this->batch->failed_calls );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A replacement started by on_success remains untouched while the finishing run commits Completed.
+	 * A replacement started by `on_completed()` survives the finishing cleanup.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A real facade admission from the `on_completed()` callback creates the successor generation that incumbent cleanup must not delete.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_completes_when_success_callback_starts_replacement(): void {
-		$this->prepare_started_batch( array() );
-		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
-		$this->clear_action_observations();
-		$this->clock->timestamp  = self::NOW + 120;
-		$replacement_result      = null;
-		$replacement_state       = null;
-		$replacement_lock        = null;
-		$this->batch->on_success = function (
-			string $finishing_run_id,
-			array $start_args
-		) use (
-			&$replacement_result,
-			&$replacement_state,
-			&$replacement_lock
-		): void {
-			$replacement_result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
-			self::assertInstanceOf( Success::class, $replacement_result );
-			self::assertIsString( $replacement_result->value );
-			$replacement_state = $this->option(
-				'a8csp_bgte_run_' . self::NAME . '_' . $replacement_result->value
-			);
-			$replacement_lock  = $this->lock();
+	public function test_handle_cleanup_action_completes_when_on_completed_starts_replacement(): void {
+		$this->prepare_cleanup_delivery();
+		$replacement               = null;
+		$this->batch->on_completed = function () use ( &$replacement ): void {
+			$replacement = $this->client->batches()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
 		};
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertInstanceOf( Success::class, $replacement_result );
-		self::assertIsString( $replacement_result->value );
-		$replacement_run_id = $replacement_result->value;
-		self::assertNotSame( self::RUN_ID, $replacement_run_id );
-		self::assertIsArray( $replacement_lock );
-		self::assertSame( $replacement_run_id, $replacement_lock['run_id'] );
-		self::assertSame( $replacement_lock, $this->lock() );
-		self::assertIsArray( $replacement_state );
-		self::assertSame(
-			$replacement_state,
-			$this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $replacement_run_id )
-		);
-		self::assertSame( 'running', $replacement_state['status'] ?? null );
-		self::assertFalse( $replacement_state['executing'] ?? null );
-		self::assertSame( 1, $replacement_state['action_seq'] ?? null );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
-				'a8csp_background_tasks/completed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		self::assertSame(
-			array(
-				'started'   => array( self::RUN_ID, $replacement_run_id ),
-				'completed' => array(
-					array(
-						'run_id' => self::RUN_ID,
-						'status' => RunStatus::Completed->value,
-					),
-				),
-				'by_hash'   => array(
-					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID, $replacement_run_id ),
-						'completed' => array(
-							array(
-								'run_id' => self::RUN_ID,
-								'status' => RunStatus::Completed->value,
-							),
-						),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
-		);
+		self::assertInstanceOf( Success::class, $replacement );
+		self::assertNotSame( self::RUN_ID, $replacement->value );
+		$this->rig->backend()->assert_scheduled( self::IDENTITY );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A sequential duplicate cleanup delivery cannot repeat success after its run state is consumed.
+	 * A sequential duplicate cleanup delivery cannot repeat `on_completed()`.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Redelivering the registered cleanup generation after state consumption proves the terminal callback is idempotent under at-least-once scheduling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_duplicate_cleanup_delivery_fires_success_once(): void {
-		$this->prepare_started_batch( array() );
-		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
-		$cleanup_seq = $this->action_seq();
-		$this->clear_action_observations();
-		$this->clock->timestamp = self::NOW + 120;
+	public function test_duplicate_cleanup_delivery_fires_on_completed_once(): void {
+		$this->prepare_cleanup_delivery();
+		$sequence = $this->run_state()['action_seq'] ?? null;
+		self::assertIsInt( $sequence );
 
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $cleanup_seq );
-		$this->lifecycle_deliveries->handle_cleanup_action( self::NAME, self::RUN_ID, $cleanup_seq );
+		$this->rig->run_due();
+		\do_action( 'a8csp_background_tasks/cleanup_batch', self::IDENTITY, self::RUN_ID, $sequence );
 
-		self::assertCount( 1, $this->batch->success_calls );
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/completed/' . self::NAME,
-				'a8csp_background_tasks/completed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		$this->assert_terminal_history( RunStatus::Completed );
+		self::assertCount( 1, $this->batch->completed_calls );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/completed' ) );
 	}
 
 	/**
-	 * A failed first-continuation schedule terminates the generated run without leaving active state.
+	 * A failed first-continuation schedule terminates generated work with no successor.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The failed scheduling write occurs after queue persistence; public failure hooks and an empty successor ledger prove the run cannot stall.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_start_action_fails_terminally_when_continue_scheduling_fails(): void {
 		$this->batch->queue = array( array( 'chunk' => 'first' ) );
 		$this->start_batch();
-		$this->backend->calls                    = array();
-		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
-		$this->clock->timestamp                  = self::NOW + 30;
+		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( $this->batch->queue, $this->failed_run_state()['queue'] );
-		$this->assert_terminal_scheduling_failure(
-			'continue',
-			array(
-				'verb' => 'enqueue_async',
-				'args' => array(
-					'hook'     => 'a8csp_background_tasks/continue',
-					'args'     => array( self::NAME, self::RUN_ID, 2 ),
-					'group'    => self::NAME . '|' . self::RUN_ID,
-					'unique'   => false,
-					'priority' => 10,
-				),
-			)
-		);
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		self::assertCount( 1, $this->batch->failed_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
 	 * A failed run schedule retains the current head in terminal diagnostics.
 	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The rejected run write must leave no accepted delivery that could process the terminalized queue head later.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_fails_terminally_when_run_scheduling_fails(): void {
-		$this->prepare_started_batch( array( array( 'chunk' => 'first' ) ) );
-		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
-		$this->clock->timestamp                  = self::NOW + 90;
+		$current = array( 'chunk' => 'first' );
+		$this->prepare_started_batch( array( $current ) );
+		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array( array( 'chunk' => 'first' ) ), $this->failed_run_state()['queue'] );
-		$this->assert_terminal_scheduling_failure(
-			'run',
-			array(
-				'verb' => 'enqueue_async',
-				'args' => array(
-					'hook'     => 'a8csp_background_tasks/run',
-					'args'     => array( self::NAME, self::RUN_ID, array( 'chunk' => 'first' ), 3 ),
-					'group'    => self::NAME . '|' . self::RUN_ID,
-					'unique'   => false,
-					'priority' => 10,
-				),
-			)
-		);
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
-	 * A failed cleanup schedule terminates a drained run instead of orphaning it.
+	 * A failed cleanup schedule terminalizes a drained run.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The rejected cleanup write must leave no accepted delivery that could invoke success after terminal failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_fails_terminally_when_cleanup_scheduling_fails(): void {
 		$this->prepare_started_batch( array() );
-		$this->backend->results['enqueue_async'] = $this->scheduling_failure_result();
-		$this->clock->timestamp                  = self::NOW + 90;
+		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		self::assertSame( array(), $this->failed_run_state()['queue'] );
-		$this->assert_terminal_scheduling_failure(
-			'cleanup',
-			array(
-				'verb' => 'enqueue_async',
-				'args' => array(
-					'hook'     => 'a8csp_background_tasks/cleanup',
-					'args'     => array( self::NAME, self::RUN_ID, 3 ),
-					'group'    => self::NAME . '|' . self::RUN_ID,
-					'unique'   => false,
-					'priority' => 10,
-				),
-			)
-		);
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
-	 * Losing replacement-lock ownership at continue exits through Superseded without batch callbacks.
+	 * Continue quietly supersedes after fixture-built lock ownership moves.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The foreign lock generation exists before the registered continuation claims execution, so it must create no successor or callback.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_continue_action_quietly_supersedes_after_lock_ownership_moves(): void {
 		$this->prepare_started_batch( array( array( 'chunk' => 'first' ) ) );
-		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
-		$this->clear_action_observations();
-		$this->clock->timestamp = self::NOW + 90;
+		$this->install_foreign_generation( self::NOW );
 
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
-		$this->assert_quiet_superseded_run();
-		self::assertSame( array(), $this->backend->calls );
+		$this->assert_foreign_superseded();
+		self::assertSame( array(), $this->batch->process_calls );
 	}
 
 	/**
-	 * Losing replacement-lock ownership at chunk execution prevents chunk and terminal callbacks.
+	 * Chunk execution quietly supersedes after fixture-built lock ownership moves.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The foreign lock generation exists before the registered run delivery claims execution, preventing chunk and terminal callbacks.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_quietly_supersedes_after_lock_ownership_moves(): void {
-		$chunk_args = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $chunk_args ) );
-		( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-		$this->replace_lock_owner( 'run-newer', self::NOW + 120 );
-		$this->clear_action_observations();
-		$this->clock->timestamp = self::NOW + 120;
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
+		$this->install_foreign_generation( self::NOW );
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $chunk_args, $this->action_seq() );
+		$this->rig->run_due();
 
-		$this->assert_quiet_superseded_run();
+		$this->assert_foreign_superseded();
 		self::assertSame( array(), $this->batch->process_calls );
-		self::assertSame( array(), $this->backend->calls );
 	}
 
-	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
 	// endregion.
 
 	// region HELPERS.
 
 	/**
-	 * Schedules the retained queue head as a run action and clears its observations.
+	 * Starts the deterministic batch through its owner-bound facade.
 	 *
-	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  void
+	 * @return  string
 	 */
-	private function prepare_scheduled_chunk( array $queue ): void {
-		$this->prepare_started_batch( $queue );
-		$this->clock->timestamp = self::NOW + 90;
-		$this->lifecycle_deliveries->handle_continue_action( self::NAME, self::RUN_ID, $this->action_seq() );
-		$this->clear_action_observations();
-	}
-
-	/**
-	 * Clears observations created by the preceding internal action.
-	 *
-	 * @return  void
-	 */
-	private function clear_action_observations(): void {
-		$this->backend->calls         = array();
-		$this->logger->records        = array();
-		$this->wpdb->recorded_queries = array();
-
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
-	}
-
-	/**
-	 * Returns the failed status write made before terminal option deletion.
-	 *
-	 * @return  array{
-	 *     status: string,
-	 *     executing: bool,
-	 *     start_args: array<array-key, mixed>,
-	 *     args_hash: string,
-	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
-	 *     action_seq: int,
-	 *     created_at: int,
-	 *     heartbeat_at: int
-	 * }
-	 */
-	private function failed_run_state(): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
-		self::assertIsArray( $events );
-		foreach ( $events as $event ) {
-			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
-				continue;
-			}
-			if ( $this->run_option_name() !== ( $event['key'] ?? null ) ) {
-				continue;
-			}
-
-			$state = \maybe_unserialize( $event['raw'] ?? null );
-			if ( \is_array( $state ) && 'failed' === ( $state['status'] ?? null ) ) {
-				return $this->typed_run_state( $state );
-			}
-		}
-
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
-		self::assertIsArray( $calls );
-		foreach ( $calls as $call ) {
-			self::assertIsArray( $call );
-			if ( 'update_option' !== ( $call['function'] ?? null ) ) {
-				continue;
-			}
-
-			$args = $call['args'] ?? null;
-			self::assertIsArray( $args );
-			if ( $this->run_option_name() !== ( $args[0] ?? null ) ) {
-				continue;
-			}
-
-			$state = $args[1] ?? null;
-			if ( \is_array( $state ) && 'failed' === ( $state['status'] ?? null ) ) {
-				return $this->typed_run_state( $state );
-			}
-		}
-
-		self::fail( 'The batch run never persisted its failed state.' );
-	}
-
-	/**
-	 * Reduces the unified boundary ledger to lifecycle-significant labels.
-	 *
-	 * @return  list<string>
-	 */
-	private function lifecycle_labels(): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
-		self::assertIsArray( $events );
-		$labels = array();
-
-		foreach ( $events as $event ) {
-			self::assertIsArray( $event );
-			$type = $event['type'] ?? null;
-			if ( 'lock' === $type ) {
-				$operation = $event['operation'] ?? null;
-				self::assertIsString( $operation );
-				if ( $this->run_option_name() === ( $event['key'] ?? null ) ) {
-					if ( 'delete' === $operation ) {
-						$labels[] = 'run:delete';
-					} elseif ( 'update' === $operation ) {
-						$value = \maybe_unserialize( $event['raw'] ?? null );
-						self::assertIsArray( $value );
-						$status = $value['status'] ?? null;
-						self::assertIsString( $status );
-						$labels[] = 'run:' . $status;
-					}
-
-					continue;
-				}
-				$labels[] = 'lock:' . $operation;
-				continue;
-			}
-
-			if ( 'batch' === $type ) {
-				$operation = $event['operation'] ?? null;
-				self::assertIsString( $operation );
-				$labels[] = 'batch:' . $operation;
-				continue;
-			}
-
-			if ( 'action' === $type ) {
-				$hook_name = $event['hook_name'] ?? null;
-				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
-				continue;
-			}
-
-			if ( 'option' !== $type ) {
-				continue;
-			}
-
-			$function = $event['function'] ?? null;
-			$args     = $event['args'] ?? null;
-			self::assertIsArray( $args );
-			$option_name = $args[0] ?? null;
-			self::assertIsString( $option_name );
-			if ( 'delete_option' === $function && $this->run_option_name() === $option_name ) {
-				$labels[] = 'run:delete';
-				continue;
-			}
-
-			if ( 'update_option' !== $function ) {
-				continue;
-			}
-
-			if ( $this->run_option_name() === $option_name ) {
-				$value = $args[1] ?? null;
-				self::assertIsArray( $value );
-				$status = $value['status'] ?? null;
-				self::assertIsString( $status );
-				$labels[] = 'run:' . $status;
-			} elseif ( 'a8csp_bgte_failed_' . self::NAME === $option_name ) {
-				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::NAME === $option_name ) {
-				$labels[] = 'history';
-			}
-		}
-
-		return $labels;
-	}
-
-	/**
-	 * Returns a deterministic scheduling failure for one lifecycle action.
-	 *
-	 * @return  Failure<SchedulingError>
-	 */
-	private function scheduling_failure_result(): Failure {
-		return new Failure(
-			new SchedulingError(
-				SchedulingErrorReason::ScheduleFailed,
-				'Restore the scheduler before retrying this batch.'
-			)
-		);
-	}
-
-	/**
-	 * Asserts queue startup failed terminally before scheduling a continuation.
-	 *
-	 * @phpstan-param class-string $exception_class
-	 *
-	 * @param   string $message         Expected failure message.
-	 * @param   string $exception_class Expected throwable class.
-	 *
-	 * @return  void
-	 */
-	private function assert_terminal_start_error( string $message, string $exception_class ): void {
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->failed_run_state()['queue'] );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertSame( array(), $this->batch->success_calls );
-		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame( $message, $error->message );
-		self::assertSame( $exception_class, $error->exception_class );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		$this->assert_terminal_history( RunStatus::Failed );
-	}
-
-	/**
-	 * Asserts one failed scheduling stage leaves only terminal diagnostics and history.
-	 *
-	 * @param   'continue'|'run'|'cleanup'                      $stage         Scheduled action stage.
-	 * @param   array{verb: string, args: array<string, mixed>} $expected_call Complete scheduling request.
-	 *
-	 * @return  void
-	 */
-	private function assert_terminal_scheduling_failure( string $stage, array $expected_call ): void {
-		self::assertSame( array( $expected_call ), $this->backend->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		self::assertSame( array(), $this->batch->success_calls );
-		self::assertCount( 1, $this->batch->failure_calls );
-		$error = $this->batch->failure_calls[0]['error'];
-		self::assertSame(
-			\sprintf(
-				'Batch "catalog-sync" could not schedule the %s action: Restore the scheduler before retrying this batch.',
-				$stage
-			),
-			$error->message
-		);
-		self::assertSame( SchedulingError::class, $error->exception_class );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		$stored_error = $failed_run['error'] ?? null;
-		self::assertIsArray( $stored_error );
-		self::assertSame( $error->message, $stored_error['message'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
-				'a8csp_background_tasks/failed',
-			),
-			\array_slice( \array_column( $this->fired_actions(), 'hook_name' ), -2 )
-		);
-		$this->assert_terminal_history( RunStatus::Failed );
-	}
-
-	/**
-	 * Asserts a fenced run exits without processing or terminal batch callbacks.
-	 *
-	 * @return  void
-	 */
-	private function assert_quiet_superseded_run(): void {
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertSame( array(), $this->batch->success_calls );
-		self::assertSame( array(), $this->batch->failure_calls );
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/superseded',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
-			),
-			$this->fired_actions()
-		);
-		$this->assert_terminal_history( RunStatus::Superseded );
-	}
-
-	/**
-	 * Asserts both terminal-history buffers contain the deterministic outcome.
-	 *
-	 * @param   RunStatus $status Terminal run status.
-	 *
-	 * @return  void
-	 */
-	private function assert_terminal_history( RunStatus $status ): void {
-		$entry = array(
-			'run_id' => self::RUN_ID,
-			'status' => $status->value,
-		);
-
-		self::assertSame(
-			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
-					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array( $entry ),
-					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
-		);
-	}
-
-	/**
-	 * Starts one deterministic batch run.
-	 *
-	 * @return  void
-	 */
-	private function start_batch(): void {
-		$result = $this->dispatcher->start_batch( self::NAME, self::ARGS );
+	private function start_batch(): string {
+		$result = $this->client->batches()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
+
+		return $result->value;
 	}
 
 	/**
-	 * Generates a queue and clears observations before its first continue action.
+	 * Returns one portable chunk with the requested encoded JSON byte length.
+	 *
+	 * @param   int $json_bytes Exact encoded byte length, including object syntax.
+	 *
+	 * @return  array{payload: string}
+	 */
+	private static function chunk_with_json_bytes( int $json_bytes ): array {
+		return array( 'payload' => \str_repeat( 'a', $json_bytes - 14 ) );
+	}
+
+	/**
+	 * Returns a portable 128-chunk queue with the requested PHP serialization length.
+	 *
+	 * Each full chunk has an 8,178-byte payload and therefore an 8,192-byte JSON representation.
+	 * Measuring the complete serialized queue yields the overflow removed from the final payload;
+	 * the four-digit guard keeps that payload's serialized length field at a stable width.
+	 *
+	 * @param   int $persisted_bytes Exact persisted byte length.
+	 *
+	 * @return  list<array{payload: string}>
+	 */
+	private static function queue_with_persisted_bytes( int $persisted_bytes ): array {
+		$payload_lengths = \array_fill( 0, 128, 8_178 );
+		$overflow        = self::serialized_queue_bytes_for_payload_lengths( $payload_lengths ) - $persisted_bytes;
+		$tail_index      = \array_key_last( $payload_lengths );
+		$tail_bytes      = $payload_lengths[ $tail_index ] - $overflow;
+		if ( 1_000 > $tail_bytes || 9_999 < $tail_bytes ) {
+			throw new \LogicException( 'The boundary fixture requires a four-digit final payload length.' );
+		}
+		$payload_lengths[ $tail_index ] = $tail_bytes;
+
+		return \array_map(
+			static fn ( int $payload_bytes ): array => array( 'payload' => \str_repeat( 'a', $payload_bytes ) ),
+			$payload_lengths
+		);
+	}
+
+	/**
+	 * Calculates PHP's serialized byte length for the fixture queue.
+	 *
+	 * @phpstan-param list<int> $payload_lengths
+	 *
+	 * @param   array $payload_lengths Payload byte lengths in queue order.
+	 *
+	 * @return  int
+	 */
+	private static function serialized_queue_bytes_for_payload_lengths( array $payload_lengths ): int {
+		$queue = \array_map(
+			static fn ( int $payload_bytes ): array => array( 'payload' => \str_repeat( 'a', $payload_bytes ) ),
+			$payload_lengths
+		);
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Production persists this queue through WordPress serialization; the boundary fixture measures the same grammar.
+		return \strlen( \serialize( $queue ) );
+	}
+
+	/**
+	 * Delivers start for one queue and leaves its continuation pending.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
 	 *
@@ -2024,292 +1657,278 @@ final class ActionDeliveriesBatchTest extends TestCase {
 	private function prepare_started_batch( array $queue ): void {
 		$this->batch->queue = $queue;
 		$this->start_batch();
-		$this->clock->timestamp = self::NOW + 30;
-		$this->lifecycle_deliveries->handle_start_action( self::NAME, self::RUN_ID, $this->action_seq() );
-
-		$this->backend->calls                        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$this->rig->run_due();
+		$this->rig->backend()->calls = array();
 	}
 
 	/**
-	 * Returns the deterministic run option's complete state.
+	 * Delivers start and continue for one queue, leaving its run action pending.
 	 *
-	 * @return  array{
-	 *     status: string,
-	 *     executing: bool,
-	 *     start_args: array<array-key, mixed>,
-	 *     args_hash: string,
-	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
-	 *     action_seq: int,
-	 *     created_at: int,
-	 *     heartbeat_at: int
-	 * }
-	 */
-	private function run_state(): array {
-		return $this->typed_run_state( $this->option( $this->run_option_name() ) );
-	}
-
-	/**
-	 * Reconstructs a complete typed state from the WordPress option boundary.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @param   mixed $state Persisted run state.
-	 *
-	 * @return  array{
-	 *     status: string,
-	 *     executing: bool,
-	 *     start_args: array<array-key, mixed>,
-	 *     args_hash: string,
-	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
-	 *     action_seq: int,
-	 *     created_at: int,
-	 *     heartbeat_at: int
-	 * }
-	 */
-	private function typed_run_state( mixed $state ): array {
-		self::assertIsArray( $state );
-		$status        = $state['status'] ?? null;
-		$executing     = $state['executing'] ?? null;
-		$start_args    = $state['start_args'] ?? null;
-		$args_hash     = $state['args_hash'] ?? null;
-		$raw_queue     = $state['queue'] ?? null;
-		$chunk_retries = $state['chunk_retries'] ?? null;
-		$action_seq    = $state['action_seq'] ?? null;
-		$created_at    = $state['created_at'] ?? null;
-		$heartbeat_at  = $state['heartbeat_at'] ?? null;
-		self::assertIsString( $status );
-		self::assertIsBool( $executing );
-		self::assertIsArray( $start_args );
-		self::assertIsString( $args_hash );
-		self::assertIsArray( $raw_queue );
-		self::assertIsInt( $chunk_retries );
-		self::assertIsInt( $action_seq );
-		self::assertIsInt( $created_at );
-		self::assertIsInt( $heartbeat_at );
-
-		$queue = array();
-		foreach ( $raw_queue as $chunk_args ) {
-			self::assertIsArray( $chunk_args );
-			$queue[] = $chunk_args;
-		}
-
-		return array(
-			'status'        => $status,
-			'executing'     => $executing,
-			'start_args'    => $start_args,
-			'args_hash'     => $args_hash,
-			'queue'         => $queue,
-			'chunk_retries' => $chunk_retries,
-			'action_seq'    => $action_seq,
-			'created_at'    => $created_at,
-			'heartbeat_at'  => $heartbeat_at,
-		);
-	}
-
-	/**
-	 * Returns complete run states written through the exact-CAS boundary.
-	 *
-	 * @return  list<array{
-	 *     status: string,
-	 *     executing: bool,
-	 *     start_args: array<array-key, mixed>,
-	 *     args_hash: string,
-	 *     queue: list<array<array-key, mixed>>,
-	 *     chunk_retries: int,
-	 *     action_seq: int,
-	 *     created_at: int,
-	 *     heartbeat_at: int
-	 * }>
-	 */
-	private function recorded_run_states(): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
-		self::assertIsArray( $events );
-		$states = array();
-
-		foreach ( $events as $event ) {
-			if (
-				! \is_array( $event )
-				|| 'lock' !== ( $event['type'] ?? null )
-				|| 'update' !== ( $event['operation'] ?? null )
-				|| $this->run_option_name() !== ( $event['key'] ?? null )
-			) {
-				continue;
-			}
-
-			$states[] = $this->typed_run_state( \maybe_unserialize( $event['raw'] ?? null ) );
-		}
-
-		return $states;
-	}
-
-	/**
-	 * Returns the deterministic run option name.
-	 *
-	 * @return  string
-	 */
-	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
-	}
-
-	/**
-	 * Returns the newest scheduled lifecycle action sequence for the live batch run.
-	 *
-	 * @return  int
-	 */
-	private function action_seq(): int {
-		return $this->run_state()['action_seq'];
-	}
-
-	/**
-	 * Replaces the current batch lock with one foreign owner.
-	 *
-	 * @param   string $run_id       Foreign run identifier.
-	 * @param   int    $heartbeat_at Foreign heartbeat timestamp.
+	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
 	 *
 	 * @return  void
 	 */
-	private function replace_lock_owner( string $run_id, int $heartbeat_at ): void {
-		$raw = \maybe_serialize(
-			array(
-				'run_id'       => $run_id,
-				'claimed_at'   => $heartbeat_at,
-				'heartbeat_at' => $heartbeat_at,
+	private function prepare_scheduled_chunk( array $queue ): void {
+		$this->prepare_started_batch( $queue );
+		$this->rig->run_due();
+		$this->rig->backend()->calls = array();
+	}
+
+	/**
+	 * Leaves the cleanup action for one drained batch pending.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function prepare_cleanup_delivery(): void {
+		$this->prepare_started_batch( array() );
+		$this->rig->run_due();
+		$this->rig->clock()->timestamp = self::NOW + 120;
+	}
+
+	/**
+	 * Installs one production-built foreign lock and latest-pointer generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $heartbeat Foreign generation heartbeat.
+	 *
+	 * @return  void
+	 */
+	private function install_foreign_generation( int $heartbeat ): void {
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => 'run-newer',
+						'args_hash' => $this->args_hash(),
+					),
+				)
 			)
 		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH, $raw );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-newer', $heartbeat, $heartbeat ) );
 	}
 
 	/**
-	 * Returns the current deterministic lock row.
+	 * Asserts the incumbent superseded while foreign ownership survived.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function assert_foreign_superseded(): void {
+		$this->rig->assert_superseded();
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->batch->failed_calls );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+	}
+
+	/**
+	 * Asserts and returns the latest public failure payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ApiErrorCode                 $code         Expected failure code.
+	 * @param   RunFailureStage              $stage        Expected failure stage.
+	 * @param   array<array-key, mixed>|null $failed_chunk Expected failed chunk.
+	 *
+	 * @return  RunFailure
+	 */
+	private function assert_failure( ApiErrorCode $code, RunFailureStage $stage, ?array $failed_chunk ): RunFailure {
+		$events = $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' );
+		self::assertNotEmpty( $events );
+		$failure = $events[ \count( $events ) - 1 ][3] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( $code, $failure->code );
+		self::assertSame( $stage, $failure->stage );
+		self::assertSame( $failed_chunk, $failure->failed_chunk );
+
+		return $failure;
+	}
+
+	/**
+	 * Returns a deterministic scheduling failure for one lifecycle action.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  Failure<SchedulingError>
+	 */
+	private function scheduling_failure_result(): Failure {
+		return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying this batch.' ) );
+	}
+
+	/**
+	 * Stores one production-built raw fixture in the active database.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
+	 *
+	 * @return  void
+	 */
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+	}
+
+	/**
+	 * Returns the canonical argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	private function args_hash(): string {
+		return $this->fixtures->args_hash( self::ARGS );
+	}
+
+	/**
+	 * Returns the current decoded overlap lock.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>|null
 	 */
 	private function lock(): ?array {
-		$name = 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
-		$raw  = $this->wpdb->rows[ $name ] ?? null;
-		if ( ! \is_string( $raw ) ) {
-			return null;
-		}
+		$value = $this->decoded_row( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() );
 
-		$value = \maybe_unserialize( $raw );
-		if ( ! \is_array( $value ) ) {
-			return null;
-		}
-
-		$run_id       = $value['run_id'] ?? null;
-		$claimed_at   = $value['claimed_at'] ?? null;
-		$heartbeat_at = $value['heartbeat_at'] ?? null;
-		if ( ! \is_string( $run_id ) || ! \is_int( $claimed_at ) || ! \is_int( $heartbeat_at ) ) {
-			return null;
-		}
-
-		return array(
-			'run_id'       => $run_id,
-			'claimed_at'   => $claimed_at,
-			'heartbeat_at' => $heartbeat_at,
-		);
+		return \is_array( $value ) ? $value : null;
 	}
 
 	/**
-	 * Returns one persisted option value.
+	 * Returns the current decoded deterministic run state.
 	 *
-	 * @param   string $name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private function run_state(): ?array {
+		$value = $this->decoded_row( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+
+		return \is_array( $value ) ? $value : null;
+	}
+
+	/**
+	 * Decodes one authoritative raw database row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
 	 */
-	private function option( string $name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
+	private function decoded_row( string $option_name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $option_name ] ?? null;
+		if ( null === $raw ) {
+			$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+			self::assertIsArray( $options );
 
-		return $options[ $name ] ?? null;
-	}
-
-	/**
-	 * Returns fired lifecycle actions.
-	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
-	 */
-	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
-		self::assertIsArray( $actions );
-		$typed_actions = array();
-		foreach ( $actions as $action ) {
-			self::assertIsArray( $action );
-			$hook_name = $action['hook_name'] ?? null;
-			$args      = $action['args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsArray( $args );
-			$typed_actions[] = array(
-				'hook_name' => $hook_name,
-				'args'      => \array_values( $args ),
-			);
+			return $options[ $option_name ] ?? null;
 		}
 
-		return $typed_actions;
+		return \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 	}
 
 	/**
-	 * Returns internal action registrations.
+	 * Returns backend calls that target one lifecycle hook.
 	 *
-	 * @return  list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook Lifecycle hook.
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
-	private function action_registrations(): array {
-		$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
-		self::assertIsArray( $registrations );
-		$typed_registrations = array();
-		foreach ( $registrations as $registration ) {
-			self::assertIsArray( $registration );
-			$hook_name     = $registration['hook_name'] ?? null;
-			$priority      = $registration['priority'] ?? null;
-			$accepted_args = $registration['accepted_args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsInt( $priority );
-			self::assertIsInt( $accepted_args );
-			$typed_registrations[] = array(
-				'hook_name'     => $hook_name,
-				'callback'      => $registration['callback'] ?? null,
-				'priority'      => $priority,
-				'accepted_args' => $accepted_args,
-			);
-		}
-
-		return $typed_registrations;
+	private function calls_for_hook( string $hook ): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => ( $call['args']['hook'] ?? null ) === $hook ) );
 	}
 
 	/**
-	 * Scripts one WordPress filter value through a typed global boundary.
+	 * Returns the only backend call targeting one lifecycle hook.
 	 *
-	 * @param   string $hook_name Hook name.
-	 * @param   mixed  $value     Scripted value.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook Lifecycle hook.
+	 *
+	 * @return  array{verb: string, args: array<string, mixed>}
+	 */
+	private function single_call_for_hook( string $hook ): array {
+		$calls = $this->calls_for_hook( $hook );
+		self::assertCount( 1, $calls );
+
+		return $calls[0];
+	}
+
+	/**
+	 * Scripts one legitimate WordPress filter seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook_name Filter hook name.
+	 * @param   mixed  $value     Filter return or callback.
 	 *
 	 * @return  void
 	 */
 	private function set_filter_value( string $hook_name, mixed $value ): void {
 		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
-		$filters[ $hook_name ] = $value;
-
+		$filters[ $hook_name ]                    = $value;
 		$GLOBALS['a8csp_bgte_test_filter_values'] = $filters;
 	}
 
 	/**
-	 * Scripts one listener throwable through the unit action boundary.
+	 * Scripts one legitimate WordPress action failure seam.
 	 *
-	 * @param   string     $hook_name Hook name.
-	 * @param   \Throwable $throwable Listener failure.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string     $hook_name Action hook name.
+	 * @param   \Throwable $throwable Failure raised by the hook seam.
 	 *
 	 * @return  void
 	 */
 	private function set_action_throwable( string $hook_name, \Throwable $throwable ): void {
 		$throwables = $GLOBALS['a8csp_bgte_test_action_throwables'] ?? null;
 		self::assertIsArray( $throwables );
-		$throwables[ $hook_name ] = $throwable;
-
+		$throwables[ $hook_name ]                     = $throwable;
 		$GLOBALS['a8csp_bgte_test_action_throwables'] = $throwables;
+	}
+
+	/**
+	 * Observes one legitimate WordPress action boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $hook_name Exact action hook.
+	 * @param   \Closure $observe   Observation callback.
+	 *
+	 * @return  void
+	 */
+	private function observe_action( string $hook_name, \Closure $observe ): void {
+		$observers = $GLOBALS['a8csp_bgte_test_action_observers'] ?? null;
+		self::assertIsArray( $observers );
+		$observers[]                                 = static function ( string $hook ) use ( $hook_name, $observe ): void {
+			if ( $hook_name === $hook ) {
+				$observe();
+			}
+		};
+		$GLOBALS['a8csp_bgte_test_action_observers'] = $observers;
 	}
 
 	// endregion.

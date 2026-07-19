@@ -2,17 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchContextInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchContextInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 
 /**
  * Demonstrates a batch that recounts comments one post per independently retried chunk.
  *
- * The start action carries only a post-type key. Queue generation loads the matching post IDs from
- * WordPress, keeping bulk data out of the scheduling payload.
+ * The persisted start arguments contain only a post-type key. Queue generation loads the matching
+ * post IDs from WordPress and persists one identifier per chunk.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -28,37 +28,37 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @var     string
 	 */
-	public const NAME = 'a8csp-bgte-demo-comment-count-recount';
+	public const string NAME = 'a8csp-bgte-demo-comment-count-recount';
 
 	/**
-	 * Consumer-owned action fired after one post's comment count is refreshed.
+	 * Client-owned action fired after one post's comment count is refreshed.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const RECOUNTED_HOOK = 'a8csp_bgte_demo/comment_count_recounted';
+	public const string RECOUNTED_HOOK = 'a8csp_bgte_demo/comment_count_recounted';
 
 	/**
-	 * Consumer-owned action fired after every chunk succeeds.
+	 * Client-owned action fired after every chunk succeeds.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const SUCCEEDED_HOOK = 'a8csp_bgte_demo/comment_count_recount_succeeded';
+	public const string SUCCEEDED_HOOK = 'a8csp_bgte_demo/comment_count_recount_succeeded';
 
 	/**
-	 * Consumer-owned action fired after a terminal batch failure.
+	 * Client-owned action fired after a terminal batch failure.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const FAILED_HOOK = 'a8csp_bgte_demo/comment_count_recount_failed';
+	public const string FAILED_HOOK = 'a8csp_bgte_demo/comment_count_recount_failed';
 
 	// endregion.
 
@@ -78,6 +78,19 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
+	 * Returns the shared ceiling for one queue generation or recount invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  int
+	 */
+	#[\Override]
+	public function max_callback_runtime(): int {
+		return self::DEFAULT_MAX_CALLBACK_RUNTIME;
+	}
+
+	/**
 	 * Loads post IDs by the small `post_type` key carried on the start action.
 	 *
 	 * @since   1.0.0
@@ -85,7 +98,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 *
-	 * @throws  NonRetryableTaskException When `post_type` is absent or not a registered post type.
+	 * @throws  NonRetryableException When `post_type` is absent or not a registered post type.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
@@ -95,9 +108,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 		// A typo'd post type would drain an empty queue and report success; failing loudly on an
 		// unregistered key is a permanent input defect, so it escapes the retry ladder.
 		if ( ! \is_string( $post_type ) || ! \post_type_exists( $post_type ) ) {
-			throw new NonRetryableTaskException(
-				'Comment-count recount arguments require a registered post_type; pass the post type key when starting the batch.'
-			);
+			throw new NonRetryableException( 'Comment-count recount arguments require a registered post_type; pass the post type key when starting the batch.' );
 		}
 
 		$post_ids = \get_posts(
@@ -120,7 +131,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
-	 * Recounts one post and publishes a consumer-owned observation action.
+	 * Recounts one post and publishes a client-owned observation action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -128,7 +139,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
 	 * @param   BatchContextInterface   $context    Controlled access to this chunk's run.
 	 *
-	 * @throws  NonRetryableTaskException When the queued post identifier is invalid or its post is gone.
+	 * @throws  NonRetryableException When the queued post identifier is invalid or its post is gone.
 	 * @throws  \RuntimeException         When the refreshed comment count is not persisted.
 	 *
 	 * @return  void
@@ -137,17 +148,13 @@ final class CommentCountRecountBatch implements BatchInterface {
 	public function process_chunk( array $chunk_args, BatchContextInterface $context ): void {
 		$post_id = $chunk_args['post_id'] ?? null;
 		if ( ! \is_int( $post_id ) || 1 > $post_id ) {
-			throw new NonRetryableTaskException(
-				'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.'
-			);
+			throw new NonRetryableException( 'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.' );
 		}
 
 		// WordPress returns false only when the post no longer exists — a permanent missing
 		// reference, not a transient failure, so it escapes the retry ladder.
 		if ( ! \wp_update_comment_count_now( $post_id ) ) {
-			throw new NonRetryableTaskException(
-				\sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id )
-			);
+			throw new NonRetryableException( \sprintf( 'Post %d no longer exists; regenerate the batch queue from current post IDs.', $post_id ) );
 		}
 
 		// The core helper reports success without checking its database update, so comparing the
@@ -162,14 +169,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 			)
 		);
 		if ( $approved_comment_count !== $stored_comment_count ) {
-			throw new \RuntimeException(
-				\sprintf(
-					'Post %1$d stores comment_count %2$d but has %3$d approved comments; fix the database write before retrying the chunk.',
-					$post_id,
-					$stored_comment_count,
-					$approved_comment_count
-				)
-			);
+			throw new \RuntimeException( \sprintf( 'Post %1$d stores comment_count %2$d but has %3$d approved comments; fix the database write before retrying the chunk.', $post_id, $stored_comment_count, $approved_comment_count ) );
 		}
 
 		/**
@@ -196,7 +196,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_success( string $run_id, array $start_args ): void {
+	public function on_completed( string $run_id, array $start_args ): void {
 		/**
 		 * Fires after every comment-count chunk succeeds.
 		 *
@@ -210,19 +210,19 @@ final class CommentCountRecountBatch implements BatchInterface {
 	}
 
 	/**
-	 * Publishes terminal failure detail for the consumer's alerting code.
+	 * Publishes terminal failure detail for the client's alerting code.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   EngineError             $error      Persisted failure detail.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_failure( string $run_id, array $start_args, EngineError $error ): void {
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
 		/**
 		 * Fires after the demo batch reaches terminal failure.
 		 *
@@ -231,9 +231,9 @@ final class CommentCountRecountBatch implements BatchInterface {
 		 *
 		 * @param   string                  $run_id     Engine-assigned batch run identifier.
 		 * @param   array<array-key, mixed> $start_args Original batch start arguments.
-		 * @param   EngineError             $error      Persisted failure detail.
+		 * @param   RunFailure              $failure    Persisted terminal-failure value.
 		 */
-		\do_action( self::FAILED_HOOK, $run_id, $start_args, $error );
+		\do_action( self::FAILED_HOOK, $run_id, $start_args, $failure );
 	}
 
 	/**
@@ -246,12 +246,7 @@ final class CommentCountRecountBatch implements BatchInterface {
 	 */
 	#[\Override]
 	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy(
-			max_attempts: 3,
-			base_delay: 5,
-			multiplier: 2,
-			max_delay: \MINUTE_IN_SECONDS
-		);
+		return new RetryPolicy( max_attempts: 3, base_delay: 5, multiplier: 2, max_delay: \MINUTE_IN_SECONDS );
 	}
 
 	// endregion.

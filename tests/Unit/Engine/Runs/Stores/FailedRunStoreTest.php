@@ -2,44 +2,81 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
+/** Detects unsafe class construction while corrupt failed-run storage is inspected. */
+final class FailedRunStorePoison {
+	public static int $wakeups = 0;
+
+	/** Records an unsafe native object construction. */
+	public function __wakeup(): void {
+		++self::$wakeups;
+	}
+}
+
 /**
- * Pins failed-run retry data, ordering, and bounded retention.
+ * Exercises failed-run retention through the run facade and retains exact-row CAS proofs.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( FailedRunStore::class )]
-#[UsesClass( EngineError::class )]
-#[UsesClass( OptionRows::class )]
-#[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( HookLogger::class )]
 final class FailedRunStoreTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string NAME     = 'reports';
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'runs-tests';
+	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
+
+	private Client $client;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private OptionRows $rows;
-	private WpdbLockSpy $wpdb;
+	private RecordingTask $task;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress option functions before the store is autoloaded.
+	 * Loads guarded production files before the graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 3 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 3 ) . '/wp-lock-stubs.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets request-local option state.
+	 * Boots one registered failing task against deterministic interface fakes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -47,389 +84,674 @@ final class FailedRunStoreTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']         = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']         = 1;
-		$GLOBALS['a8csp_bgte_test_cache']           = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']     = array();
-		$this->wpdb                                 = new WpdbLockSpy();
-		$this->rows                                 = new OptionRows( $this->wpdb );
+		$this->rig                = EngineRig::set_up( self::NOW );
+		$this->client             = $this->rig->client( self::OWNER );
+		$this->task               = new RecordingTask( self::NAME );
+		$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->client->tasks()->register( $this->task );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
 
 	/**
-	 * Empty storage returns a newest-last list with no entries.
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_all_returns_an_empty_list_without_failures(): void {
-		self::assertSame( array(), ( new FailedRunStore( 'reports', $this->rows ) )->all() );
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	// endregion.
+
+	// region BEHAVIOR.
+
+	/**
+	 * The twenty-first retained failure logs the confirmed oldest-run eviction.
+	 *
+	 * @return  void
+	 */
+	public function test_retention_eviction_logs_the_evicted_run_and_identity_after_persistence(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_ids[] = $this->fail_task( array( 'index' => $index ), $index + 1 );
+		}
+		$this->rig->logger()->records = array();
+
+		$terminal_run_id = $this->fail_task( array( 'index' => 20 ), 21 );
+
+		self::assertCount( 2, $this->rig->logger()->records );
+		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( $terminal_run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'warning', $this->rig->logger()->records[1]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[1]['context']['identity'] ?? null );
+		self::assertSame( $run_ids[0], $this->rig->logger()->records[1]['context']['evicted_run_ids'] ?? null );
 	}
 
 	/**
-	 * Raw failed-run reads reject serialized classes without invoking their wakeup hooks.
+	 * A failed-run persist below the retention limit emits only its terminal-failure event.
 	 *
 	 * @return  void
 	 */
-	public function test_all_does_not_construct_serialized_classes(): void {
-		FailedRunStorePoison::$wakeups = 0;
-		$expected                      = array(
+	public function test_non_evicting_failed_run_persist_logs_only_the_terminal_failure(): void {
+		$run_id = $this->fail_task( array( 'index' => 0 ), 1 );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( $run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+	}
+
+	/**
+	 * One mixed row preserves healthy failures and reports its rejected member once.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_corrupt_entries_warn_once_without_hiding_healthy_neighbors(): void {
+		$fixture = StoreFixtureBuilder::failed_runs_with_corrupt_member(
+			$this->fixtures->failed_runs(
+				array(
+					self::fixture_entry( 'run-a', 100 ),
+					self::fixture_entry( 'run-b', 200 ),
+				)
+			)
+		);
+		$this->put_fixture( $fixture );
+		$this->rig->logger()->records = array();
+
+		$result = $this->store()->all();
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsArray( $result->value );
+		self::assertSame( array( 'run-a', 'run-b' ), \array_column( $result->value, 'run_id' ) );
+		self::assertSame(
 			array(
-				'run_id'     => 'run-valid',
-				'failed_at'  => 1_700_000_001,
-				'start_args' => array( 'site_id' => 7 ),
-				'attempts'   => 2,
-				'error'      => array(
-					'class'   => null,
-					'message' => 'Expected failure.',
+				array(
+					'level'   => 'warning',
+					'message' => 'Failed-run retention for "{identity}" contains {unreadable_count} unreadable entry in option row "{option_name}"; this read omits it, so repair or purge the row.',
+					'context' => array(
+						'identity'         => self::IDENTITY,
+						'option_name'      => $fixture[0],
+						'unreadable_count' => 1,
+					),
 				),
 			),
+			$this->rig->logger()->records
 		);
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture must model hostile raw option bytes.
-		$this->wpdb->put( 'a8csp_bgte_failed_poisoned', \serialize( array( $expected[0], new FailedRunStorePoison() ) ) );
-
-		self::assertSame( $expected, ( new FailedRunStore( 'poisoned', $this->rows ) )->all() );
-		self::assertSame( 0, FailedRunStorePoison::$wakeups );
 	}
 
 	/**
-	 * Record and remove preserve the exact manual-retry schema under the literal key.
+	 * A listener reading the same corrupt row through a fresh store cannot recurse its warning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_record_all_and_remove_round_trip_exact_entries(): void {
-		$store = new FailedRunStore( 'reports', $this->rows );
+	public function test_corrupt_entry_warning_is_guarded_across_reentrant_store_instances(): void {
+		$fixture = StoreFixtureBuilder::failed_runs_with_corrupt_member( $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) ) );
+		$this->put_fixture( $fixture );
+		$store          = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() );
+		$listener_calls = 0;
+		$nested         = null;
+		$callbacks      = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks['a8csp_background_tasks/log']     = function () use ( &$listener_calls, &$nested ): void {
+			++$listener_calls;
+			if ( 1 === $listener_calls ) {
+				$nested = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() )->all();
+			}
+		};
+		$GLOBALS['a8csp_bgte_test_action_callbacks'] = $callbacks;
 
-		$store->record(
-			'run-a',
-			1_700_000_001,
-			array( 'site_id' => 7 ),
-			3,
-			new EngineError( 'Database unavailable.', \RuntimeException::class )
-		);
-		$store->record(
-			'run-b',
-			1_700_000_002,
-			array( 'site_id' => 8 ),
+		$outer = $store->all();
+
+		self::assertInstanceOf( Success::class, $outer );
+		self::assertInstanceOf( Success::class, $nested );
+		self::assertIsArray( $outer->value );
+		self::assertIsArray( $nested->value );
+		self::assertSame( array( 'run-a' ), \array_column( $outer->value, 'run_id' ) );
+		self::assertSame( array( 'run-a' ), \array_column( $nested->value, 'run_id' ) );
+		self::assertSame( 1, $listener_calls );
+		$fired = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
+		self::assertIsArray( $fired );
+		self::assertCount(
 			1,
-			new EngineError( 'Task returned an invalid result.' )
+			\array_filter(
+				$fired,
+				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_background_tasks/log' === ( $action['hook_name'] ?? null )
+			)
 		);
-
-		$expected = array(
-			array(
-				'run_id'     => 'run-a',
-				'failed_at'  => 1_700_000_001,
-				'start_args' => array( 'site_id' => 7 ),
-				'attempts'   => 3,
-				'error'      => array(
-					'class'   => \RuntimeException::class,
-					'message' => 'Database unavailable.',
-				),
-			),
-			array(
-				'run_id'     => 'run-b',
-				'failed_at'  => 1_700_000_002,
-				'start_args' => array( 'site_id' => 8 ),
-				'attempts'   => 1,
-				'error'      => array(
-					'class'   => null,
-					'message' => 'Task returned an invalid result.',
-				),
-			),
-		);
-
-		self::assertSame( $expected, $store->all() );
-		self::assertSame( $expected, $this->option( 'a8csp_bgte_failed_reports' ) );
-		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_failed_reports' ) );
-
-		$store->remove( 'run-a' );
-
-		self::assertSame( array( $expected[1] ), $store->all() );
-		$this->assert_all_option_writes_disable_autoload();
 	}
 
 	/**
-	 * The twenty-first failure evicts the oldest entry and retains newest-last order.
+	 * Failed-run retention keeps the newest twenty and retry consumes exactly one retained failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_ring_buffer_evicts_the_oldest_entry_past_twenty(): void {
-		$store = new FailedRunStore( 'exports', $this->rows );
-
-		for ( $index = 0; $index <= 20; ++$index ) {
-			$suffix = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
-			$store->record(
-				'run-' . $suffix,
-				1_700_000_000 + $index,
-				array( 'index' => $index ),
-				$index + 1,
-				new EngineError( 'Failure ' . $suffix )
-			);
+	public function test_failed_retention_and_retry_consumption_are_observable_through_the_run_facade(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 20 ) as $index ) {
+			$run_ids[] = $this->fail_task( array( 'index' => $index ), $index + 1 );
 		}
 
-		$entries = $store->all();
+		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		self::assertNotNull( $history );
+		$retained = \array_column( $history, 'failed_store', 'run_id' );
+		self::assertFalse( $retained[ $run_ids[0] ] );
+		self::assertTrue( $retained[ $run_ids[1] ] );
+		self::assertCount( 20, \array_filter( $retained ) );
 
-		self::assertCount( 20, $entries );
-		self::assertSame(
-			\array_map(
-				static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-				\range( 1, 20 )
-			),
-			\array_column( $entries, 'run_id' )
+		$evicted = $this->client->runs()->retry_failed( self::NAME, $run_ids[0] );
+		self::assertInstanceOf( Failure::class, $evicted );
+		self::assertInstanceOf( ApiError::class, $evicted->error );
+		self::assertSame( ApiErrorCode::RunNotRetained, $evicted->error->code );
+
+		$this->task->throwable          = null;
+		$this->rig->randomizer()->value = 99;
+		$retried                        = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
+		self::assertInstanceOf( Success::class, $retried );
+		$consumed = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
+		self::assertInstanceOf( Failure::class, $consumed );
+		self::assertInstanceOf( ApiError::class, $consumed->error );
+		self::assertSame( ApiErrorCode::RunNotRetained, $consumed->error->code );
+		$this->rig->run_due();
+		self::assertSame( array( 'index' => 1 ), $this->task->calls[21] ?? null );
+	}
+
+	/**
+	 * Retried work receives the original portable arguments and can complete as a fresh run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_replays_original_arguments_and_removes_failed_retention(): void {
+		$args                           = array(
+			'scope'   => 'all',
+			'site_id' => 7,
 		);
-		self::assertSame( 'Failure 01', $entries[0]['error']['message'] );
-		self::assertSame( 'Failure 20', $entries[19]['error']['message'] );
+		$failed                         = $this->fail_task( $args, 7 );
+		$this->task->throwable          = null;
+		$this->rig->randomizer()->value = 8;
+
+		$retried = $this->client->runs()->retry_failed( self::NAME, $failed );
+		self::assertInstanceOf( Success::class, $retried );
+		self::assertNotSame( $failed, $retried->value );
+		$this->rig->run_due();
+
+		self::assertSame( array( $args, $args ), $this->task->calls );
+		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		self::assertNotNull( $history );
+		$failed_entry = \array_find( $history, static fn ( array $entry ): bool => $failed === $entry['run_id'] );
+		self::assertNotNull( $failed_entry );
+		self::assertFalse( $failed_entry['failed_store'] );
+		self::assertSame( 'completed', $history[0]['outcome'] ?? null );
 	}
 
 	/**
-	 * Removing an absent run leaves both the option and write ledger untouched.
+	 * Corrupt and legacy failed rows inspect as unretained data and never fatal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_remove_of_absent_run_is_a_no_op(): void {
-		$store = new FailedRunStore( 'imports', $this->rows );
-		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ) );
-		$before_option = $this->option( 'a8csp_bgte_failed_imports' );
-		$before_calls  = $this->option_calls();
+	public function test_malformed_failed_rows_are_tolerated_by_inspection_and_retry(): void {
+		$this->put_fixture( $this->fixtures->unreadable_failed_runs() );
 
-		$store->remove( 'missing' );
-
-		self::assertSame( $before_option, $this->option( 'a8csp_bgte_failed_imports' ) );
-		self::assertSame( $before_calls, $this->option_calls() );
+		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		self::assertSame( array(), $snapshot['history'] );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
 	}
 
 	/**
-	 * Purging deletes the complete option and reports the retained-entry count.
+	 * Unknown terminalization stages inspect as unretained data and never fatal.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A canonical fixture cannot contain an unknown stage, so corrupting only that scalar proves read validation fails closed through the public inspection and retry seams.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_purge_deletes_the_store_and_returns_its_entry_count(): void {
-		$store = new FailedRunStore( 'reports', $this->rows );
-		$store->record( 'run-a', 100, array(), 1, new EngineError( 'First failure.' ) );
-		$store->record( 'run-b', 200, array(), 2, new EngineError( 'Second failure.' ) );
+	public function test_unknown_failure_stages_are_tolerated_as_unretained_data(): void {
+		$fixture = StoreFixtureBuilder::failed_runs_with_unknown_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ) );
+		$this->put_fixture( $fixture );
 
-		self::assertSame( 2, $store->purge() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_reports' ) );
-		self::assertSame( 0, $store->purge() );
+		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
 	}
 
+	// endregion.
+
+	// region KEEP CAS MICRO-SUITE.
+
 	/**
-	 * An authoritative read failure remains distinct from an absent store.
+	 * Same-identifier writers converge on the first payload that wins the exact update.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built generations prove replayed writers cannot replace the retained retry arguments chosen by the first successful CAS.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_purge_returns_failure_when_the_authoritative_read_fails(): void {
-		$store = new FailedRunStore( 'read-failure', $this->rows );
-		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ) );
-		$this->wpdb->before_next(
-			'select',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted read failure';
+	public function test_interleaved_same_identifier_writers_converge_on_the_first_payload(): void {
+		$initial = array( self::fixture_entry( 'run-existing', 100 ) );
+		$rival   = self::fixture_entry( 'run-shared', 200, array( 'writer' => 'rival' ) );
+		$caller  = self::fixture_entry( 'run-shared', 300, array( 'writer' => 'caller' ) );
+		$this->put_fixture( $this->fixtures->failed_runs( $initial ) );
+		$this->rig->wpdb()->before_next(
+			'update',
+			function () use ( $rival ): void {
+				self::assertTrue( $this->record_entry( $rival ) );
 			}
 		);
 
-		self::assertNull( $store->purge() );
-		self::assertNotNull( $this->option( 'a8csp_bgte_failed_read-failure' ) );
+		self::assertTrue( $this->record_entry( $caller ) );
+
+		self::assertSame( $this->fixtures->failed_runs( array( ...$initial, $rival ) )[1], $this->raw_row() );
 	}
 
 	/**
-	 * A failed exact delete leaves the selected store intact and reports failure.
+	 * A lost exact update retries from fresh rival bytes without normalizing them away.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Embedded null bytes in a production-built rival generation make exact preservation distinguishable from decode-and-recreate shortcuts.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_purge_returns_failure_when_the_exact_delete_fails(): void {
-		$store = new FailedRunStore( 'delete-failure', $this->rows );
-		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure.' ) );
-		$this->wpdb->before_next(
+	public function test_lost_cas_preserves_fixture_built_rival_bytes(): void {
+		$initial    = array( self::fixture_entry( 'run-existing', 100 ) );
+		$rival      = self::fixture_entry( 'run-rival', 200, array( 'token' => "rival-\0bytes" ), "Rival \0 failure." );
+		$caller     = self::fixture_entry( 'run-caller', 300 );
+		$concurrent = array( ...$initial, $rival );
+		$this->put_fixture( $this->fixtures->failed_runs( $initial ) );
+		$rival_fixture = $this->fixtures->failed_runs( $concurrent );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+			}
+		);
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertTrue( $this->record_entry( $caller ) );
+
+		self::assertSame( $this->fixtures->failed_runs( array( ...$concurrent, $caller ) )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
+		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
+	}
+
+	/**
+	 * A lost exact update remains retryable when its selected generation is restored.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale An update-boundary rival followed by a read-boundary restoration reproduces A-to-B-to-A; only this storage interleave proves a typed comparison loss retries instead of restored bytes being misclassified as a failed write.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_retries_and_wins_when_the_selected_generation_is_restored_after_a_loss(): void {
+		$initial         = array( self::fixture_entry( 'run-existing', 100 ) );
+		$caller          = self::fixture_entry( 'run-caller', 300 );
+		$initial_fixture = $this->fixtures->failed_runs( $initial );
+		$rival_fixture   = $this->fixtures->failed_runs( array( ...$initial, self::fixture_entry( 'run-rival', 200 ) ) );
+		$this->put_fixture( $initial_fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $initial_fixture, $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( $initial_fixture ): void {
+						$wpdb->put( $initial_fixture[0], $initial_fixture[1] );
+					}
+				);
+			}
+		);
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertTrue( $this->record_entry( $caller ) );
+
+		self::assertSame( $this->fixtures->failed_runs( array( ...$initial, $caller ) )[1], $this->raw_row() );
+		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * Read failures and unchanged failed updates cannot alter retained retry data.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A no-write result is required when authority is unavailable, while a typed write-failed outcome prevents retrying as though a competing generation won.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_and_remove_authority_failures_leave_exact_bytes_untouched(): void {
+		$entry   = self::fixture_entry( 'run-existing', 100 );
+		$fixture = $this->fixtures->failed_runs( array( $entry ) );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->fail_next_read();
+
+		self::assertFalse( $this->record_entry( self::fixture_entry( 'run-new', 200 ) ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertSame( array(), $this->write_queries() );
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->fail_next_read();
+		self::assertFalse( $this->store()->remove( 'run-existing' ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertSame( array(), $this->write_queries() );
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'update', false );
+		self::assertFalse( $this->record_entry( self::fixture_entry( 'run-new', 200 ) ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'update', false );
+		self::assertFalse( $this->store()->remove( 'run-existing' ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * Purge retries a changed generation and stops after three consecutive comparison losses.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Exact-delete retry bounds prevent an unbounded maintenance loop while preserving each interleaved append until one complete generation is deleted.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_purge_retries_changed_generations_and_honors_its_retry_bound(): void {
+		$initial = self::fixture_entry( 'run-a', 100 );
+		$this->put_fixture( $this->fixtures->failed_runs( array( $initial ) ) );
+		$this->rig->wpdb()->before_next(
 			'delete',
-			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'scripted delete failure';
+			function (): void {
+				self::assertTrue( $this->record_entry( self::fixture_entry( 'run-b', 200 ) ) );
 			}
 		);
-		$this->wpdb->script_result( 'delete', false );
+		self::assertSame( 2, $this->store()->purge() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->rig->wpdb()->rows );
 
-		self::assertNull( $store->purge() );
-		self::assertNotNull( $this->option( 'a8csp_bgte_failed_delete-failure' ) );
-	}
-
-	/**
-	 * A concurrent append loses the first CAS and the retry deletes the newer exact row.
-	 *
-	 * @return  void
-	 */
-	public function test_purge_retries_a_cas_loss_and_reports_the_deleted_snapshot_count(): void {
-		$store = new FailedRunStore( 'cas-retry', $this->rows );
-		$store->record( 'run-a', 100, array(), 1, new EngineError( 'First failure.' ) );
-		$this->wpdb->before_next(
-			'delete',
-			static function ( WpdbLockSpy $wpdb ) use ( $store ): void {
-				$store->record( 'run-b', 200, array(), 2, new EngineError( 'Second failure.' ) );
-			}
-		);
-
-		self::assertSame( 2, $store->purge() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_cas-retry' ) );
-	}
-
-	/**
-	 * Three consecutive concurrent appends exhaust the bounded exact-delete attempts.
-	 *
-	 * @return  void
-	 */
-	public function test_purge_reports_failure_after_three_cas_losses(): void {
-		$store = new FailedRunStore( 'cas-exhaustion', $this->rows );
-		$store->record( 'run-a', 100, array(), 1, new EngineError( 'Failure A.' ) );
-
+		$this->put_fixture( $this->fixtures->failed_runs( array( $initial ) ) );
 		foreach ( array( 'b', 'c', 'd' ) as $index => $suffix ) {
-			$this->wpdb->before_next(
+			$this->rig->wpdb()->before_next(
 				'delete',
-				static function ( WpdbLockSpy $wpdb ) use ( $store, $index, $suffix ): void {
-					$store->record(
-						'run-' . $suffix,
-						200 + $index,
-						array(),
-						2 + $index,
-						new EngineError( 'Failure ' . \strtoupper( $suffix ) . '.' )
-					);
+				function () use ( $index, $suffix ): void {
+					self::assertTrue( $this->record_entry( self::fixture_entry( 'run-' . $suffix, 200 + $index ) ) );
 				}
 			);
 		}
 
-		self::assertNull( $store->purge() );
-		self::assertCount( 4, $store->all() );
+		self::assertNull( $this->store()->purge() );
+		$remaining = $this->store()->all();
+		self::assertInstanceOf( Success::class, $remaining );
+		self::assertIsArray( $remaining->value );
+		self::assertCount( 4, $remaining->value );
 	}
 
 	/**
-	 * A wholly malformed row has the same zero valid entries as all() and is still deleted.
+	 * Purge stops without a comparison-loss retry when the database delete fails.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A failed exact DELETE must not enter the generation-reread loop used only for competing writers; the public store result cannot otherwise distinguish those storage outcomes.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_purge_deletes_malformed_raw_storage_with_a_zero_count(): void {
-		$GLOBALS['a8csp_bgte_test_options'] = array(
-			'a8csp_bgte_failed_malformed' => 'not a failed-run list',
-		);
+	public function test_purge_stops_after_a_database_delete_failure(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'delete', false );
 
-		$store = new FailedRunStore( 'malformed', $this->rows );
-
-		self::assertSame( array(), $store->all() );
-		self::assertSame( 0, $store->purge() );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_malformed' ) );
+		self::assertNull( $this->store()->purge() );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertCount( 1, $this->queries_starting_with( 'DELETE ' ) );
 	}
 
 	/**
-	 * A serialized object payload contains no valid failed-run entries and is still purged.
+	 * Serialized objects contain no retryable entries and cannot run wakeup code.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The corrupt fixture deliberately bypasses production serialization to prove raw decoding rejects object construction before failed-run inspection or purge.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_purge_counts_a_serialized_object_payload_as_zero_valid_entries(): void {
-		$raw = \maybe_serialize( new \stdClass() );
-		self::assertIsString( $raw );
-		$this->wpdb->put( 'a8csp_bgte_failed_object', $raw );
+	public function test_serialized_objects_are_empty_without_constructing_their_class(): void {
+		$fixture     = $this->fixtures->unreadable_failed_runs( new FailedRunStorePoison() );
+		$option_name = $fixture[0];
+		$this->put_fixture( $fixture );
+		FailedRunStorePoison::$wakeups = 0;
+		$this->rig->logger()->records  = array();
 
-		$store = new FailedRunStore( 'object', $this->rows );
-
-		self::assertSame( 0, $store->purge() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_object', $this->wpdb->rows );
-	}
-
-	/**
-	 * Removing from an oversized persisted buffer applies the write-time cap.
-	 *
-	 * @return  void
-	 */
-	public function test_remove_caps_a_preexisting_oversized_buffer(): void {
-		$entries = array();
-		for ( $index = 0; $index < 22; ++$index ) {
-			$suffix    = \str_pad( (string) $index, 2, '0', STR_PAD_LEFT );
-			$entries[] = array(
-				'run_id'     => 'run-' . $suffix,
-				'failed_at'  => 1_700_000_000 + $index,
-				'start_args' => array( 'index' => $index ),
-				'attempts'   => 1,
-				'error'      => array(
-					'class'   => null,
-					'message' => 'Failure ' . $suffix,
-				),
-			);
-		}
-		$GLOBALS['a8csp_bgte_test_options'] = array( 'a8csp_bgte_failed_oversized' => $entries );
-
-		$store = new FailedRunStore( 'oversized', $this->rows );
-
-		$store->remove( 'run-00' );
-
+		$result = $this->store()->all();
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( array(), $result->value );
+		self::assertSame( 0, FailedRunStorePoison::$wakeups );
 		self::assertSame(
-			\array_map(
-				static fn ( int $index ): string => 'run-' . \str_pad( (string) $index, 2, '0', STR_PAD_LEFT ),
-				\range( 2, 21 )
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Failed-run retention for "{identity}" is unreadable at option row "{option_name}"; repair or purge the row.',
+					'context' => array(
+						'identity'    => self::IDENTITY,
+						'option_name' => $option_name,
+					),
+				),
 			),
-			\array_column( $store->all(), 'run_id' )
+			$this->rig->logger()->records
 		);
-		self::assertSame( false, $this->autoload_flag( 'a8csp_bgte_failed_oversized' ) );
+		$this->rig->logger()->records = array();
+		self::assertSame( 0, $this->store()->purge() );
+		self::assertSame( 0, FailedRunStorePoison::$wakeups );
+		self::assertCount( 1, $this->rig->logger()->records );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
-	 * Returns one stored option value.
+	 * Executes one real terminal task failure and returns its run identifier.
 	 *
-	 * @param   string $option_name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  mixed
+	 * @param   array<array-key, mixed> $args       Task arguments.
+	 * @param   int                     $randomness Deterministic run-id entropy.
+	 *
+	 * @return  string
 	 */
-	private function option( string $option_name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
+	private function fail_task( array $args, int $randomness ): string {
+		$this->rig->randomizer()->value = $randomness;
+		$result                         = $this->client->tasks()->enqueue( self::NAME, $args );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
+		$this->rig->run_due();
+		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
 
-		return $options[ $option_name ] ?? null;
+		return $result->value;
 	}
 
 	/**
-	 * Returns the recorded autoload flag for one option.
+	 * Returns one fixture request consumed by StoreFixtureBuilder.
 	 *
-	 * @param   string $option_name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
-	 * @return  mixed
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   int                     $failed_at  Failure timestamp.
+	 * @param   array<array-key, mixed> $start_args Original run arguments.
+	 * @param   string                  $summary    Failure summary.
+	 *
+	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
 	 */
-	private function autoload_flag( string $option_name ): mixed {
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? null;
-		self::assertIsArray( $autoload_flags );
+	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
 
-		return $autoload_flags[ $option_name ] ?? null;
+		return array(
+			'failed_at'  => $failed_at,
+			'start_args' => $start_args,
+			'failure'    => $failure,
+			'error'      => new EngineError( $summary ),
+		);
 	}
 
 	/**
-	 * Asserts that every option write explicitly disables autoload.
+	 * Records one fixture request through the active production store.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError} $entry Failed-run request.
+	 *
+	 * @return  bool
+	 */
+	private function record_entry( array $entry ): bool {
+		return $this->store()->record( $entry['failure']->run_id, $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
+	}
+
+	/**
+	 * Returns a failed-run store bound to the active authoritative rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  FailedRunStore
+	 */
+	private function store(): FailedRunStore {
+		return new FailedRunStore( self::IDENTITY, $this->rows, $this->rig->logger() );
+	}
+
+	/**
+	 * Stores one production-built raw fixture in the active database.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
 	 *
 	 * @return  void
 	 */
-	private function assert_all_option_writes_disable_autoload(): void {
-		foreach ( $this->option_calls() as $call ) {
-			if ( 'add_option' === $call['function'] ) {
-				self::assertSame( false, $call['args'][3] );
-			} elseif ( 'update_option' === $call['function'] ) {
-				self::assertSame( false, $call['args'][2] );
-			}
-		}
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}
 
 	/**
-	 * Returns every recorded option-function call.
+	 * Returns the active store's authoritative raw bytes.
 	 *
-	 * @return  list<array{function: string, args: list<mixed>}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
 	 */
-	private function option_calls(): array {
-		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'];
+	private function raw_row(): string {
+		$raw = $this->rig->wpdb()->rows[ FailedRunStore::OPTION_PREFIX . self::IDENTITY ] ?? null;
+		self::assertIsString( $raw );
 
-		return $calls;
+		return $raw;
 	}
-}
 
-/** Serialized poison probe for hardened failed-run option reads. */
-final class FailedRunStorePoison {
-	public static int $wakeups = 0;
-
-	/** Records unsafe native object construction. */
-	public function __wakeup(): void {
-		++self::$wakeups;
+	/**
+	 * Makes the next authoritative read fail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function fail_next_read(): void {
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted failed-run read failure';
+			}
+		);
 	}
+
+	/**
+	 * Returns authoritative write statements.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<string>
+	 */
+	private function write_queries(): array {
+		return \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'INSERT ' ) || \str_starts_with( $query, 'UPDATE ' ) || \str_starts_with( $query, 'DELETE ' ) ) );
+	}
+
+	/**
+	 * Returns recorded statements carrying one literal prefix.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $prefix Statement prefix.
+	 *
+	 * @return  list<string>
+	 */
+	private function queries_starting_with( string $prefix ): array {
+		return \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, $prefix ) ) );
+	}
+
+	// endregion.
 }

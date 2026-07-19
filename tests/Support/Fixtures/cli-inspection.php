@@ -6,32 +6,22 @@
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\Schedule;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		$engine = \a8csp_bgte_engine();
-		if ( null === $engine ) {
-			return;
-		}
-
-		$engine->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
-		$result = $engine->schedules()->sync(
-			'integration-cli-inspection-owner',
+		$client = \a8csp_bgte( 'integration-cli-inspection-owner' );
+		$client->tasks()->register( new RecordingTask( 'integration-cli-inspection-task' ) );
+		$result = $client->schedules()->sync(
 			array(
-				new Schedule(
-					'inspection-schedule',
-					Recurrence::every( 300 ),
-					'integration-cli-inspection-task',
-					array( 'source' => 'schedule' )
-				),
+				new Schedule( 'inspection-schedule', Recurrence::every( 300 ), 'integration-cli-inspection-task', array( 'source' => 'schedule' ) ),
 			)
 		);
 		if ( $result->is_failure() ) {
-			\WP_CLI::error( $result->error->message );
+			\WP_CLI::error( 'The CLI inspection fixture could not synchronize its schedule.' );
 		}
 	}
 );

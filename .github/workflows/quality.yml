@@ -25,13 +25,14 @@ jobs:
     with:
       php-versions: '["8.5", "8.6"]'
 
-  bootstrap-syntax:
-    name: Bootstrap syntax (PHP ${{ matrix.php }})
+  belowfloor-syntax:
+    name: Below-floor syntax (PHP ${{ matrix.php }})
     strategy:
       fail-fast: false
       matrix:
         php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -44,11 +45,10 @@ jobs:
           coverage: none
           tools: none
 
-      # Only the entry file and functions-bootstrap.php must parse below the plugin's PHP
-      # floor; functions.php, uninstall.php, and index.php load after the requirements gate
-      # and are excluded. Discover the entry by its WordPress "Plugin Name:" header because its
-      # filename is repository-specific. functions-bootstrap.php shares the below-floor constraint
-      # but lacks the plugin header, so lint it explicitly to keep it inside this matrix.
+      # Lint the files that can parse on a below-floor host: the entry file,
+      # functions-bootstrap.php, and uninstall.php. functions.php and index.php load only after
+      # the requirements gate. Discover the entry by its WordPress "Plugin Name:" header because
+      # its filename is repository-specific.
       - name: Check the below-floor files for syntax errors
         run: |
           set -euo pipefail
@@ -61,10 +61,12 @@ jobs:
           fi
           php -l "${entry_files[0]}"
           php -l "$GITHUB_WORKSPACE/functions-bootstrap.php"
+          php -l "$GITHUB_WORKSPACE/uninstall.php"
 
   changelog:
     name: Changelog
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

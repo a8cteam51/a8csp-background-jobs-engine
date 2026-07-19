@@ -2,27 +2,34 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\ExpectationFailedException;
 
 /**
  * Verifies the integration rig restores request-local state and clears persistent test data.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class RigContractTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook populated by the plugin before the parent fixture captures its snapshot. */
-	private const EXISTING_HOOK = 'plugins_loaded';
+	private const string EXISTING_HOOK = 'plugins_loaded';
 
 	/** Hook introduced after the probe snapshot. */
-	private const NEW_HOOK = 'a8csp_bgte/rig_contract/new';
+	private const string NEW_HOOK = 'a8csp_bgte/rig_contract/new';
 
 	/** Engine option used to exercise the leftover declaration contract. */
-	private const FAILED_PROBE_OPTION = 'a8csp_bgte_failed_probe';
+	private const string FAILED_PROBE_OPTION = 'a8csp_bgte_failed_runs_probe';
 
 	/** Action Scheduler hook used to exercise custom-table cleanup. */
-	private const ACTION_SCHEDULER_HOOK = 'a8csp_bgte/rig_contract/action_scheduler';
+	private const string ACTION_SCHEDULER_HOOK = 'a8csp_bgte/rig_contract/action_scheduler';
 
 	// endregion.
 
@@ -30,6 +37,9 @@ final class RigContractTest extends IntegrationTestCase {
 
 	/**
 	 * Hook restoration preserves the captured listener while removing later listeners from old and new hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -40,9 +50,9 @@ final class RigContractTest extends IntegrationTestCase {
 		$this->restore_wordpress_hooks();
 		$this->snapshot_wordpress_hooks();
 
-		$wp_actions_before = $GLOBALS['wp_actions'] ?? array();
-		$wp_filters_before = $GLOBALS['wp_filters'] ?? array();
-		$plugin_listener   = \has_action( self::EXISTING_HOOK, 'a8csp_bgte_plugin' );
+		$action_count_before = \did_action( self::NEW_HOOK );
+		$filter_count_before = \did_filter( self::NEW_HOOK );
+		$plugin_listener     = \has_action( self::EXISTING_HOOK, array( \a8csp_bgte_plugin(), 'boot' ) );
 		self::assertIsInt( $plugin_listener, 'The plugin listener must exist before the hook-restoration probe runs' );
 
 		try {
@@ -53,11 +63,11 @@ final class RigContractTest extends IntegrationTestCase {
 
 			$this->restore_wordpress_hooks();
 
-			self::assertSame( $plugin_listener, \has_action( self::EXISTING_HOOK, 'a8csp_bgte_plugin' ) );
+			self::assertSame( $plugin_listener, \has_action( self::EXISTING_HOOK, array( \a8csp_bgte_plugin(), 'boot' ) ) );
 			self::assertFalse( \has_action( self::EXISTING_HOOK, $existing_hook_listener ) );
 			self::assertFalse( \has_filter( self::NEW_HOOK, $new_hook_listener ) );
-			self::assertSame( $wp_actions_before, $GLOBALS['wp_actions'] );
-			self::assertSame( $wp_filters_before, $GLOBALS['wp_filters'] );
+			self::assertSame( $action_count_before, \did_action( self::NEW_HOOK ) );
+			self::assertSame( $filter_count_before, \did_filter( self::NEW_HOOK ) );
 		} finally {
 			$this->restore_wordpress_hooks();
 		}
@@ -66,23 +76,34 @@ final class RigContractTest extends IntegrationTestCase {
 	/**
 	 * Undeclared engine state fails hygiene and is removed before teardown rechecks the contract.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	#[Group( 'degraded' )]
 	public function test_option_hygiene_rejects_undeclared_state(): void {
 		self::assertTrue( \update_option( self::FAILED_PROBE_OPTION, 'sentinel', false ) );
-		$this->expectException( ExpectationFailedException::class );
-		$this->expectExceptionMessageIsOrContains( 'Unexpected rows: ' . self::FAILED_PROBE_OPTION );
 
 		try {
 			$this->assert_engine_option_hygiene();
+		} catch ( ExpectationFailedException $exception ) {
+			self::assertStringContainsString( 'Delete transient engine rows before test completion or declare deliberate leftovers with expect_option().', $exception->getMessage() );
+			self::assertStringContainsString( 'Unexpected rows: ' . self::FAILED_PROBE_OPTION, $exception->getMessage() );
+
+			return;
 		} finally {
 			\delete_option( self::FAILED_PROBE_OPTION );
 		}
+
+		self::fail( 'Option hygiene accepted undeclared engine state.' );
 	}
 
 	/**
 	 * Declared engine state passes hygiene and is removed before teardown.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -99,29 +120,23 @@ final class RigContractTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Action Scheduler cleanup removes one pending action from the custom-table store.
+	 * Action Scheduler cleanup removes one scheduled occurrence from facade reads.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_action_scheduler_cleanup_removes_pending_actions(): void {
-		$action_id = \as_schedule_single_action(
-			\time() + \HOUR_IN_SECONDS,
-			self::ACTION_SCHEDULER_HOOK
-		);
-		self::assertGreaterThan( 0, $action_id );
-
-		$store = $this->action_scheduler_store();
-		self::assertSame(
-			1,
-			(int) $store->query_actions(
-				array( 'status' => \ActionScheduler_Store::STATUS_PENDING ),
-				'count'
-			)
-		);
+		$scheduler = new SchedulerFacade( array( new ActionSchedulerBackend(), new WPCronBackend() ) );
+		$scheduler->register_hooks();
+		$scheduled = $scheduler->schedule_single( self::ACTION_SCHEDULER_HOOK, \time() + \HOUR_IN_SECONDS );
+		self::assertInstanceOf( Success::class, $scheduled );
+		self::assertTrue( $scheduler->is_scheduled( self::ACTION_SCHEDULER_HOOK ) );
 
 		$this->truncate_action_scheduler_tables();
 
-		self::assertSame( 0, (int) $store->query_actions( array(), 'count' ) );
+		self::assertFalse( $scheduler->is_scheduled( self::ACTION_SCHEDULER_HOOK ) );
 	}
 
 	// endregion.

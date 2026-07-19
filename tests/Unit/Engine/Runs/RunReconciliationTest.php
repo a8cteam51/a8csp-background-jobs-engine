@@ -2,61 +2,94 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Pins periodic reconciliation of abandoned lock and run state.
  *
+ * @load-bearing durability
+ * @pin-rationale Maintenance must classify and converge exact retained run/lock combinations, including crashed and corrupt states that supported consumer operations cannot manufacture.
+ * @fixture StoreFixtureBuilder
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
  */
 #[CoversClass( RunReconciliation::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( MaintenanceTask::class )]
+#[UsesClass( MaintenanceLockSweep::class )]
 #[UsesClass( OverlapGuard::class )]
-#[UsesClass( LockRows::class )]
+#[UsesClass( OptionRows::class )]
+#[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( RunFailure::class )]
 #[UsesClass( StoreFactory::class )]
+#[UsesClass( LifecycleEffects::class )]
+#[UsesClass( WorkRegistry::class )]
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS      = array( 'site_id' => 7 );
-	private const ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
-	private const NAME      = 'crashed-task';
-	private const NOW       = 1_700_000_000;
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
+	private const array ARGS       = array( 'site_id' => 7 );
+	private const string ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
+	private const string IDENTITY  = self::OWNER . ':' . self::NAME;
+	private const string NAME      = 'crashed-task';
+	private const int NOW          = 1_700_000_000;
+	private const string OWNER     = 'runs-tests';
+	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
-	private BatchRegistry $batches;
+	private WorkRegistry $work;
+	private RecordingBackend $backend;
 	private Dispatcher $dispatcher;
 	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
 	private MaintenanceTask $maintenance;
+	private StoreFactory $stores;
+	private LifecycleEffects $terminal_effects;
+	private RunTransitions $terminal_transitions;
 	private WpdbLockSpy $wpdb;
 
 	// endregion.
@@ -78,7 +111,7 @@ final class RunReconciliationTest extends TestCase {
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Scheduling/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 
 	/**
@@ -97,6 +130,7 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
 		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
 		$GLOBALS['a8csp_bgte_test_filter_values']         = array();
+		$GLOBALS['a8csp_bgte_test_filter_registrations']  = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions']         = array();
 		$GLOBALS['a8csp_bgte_test_action_throwables']     = array();
 		$GLOBALS['a8csp_bgte_test_lifecycle_events']      = array();
@@ -105,75 +139,25 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
 		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
 
-		$this->clock   = new FixedClock( self::NOW );
-		$this->batches = new BatchRegistry();
-		$this->logger  = new RecordingLogger();
-		$this->wpdb    = new WpdbLockSpy();
-		$tasks         = new TaskRegistry();
-		$tasks->register( new RecordingTask( self::NAME ) );
-		$backend                    = new RecordingBackend();
+		$this->clock  = new FixedClock( self::NOW );
+		$this->work   = new WorkRegistry();
+		$this->logger = new RecordingLogger();
+		$this->wpdb   = new WpdbLockSpy();
+		$this->work->register_task( self::IDENTITY, new RecordingTask( self::NAME ) );
+		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores                     = new StoreFactory( $this->clock, $option_rows );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$this->stores               = new StoreFactory( $this->clock, $option_rows, $this->logger );
 		$randomizer                 = new RecordingRandomizer( 42 );
-		$lock_windows               = new LockWindows( $this->clock );
-		$terminal_transitions       = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle          = new FailureLifecycle(
-			$backend,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-		$this->lifecycle_deliveries = new ActionDeliveries(
-			$tasks,
-			$this->batches,
-			$backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle
-		);
-		$this->dispatcher           = new Dispatcher(
-			$tasks,
-			$this->batches,
-			$backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
-		$reconciliation             = new RunReconciliation(
-			$guard,
-			$stores,
-			$this->clock,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-			$tasks,
-			$this->batches,
-		);
-		$occurrence_delivery        = new OccurrenceDelivery(
-			new ScheduleRegistry( $option_rows ),
-			$this->dispatcher,
-			new OccurrenceLease( new LockRows( $this->wpdb ), $this->clock, $randomizer ),
-			new SchedulerFacade( array( $backend ) ),
-			$option_rows,
-			$this->clock,
-			$this->logger
-		);
-		$this->maintenance          = new MaintenanceTask(
-			$option_rows,
-			$reconciliation,
-			$guard,
-			$occurrence_delivery,
-			$this->logger
-		);
+		$lock_windows               = new LockWindows( $this->clock, $this->logger );
+		$this->terminal_effects     = new LifecycleEffects( $guard, $this->stores, $this->logger );
+		$this->terminal_transitions = new RunTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
+		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->work, $this->backend, $this->stores, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
+		$this->dispatcher           = new Dispatcher( $this->work, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
+		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->work, $this->backend );
+		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
+		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
 	// endregion.
@@ -181,12 +165,12 @@ final class RunReconciliationTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The maintenance task exposes one stable engine-owned task name.
+	 * The maintenance task exposes one stable owner-local task name.
 	 *
 	 * @return  void
 	 */
-	public function test_task_name_is_engine_reserved(): void {
-		self::assertSame( 'a8csp-bgte-maintenance', $this->maintenance->get_name() );
+	public function test_task_name_is_owner_local(): void {
+		self::assertSame( 'maintenance', $this->maintenance->get_name() );
 	}
 
 	/**
@@ -196,14 +180,8 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_converges_pending_unknown_chain_intent(): void {
 		$registration_key = 'orphan-owner:orphan-schedule';
-		$option_name      = 'a8csp_bgte_cleanup_' . \hash( 'sha256', $registration_key );
-		$raw              = \maybe_serialize(
-			array(
-				'key'        => $registration_key,
-				'created_at' => self::NOW,
-			)
-		);
-		self::assertIsString( $raw );
+
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
 		$this->wpdb->put( $option_name, $raw );
 
 		$this->maintenance->handle( array() );
@@ -217,14 +195,15 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_deletes_a_stale_orphaned_lock(): void {
-		$lock_name = 'a8csp_bgte_lock_orphan-task_' . \str_repeat( 'a', 64 );
+		$orphan_name = self::identity( 'orphan-task' );
+		$lock_name   = OverlapGuard::OPTION_PREFIX . $orphan_name . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'orphan-task', $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( $orphan_name, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
@@ -234,7 +213,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_leaves_a_fresh_orphaned_lock_untouched(): void {
-		$lock_name = 'a8csp_bgte_lock_orphan-task_' . \str_repeat( 'a', 64 );
+		$lock_name = OverlapGuard::OPTION_PREFIX . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW );
 
 		$this->maintenance->handle( array() );
@@ -260,6 +239,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
+		self::assertSame( array(), $this->backend->calls );
 		$this->assert_crashed_run_terminalized();
 	}
 
@@ -270,11 +250,752 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_terminalizes_a_running_run_with_a_missing_lock(): void {
 		$this->create_running_run();
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 
 		$this->maintenance->handle( array() );
 
 		$this->assert_crashed_run_terminalized();
+	}
+
+	/**
+	 * A stale committed batch continuation is redelivered and advances through one chunk without failure.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_redelivers_a_stale_pending_batch_continue_and_processes_its_chunk(): void {
+		$name         = self::identity( 'redelivered-batch' );
+		$chunk        = array( 'page' => 1 );
+		$batch        = new RecordingBatch( 'redelivered-batch' );
+		$batch->queue = array( $chunk );
+		$this->work->register_batch( $name, $batch );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp_background_tasks/continue_batch',
+						'args'     => array( $name, self::RUN_ID, 2 ),
+						'group'    => $name . '|' . self::RUN_ID,
+						'priority' => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		$state = $this->run_state( $name );
+		self::assertSame( 'running', $state['status'] ?? null );
+		self::assertFalse( $state['executing'] ?? true );
+		self::assertSame( 2, $state['action_seq'] ?? null );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
+		self::assertSame( array(), $batch->failed_calls );
+
+		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
+
+		self::assertCount( 1, $batch->process_calls );
+		self::assertSame( $chunk, $batch->process_calls[0]['chunk_args'] ?? null );
+		self::assertSame( array(), $batch->failed_calls );
+	}
+
+	/**
+	 * A pending batch-start descriptor preserves the scheduler request derived from either policy.
+	 *
+	 * @param   string $existing_value Existing-run policy value used for admission.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'batch_start_redelivery_policies' )]
+	public function test_sweep_redelivers_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value ): void {
+		$name  = self::identity( 'redelivered-start-batch' );
+		$batch = new RecordingBatch( 'redelivered-start-batch' );
+		$this->work->register_batch( $name, $batch );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 23,
+			),
+			$this->run_state( $name )['pending'] ?? null
+		);
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp_background_tasks/start_batch',
+						'args'     => array( $name, self::RUN_ID, 1 ),
+						'group'    => $name . '|' . self::RUN_ID,
+						'priority' => 23,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertSame( 'running', $this->run_state( $name )['status'] ?? null );
+		self::assertSame( array(), $batch->failed_calls );
+	}
+
+	/**
+	 * Supplies every existing-run policy that can schedule a batch start.
+	 *
+	 * @return  array<string, array{existing_value: string}>
+	 */
+	public static function batch_start_redelivery_policies(): array {
+		return array(
+			'reject'  => array(
+				'existing_value' => 'reject',
+			),
+			'replace' => array(
+				'existing_value' => 'replace',
+			),
+		);
+	}
+
+	/**
+	 * A stale schedule-driven task descriptor preserves its priority.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_redelivers_a_stale_pending_task_action(): void {
+		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, priority: 23 );
+		self::assertInstanceOf( Success::class, $result );
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'enqueue_async',
+					'args' => array(
+						'hook'     => 'a8csp_background_tasks/run_task',
+						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'    => self::IDENTITY . '|' . self::RUN_ID,
+						'priority' => 23,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertSame( 'running', $this->run_state( self::IDENTITY )['status'] ?? null );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+	}
+
+	/**
+	 * A missing lock is reconstructed for the retained generation before its task action is redelivered.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_restores_a_missing_lock_before_redelivering_a_stale_pending_task(): void {
+		$this->create_running_run();
+		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 1, $this->backend->calls );
+		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+		self::assertSame(
+			array(
+				'run_id'       => self::RUN_ID,
+				'claimed_at'   => self::NOW,
+				'heartbeat_at' => self::NOW,
+			),
+			\maybe_unserialize( $lock_raw )
+		);
+
+		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+	}
+
+	/**
+	 * A backend may deliver an accepted redelivery before returning without a later state overwrite.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_allows_a_redelivered_task_to_complete_during_scheduler_acceptance(): void {
+		$this->create_running_run();
+		$this->clock->timestamp = self::NOW + 901;
+		$this->backend->calls   = array();
+		$this->backend->before_next(
+			'enqueue_async',
+			function (): void {
+				$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertCount( 1, $this->backend->calls );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		$this->assert_history_status( $options, 'completed' );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+	}
+
+	/**
+	 * A newer same-owner lock credit defers redelivery until it can be restored to the retained generation.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_repairs_a_stale_same_owner_heartbeat_mismatch_before_redelivery(): void {
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS, delay: 1_200 );
+		self::assertInstanceOf( Success::class, $result );
+		$this->set_run_fields( self::IDENTITY, array( 'heartbeat_at' => self::NOW ) );
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( array(), $this->backend->calls );
+		$credited_lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $credited_lock );
+		$credited_lock = \maybe_unserialize( $credited_lock );
+		self::assertIsArray( $credited_lock );
+		self::assertSame( self::NOW + 1_200, $credited_lock['heartbeat_at'] ?? null );
+
+		$this->clock->timestamp = self::NOW + 2_101;
+		$this->maintenance->handle( array() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'schedule_single',
+					'args' => array(
+						'hook'      => 'a8csp_background_tasks/run_task',
+						'timestamp' => self::NOW + 2_101,
+						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'     => self::IDENTITY . '|' . self::RUN_ID,
+						'priority'  => 10,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		$restored_lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $restored_lock );
+		$restored_lock = \maybe_unserialize( $restored_lock );
+		self::assertIsArray( $restored_lock );
+		self::assertSame( self::NOW, $restored_lock['heartbeat_at'] ?? null );
+
+		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+	}
+
+	/**
+	 * Single-mode retry redelivery clamps a past fire time to now and retains a future fire time.
+	 *
+	 * @param   int $fire_at           Persisted retry fire time.
+	 * @param   int $expected_fire_at  Expected scheduler timestamp.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'retry_redelivery_fire_times' )]
+	public function test_sweep_redelivers_a_stale_pending_retry_at_the_remaining_delay( int $fire_at, int $expected_fire_at ): void {
+		$this->create_running_run();
+		$this->set_run_fields(
+			self::IDENTITY,
+			array(
+				'heartbeat_at'    => self::NOW - 901,
+				'failed_attempts' => 1,
+				'pending'         => array(
+					'stage'    => 'run',
+					'mode'     => 'single',
+					'fire_at'  => $fire_at,
+					'priority' => 17,
+				),
+			)
+		);
+		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
+		$this->backend->calls = array();
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'schedule_single',
+					'args' => array(
+						'hook'      => 'a8csp_background_tasks/run_task',
+						'timestamp' => $expected_fire_at,
+						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
+						'group'     => self::IDENTITY . '|' . self::RUN_ID,
+						'priority'  => 17,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertSame( 'running', $this->run_state( self::IDENTITY )['status'] ?? null );
+	}
+
+	/**
+	 * Supplies future and elapsed retry fire times.
+	 *
+	 * @return  array<string, array{fire_at: int, expected_fire_at: int}>
+	 */
+	public static function retry_redelivery_fire_times(): array {
+		return array(
+			'future fire retains remaining delay' => array(
+				'fire_at'          => self::NOW + 75,
+				'expected_fire_at' => self::NOW + 75,
+			),
+			'elapsed fire runs immediately'       => array(
+				'fire_at'          => self::NOW - 75,
+				'expected_fire_at' => self::NOW,
+			),
+		);
+	}
+
+	/**
+	 * A scheduler rejection preserves the pending run for a later redelivery.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_preserves_a_stale_pending_run_when_redelivery_is_rejected(): void {
+		$name  = self::identity( 'redelivery-rejection-batch' );
+		$batch = new RecordingBatch( 'redelivery-rejection-batch' );
+		$this->work->register_batch( $name, $batch );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+
+		$state_before = $this->run_state( $name );
+		$raw_before   = \maybe_serialize( $state_before );
+		self::assertIsString( $raw_before );
+		$pending_before = $state_before['pending'] ?? null;
+		self::assertIsArray( $pending_before );
+
+		$this->clock->timestamp                   = self::NOW + 901;
+		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redelivering.', array( 'client_payload' => self::ARGS ) ) );
+		$this->backend->calls                     = array();
+		$this->logger->records                    = array();
+		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 1, $this->backend->calls );
+		$rejected_call = $this->backend->calls[0];
+		$state_after   = $this->run_state( $name );
+		$raw_after     = \maybe_serialize( $state_after );
+		self::assertIsString( $raw_after );
+		self::assertSame( $raw_before, $raw_after );
+		self::assertSame( 'running', $state_after['status'] ?? null );
+		self::assertFalse( $state_after['executing'] ?? true );
+		self::assertSame( $pending_before, $state_after['pending'] ?? null );
+		$options = $this->options();
+		self::assertArrayHasKey( $this->run_option_name( $name ), $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $options );
+		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( $name, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( SchedulingError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( SchedulingErrorReason::ScheduleFailed->value, $this->logger->records[0]['context']['error_reason'] ?? null );
+
+		unset( $this->backend->results['enqueue_async'] );
+
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 2, $this->backend->calls );
+		self::assertSame( $rejected_call, $this->backend->calls[1] );
+		self::assertCount( 1, $this->logger->records );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
+		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $this->fired_actions() );
+	}
+
+	/**
+	 * A transfer completed during a rejected redelivery is reconciled by the next sweep.
+	 *
+	 * @return  void
+	 */
+	public function test_next_sweep_supersedes_when_ownership_transfers_during_a_rejected_redelivery(): void {
+		$this->create_running_run();
+		$this->clock->timestamp                  = self::NOW + 901;
+		$replacement_run_id                      = '00000000001700000001-0000000000000000043';
+		$this->backend->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Rejection resolves after ownership transfers.' ) );
+		$this->backend->before_next(
+			'enqueue_async',
+			function () use ( $replacement_run_id ): void {
+				$this->put_lock( $this->lock_option_name(), $replacement_run_id, $this->clock->timestamp );
+			}
+		);
+		$this->backend->calls = array();
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertCount( 1, $this->backend->calls );
+		self::assertArrayHasKey( $this->run_option_name(), $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		self::assertSame( array(), $this->fired_actions() );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( $replacement_run_id, $lock['run_id'] ?? null );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertCount( 1, $this->backend->calls );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
+				'a8csp_background_tasks/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_history_status( $options, 'superseded' );
+	}
+
+	/**
+	 * A rejected redelivery never enters the terminal lock-claim path.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_does_not_claim_a_terminal_fence_after_redelivery_rejection(): void {
+		$this->create_running_run();
+		$this->clock->timestamp                  = self::NOW + 901;
+		$replacement_run_id                      = '00000000001700000001-0000000000000000043';
+		$this->backend->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Rejection resolves before the terminal fence transfers.' ) );
+		$this->backend->before_next(
+			'enqueue_async',
+			function () use ( $replacement_run_id ): void {
+				$this->wpdb->before_next(
+					'delete',
+					function () use ( $replacement_run_id ): void {
+						$this->put_lock( $this->lock_option_name(), $replacement_run_id, $this->clock->timestamp );
+					}
+				);
+			}
+		);
+		$this->backend->calls = array();
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+		self::assertSame( array(), $this->fired_actions() );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
+
+		unset( $this->backend->results['enqueue_async'] );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertCount( 2, $this->backend->calls );
+		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
+		self::assertArrayHasKey( $this->run_option_name(), $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		self::assertSame( array(), $this->fired_actions() );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
+	}
+
+	/**
+	 * A stale legacy running row without a descriptor remains on the crash-failure path with a diagnostic.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_terminalizes_a_stale_run_missing_its_pending_descriptor(): void {
+		$this->create_running_run();
+		$state = $this->run_state( self::IDENTITY );
+		unset( $state['pending'] );
+		$state['heartbeat_at'] = self::NOW - 901;
+		$this->replace_run_state( self::IDENTITY, $state );
+		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
+		$this->backend->calls = array();
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( array(), $this->backend->calls );
+		$this->assert_crashed_run_terminalized();
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'name'   => self::IDENTITY,
+					'run_id' => self::RUN_ID,
+				)
+			)
+		);
+	}
+
+	/**
+	 * A pending row exactly at the strict heartbeat boundary is untouched.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_leaves_a_fresh_pending_run_untouched(): void {
+		$this->create_running_run();
+		$state_before           = $this->run_state( self::IDENTITY );
+		$lock_before            = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 900;
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( $state_before, $this->run_state( self::IDENTITY ) );
+		self::assertSame( $lock_before, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+	}
+
+	/**
+	 * Repeated accepted redeliveries remain harmless because only one exact action generation advances.
+	 *
+	 * @return  void
+	 */
+	public function test_two_sweeps_redeliver_twice_but_duplicate_delivery_processes_once(): void {
+		$name         = self::identity( 'idempotent-batch' );
+		$chunk        = array( 'page' => 1 );
+		$batch        = new RecordingBatch( 'idempotent-batch' );
+		$batch->queue = array( $chunk );
+		$this->work->register_batch( $name, $batch );
+		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
+		$this->backend->calls   = array();
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array() );
+
+		self::assertCount( 2, $this->backend->calls );
+		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
+		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
+		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 3 ), $this->backend->calls[0]['args']['args'] ?? null );
+
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
+		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
+
+		self::assertCount( 1, $batch->process_calls );
+		self::assertSame( array(), $batch->failed_calls );
+	}
+
+	/**
+	 * A retained Batch run cannot be delivered through a Task that reused its identity.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_batch_redelivery_ignores_a_current_task_with_the_same_identity(): void {
+		$chunk = array( 'page' => 1 );
+		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$this->store_running_state( self::IDENTITY, $state );
+		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
+		$current_task = $this->work->task( self::IDENTITY );
+		self::assertInstanceOf( RecordingTask::class, $current_task );
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+
+		$this->lifecycle_deliveries->handle_run_chunk_action( self::IDENTITY, self::RUN_ID, 1 );
+
+		self::assertSame( array(), $current_task->calls );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		$record = $this->log_record(
+			'warning',
+			array(
+				'batch_name' => self::IDENTITY,
+				'run_id'     => self::RUN_ID,
+			)
+		);
+		self::assertNotNull( $record );
+		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
+	}
+
+	/**
+	 * A retained Task run cannot be delivered through a Batch that reused its identity.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_task_redelivery_ignores_a_current_batch_with_the_same_identity(): void {
+		$name          = self::identity( 'reused-as-batch' );
+		$current_batch = new RecordingBatch( 'reused-as-batch' );
+		$this->work->register_batch( $name, $current_batch );
+		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$this->store_running_state( $name, $state );
+		$this->put_lock( 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( 'a8csp_background_tasks/run_task', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+
+		$this->lifecycle_deliveries->handle_run_task_action( $name, self::RUN_ID, 1 );
+
+		self::assertSame( array(), $current_batch->process_calls );
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $this->options() );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $this->options() );
+		$record = $this->log_record(
+			'warning',
+			array(
+				'task_name' => $name,
+				'run_id'    => self::RUN_ID,
+			)
+		);
+		self::assertNotNull( $record );
+		self::assertSame( $name, $record['context']['task_name'] ?? null );
+	}
+
+	/**
+	 * A throwing run timing filter leaves its row unchanged without starving a later client.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_continues_after_one_run_staleness_filter_throws(): void {
+		$this->create_running_run();
+		$run_name = $this->run_option_name();
+		$run_raw  = \maybe_serialize( $this->options()[ $run_name ] ?? null );
+		self::assertIsString( $run_raw );
+		$replacement_run_id = '00000000001700000001-0000000000000000043';
+		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW - 901 );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+
+		$healthy_name  = self::identity( 'healthy-batch' );
+		$healthy_batch = new RecordingBatch( 'healthy-batch' );
+		$this->work->register_batch( $healthy_name, $healthy_batch );
+		$result = $this->dispatcher->start_batch( $healthy_name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$this->set_run_fields( $healthy_name, array( 'executing' => true ) );
+		unset( $this->wpdb->rows[ 'a8csp_bgte_overlap_lock_' . $healthy_name . '_' . self::ARGS_HASH ] );
+
+		$throwable = new \RuntimeException( 'Run staleness filter exploded.' );
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
+			'a8csp_background_tasks/lock_staleness/' . self::IDENTITY => static function () use ( $throwable ): int {
+				throw $throwable;
+			},
+		);
+
+		$this->logger->records = array();
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayHasKey( $run_name, $options );
+		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $healthy_name . '_' . self::RUN_ID, $options );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $healthy_name, $options );
+		self::assertCount( 1, $healthy_batch->failed_calls );
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
+		self::assertSame(
+			array(
+				'name'      => self::IDENTITY,
+				'run_id'    => self::RUN_ID,
+				'exception' => $throwable,
+			),
+			$diagnostic['context']
+		);
+	}
+
+	/**
+	 * An unclassified run keeps same-name transfer evidence for a later sweep.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_defers_same_name_locks_after_run_timing_filter_throws(): void {
+		$this->create_running_run();
+		$run_name = $this->run_option_name();
+		$run_raw  = \maybe_serialize( $this->options()[ $run_name ] ?? null );
+		self::assertIsString( $run_raw );
+
+		$replacement_run_id = '00000000001700000001-0000000000000000043';
+		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW - 901 );
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $lock_raw );
+
+		$throwable = new \RuntimeException( 'Run continue-delay filter exploded.' );
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
+			'a8csp_background_tasks/continue_delay' => static function ( int $delay, string $name, string $run_id ) use ( $throwable ): int {
+				if ( self::IDENTITY === $name && self::RUN_ID === $run_id ) {
+					throw $throwable;
+				}
+
+				return $delay;
+			},
+		);
+
+		$this->logger->records = array();
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayHasKey( $run_name, $options );
+		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
+		self::assertSame(
+			array(
+				'name'      => self::IDENTITY,
+				'run_id'    => self::RUN_ID,
+				'exception' => $throwable,
+			),
+			$diagnostic['context']
+		);
+
+		$GLOBALS['a8csp_bgte_test_filter_values'] = array();
+		$this->clock->timestamp                   = self::NOW + 901;
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 	}
 
 	/**
@@ -285,6 +1006,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_leaves_a_running_run_untouched_when_lock_read_fails(): void {
 		$this->create_running_run();
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -295,17 +1017,83 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
-		self::assertSame( array(), $this->logger->records );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**
-	 * A stale running run fenced by a replacement records supersession without failure state.
+	 * A run read failure aborts the sweep before lock reconciliation can erase fencing evidence.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_supersedes_a_stale_running_run_whose_lock_has_transferred(): void {
+	public function test_sweep_aborts_lock_reconciliation_when_a_run_read_fails(): void {
 		$this->create_running_run();
+		$orphan_lock = 'a8csp_bgte_overlap_lock_' . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
+		$this->put_lock( $orphan_lock, 'orphan-run', self::NOW - 901 );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient run read failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
+		self::assertArrayHasKey( $orphan_lock, $this->wpdb->rows );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
+	}
+
+	/**
+	 * A failed run-name enumeration aborts before the lock phase.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_aborts_lock_reconciliation_when_run_enumeration_fails(): void {
+		$lock_name = 'a8csp_bgte_overlap_lock_' . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
+		$this->put_lock( $lock_name, 'orphan-run', self::NOW - 901 );
+		$lock_raw = $this->wpdb->rows[ $lock_name ] ?? null;
+		self::assertIsString( $lock_raw );
+		$this->wpdb->before_next(
+			'scan',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient run-name enumeration failure';
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'run-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
+	}
+
+	/**
+	 * A retained Batch run keeps Batch supersession routing after its identity is reused by a Task.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_supersedes_a_stale_persisted_batch_whose_lock_has_transferred(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->store_running_state( self::IDENTITY, $state );
 		$this->clock->timestamp = self::NOW + 901;
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, $this->clock->timestamp );
@@ -314,15 +1102,15 @@ final class RunReconciliationTest extends TestCase {
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -331,13 +1119,23 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'superseded',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		$lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock );
 		$lock_row = \maybe_unserialize( $lock );
 		self::assertIsArray( $lock_row );
 		self::assertSame( $replacement_run_id, $lock_row['run_id'] ?? null );
+		$record = $this->log_record(
+			'info',
+			array(
+				'batch_name' => self::IDENTITY,
+				'run_id'     => self::RUN_ID,
+			)
+		);
+		self::assertNotNull( $record );
+		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
+		self::assertArrayNotHasKey( 'task_name', $record['context'] );
 	}
 
 	/**
@@ -355,16 +1153,16 @@ final class RunReconciliationTest extends TestCase {
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -373,7 +1171,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'superseded',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 	}
 
@@ -390,7 +1188,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance->handle( array() );
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->logger->records );
 	}
@@ -427,10 +1225,10 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
@@ -465,49 +1263,145 @@ final class RunReconciliationTest extends TestCase {
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
 		self::assertSame( $this->clock->timestamp, $state['heartbeat_at'] ?? null );
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $options );
-		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame( array(), $history['completed'] ?? null );
+		self::assertSame( array(), $history['terminal'] ?? null );
 		self::assertSame( array(), $this->fired_actions() );
 	}
 
 	/**
-	 * A crashed batch follows its registered failure callback before common terminal cleanup.
+	 * A crashed batch follows its registered `on_failed()` callback before common terminal cleanup.
 	 *
 	 * @return  void
 	 */
 	public function test_sweep_terminalizes_a_running_batch_through_batch_failure_machinery(): void {
-		$name  = 'crashed-batch';
-		$batch = new RecordingBatch( $name );
-		$this->batches->register( $batch );
+		$name  = self::identity( 'crashed-batch' );
+		$batch = new RecordingBatch( 'crashed-batch' );
+		$this->work->register_batch( $name, $batch );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
-		$lock_name = 'a8csp_bgte_lock_' . $name . '_' . self::ARGS_HASH;
+		$lock_name = 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH;
+		$this->set_run_fields( $name, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $lock_name ] );
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
 
 		$this->maintenance->handle( array() );
 
-		self::assertCount( 1, $batch->failure_calls );
-		self::assertSame( self::RUN_ID, $batch->failure_calls[0]['run_id'] ?? null );
-		self::assertSame( self::ARGS, $batch->failure_calls[0]['start_args'] ?? null );
-		self::assertStringContainsString(
-			'maintenance crash-reclaim path',
-			$batch->failure_calls[0]['error']->message
-		);
+		self::assertCount( 1, $batch->failed_calls );
+		self::assertSame( self::RUN_ID, $batch->failed_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $batch->failed_calls[0]['start_args'] ?? null );
+		$failure = $batch->failed_calls[0]['error'];
+		self::assertSame( $name, $failure->identity );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertStringContainsString( 'maintenance crash reclaim path', $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		$actions = $this->fired_actions();
 		$options = $this->options();
-		self::assertArrayNotHasKey( 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID, $options );
-		self::assertArrayHasKey( 'a8csp_bgte_failed_' . $name, $options );
+		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID, $options );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $options );
 		self::assertSame(
 			array(
 				'a8csp_background_tasks/failed/' . $name,
 				'a8csp_background_tasks/failed',
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			\array_column( $actions, 'hook_name' )
+		);
+		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
+		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+	}
+
+	/**
+	 * A retained Batch row keeps Batch crash routing after its identity is reused by a Task.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_routes_a_running_row_by_its_persisted_batch_kind(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
+
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
+
+		$decoded = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $decoded );
+		$options                 = $this->options();
+		$options[ $option_name ] = $decoded;
+
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+
+		$this->maintenance->handle( array() );
+
+		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
+		self::assertIsArray( $failed );
+		$failed_entry = $failed[0] ?? null;
+		self::assertIsArray( $failed_entry );
+		$error = $failed_entry['error'] ?? null;
+		self::assertIsArray( $error );
+		self::assertSame( self::ARGS, $error['failed_chunk'] ?? null );
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'batch_name' => self::IDENTITY,
+					'run_id'     => self::RUN_ID,
+					'status'     => 'failed',
+				)
+			)
+		);
+	}
+
+	/**
+	 * A throwing batch `on_failed()` callback cannot starve a later client's crash reconciliation.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_continues_after_a_batch_on_failed_callback_throws(): void {
+		$throwing_name  = self::identity( 'broken-batch' );
+		$throwing_batch = new RecordingBatch( 'broken-batch' );
+		$this->work->register_batch( $throwing_name, $throwing_batch );
+		$result = $this->dispatcher->start_batch( $throwing_name, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$this->set_run_fields( $throwing_name, array( 'executing' => true ) );
+		unset( $this->wpdb->rows[ 'a8csp_bgte_overlap_lock_' . $throwing_name . '_' . self::ARGS_HASH ] );
+
+		$this->create_running_run();
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
+		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$throwable                        = new \RuntimeException( 'Batch on_failed callback exploded.' );
+		$throwing_batch->failed_throwable = $throwable;
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertCount( 1, $throwing_batch->failed_calls );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		self::assertIsArray( $history );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'failed',
+				),
+			),
+			$history['terminal'] ?? null
+		);
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
+		self::assertSame(
+			array(
+				'name'      => $throwing_name,
+				'run_id'    => self::RUN_ID,
+				'exception' => $throwable,
+			),
+			$diagnostic['context']
 		);
 	}
 
@@ -517,15 +1411,58 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_deletes_a_schema_invalid_lock_row(): void {
-		$lock_name = 'a8csp_bgte_lock_corrupt-task_' . \str_repeat( 'b', 64 );
+		$corrupt_name = self::identity( 'corrupt-task' );
+		$lock_name    = OverlapGuard::OPTION_PREFIX . $corrupt_name . '_' . \str_repeat( 'b', 64 );
 		$this->wpdb->put( $lock_name, 'not-serialized' );
 
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'corrupt-task', $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( $corrupt_name, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertNull( $this->logger->records[0]['context']['run_id'] ?? null );
+	}
+
+	/**
+	 * A throwing lock cleanup leaves its exact row intact without starving later lock rows.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_continues_after_one_lock_cleanup_throws(): void {
+		$throwing_name = self::identity( 'broken-lock' );
+		$throwing_hash = \str_repeat( 'b', 64 );
+		$throwing_key  = OverlapGuard::OPTION_PREFIX . $throwing_name . '_' . $throwing_hash;
+		$throwing_raw  = 'broken-lock-row';
+		$this->wpdb->put( $throwing_key, $throwing_raw );
+
+		$healthy_name = self::identity( 'healthy-lock' );
+		$healthy_hash = \str_repeat( 'c', 64 );
+		$healthy_key  = OverlapGuard::OPTION_PREFIX . $healthy_name . '_' . $healthy_hash;
+		$this->wpdb->put( $healthy_key, 'healthy-lock-row' );
+
+		$throwable = new \RuntimeException( 'Lock cleanup exploded.' );
+		$this->wpdb->before_next(
+			'delete',
+			static function () use ( $throwable ): void {
+				throw $throwable;
+			}
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $throwing_raw, $this->wpdb->rows[ $throwing_key ] ?? null );
+		self::assertArrayNotHasKey( $healthy_key, $this->wpdb->rows );
+		$diagnostic = $this->exception_diagnostic( $throwable );
+		self::assertSame( 'warning', $diagnostic['level'] ?? null );
+		self::assertSame(
+			array(
+				'name'      => $throwing_name,
+				'args_hash' => $throwing_hash,
+				'run_id'    => null,
+				'exception' => $throwable,
+			),
+			$diagnostic['context']
+		);
 	}
 
 	/**
@@ -534,23 +1471,20 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_reclaims_a_stale_lock_whose_run_row_is_corrupt(): void {
-		$name                               = 'corrupt-task';
+		$name                               = self::identity( 'corrupt-task' );
 		$args_hash                          = \str_repeat( 'b', 64 );
-		$run_name                           = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
+		$run_name                           = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
 		$options                            = $this->options();
 		$options[ $run_name ]               = 'corrupt-run';
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
-		$lock_name                          = 'a8csp_bgte_lock_' . $name . '_' . $args_hash;
+		$lock_name                          = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
 
 		self::assertArrayNotHasKey( $run_name, $this->options() );
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
-		self::assertSame(
-			array( 'warning', 'warning' ),
-			\array_column( $this->logger->records, 'level' )
-		);
+		self::assertSame( array( 'warning', 'warning' ), \array_column( $this->logger->records, 'level' ) );
 	}
 
 	/**
@@ -561,7 +1495,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_reclaims_a_stale_lock_when_the_valid_run_has_a_different_fencing_hash(): void {
 		$this->create_running_run();
 		$mismatched_hash = \str_repeat( 'f', 64 );
-		$mismatched_lock = 'a8csp_bgte_lock_' . self::NAME . '_' . $mismatched_hash;
+		$mismatched_lock = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $mismatched_hash;
 		$this->put_lock( $mismatched_lock, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
@@ -577,7 +1511,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_exact_deletes_an_unpaired_corrupt_run_row(): void {
-		$run_name                           = 'a8csp_bgte_run_corrupt-task_' . self::RUN_ID;
+		$run_name                           = RunStore::OPTION_PREFIX . self::identity( 'corrupt-task' ) . '_' . self::RUN_ID;
 		$options                            = $this->options();
 		$options[ $run_name ]               = 'corrupt-run';
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
@@ -595,12 +1529,13 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_saturates_task_failure_attempts_at_php_int_max(): void {
 		$this->create_running_run();
-		$this->set_run_chunk_retries( $this->run_option_name(), \PHP_INT_MAX );
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
+		$this->set_run_failed_attempts( $this->run_option_name(), \PHP_INT_MAX );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 
 		$this->maintenance->handle( array() );
 
-		$failed = $this->options()[ 'a8csp_bgte_failed_' . self::NAME ] ?? null;
+		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
 		$failure = $failed[0] ?? null;
 		self::assertIsArray( $failure );
@@ -613,17 +1548,18 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_saturates_batch_failure_attempts_at_php_int_max(): void {
-		$name = 'crashed-batch';
-		$this->batches->register( new RecordingBatch( $name ) );
+		$name = self::identity( 'crashed-batch' );
+		$this->work->register_batch( $name, new RecordingBatch( 'crashed-batch' ) );
 		$result = $this->dispatcher->start_batch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$run_name = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
-		$this->set_run_chunk_retries( $run_name, \PHP_INT_MAX );
-		unset( $this->wpdb->rows[ 'a8csp_bgte_lock_' . $name . '_' . self::ARGS_HASH ] );
+		$this->set_run_fields( $name, array( 'executing' => true ) );
+		$this->set_run_failed_attempts( $run_name, \PHP_INT_MAX );
+		unset( $this->wpdb->rows[ 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH ] );
 
 		$this->maintenance->handle( array() );
 
-		$failed = $this->options()[ 'a8csp_bgte_failed_' . $name ] ?? null;
+		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
 		self::assertIsArray( $failed );
 		$failure = $failed[0] ?? null;
 		self::assertIsArray( $failure );
@@ -647,17 +1583,17 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::NAME,
+				'a8csp_background_tasks/superseded/' . self::IDENTITY,
 				'a8csp_background_tasks/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertArrayNotHasKey( 'a8csp_bgte_failed_' . self::NAME, $this->options() );
-		$history = $this->options()[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+		$history = $this->options()[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -666,7 +1602,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'superseded',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 		$lock = \maybe_unserialize( $this->wpdb->rows[ $this->lock_option_name() ] ?? '' );
 		self::assertIsArray( $lock );
@@ -674,82 +1610,399 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A terminal run beyond the sweep grace is deleted and appended to history without hooks.
+	 * A failed batch left after its terminal claim replays every missing durable effect.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_deletes_an_old_terminal_run_option(): void {
-		$run_name                           = 'a8csp_bgte_run_terminal-task_' . self::RUN_ID;
-		$options                            = $this->options();
-		$options[ $run_name ]               = array(
-			'status'        => 'completed',
-			'executing'     => true,
-			'start_args'    => self::ARGS,
-			'args_hash'     => self::ARGS_HASH,
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => self::NOW - 7_201,
-			'heartbeat_at'  => self::NOW - 3_601,
+	public function test_sweep_replays_all_effects_for_an_old_failed_batch(): void {
+		$name  = self::identity( 'failed-batch' );
+		$batch = new RecordingBatch( 'failed-batch' );
+		$this->work->register_batch( $name, $batch );
+		$this->store_terminal_run(
+			$name,
+			'failed',
+			array(),
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted batch failure.',
+				'stage'   => RunFailureStage::Execution->value,
+				'code'    => ApiErrorCode::ExecutionFailed->value,
+			),
+			3,
+			'Batch'
 		);
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		self::assertArrayNotHasKey( $run_name, $options );
-		$history = $options['a8csp_bgte_history_terminal-task'] ?? null;
-		self::assertIsArray( $history );
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$failed = $options[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		self::assertIsArray( $failed );
 		self::assertSame(
 			array(
 				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'completed',
+					'run_id'     => self::RUN_ID,
+					'failed_at'  => self::NOW - 3_601,
+					'start_args' => self::ARGS,
+					'attempts'   => 3,
+					'error'      => array(
+						'class'   => \RuntimeException::class,
+						'message' => 'Persisted batch failure.',
+						'stage'   => RunFailureStage::Execution->value,
+						'code'    => ApiErrorCode::ExecutionFailed->value,
+					),
 				),
 			),
-			$history['completed'] ?? null
+			$failed
 		);
+		self::assertCount( 1, $batch->failed_calls );
+		self::assertSame( self::RUN_ID, $batch->failed_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $batch->failed_calls[0]['start_args'] ?? null );
+		$failure = $batch->failed_calls[0]['error'];
+		self::assertSame( $name, $failure->identity );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 3, $failure->attempts );
+		self::assertSame( RunFailureStage::Execution, $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( 'Persisted batch failure.', $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		$actions = $this->fired_actions();
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/failed/' . $name,
+				'a8csp_background_tasks/failed',
+			),
+			\array_column( $actions, 'hook_name' )
+		);
+		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
+		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * Missing persisted failure detail is replayed as a storage failure.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_classifies_missing_persisted_failure_detail_as_storage_failure(): void {
+		$name  = self::identity( 'failed-without-detail' );
+		$batch = new RecordingBatch( 'failed-without-detail' );
+		$this->work->register_batch( $name, $batch );
+		$this->store_terminal_run( $name, 'failed', array(), null, 2, 'Batch' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		$failed  = $options[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		self::assertIsArray( $failed );
+		$expected_summary = \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', self::RUN_ID, $name );
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => self::RUN_ID,
+					'failed_at'  => self::NOW - 3_601,
+					'start_args' => self::ARGS,
+					'attempts'   => 3,
+					'error'      => array(
+						'class'   => null,
+						'message' => $expected_summary,
+						'stage'   => RunFailureStage::CrashReclaim->value,
+						'code'    => ApiErrorCode::StorageFailure->value,
+					),
+				),
+			),
+			$failed
+		);
+		self::assertCount( 1, $batch->failed_calls );
+		$failure = $batch->failed_calls[0]['error'];
+		self::assertSame( $name, $failure->identity );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 3, $failure->attempts );
+		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
+		self::assertSame( ApiErrorCode::StorageFailure, $failure->code );
+		self::assertSame( $expected_summary, $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		$actions = $this->fired_actions();
+		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
+		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+	}
+
+	/**
+	 * Durable effect markers prevent a replay from repeating already completed batch effects.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_only_missing_failed_batch_effects(): void {
+		$name  = self::identity( 'partially-effected-batch' );
+		$batch = new RecordingBatch( 'partially-effected-batch' );
+		$this->work->register_batch( $name, $batch );
+		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted batch failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted batch failure.', failed_chunk: null, ) ) );
+		$failed_option = 'a8csp_bgte_failed_runs_' . $name;
+		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
+		self::assertIsString( $failed_raw );
+		$this->store_terminal_run(
+			$name,
+			'failed',
+			array( 'retention', 'callbacks', 'hooks' ),
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted batch failure.',
+				'stage'   => RunFailureStage::Execution->value,
+				'code'    => ApiErrorCode::ExecutionFailed->value,
+			),
+			2,
+			'Batch'
+		);
+
+		$this->maintenance->handle( array() );
+
+		self::assertSame( $failed_raw, $this->wpdb->rows[ $failed_option ] ?? null );
+		self::assertSame( array(), $batch->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * A losing failed callback worker does not emit downstream effects after a rival finishes the row.
+	 *
+	 * @return  void
+	 */
+	public function test_failed_callback_race_stops_after_a_rival_finishes_the_terminal_row(): void {
+		$name  = self::identity( 'racing-failed-batch' );
+		$batch = new RecordingBatch( 'racing-failed-batch' );
+		$this->store_terminal_run(
+			$name,
+			'failed',
+			array(),
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted batch failure.',
+				'stage'   => RunFailureStage::Execution->value,
+				'code'    => ApiErrorCode::ExecutionFailed->value,
+			),
+			2,
+			'Batch'
+		);
+		$run_store        = $this->stores->run_store( $name );
+		$rival_started    = false;
+		$batch->on_failed = function () use ( $batch, $name, $run_store, &$rival_started ): void {
+			if ( $rival_started ) {
+				return;
+			}
+
+			$rival_started = true;
+			$inspected     = $run_store->inspect( self::RUN_ID );
+			self::assertFalse( $inspected->is_failure() );
+			$snapshot = $inspected->value;
+			self::assertIsArray( $snapshot );
+			$state = $snapshot['state'];
+			self::assertNotNull( $state );
+			self::assertTrue( $this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch ) );
+
+			throw new \RuntimeException( 'Original callback worker resumed after rival cleanup.' );
+		};
+
+		$inspected = $run_store->inspect( self::RUN_ID );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+		$state = $snapshot['state'];
+		self::assertNotNull( $state );
+		$caught = null;
+
+		try {
+			$this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch );
+		} catch ( \RuntimeException $throwable ) {
+			$caught = $throwable;
+		}
+
+		self::assertInstanceOf( \RuntimeException::class, $caught );
+		self::assertSame( 'Original callback worker resumed after rival cleanup.', $caught->getMessage() );
+		self::assertCount( 2, $batch->failed_calls );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/failed/' . $name,
+				'a8csp_background_tasks/failed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$failed = $options[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		self::assertIsArray( $failed );
+		self::assertCount( 1, $failed );
+		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * A completed batch left after its terminal claim replays its callback, hooks, and history.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_all_effects_for_an_old_completed_batch(): void {
+		$name  = self::identity( 'completed-batch' );
+		$batch = new RecordingBatch( 'completed-batch' );
+		$this->work->register_batch( $name, $batch );
+		$this->store_terminal_run( $name, 'completed', kind: 'Batch' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => self::RUN_ID,
+					'start_args' => self::ARGS,
+				),
+			),
+			$batch->completed_calls
+		);
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . $name,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_history_status( $options, 'completed', $name );
+	}
+
+	/**
+	 * A completed task left after its terminal claim replays hooks and history before deletion.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_all_effects_for_an_old_completed_task(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		$this->assert_history_status( $options, 'completed' );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . self::IDENTITY,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 	}
 
 	/**
-	 * A failed terminal delete remains retryable without a false warning or duplicate history.
+	 * A retained Batch row keeps Batch terminal routing after its identity is reused by a Task.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_does_not_report_or_record_a_failed_terminal_delete(): void {
-		$run_name                                    = 'a8csp_bgte_run_terminal-task_' . self::RUN_ID;
-		$options                                     = $this->options();
-		$options[ $run_name ]                        = array(
-			'status'        => 'completed',
-			'executing'     => true,
-			'start_args'    => self::ARGS,
-			'args_hash'     => self::ARGS_HASH,
-			'queue'         => array(),
-			'chunk_retries' => 0,
-			'action_seq'    => 1,
-			'created_at'    => self::NOW - 7_201,
-			'heartbeat_at'  => self::NOW - 3_601,
+	public function test_sweep_routes_a_terminal_row_by_its_persisted_batch_kind(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed', kind: 'Batch' );
+
+		$this->maintenance->handle( array() );
+
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'batch_name' => self::IDENTITY,
+					'run_id'     => self::RUN_ID,
+					'status'     => 'completed',
+				)
+			)
 		);
-		$options['a8csp_bgte_history_terminal-task'] = array(
-			'started'   => array( 'existing-run' ),
-			'completed' => array(
+	}
+
+	/**
+	 * A deactivated client cannot leave its terminal row permanently unfinished.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_skips_an_unregistered_batch_callback_and_finishes_the_row(): void {
+		$name = self::identity( 'deactivated-client' );
+		$this->store_terminal_run( $name, 'completed', kind: 'Batch' );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$this->assert_history_status( $options, 'completed', $name );
+		self::assertSame(
+			array(
+				'a8csp_background_tasks/completed/' . $name,
+				'a8csp_background_tasks/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'batch_name' => $name,
+					'run_id'     => self::RUN_ID,
+					'status'     => 'completed',
+				)
+			)
+		);
+	}
+
+	/**
+	 * Terminal cleanup leaves rows whose required effects have not been marked.
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_finish_is_gated_until_the_sweep_completes_missing_effects(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed' );
+		$run_store = $this->stores->run_store( self::IDENTITY );
+		$inspected = $run_store->inspect( self::RUN_ID );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+		$state = $snapshot['state'];
+		self::assertNotNull( $state );
+
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Task' ) );
+		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		$this->assert_history_status( $options, 'completed' );
+	}
+
+	/**
+	 * A failed terminal delete retries cleanup without repeating marked effects or history.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_retries_a_failed_terminal_delete_without_repeating_effects(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed' );
+		$options = $this->options();
+		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
+		$options[ 'a8csp_bgte_history_' . self::IDENTITY ] = array(
+			'started'  => array( 'existing-run' ),
+			'terminal' => array(
 				array(
 					'run_id' => 'existing-run',
 					'status' => 'completed',
 				),
 			),
-			'by_hash'   => array(),
+			'by_hash'  => array(),
 		);
-		$GLOBALS['a8csp_bgte_test_options']          = $options;
+		$GLOBALS['a8csp_bgte_test_options']                = $options;
 		$this->wpdb->script_result( 'delete', false );
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		self::assertArrayHasKey( $run_name, $options );
-		$history = $options['a8csp_bgte_history_terminal-task'] ?? null;
+		$state   = $options[ $this->run_option_name() ] ?? null;
+		self::assertIsArray( $state );
+		self::assertSame( array( 'hooks', 'history' ), $state['effects'] ?? null );
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -757,11 +2010,31 @@ final class RunReconciliationTest extends TestCase {
 					'run_id' => 'existing-run',
 					'status' => 'completed',
 				),
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'completed',
+				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
+		self::assertCount( 2, $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
+
+		$this->logger->records                    = array();
+		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$this->maintenance->handle( array() );
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		self::assertCount( 2, $terminal );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 	}
 
 	// endregion.
@@ -769,21 +2042,102 @@ final class RunReconciliationTest extends TestCase {
 	// region HELPERS.
 
 	/**
+	 * Returns one owner-qualified test work identity.
+	 *
+	 * @param   string $name Owner-local work name.
+	 *
+	 * @return  string
+	 */
+	private static function identity( string $name ): string {
+		return self::OWNER . ':' . $name;
+	}
+
+	/**
 	 * Creates one ordinary running task through the dispatcher.
 	 *
 	 * @return  void
 	 */
 	private function create_running_run(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
+		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
 	}
 
 	/**
-	 * Asserts the complete crash-reclaim terminal effect.
+	 * Asserts the latest retained history status through the untyped option boundary.
+	 *
+	 * @param   array<array-key, mixed> $options Persisted options.
+	 * @param   string                  $status  Expected terminal status.
+	 * @param   string                  $name    Stable task or batch name.
+	 *
+	 * @return  void
+	 */
+	private function assert_history_status( array $options, string $status, string $name = self::IDENTITY ): void {
+		$history = $options[ 'a8csp_bgte_history_' . $name ] ?? null;
+		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		$entry = $terminal[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( $status, $entry['status'] ?? null );
+	}
+
+	/**
+	 * Stores one production-serialized running state.
+	 *
+	 * @param   string   $name  Complete work identity.
+	 * @param   RunState $state Running state fixture.
+	 *
+	 * @return  void
+	 */
+	private function store_running_state( string $name, RunState $state ): void {
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
+		$decoded               = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $decoded );
+
+		$options                 = $this->options();
+		$options[ $option_name ] = $decoded;
+
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
+	 * Stores one old terminal state whose omitted optional fields exercise decoder defaults.
+	 *
+	 * @phpstan-param list<string> $effects
+	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
+	 * @phpstan-param 'Task'|'Batch' $kind
+	 *
+	 * @param   string     $name            Stable task or batch name.
+	 * @param   string     $status          Terminal status value.
+	 * @param   array      $effects         Completed terminal effect keys.
+	 * @param   array|null $error           Persisted terminal failure detail.
+	 * @param   int        $failed_attempts Attempts consumed by a failed run.
+	 * @param   string     $kind            Persisted work contract type.
+	 *
+	 * @return  void
+	 */
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'Task' ): void {
+		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
+
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
+
+		$decoded = RawOptionDecoder::decode( $raw );
+		self::assertIsArray( $decoded );
+
+		$options = $this->options();
+
+		$options[ $option_name ] = $decoded;
+
+		$GLOBALS['a8csp_bgte_test_options'] = $options;
+	}
+
+	/**
+	 * Asserts the complete crash reclaim terminal effect.
 	 *
 	 * @param   bool $lock_survives Whether a replacement lock remains after terminalization.
 	 *
@@ -797,7 +2151,7 @@ final class RunReconciliationTest extends TestCase {
 		} else {
 			self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		}
-		$failed = $options[ 'a8csp_bgte_failed_' . self::NAME ] ?? null;
+		$failed = $options[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
 		self::assertCount( 1, $failed );
 		$failed_entry = $failed[0] ?? null;
@@ -806,24 +2160,32 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $error );
 		$message = $error['message'] ?? null;
 		self::assertIsString( $message );
-		self::assertStringContainsString( 'maintenance crash-reclaim path', $message );
+		self::assertStringContainsString( 'maintenance crash reclaim path', $message );
 		self::assertNull( $error['class'] ?? null );
+		self::assertSame( RunFailureStage::CrashReclaim->value, $error['stage'] ?? null );
+		self::assertSame( ApiErrorCode::ExecutionFailed->value, $error['code'] ?? null );
+		self::assertArrayNotHasKey( 'failed_chunk', $error );
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
+				'a8csp_background_tasks/failed/' . self::IDENTITY,
 				'a8csp_background_tasks/failed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
 		self::assertSame( self::RUN_ID, $actions[0]['args'][0] ?? null );
 		self::assertSame( self::ARGS, $actions[0]['args'][1] ?? null );
-		self::assertInstanceOf( EngineError::class, $actions[0]['args'][2] ?? null );
-		self::assertSame(
-			array( self::NAME, ...( $actions[0]['args'] ?? array() ) ),
-			$actions[1]['args'] ?? null
-		);
-		$history = $options[ 'a8csp_bgte_history_' . self::NAME ] ?? null;
+		$failure = $actions[0]['args'][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( self::IDENTITY, $failure->identity );
+		self::assertSame( self::RUN_ID, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( $message, $failure->summary );
+		self::assertNull( $failure->failed_chunk );
+		self::assertSame( array( self::IDENTITY, ...( $actions[0]['args'] ?? array() ) ), $actions[1]['args'] ?? null );
+		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -832,7 +2194,7 @@ final class RunReconciliationTest extends TestCase {
 					'status' => 'failed',
 				),
 			),
-			$history['completed'] ?? null
+			$history['terminal'] ?? null
 		);
 	}
 
@@ -858,29 +2220,71 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Sets one persisted run's retry counter without changing any other field.
+	 * Sets one persisted run's failed-attempt count without changing any other field.
 	 *
-	 * @param   string $option_name    Run option name.
-	 * @param   int    $chunk_retries  Retry count to persist.
+	 * @param   string $option_name     Run option name.
+	 * @param   int    $failed_attempts Failed-attempt count to persist.
 	 *
 	 * @return  void
 	 */
-	private function set_run_chunk_retries( string $option_name, int $chunk_retries ): void {
+	private function set_run_failed_attempts( string $option_name, int $failed_attempts ): void {
 		$options = $this->options();
 		$state   = $options[ $option_name ] ?? null;
 		self::assertIsArray( $state );
-		$state['chunk_retries']             = $chunk_retries;
+		$state['failed_attempts']           = $failed_attempts;
 		$options[ $option_name ]            = $state;
 		$GLOBALS['a8csp_bgte_test_options'] = $options;
 	}
 
 	/**
+	 * Replaces selected fields in one retained running state.
+	 *
+	 * @param   string                  $name   Stable task or batch name.
+	 * @param   array<array-key, mixed> $fields Replacement fields.
+	 *
+	 * @return  void
+	 */
+	private function set_run_fields( string $name, array $fields ): void {
+		$this->replace_run_state( $name, \array_replace( $this->run_state( $name ), $fields ) );
+	}
+
+	/**
+	 * Stores one decoded run-state fixture.
+	 *
+	 * @param   string                  $name  Stable task or batch name.
+	 * @param   array<array-key, mixed> $state Persisted run state.
+	 *
+	 * @return  void
+	 */
+	private function replace_run_state( string $name, array $state ): void {
+		$options                                    = $this->options();
+		$options[ $this->run_option_name( $name ) ] = $state;
+		$GLOBALS['a8csp_bgte_test_options']         = $options;
+	}
+
+	/**
+	 * Returns one retained decoded run state.
+	 *
+	 * @param   string $name Stable task or batch name.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private function run_state( string $name ): array {
+		$state = $this->options()[ $this->run_option_name( $name ) ] ?? null;
+		self::assertIsArray( $state );
+
+		return $state;
+	}
+
+	/**
 	 * Returns the deterministic run option name.
+	 *
+	 * @param   string $name Stable task or batch name.
 	 *
 	 * @return  string
 	 */
-	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
+	private function run_option_name( string $name = self::IDENTITY ): string {
+		return RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -889,7 +2293,49 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
+		return OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . self::ARGS_HASH;
+	}
+
+	/**
+	 * Returns one caught-exception diagnostic by object identity.
+	 *
+	 * @param   \Throwable $throwable Expected exception or error.
+	 *
+	 * @return  array{level: mixed, message: string, context: array<array-key, mixed>}
+	 */
+	private function exception_diagnostic( \Throwable $throwable ): array {
+		foreach ( $this->logger->records as $record ) {
+			if ( ( $record['context']['exception'] ?? null ) === $throwable ) {
+				return $record;
+			}
+		}
+
+		throw new \LogicException( 'Expected a maintenance caught-exception diagnostic.' );
+	}
+
+	/**
+	 * Returns the first log record matching a level and context identity.
+	 *
+	 * @param   string                  $level            Expected log level.
+	 * @param   array<array-key, mixed> $context_identity Context entries that identify the record.
+	 *
+	 * @return  array{level: string, message: string, context: array<array-key, mixed>}|null
+	 */
+	private function log_record( string $level, array $context_identity ): ?array {
+		foreach ( $this->logger->records as $record ) {
+			if ( $level !== $record['level'] ) {
+				continue;
+			}
+			foreach ( $context_identity as $key => $value ) {
+				if ( ! \array_key_exists( $key, $record['context'] ) || $value !== $record['context'][ $key ] ) {
+					continue 2;
+				}
+			}
+
+			return $record;
+		}
+
+		return null;
 	}
 
 	/**
@@ -924,6 +2370,16 @@ final class RunReconciliationTest extends TestCase {
 	private function options(): array {
 		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
 		self::assertIsArray( $options );
+		foreach ( $this->wpdb->rows as $name => $raw ) {
+			self::assertIsString( $name );
+			self::assertIsString( $raw );
+			if (
+				\str_starts_with( $name, 'a8csp_bgte_failed_runs_' )
+				|| \str_starts_with( $name, 'a8csp_bgte_history_' )
+			) {
+				$options[ $name ] = RawOptionDecoder::decode( $raw );
+			}
+		}
 
 		return $options;
 	}

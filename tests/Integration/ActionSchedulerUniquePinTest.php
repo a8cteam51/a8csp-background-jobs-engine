@@ -34,11 +34,7 @@ final class ActionSchedulerUniquePinTest extends IntegrationTestCase {
 		self::assertGreaterThan( 0, $first_action_id, 'Action Scheduler must persist the first pending unique action' );
 
 		$store = $this->action_scheduler_store();
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_PENDING,
-			$store->get_status( (string) $first_action_id ),
-			'The uniqueness probe must begin with a pending action'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( (string) $first_action_id ), 'The uniqueness probe must begin with a pending action' );
 
 		$duplicate_action_id = \as_enqueue_async_action( self::HOOK, $args, self::GROUP, true );
 		self::assertSame( 0, $duplicate_action_id, 'Action Scheduler must reject a duplicate of a pending unique action' );
@@ -94,17 +90,9 @@ final class ActionSchedulerUniquePinTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the in-progress uniqueness probe' );
 
 		self::assertSame( 1, $execution_calls, 'The in-progress uniqueness probe must execute exactly once' );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_RUNNING,
-			$observed_status,
-			'Action Scheduler must mark the original row in-progress before invoking its callback'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_RUNNING, $observed_status, 'Action Scheduler must mark the original row in-progress before invoking its callback' );
 		self::assertSame( 0, $duplicate_action_id, 'Action Scheduler must reject a duplicate of an in-progress unique action' );
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$store->get_status( (string) $first_action_id ),
-			'Action Scheduler must complete the original uniqueness probe after its callback returns'
-		);
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( (string) $first_action_id ), 'Action Scheduler must complete the original uniqueness probe after its callback returns' );
 		self::assertSame(
 			array( (string) $first_action_id ),
 			$store->query_actions(

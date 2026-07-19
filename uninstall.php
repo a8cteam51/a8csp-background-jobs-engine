@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 /**
- * Uninstall handler. WordPress runs this file directly when the plugin is deleted, in a cold
- * bootstrap where only `WP_UNINSTALL_PLUGIN` is defined — no Composer autoloader, no Plugin class,
- * no Component registry — so the plugin's footprint stays inline below instead of living in a
- * separately-requirable file: nothing here may reference plugin code.
+ * Uninstall handler. WordPress runs this file directly when the plugin is deleted. The plugin's
+ * entry point, Composer autoloader, and plugin classes are not loaded, so the plugin's footprint
+ * stays inline below instead of living in a separately-requirable file: nothing here may reference
+ * plugin code.
  *
  * @since       1.0.0
  * @version     1.0.0
@@ -13,43 +13,39 @@
 \defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 /*
- * The plugin's persisted footprint. Every fixed option and user-meta key any component writes
- * is listed here, in the same change that introduces the write — grouped by owning component
- * so ownership stays reviewable. Runtime-suffixed option families use the prefix sweep below.
+ * The plugin's persisted footprint. Fixed option and user-meta keys outside the reserved-prefix
+ * option sweep are listed here. Options within the a8csp_bgte_ ownership boundary use the sweep
+ * below.
  */
 $a8csp_bgte_footprint = array(
-	'options'   => array(
-		'a8csp_bgte_schedules',
-	),
+	'options'   => array(),
 	'user_meta' => array(),
 );
 
 $a8csp_bgte_lifecycle_hooks = array(
-	'a8csp_background_tasks/start',
-	'a8csp_background_tasks/continue',
-	'a8csp_background_tasks/run',
-	'a8csp_background_tasks/cleanup',
+	'a8csp_background_tasks/start_batch',
+	'a8csp_background_tasks/continue_batch',
+	'a8csp_background_tasks/run_task',
+	'a8csp_background_tasks/run_chunk',
+	'a8csp_background_tasks/cleanup_batch',
 	'a8csp_background_tasks/schedule_due',
 );
 
 /*
- * Run, latest-pointer, history, execution-lock, occurrence-lease, and failed-run option names
- * end in task, batch, run, registration-hash, or argument-hash identifiers that do not exist
- * until runtime, so no static list can name every row. The shared prefix is the complete ownership
- * boundary for standalone engine options. Escaping it before appending the wildcard keeps each
- * underscore literal instead of letting SQL LIKE broaden the sweep to similarly spelled foreign
- * options.
+ * Schedule-registration, active-run, failed-run, latest-run, run-history, overlap-lock,
+ * occurrence-lease, and cleanup-intent option names end in owner, task, batch, run,
+ * registration-hash, or argument-hash identifiers that do not exist until runtime. The shared
+ * prefix is the complete ownership boundary for standalone engine options. Escaping it before
+ * appending the wildcard keeps each underscore literal instead of letting SQL LIKE broaden the
+ * sweep to similarly spelled foreign options. The deletion loop repeats the byte-exact prefix
+ * check because the option-name column collation may admit case-distinct candidates.
  *
  * Selecting the names directly is intentional in this cold bootstrap: delete_option() still
  * performs each deletion so WordPress preserves its normal cache invalidation and hooks. The
  * complete per-site cleanup stays in one closure so the single-site and network paths cannot
  * drift apart.
  */
-$a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8csp_bgte_lifecycle_hooks ): void {
-	foreach ( $a8csp_bgte_footprint['options'] as $a8csp_bgte_uninstall_option ) {
-		delete_option( $a8csp_bgte_uninstall_option );
-	}
-
+$a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_lifecycle_hooks ): void {
 	global $wpdb;
 
 	/**
@@ -57,10 +53,13 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 	 *
 	 * @var wpdb $wpdb
 	 */
+	delete_transient( 'a8csp_bgte_github_latest_release_stable' );
+	delete_transient( 'a8csp_bgte_github_latest_release_prerelease' );
+
 	$a8csp_bgte_option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
 
 	foreach ( $a8csp_bgte_option_names as $a8csp_bgte_option_name ) {
-		if ( \is_string( $a8csp_bgte_option_name ) ) {
+		if ( \is_string( $a8csp_bgte_option_name ) && \str_starts_with( $a8csp_bgte_option_name, 'a8csp_bgte_' ) ) {
 			delete_option( $a8csp_bgte_option_name );
 		}
 	}
@@ -93,28 +92,34 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 		$a8csp_bgte_action_scheduler_tables[ $a8csp_bgte_action_scheduler_table_suffix ] = $a8csp_bgte_action_scheduler_table;
 	}
 
-	$a8csp_bgte_hook_placeholders = \implode(
-		', ',
-		\array_fill( 0, \count( $a8csp_bgte_lifecycle_hooks ), '%s' )
-	);
+	$a8csp_bgte_hook_placeholders = \implode( ', ', \array_fill( 0, \count( $a8csp_bgte_lifecycle_hooks ), '%s' ) );
 
 	// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- IN-list placeholders are array_fill()-built literals; every value still binds through prepare().
 
 	/*
-	 * Candidate group IDs must be captured before their matching actions disappear. The final
-	 * unreferenced check keeps groups shared with surviving foreign actions structurally out of scope.
+	 * Candidate claim and group IDs must be captured before their matching actions disappear. The
+	 * final unreferenced checks keep rows shared with surviving foreign actions out of scope.
 	 */
-	$a8csp_bgte_group_id_rows = $wpdb->get_col(
-		$wpdb->prepare(
-			'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')',
-			\array_merge(
-				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ),
-				$a8csp_bgte_lifecycle_hooks
-			)
-		)
-	);
+	$a8csp_bgte_claim_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `claim_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
+	$a8csp_bgte_claim_ids     = array();
+	foreach ( $a8csp_bgte_claim_id_rows as $a8csp_bgte_claim_id ) {
+		if ( ! \is_numeric( $a8csp_bgte_claim_id ) ) {
+			continue;
+		}
+
+		$a8csp_bgte_claim_id = (int) $a8csp_bgte_claim_id;
+		if ( 0 < $a8csp_bgte_claim_id ) {
+			$a8csp_bgte_claim_ids[] = $a8csp_bgte_claim_id;
+		}
+	}
+
+	$a8csp_bgte_group_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) ) );
 	$a8csp_bgte_group_ids     = array();
 	foreach ( $a8csp_bgte_group_id_rows as $a8csp_bgte_group_id ) {
+		if ( ! \is_numeric( $a8csp_bgte_group_id ) ) {
+			continue;
+		}
+
 		$a8csp_bgte_group_id = (int) $a8csp_bgte_group_id;
 		if ( 0 < $a8csp_bgte_group_id ) {
 			$a8csp_bgte_group_ids[] = $a8csp_bgte_group_id;
@@ -126,7 +131,7 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 	$a8csp_bgte_log_delete_query = $wpdb->prepare(
 		'DELETE FROM %i WHERE `action_id` IN (' .
 			'SELECT `action_id` FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')' .
-		')',
+			')',
 		\array_merge(
 			array(
 				$a8csp_bgte_action_scheduler_tables['actionscheduler_logs'],
@@ -136,17 +141,36 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 		)
 	);
 	if ( false === $wpdb->query( $a8csp_bgte_log_delete_query ) ) { // @phpstan-ignore argument.type
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
+		\error_log( 'a8csp-background-tasks-engine: uninstall left Action Scheduler actions and logs behind; actionscheduler_logs table delete failed.' );
 		return;
 	}
 
-	$a8csp_bgte_action_delete_query = $wpdb->prepare(
-		'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')',
-		\array_merge(
-			array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ),
-			$a8csp_bgte_lifecycle_hooks
-		)
-	);
-	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) || array() === $a8csp_bgte_group_ids ) { // @phpstan-ignore argument.type
+	$a8csp_bgte_action_delete_query = $wpdb->prepare( 'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgte_hook_placeholders . ')', \array_merge( array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgte_lifecycle_hooks ) );
+	if ( false === $wpdb->query( $a8csp_bgte_action_delete_query ) ) { // @phpstan-ignore argument.type
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
+		\error_log( 'a8csp-background-tasks-engine: uninstall left Action Scheduler actions behind; actionscheduler_actions table delete failed.' );
+		return;
+	}
+
+	if ( array() !== $a8csp_bgte_claim_ids ) {
+		$a8csp_bgte_claim_placeholders = \implode( ', ', \array_fill( 0, \count( $a8csp_bgte_claim_ids ), '%d' ) );
+		$a8csp_bgte_claim_delete_query = $wpdb->prepare(
+			'DELETE FROM %i WHERE `claim_id` IN (' . $a8csp_bgte_claim_placeholders . ') AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
+			\array_merge(
+				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_claims'] ),
+				$a8csp_bgte_claim_ids,
+				array( $a8csp_bgte_action_scheduler_tables['actionscheduler_actions'] )
+			)
+		);
+		if ( false === $wpdb->query( $a8csp_bgte_claim_delete_query ) ) { // @phpstan-ignore argument.type
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
+			\error_log( 'a8csp-background-tasks-engine: uninstall left orphaned Action Scheduler claims behind; actionscheduler_claims table delete failed.' );
+			return;
+		}
+	}
+
+	if ( array() === $a8csp_bgte_group_ids ) {
 		return;
 	}
 
@@ -168,26 +192,35 @@ $a8csp_bgte_uninstall_site = static function () use ( $a8csp_bgte_footprint, $a8
 
 /*
  * Options, WP-Cron events, and Action Scheduler actions are stored per site, while WordPress runs
- * a multisite uninstall only once for the network. `number => 0` removes get_sites()'s default
- * limit so every site's engine footprint is visited.
+ * a multisite uninstall only once for the network. Bounded pages keep site discovery memory
+ * proportional to one batch while still visiting every site's engine footprint.
  */
 if ( is_multisite() ) {
-	$a8csp_bgte_uninstall_site_ids = get_sites(
-		array(
-			'fields' => 'ids',
-			'number' => 0,
-		)
-	);
-	foreach ( $a8csp_bgte_uninstall_site_ids as $a8csp_bgte_uninstall_site_id ) {
-		switch_to_blog( $a8csp_bgte_uninstall_site_id );
-		$a8csp_bgte_uninstall_site();
-		restore_current_blog();
-	}
+	$a8csp_bgte_uninstall_site_batch_size = 100;
+	$a8csp_bgte_uninstall_site_offset     = 0;
+	do {
+		$a8csp_bgte_uninstall_site_ids = get_sites(
+			array(
+				'fields' => 'ids',
+				'number' => $a8csp_bgte_uninstall_site_batch_size,
+				'offset' => $a8csp_bgte_uninstall_site_offset,
+			)
+		);
+		foreach ( $a8csp_bgte_uninstall_site_ids as $a8csp_bgte_uninstall_site_id ) {
+			switch_to_blog( $a8csp_bgte_uninstall_site_id );
+			$a8csp_bgte_uninstall_site();
+			restore_current_blog();
+		}
+
+		$a8csp_bgte_uninstall_site_count   = \count( $a8csp_bgte_uninstall_site_ids );
+		$a8csp_bgte_uninstall_site_offset += $a8csp_bgte_uninstall_site_batch_size;
+	} while ( $a8csp_bgte_uninstall_site_count === $a8csp_bgte_uninstall_site_batch_size );
 } else {
 	$a8csp_bgte_uninstall_site();
 }
 
 // User meta is stored network-globally, so one pass covers every site.
+// @phpstan-ignore foreach.emptyArray (The fixed-key footprint starts empty; each fixed-key write lands its entry here.)
 foreach ( $a8csp_bgte_footprint['user_meta'] as $a8csp_bgte_uninstall_meta_key ) {
 	delete_metadata( 'user', 0, $a8csp_bgte_uninstall_meta_key, '', true );
 }

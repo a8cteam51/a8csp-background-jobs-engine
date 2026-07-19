@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schemas.wp.org/trunk/wp-env.schema.json",
+  "$schema": "https://schemas.wp.org/trunk/wp-env.json",
   "phpVersion": "8.5",
   "port": 8893,
   "testsEnvironment": false,
@@ -11,9 +11,7 @@
     "afterStart": "wp-env run cli wp plugin activate action-scheduler a8csp-background-tasks-engine"
   },
   "config": {
-    "WP_DEBUG": true,
     "WP_DEBUG_DISPLAY": false,
-    "WP_DEBUG_LOG": true,
-    "SCRIPT_DEBUG": true
+    "WP_DEBUG_LOG": true
   }
 }

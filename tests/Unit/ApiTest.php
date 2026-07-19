@@ -2,48 +2,52 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use PHPUnit\Framework\Attributes\CoversFunction;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the procedural API lifecycle guard and unavailable-engine fallbacks.
+ * Exercises the owner-bound public front door and its stable error boundary.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgte_engine' )]
-#[CoversFunction( 'a8csp_bgte_enqueue_task' )]
-#[CoversFunction( 'a8csp_bgte_start_batch' )]
-#[CoversFunction( 'a8csp_bgte_retry_failed_run' )]
-#[CoversFunction( 'a8csp_bgte_cancel_run' )]
-#[CoversFunction( 'a8csp_bgte_sync_schedules' )]
-#[CoversFunction( 'a8csp_bgte_run_schedule_now' )]
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState( false )]
 final class ApiTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
+	private EngineRig $rig;
+
+	// endregion.
+
 	// region LIFECYCLE.
 
 	/**
-	 * Loads the WordPress lifecycle and diagnostic seams with the procedural API.
+	 * Loads guarded WordPress seams before public functions are resolved.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once __DIR__ . '/wp-cron-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/functions.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets the lifecycle script and incorrect-use ledger.
+	 * Boots one deterministic production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -51,8 +55,24 @@ final class ApiTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_did_actions']          = array();
-		$GLOBALS['a8csp_bgte_test_doing_it_wrong_calls'] = array();
+		$this->rig = EngineRig::set_up();
+	}
+
+	/**
+	 * Releases request-local engine state after each API scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
@@ -60,67 +80,271 @@ final class ApiTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Access before plugins_loaded reports the correction and returns null.
+	 * Access before init fails with the earliest safe lifecycle contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_engine_access_before_plugins_loaded_reports_incorrect_use(): void {
-		self::assertNull( \a8csp_bgte_engine() );
-		self::assertSame(
-			array(
-				array(
-					'function_name' => 'a8csp_bgte_engine',
-					'message'       => 'Call a8csp_bgte_engine() after plugins_loaded, when the engine has booted.',
-					'version'       => '1.0.0',
-				),
-			),
-			$GLOBALS['a8csp_bgte_test_doing_it_wrong_calls']
-		);
+	public function test_front_door_is_unavailable_before_init(): void {
+		$GLOBALS['a8csp_bgte_test_did_actions'] = array();
+
+		$this->expectException( \LogicException::class );
+		$this->expectExceptionMessageIs( 'The background tasks client is available from the init hook; call a8csp_bgte() from an init callback or later.' );
+
+		\a8csp_bgte( 'consumer-plugin' );
 	}
 
 	/**
-	 * Access after plugins_loaded returns the engine retained by the component.
+	 * Access during and after init returns a working owner-bound facade.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_engine_access_after_plugins_loaded_delegates_to_the_component(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+	public function test_front_door_flows_during_and_after_init(): void {
+		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
+		$during                                   = \a8csp_bgte( 'during-init' );
+		$during->tasks()->register( new RecordingTask( 'sync' ) );
+		self::assertInstanceOf( Success::class, $during->tasks()->enqueue( 'sync' ) );
 
-		$engine          = ( new \ReflectionClass( Engine::class ) )->newInstanceWithoutConstructor();
-		$engine_property = new \ReflectionProperty( Component::class, 'engine' );
-		$engine_property->setValue( null, $engine );
-
-		self::assertSame( $engine, \a8csp_bgte_engine() );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_doing_it_wrong_calls'] );
+		$GLOBALS['a8csp_bgte_test_doing_actions'] = array();
+		self::assertInstanceOf( Client::class, \a8csp_bgte( 'after-init' ) );
 	}
 
 	/**
-	 * Every mutation returns its unavailable-engine failure after the lifecycle gate.
+	 * Equal local names remain isolated by owner across admission, delivery, and completion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_post_boot_api_returns_failures_when_the_component_is_unavailable(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+	public function test_two_owners_run_the_same_local_task_name_independently(): void {
+		$left       = $this->rig->client( 'owner-left' );
+		$right      = $this->rig->client( 'owner-right' );
+		$left_task  = new RecordingTask( 'sync' );
+		$right_task = new RecordingTask( 'sync' );
+		$left->tasks()->register( $left_task );
+		$right->tasks()->register( $right_task );
 
-		$results = array(
-			\a8csp_bgte_enqueue_task( 'email-digest', array( 'site_id' => 7 ), delay: 30, unique: true, priority: 5 ),
-			\a8csp_bgte_start_batch( 'catalog-sync', array( 'site_id' => 7 ), unique: true, priority: 23 ),
-			\a8csp_bgte_retry_failed_run( 'email-digest', 'run-1' ),
-			\a8csp_bgte_cancel_run( 'email-digest', 'run-1' ),
-			\a8csp_bgte_sync_schedules( 'consumer-plugin', array() ),
-			\a8csp_bgte_run_schedule_now( 'consumer-plugin', 'nightly' ),
+		self::assertInstanceOf( Success::class, $left->tasks()->enqueue( 'sync', array( 'owner' => 'left' ) ) );
+		self::assertInstanceOf( Success::class, $right->tasks()->enqueue( 'sync', array( 'owner' => 'right' ) ) );
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		self::assertSame( array( array( 'owner' => 'left' ) ), $left_task->calls );
+		self::assertSame( array( array( 'owner' => 'right' ) ), $right_task->calls );
+		self::assertInstanceOf( Success::class, $left->runs()->last_completed_run_id( 'sync' ) );
+		self::assertInstanceOf( Success::class, $right->runs()->last_completed_run_id( 'sync' ) );
+	}
+
+	/**
+	 * Every invalid or reserved owner is rejected at the single public front door.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $owner Invalid owner.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_owners' )]
+	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		\a8csp_bgte( $owner );
+	}
+
+	/**
+	 * Public concept facades map internal admission failures to stable API codes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_concept_facades_map_internal_failures_to_public_codes(): void {
+		$client = $this->rig->client( 'consumer-plugin' );
+
+		self::assert_api_failure( $client->tasks()->enqueue( 'missing-task' ), ApiErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->batches()->start( 'missing-batch' ), ApiErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->schedules()->dispatch_now( 'missing-schedule' ), ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
+	}
+
+	/**
+	 * Last-completed lookup follows terminal order and ignores a later failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_run_id_retains_the_latest_successful_terminal(): void {
+		$client = $this->rig->client( 'consumer-plugin' );
+		$task   = new RecordingTask( 'sync' );
+		$client->tasks()->register( $task );
+		$first = $this->enqueue_and_run( $client, array( 'sequence' => 1 ) );
+		$last  = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
+		self::assertNotSame( $first, $last );
+
+		$task->throwable = new NonRetryableException( 'Terminal failure.' );
+		$this->enqueue_and_run( $client, array( 'sequence' => 3 ) );
+		$result = $client->runs()->last_completed_run_id( 'sync' );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $last, $result->value );
+	}
+
+	/**
+	 * Completed-hook clients observe the previous completion before the current pointer advances.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_run_id_inside_a_completed_hook_returns_the_previous_completion(): void {
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'sync' ) );
+		$observed  = array();
+		$callbacks = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks['a8csp_background_tasks/completed/consumer-plugin:sync'] = static function () use ( $client, &$observed ): void {
+			$result = $client->runs()->last_completed_run_id( 'sync' );
+			self::assertInstanceOf( Success::class, $result );
+			$observed[] = $result->value;
+		};
+
+		$GLOBALS['a8csp_bgte_test_action_callbacks'] = $callbacks;
+
+		$first  = $this->enqueue_and_run( $client, array( 'sequence' => 1 ) );
+		$second = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
+
+		self::assertSame( array( null, $first ), $observed );
+		$result = $client->runs()->last_completed_run_id( 'sync' );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $second, $result->value );
+	}
+
+	/**
+	 * Raw database detail never crosses the public failure boundary.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The scripted database string is attacker- or operator-controlled detail; the public result must expose only a stable message and the safe option-name context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_storage_failure_redacts_database_detail(): void {
+		$client = $this->rig->client( 'consumer-plugin' );
+		$client->tasks()->register( new RecordingTask( 'sync' ) );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->last_error = 'client-controlled database detail';
+			}
 		);
 
-		foreach ( $results as $result ) {
-			self::assertInstanceOf( Failure::class, $result );
-			self::assertInstanceOf( EngineError::class, $result->error );
-			self::assertSame(
-				'The background tasks engine is unavailable; call after the engine boots on plugins_loaded.',
-				$result->error->message
-			);
+		$result = $client->runs()->retry_failed( 'sync', '00000000001700000000-0000000000000000042' );
+
+		self::assert_api_failure( $result, ApiErrorCode::StorageFailure, array( 'option_name' ) );
+		if ( ! $result instanceof Failure || ! $result->error instanceof ApiError ) {
+			throw new \LogicException( 'The storage failure did not retain its public API error.' );
 		}
+		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'option_name' => 'a8csp_bgte_failed_runs_consumer-plugin:sync' ), $result->error->context );
+		self::assertStringNotContainsString( 'client-controlled', $result->error->message );
+	}
 
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_doing_it_wrong_calls'] );
+	/**
+	 * The public function surface contains only the owner-bound client front door.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_legacy_global_functions_are_absent(): void {
+		foreach ( array( 'a8csp_bgte_engine', 'a8csp_bgte_enqueue_task', 'a8csp_bgte_start_batch', 'a8csp_bgte_sync_schedules', 'a8csp_bgte_run_schedule_now', 'a8csp_bgte_retry_failed_run', 'a8csp_bgte_cancel_run' ) as $function ) {
+			self::assertFalse( \function_exists( $function ), $function );
+		}
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Enqueues and delivers one task through the public graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Client             $client Owner-bound public facade.
+	 * @param   array<string, mixed> $args     Task arguments.
+	 *
+	 * @return  string
+	 */
+	private function enqueue_and_run( Client $client, array $args ): string {
+		++$this->rig->clock()->timestamp;
+		$result = $client->tasks()->enqueue( 'sync', $args );
+		self::assertInstanceOf( Success::class, $result );
+		if ( ! \is_string( $result->value ) ) {
+			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
+		}
+		$this->rig->run_due();
+
+		return $result->value;
+	}
+
+	/**
+	 * Asserts one stable public failure contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   AbstractResult $result       Public API result.
+	 * @param   ApiErrorCode   $code         Expected stable error code.
+	 * @param   array          $context_keys Expected public context keys.
+	 *
+	 * @return  void
+	 *
+	 * @phpstan-param AbstractResult<mixed, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface> $result
+	 * @phpstan-param list<string> $context_keys
+	 */
+	private static function assert_api_failure( AbstractResult $result, ApiErrorCode $code, array $context_keys ): void {
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( $code, $result->error->code );
+		self::assertSame( $context_keys, \array_keys( $result->error->context ) );
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies every invalid or reserved client owner.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{owner: string}>
+	 */
+	public static function invalid_owners(): array {
+		return array(
+			'empty'           => array( 'owner' => '' ),
+			'uppercase'       => array( 'owner' => 'Consumer' ),
+			'colon'           => array( 'owner' => 'consumer:plugin' ),
+			'33 bytes'        => array( 'owner' => \str_repeat( 'o', 33 ) ),
+			'reserved owner'  => array( 'owner' => 'a8csp-bgte' ),
+			'reserved prefix' => array( 'owner' => 'a8csp-bgte-addon' ),
+		);
 	}
 
 	// endregion.

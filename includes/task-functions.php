@@ -1,58 +1,75 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Scheduling\Errors\SchedulingError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\CallableTask;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Creates and schedules one run for a registered task.
+ * Registers one callable-backed task for an owner.
  *
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string                  $name     Stable task name.
- * @param   array<array-key, mixed> $args     Task arguments.
- * @param   int                     $delay    Scheduling delay in seconds.
- * @param   bool                    $unique   Whether the backend retains an identical async action.
- * @param   int                     $priority Advisory priority from 0 through 255.
+ * @phpstan-param callable(array<array-key, mixed>): mixed $handler
+ * @phpstan-param array{max_runtime?: int|null, retry?: RetryPolicy|null} $options
  *
- * @return  AbstractResult<string, EngineError|SchedulingError>
+ * @param   string   $owner   Client plugin owner.
+ * @param   string   $name    Owner-local task name.
+ * @param   callable $handler Task handler.
+ * @param   array    $options Optional task policy overrides.
+ *
+ * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
+ *
+ * @return  true|\WP_Error
+ */
+#[\NoDiscard( 'a task-registration failure must be handled, not dropped' )]
+function a8csp_bgte_task_register( string $owner, string $name, callable $handler, array $options = array() ): true|\WP_Error {
+	try {
+		$client = \a8csp_bgte( $owner );
+	} catch ( \InvalidArgumentException $exception ) {
+		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+	}
+
+	try {
+		$client->tasks()->register( new CallableTask( $name, \Closure::fromCallable( $handler ), $options['max_runtime'] ?? null, $options['retry'] ?? null ) );
+	} catch ( \InvalidArgumentException $exception ) {
+		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+	} catch ( \LogicException $exception ) {
+		return new \WP_Error( 'already_registered', $exception->getMessage() );
+	}
+
+	return true;
+}
+
+/**
+ * Creates and schedules one task run for an owner.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string                  $owner         Client plugin owner.
+ * @param   string                  $name          Owner-local task name.
+ * @param   array<array-key, mixed> $args          Task arguments.
+ * @param   int                     $delay_seconds Scheduling delay in seconds.
+ * @param   string|null             $dedup_key     Optional opaque deduplication key.
+ * @param   int                     $priority      Advisory priority from 0 through 255.
+ *
+ * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
+ *
+ * @return  string|\WP_Error
  */
 #[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-function a8csp_bgte_enqueue_task( string $name, array $args = array(), int $delay = 0, bool $unique = false, int $priority = 10 ): AbstractResult {
-	return a8csp_bgte_engine()?->tasks()->enqueue( $name, $args, $delay, $unique, $priority ) ?? a8csp_bgte_engine_unavailable_failure();
-}
+function a8csp_bgte_task_enqueue( string $owner, string $name, array $args = array(), int $delay_seconds = 0, ?string $dedup_key = null, int $priority = 10 ): string|\WP_Error {
+	try {
+		$result = \a8csp_bgte( $owner )->tasks()->enqueue( $name, $args, $delay_seconds, $dedup_key, $priority );
+	} catch ( \InvalidArgumentException $exception ) {
+		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+	}
 
-/**
- * Starts a fresh run from one retained failed run's original arguments.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   string $name   Stable task or batch name.
- * @param   string $run_id Retained failed-run identifier.
- *
- * @return  AbstractResult<string, EngineError|SchedulingError>
- */
-#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-function a8csp_bgte_retry_failed_run( string $name, string $run_id ): AbstractResult {
-	return a8csp_bgte_engine()?->retry_failed( $name, $run_id ) ?? a8csp_bgte_engine_unavailable_failure();
-}
+	if ( $result->is_failure() ) {
+		return new \WP_Error( $result->error->code->value, $result->error->message, $result->error->context );
+	}
 
-/**
- * Cancels one retained run that is not executing or pending batch cleanup.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @param   string $name   Stable task or batch name.
- * @param   string $run_id Retained run identifier.
- *
- * @return  AbstractResult<string, EngineError|SchedulingError>
- */
-#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-function a8csp_bgte_cancel_run( string $name, string $run_id ): AbstractResult {
-	return a8csp_bgte_engine()?->cancel( $name, $run_id ) ?? a8csp_bgte_engine_unavailable_failure();
+	return $result->value;
 }

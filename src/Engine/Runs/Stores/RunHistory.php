@@ -5,11 +5,15 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Persists bounded started and terminal run histories.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -25,7 +29,17 @@ final readonly class RunHistory {
 	 *
 	 * @var     int
 	 */
-	private const DEFAULT_SIZE = 30;
+	private const int DEFAULT_SIZE = 30;
+
+	/**
+	 * Maximum exact-row compare-and-swap attempts before a contended write fails safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int UPDATE_ATTEMPTS = 5;
 
 	/**
 	 * Prefix for run-history option names.
@@ -35,10 +49,10 @@ final readonly class RunHistory {
 	 *
 	 * @var     string
 	 */
-	private const OPTION_PREFIX = 'a8csp_bgte_history_';
+	public const string OPTION_PREFIX = 'a8csp_bgte_history_';
 
 	/**
-	 * Distinct argument identities are evicted least-recently-recorded past this count; without
+	 * Distinct single-flight identities are evicted least-recently-recorded past this count; without
 	 * a bucket cap the by_hash map grows one entry per identity forever, which is the unbounded
 	 * option-row growth this store exists to prevent.
 	 *
@@ -47,7 +61,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     int
 	 */
-	private const MAX_HASH_BUCKETS = 20;
+	private const int MAX_HASH_BUCKETS = 20;
 
 	// endregion
 
@@ -59,12 +73,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name Stable task or batch name.
-	 * @param   OptionRows|null $rows Authoritative raw option-row I/O, when inspection is required.
+	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
+	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
-		private string $name,
-		private ?OptionRows $rows = null,
+		private string $identity,
+		private OptionRows $rows,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -78,12 +94,15 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id    Run identifier.
-	 * @param   string $args_hash Stable identity of the start arguments.
+	 * @param   string $args_hash Stable single-flight identity.
 	 *
-	 * @return  void
+	 * @throws  \LogicException When the current site differs from the bound site or serialization fails.
+	 *
+	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	public function record_started( string $run_id, string $args_hash ): void {
-		$this->record( $run_id, $args_hash );
+	#[\NoDiscard( 'a run-history persistence failure must be handled, not dropped' )]
+	public function record_started( string $run_id, string $args_hash ): bool {
+		return $this->record( $run_id, $args_hash );
 	}
 
 	/**
@@ -93,15 +112,17 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string    $run_id    Run identifier.
-	 * @param   string    $args_hash Stable identity of the start arguments.
+	 * @param   string    $args_hash Stable single-flight identity.
 	 * @param   RunStatus $status    Terminal run status.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
+	 * @throws  \LogicException           When the current site differs from the bound site or serialization fails.
 	 *
-	 * @return  void
+	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): void {
-		$this->record( $run_id, $args_hash, $status );
+	#[\NoDiscard( 'a run-history persistence failure must be handled, not dropped' )]
+	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): bool {
+		return $this->record( $run_id, $args_hash, $status );
 	}
 
 	/**
@@ -112,12 +133,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  list<string>
+	 * @return  list<string>|null Null when the authoritative row read fails.
 	 */
-	public function started_entries(): array {
-		return $this->history_from_raw_row()['started'];
+	public function started_entries(): ?array {
+		$history = $this->history_from_raw_row();
+
+		return null === $history ? null : $history['started'];
 	}
 
 	/**
@@ -128,12 +151,14 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>|null Null when the authoritative row read fails.
 	 */
-	public function terminal_entries(): array {
-		return $this->history_from_raw_row()['completed'];
+	public function terminal_entries(): ?array {
+		$history = $this->history_from_raw_row();
+
+		return null === $history ? null : $history['terminal'];
 	}
 
 	// endregion
@@ -147,66 +172,95 @@ final readonly class RunHistory {
 	 * @version 1.0.0
 	 *
 	 * @param   string         $run_id    Run identifier.
-	 * @param   string         $args_hash Stable identity of the start arguments.
+	 * @param   string         $args_hash Stable single-flight identity.
 	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
+	 * @throws  \LogicException           When the current site differs from the bound site or serialization fails.
 	 *
-	 * @return  void
+	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	private function record( string $run_id, string $args_hash, ?RunStatus $status = null ): void {
-		$history      = self::history_from_option( \get_option( $this->option_name(), null ) );
-		$hash_history = $history['by_hash'][ $args_hash ] ?? array(
-			'started'   => array(),
-			'completed' => array(),
-		);
-		if ( null === $status ) {
-			if (
-				\in_array( $run_id, $history['started'], true )
-				|| \in_array( $run_id, $hash_history['started'], true )
-			) {
-				return;
-			}
-
-			$history['started'][]      = $run_id;
-			$hash_history['started'][] = $run_id;
-		} else {
-			if ( RunStatus::Running === $status ) {
-				throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
-			}
-
-			if (
-				\in_array( $run_id, self::terminal_run_ids( $history['completed'] ), true )
-				|| \in_array( $run_id, self::terminal_run_ids( $hash_history['completed'] ), true )
-			) {
-				return;
-			}
-
-			$entry = array(
-				'run_id' => $run_id,
-				'status' => $status->value,
-			);
-
-			$history['completed'][]      = $entry;
-			$hash_history['completed'][] = $entry;
+	private function record( string $run_id, string $args_hash, ?RunStatus $status = null ): bool {
+		if ( RunStatus::Running === $status ) {
+			throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
 		}
 
-		// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
-		unset( $history['by_hash'][ $args_hash ] );
-		$history['by_hash'][ $args_hash ] = $hash_history;
-		$history['by_hash']               = \array_slice( $history['by_hash'], -self::MAX_HASH_BUCKETS, null, true );
+		$rows = $this->rows;
+		$key  = $this->option_name();
+		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
+			$selected = $rows->read( $key );
+			if ( $selected->is_failure() ) {
+				return false;
+			}
 
-		$size                 = $this->history_size();
-		$history['started']   = self::tail( $history['started'], $size );
-		$history['completed'] = self::tail( $history['completed'], $size );
-		foreach ( $history['by_hash'] as $hash => $buffers ) {
-			$history['by_hash'][ $hash ] = array(
-				'started'   => self::tail( $buffers['started'], $size ),
-				'completed' => self::tail( $buffers['completed'], $size ),
+			$expected_raw = $selected->value;
+			$history      = self::history_from_option( null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw ) );
+			// Per-hash entries preserve record() idempotency for replayed terminal writes after global-buffer eviction and remain query-internal.
+			$hash_history = $history['by_hash'][ $args_hash ] ?? array(
+				'started'  => array(),
+				'terminal' => array(),
 			);
+			if ( null === $status ) {
+				if (
+					\in_array( $run_id, $history['started'], true )
+					|| \in_array( $run_id, $hash_history['started'], true )
+				) {
+					return true;
+				}
+
+				$history['started'][]      = $run_id;
+				$hash_history['started'][] = $run_id;
+			} else {
+				if (
+					\in_array( $run_id, self::terminal_run_ids( $history['terminal'] ), true )
+					|| \in_array( $run_id, self::terminal_run_ids( $hash_history['terminal'] ), true )
+				) {
+					return true;
+				}
+
+				$entry = array(
+					'run_id' => $run_id,
+					'status' => $status->value,
+				);
+
+				$history['terminal'][]      = $entry;
+				$hash_history['terminal'][] = $entry;
+			}
+
+			// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
+			unset( $history['by_hash'][ $args_hash ] );
+			$history['by_hash'][ $args_hash ] = $hash_history;
+			$history['by_hash']               = \array_slice( $history['by_hash'], -self::MAX_HASH_BUCKETS, null, true );
+
+			$size                = $this->history_size();
+			$history['started']  = self::tail( $history['started'], $size );
+			$history['terminal'] = self::tail( $history['terminal'], $size );
+			foreach ( $history['by_hash'] as $hash => $buffers ) {
+				$history['by_hash'][ $hash ] = array(
+					'started'  => self::tail( $buffers['started'], $size ),
+					'terminal' => self::tail( $buffers['terminal'], $size ),
+				);
+			}
+
+			$replacement_raw = self::serialize_history( $history );
+			if ( null === $expected_raw ) {
+				if ( RowWriteOutcome::Won === $rows->insert_if_absent( $key, $replacement_raw ) ) {
+					return true;
+				}
+
+				continue;
+			}
+
+			$write = $rows->compare_and_swap( $key, $expected_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won === $write ) {
+				return true;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return false;
+			}
 		}
 
-		\update_option( $this->option_name(), $history, false );
+		return false;
 	}
 
 	/**
@@ -218,9 +272,29 @@ final readonly class RunHistory {
 	 * @return  int
 	 */
 	private function history_size(): int {
+		/**
+		 * Filters the number of runs retained in each history buffer.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int $size Default per-buffer history cap.
+		 */
 		$size = \apply_filters( 'a8csp_background_tasks/history_size', self::DEFAULT_SIZE );
+		if ( \is_int( $size ) && 0 < $size ) {
+			return $size;
+		}
 
-		return \is_int( $size ) && 0 < $size ? $size : self::DEFAULT_SIZE;
+		$this->logger->warning(
+			'Run-history-size filter returned an invalid value; return a positive integer to override the default retention size.',
+			array(
+				'name'          => $this->identity,
+				'returned_type' => \get_debug_type( $size ),
+				'default_size'  => self::DEFAULT_SIZE,
+			)
+		);
+
+		return self::DEFAULT_SIZE;
 	}
 
 	/**
@@ -232,7 +306,7 @@ final readonly class RunHistory {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->name;
+		return self::OPTION_PREFIX . $this->identity;
 	}
 
 	/**
@@ -241,31 +315,47 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \LogicException When authoritative option-row I/O is unavailable.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
 	 *     by_hash: array<array-key, array{
 	 *         started: list<string>,
-	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
 	 *     }>
-	 * }
+	 * }|null Null when the authoritative row read fails.
 	 */
-	private function history_from_raw_row(): array {
-		$rows = $this->rows;
-		if ( null === $rows ) {
-			$wpdb = $GLOBALS['wpdb'] ?? null;
-			if ( ! $wpdb instanceof \wpdb ) {
-				throw new \LogicException( 'Run-history inspection requires authoritative option-row I/O.' );
-			}
-
-			$rows = new OptionRows( $wpdb );
+	private function history_from_raw_row(): ?array {
+		$selected = $this->rows->read( $this->option_name() );
+		if ( $selected->is_failure() ) {
+			return null;
 		}
 
-		$raw = $rows->select( $this->option_name() );
+		$raw = $selected->value;
 
 		return self::history_from_option( null === $raw ? null : RawOptionDecoder::decode( $raw ) );
+	}
+
+	/**
+	 * Returns a history's exact WordPress option representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $history Complete history state.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the history to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize_history( array $history ): string {
+		$raw = \maybe_serialize( $history );
+		if ( ! \is_string( $raw ) ) {
+			throw new \LogicException( 'WordPress must serialize run history to a string.' );
+		}
+
+		return $raw;
 	}
 
 	/**
@@ -278,19 +368,19 @@ final readonly class RunHistory {
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
 	 *     by_hash: array<array-key, array{
 	 *         started: list<string>,
-	 *         completed: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
 	 *     }>
 	 * }
 	 */
 	private static function history_from_option( mixed $value ): array {
 		if ( ! \is_array( $value ) ) {
 			return array(
-				'started'   => array(),
-				'completed' => array(),
-				'by_hash'   => array(),
+				'started'  => array(),
+				'terminal' => array(),
+				'by_hash'  => array(),
 			);
 		}
 
@@ -302,16 +392,16 @@ final readonly class RunHistory {
 				}
 
 				$by_hash[ $args_hash ] = array(
-					'started'   => self::string_list( $buffers['started'] ?? null ),
-					'completed' => self::terminal_list( $buffers['completed'] ?? null ),
+					'started'  => self::string_list( $buffers['started'] ?? null ),
+					'terminal' => self::terminal_list( $buffers['terminal'] ?? null ),
 				);
 			}
 		}
 
 		return array(
-			'started'   => self::string_list( $value['started'] ?? null ),
-			'completed' => self::terminal_list( $value['completed'] ?? null ),
-			'by_hash'   => $by_hash,
+			'started'  => self::string_list( $value['started'] ?? null ),
+			'terminal' => self::terminal_list( $value['terminal'] ?? null ),
+			'by_hash'  => $by_hash,
 		);
 	}
 
@@ -330,14 +420,7 @@ final readonly class RunHistory {
 			return array();
 		}
 
-		$strings = array();
-		foreach ( $value as $entry ) {
-			if ( \is_string( $entry ) ) {
-				$strings[] = $entry;
-			}
-		}
-
-		return $strings;
+		return \array_values( \array_filter( $value, static fn ( mixed $entry ): bool => \is_string( $entry ) ) );
 	}
 
 	/**

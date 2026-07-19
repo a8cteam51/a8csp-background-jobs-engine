@@ -2,105 +2,73 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Randomization\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Retry\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\TerminalTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Batches\BatchRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\TaskRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\UsesClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the observable single-task delivery lifecycle across storage, hooks, locks, and logs.
+ * Exercises task deliveries through the registered production action graph.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( ActionDeliveries::class )]
-#[UsesClass( EngineError::class )]
-#[UsesClass( FailedRunStore::class )]
-#[UsesClass( LatestRunPointer::class )]
-#[UsesClass( Dispatcher::class )]
-#[UsesClass( LockRows::class )]
-#[UsesClass( OverlapGuard::class )]
-#[UsesClass( Randomizer::class )]
-#[UsesClass( RetryPolicy::class )]
-#[UsesClass( RunHistory::class )]
-#[UsesClass( RunState::class )]
-#[UsesClass( RunStatus::class )]
-#[UsesClass( RunStore::class )]
-#[UsesClass( StoreFactory::class )]
-#[UsesClass( BatchRegistry::class )]
-#[UsesClass( TaskRegistry::class )]
 final class ActionDeliveriesTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const ARGS = array(
+	private const array ARGS      = array(
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
+	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string NAME     = 'email-digest';
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'runs-tests';
+	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private const ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const NAME      = 'email-digest';
-	private const NOW       = 1_700_000_000;
-	private const RUN_ID    = '00000000001700000000-0000000000000000042';
-
-	private FixedClock $clock;
-	private RecordingBackend $backend;
-	private ActionDeliveries $lifecycle_deliveries;
-	private RecordingLogger $logger;
-	private RecordingRandomizer $randomizer;
+	private Client $client;
+	private StoreFixtureBuilder $fixtures;
+	private EngineRig $rig;
 	private RecordingTask $task;
-	private TaskRegistry $registry;
-	private WpdbLockSpy $wpdb;
-	private Dispatcher $dispatcher;
 
 	// endregion.
 
 	// region LIFECYCLE.
 
 	/**
-	 * Loads guarded WordPress functions before orchestration classes are instantiated.
+	 * Loads guarded WordPress seams before the production graph is built.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
-		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Scheduling/wp-json-encode-stub.php';
+		EngineRig::bootstrap();
 	}
 
 	/**
-	 * Resets every observable boundary and constructs one registered task lifecycle.
+	 * Boots one registered task against deterministic interface fakes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -108,651 +76,694 @@ final class ActionDeliveriesTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$this->rig    = EngineRig::set_up( self::NOW );
+		$this->client = $this->rig->client( self::OWNER );
+		$this->task   = new RecordingTask( self::NAME );
+		$this->client->tasks()->register( $this->task );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+	}
 
-		$this->clock      = new FixedClock( self::NOW );
-		$this->backend    = new RecordingBackend();
-		$this->logger     = new RecordingLogger();
-		$this->randomizer = new RecordingRandomizer( 42 );
-		$this->task       = new RecordingTask( self::NAME );
-		$this->registry   = new TaskRegistry();
-		$this->registry->register( $this->task );
-		$this->wpdb           = new WpdbLockSpy();
-		$batches              = new BatchRegistry();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-
-		$this->lifecycle_deliveries = new ActionDeliveries(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-
-		$this->dispatcher = new Dispatcher(
-			$this->registry,
-			$batches,
-			$this->backend,
-			$guard,
-			$stores,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$lock_windows,
-			$terminal_transitions,
-		);
+	/**
+	 * Releases request-local engine state after each scenario.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	// endregion.
 
 	// region TESTS.
-	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/**
-	 * Hook registration exposes every internal lifecycle action through the delivery registrar.
+	 * The registered start, continue, run, and cleanup actions complete one real batch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_register_hooks_wires_the_internal_lifecycle_actions(): void {
-		$this->lifecycle_deliveries->register_hooks();
+	public function test_registered_delivery_hooks_drive_every_batch_stage(): void {
+		$batch        = new RecordingBatch( 'hook-registration-probe' );
+		$batch->queue = array( array( 'chunk' => 'only' ) );
+		$this->client->batches()->register( $batch );
+		$result = $this->client->batches()->start( $batch->get_name(), self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
 
-		self::assertSame(
-			array(
-				array(
-					'hook_name'     => 'a8csp_background_tasks/start',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_start_action' ),
-					'priority'      => 10,
-					'accepted_args' => 3,
-				),
-				array(
-					'hook_name'     => 'a8csp_background_tasks/continue',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_continue_action' ),
-					'priority'      => 10,
-					'accepted_args' => 3,
-				),
-				array(
-					'hook_name'     => 'a8csp_background_tasks/run',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_run_action' ),
-					'priority'      => 10,
-					'accepted_args' => 4,
-				),
-				array(
-					'hook_name'     => 'a8csp_background_tasks/cleanup',
-					'callback'      => array( $this->lifecycle_deliveries, 'handle_cleanup_action' ),
-					'priority'      => 10,
-					'accepted_args' => 3,
-				),
-			),
-			$this->action_registrations()
-		);
+		for ( $delivery = 0; $delivery < 5; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( self::ARGS ), $batch->generate_calls );
+		self::assertCount( 1, $batch->process_calls );
+		self::assertSame( array( 'chunk' => 'only' ), $batch->process_calls[0]['chunk_args'] );
+		self::assertCount( 1, $batch->completed_calls );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * Run handling refreshes both heartbeats before task execution and completes in terminal order.
+	 * One explicit key blocks differing payloads only until its incumbent completes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_executes_and_completes_the_task(): void {
-		$this->prepare_run_action();
-		$observed_lock = null;
-		$observed_run  = null;
+	public function test_dedup_key_collapses_different_arguments_until_completion_then_allows_reuse(): void {
+		$dedup_key      = 'site-7-digest';
+		$successor_args = array(
+			'site_id' => 8,
+			'mode'    => 'delta',
+		);
+		$first          = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
+		self::assertInstanceOf( Success::class, $first );
 
-		$this->task->on_handle = function ( array $args ) use ( &$observed_lock, &$observed_run ): void {
-			self::assertSame( self::ARGS, $args );
-			$observed_lock = $this->lock();
-			$observed_run  = $this->option( $this->run_option_name() );
-		};
+		$this->rig->clock()->timestamp = self::NOW + 1;
+		$duplicate                     = $this->client->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
+		self::assertCount( 1, $this->run_delivery_calls() );
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		$this->rig->clock()->timestamp = self::NOW + 2;
+		$reused                        = $this->client->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		self::assertInstanceOf( Success::class, $reused );
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS, $successor_args ), $this->task->calls );
+	}
+
+	/**
+	 * A delivered task executes once and exposes its completed public lifecycle.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_executes_and_completes_the_task(): void {
+		$run_id = $this->enqueue_task();
+
+		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		self::assertIsArray( $observed_lock );
-		self::assertSame( self::NOW + 90, $observed_lock['heartbeat_at'] );
-		self::assertIsArray( $observed_run );
-		self::assertSame( 'running', $observed_run['status'] );
-		self::assertTrue( $observed_run['executing'] );
-		self::assertSame( self::NOW + 90, $observed_run['heartbeat_at'] );
-		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
 		self::assertSame(
 			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/completed/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/completed',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
+				array( $run_id, self::ARGS ),
 			),
-			$this->fired_actions()
+			$this->rig->hooks()->fired( 'a8csp_background_tasks/completed/' . self::IDENTITY )
 		);
 		self::assertSame(
 			array(
-				'lock:update',
-				'run:running',
-				'task:handle',
-				'lock:update',
-				'run:completed',
-				'hook:completed/' . self::NAME,
-				'hook:completed',
-				'lock:delete',
-				'run:delete',
-				'history',
+				array( self::IDENTITY, $run_id, self::ARGS ),
 			),
-			$this->lifecycle_labels()
+			$this->rig->hooks()->fired( 'a8csp_background_tasks/completed' )
 		);
-		$this->assert_terminal_history( RunStatus::Completed );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A reentrant same-sequence task delivery cannot enter user code under a fresh marker.
+	 * A task without an override receives the shared callback liveness credit.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The callback observes the credited lock generation while production delivery owns it; no public result exposes an in-flight lease.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_drops_a_reentrant_same_sequence_delivery(): void {
-		$this->prepare_run_action();
-		$action_seq = $this->action_seq();
-		$reentered  = false;
+	public function test_run_delivery_credits_the_default_runtime_before_task_execution(): void {
+		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
+	}
 
-		$this->task->on_handle = function ( array $args ) use ( $action_seq, &$reentered ): void {
-			self::assertSame( self::ARGS, $args );
+	/**
+	 * Delivery clamps invalid and runaway declarations before crediting callback liveness.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The callback-time lock generation is the concurrency contract that prevents a long-running owner from being reclaimed early.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $declared       Declared callback runtime.
+	 * @param   int $expected_lease Expected credited runtime.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'bounded_runtime_values' )]
+	public function test_run_delivery_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
+		$this->task->max_callback_runtime = $declared;
+		$this->assert_callback_lease( $expected_lease );
+	}
+
+	/**
+	 * A throwing runtime declaration falls back to the default lease.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The declaration failure occurs before the callback lease exists, so the in-flight lock bytes are the only evidence that fallback liveness was credited.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_defaults_the_lease_when_the_runtime_declaration_throws(): void {
+		$this->task->max_callback_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
+		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['exception_class'] ?? null );
+		self::assertSame( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME, $this->rig->logger()->records[0]['context']['default_runtime'] ?? null );
+	}
+
+	/**
+	 * An indeterminate admission fence performs no task, terminal hook, or storage write.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The nested read failure occurs between run-marker admission and lock-heartbeat authority; exact pre/post bytes prove the fail-closed path makes no write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_fails_closed_when_lock_heartbeat_read_fails(): void {
+		$this->enqueue_task();
+		$before                              = $this->relevant_rows();
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $lock_reader ): void {
+						$lock_reader->last_error = 'transient heartbeat read failure';
+					}
+				);
+			}
+		);
+
+		$this->rig->run_due();
+
+		self::assertSame( array(), $this->task->calls );
+		self::assertSame( $before, $this->relevant_rows() );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/completed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+		foreach ( $this->rig->wpdb()->recorded_queries as $query ) {
+			self::assertStringStartsWith( 'SELECT ', $query );
+		}
+	}
+
+	/**
+	 * A reentrant same-sequence delivery cannot enter user code twice.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Re-entering the registered action while its execution marker is held proves duplicate scheduler delivery cannot cross the user-code fence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_drops_a_reentrant_same_sequence_delivery(): void {
+		$this->enqueue_task();
+		$reentered             = false;
+		$this->task->on_handle = function () use ( &$reentered ): void {
 			if ( $reentered ) {
 				return;
 			}
 
 			$reentered = true;
-			$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+			\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
 		};
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+		$this->rig->run_due();
 
 		self::assertTrue( $reentered );
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'debug',
-					'message' => 'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
-					'context' => array(
-						'task_name'  => self::NAME,
-						'run_id'     => self::RUN_ID,
-						'action_seq' => $action_seq,
-					),
-				),
-			),
-			$this->logger->records
-		);
-		$this->assert_terminal_history( RunStatus::Completed );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * Batch arguments on a task delivery clear its marker so the correctly shaped delivery can run.
+	 * A task-hook payload with a non-integer sequence is rejected before admission.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Direct registered-hook delivery proves the typed task boundary rejects a chunk-shaped payload without mutating authoritative run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_clears_the_task_marker_after_batch_argument_misdelivery(): void {
-		$this->prepare_run_action();
-		$action_seq = $this->action_seq();
+	public function test_run_task_handler_rejects_a_non_integer_sequence_before_admission(): void {
+		$this->enqueue_task();
+		$before = $this->relevant_rows();
+		$thrown = null;
 
-		$this->lifecycle_deliveries->handle_run_action(
-			self::NAME,
-			self::RUN_ID,
-			array( 'chunk' => 'misdelivered' ),
-			$action_seq
-		);
+		try {
+			\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ) );
+		} catch ( \TypeError $error ) {
+			$thrown = $error;
+		}
 
-		$state = $this->option( $this->run_option_name() );
-		self::assertIsArray( $state );
-		self::assertSame( 'running', $state['status'] ?? null );
-		self::assertFalse( $state['executing'] ?? true );
-		self::assertSame( $action_seq, $state['action_seq'] ?? null );
+		self::assertInstanceOf( \TypeError::class, $thrown );
+		self::assertSame( $before, $this->relevant_rows() );
 		self::assertSame( array(), $this->task->calls );
-		self::assertSame( array(), $this->backend->calls );
-		self::assertSame( array(), $this->fired_actions() );
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Task run action carries batch chunk arguments; schedule task runs with only the task name and run identifier.',
-					'context' => array(
-						'task_name' => self::NAME,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
+	}
+
+	/**
+	 * An expired delivery cannot shorten the execution lease credited to its replacement.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built run and lock generations stage the replacement between callback entry and incumbent completion, the race production generation fences must preserve.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_preserves_a_replacement_execution_lease(): void {
+		$this->assert_replacement_generation_survives( null );
+	}
+
+	/**
+	 * An expired throwing delivery cannot shorten its replacement's execution lease.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built run and lock generations stage replacement ownership before the incumbent enters failure adjudication.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_failed_run_delivery_preserves_a_replacement_execution_lease(): void {
+		$this->assert_replacement_generation_survives( new \RuntimeException( 'Expired attempt failed after replacement admission.' ) );
+	}
+
+	/**
+	 * Retry-policy resolution cannot shorten a replacement admitted by the policy hook.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The legitimate retry-policy hook stages a fixture-built replacement after user code fails but before the incumbent failure transition writes.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_policy_preserves_a_replacement_execution_lease(): void {
+		$this->enqueue_task();
+		$this->task->throwable = new \RuntimeException( 'Attempt failed before retry-policy resolution.' );
+		$this->set_filter_value(
+			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
+			function ( RetryPolicy $policy ): RetryPolicy {
+				$this->install_replacement_generation();
+
+				return $policy;
+			}
 		);
 
-		$this->logger->records = array();
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+		$this->rig->run_due();
+
+		$this->assert_replacement_generation_is_retained();
+	}
+
+	/**
+	 * A fixed-token chunk hook delivered against a task run routes by the persisted kind and runs the task.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, without stranding the execution marker.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_chunk_hook_delivery_routes_a_task_run_by_its_persisted_kind(): void {
+		$this->enqueue_task();
+
+		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 1 );
+		self::assertSame( array( self::ARGS ), $this->task->calls );
+		$this->rig->assert_completed();
+
+		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		self::assertNull( $this->option( $this->run_option_name() ) );
 	}
 
 	/**
-	 * An unregistered task action fails its live run instead of orphaning active state.
+	 * An unregistered task delivery fails its live run instead of orphaning it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_terminalizes_a_live_unregistered_task(): void {
-		$this->prepare_run_action();
-		$action_seq           = $this->action_seq();
-		$tasks                = new TaskRegistry();
-		$batches              = new BatchRegistry();
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new LockRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ) );
-		$lock_windows         = new LockWindows( $this->clock );
-		$terminal_transitions = new TerminalTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger );
-		$failure_lifecycle    = new FailureLifecycle(
-			$this->backend,
-			$this->clock,
-			$this->randomizer,
-			$this->logger,
-			$terminal_transitions
-		);
-		$lifecycle_deliveries = new ActionDeliveries(
-			$tasks,
-			$batches,
-			$this->backend,
-			$stores,
-			$this->logger,
-			$this->clock,
-			$lock_windows,
-			$terminal_transitions,
-			$failure_lifecycle,
-		);
-		$lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $action_seq );
+	public function test_unregistered_task_delivery_terminalizes_the_live_run(): void {
+		$this->rig->tear_down();
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->client   = $this->rig->client( self::OWNER );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->seed_pending_run();
 
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertNull( $this->lock() );
-		$failed_runs = $this->option( 'a8csp_bgte_failed_' . self::NAME );
-		self::assertIsArray( $failed_runs );
-		$failed_run = $failed_runs[0] ?? null;
-		self::assertIsArray( $failed_run );
-		$stored_error = $failed_run['error'] ?? null;
-		self::assertIsArray( $stored_error );
-		self::assertSame(
-			'Task name "email-digest" is no longer registered unambiguously for run "00000000001700000000-0000000000000000042"; re-register exactly one task under that name or purge the run.',
-			$stored_error['message'] ?? null
-		);
-		self::assertSame( 1, $failed_run['attempts'] ?? null );
-		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::NAME,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
-		);
-		self::assertSame(
-			array(
-				array(
-					'level'   => 'warning',
-					'message' => 'Task run action references an unregistered task; register the task before dispatching its run action.',
-					'context' => array(
-						'task_name' => self::NAME,
-						'run_id'    => self::RUN_ID,
-					),
-				),
-			),
-			$this->logger->records
-		);
+		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
+
+		$this->rig->assert_failed( ApiErrorCode::UnknownWork );
+		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$this->assert_failure_code( $retry, ApiErrorCode::UnknownWork );
 	}
 
 	/**
-	 * Ownership loss during task work supersedes the incumbent without touching the replacement.
+	 * Ownership loss during task work supersedes only the incumbent.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Production-built latest-pointer and foreign-lock bytes stage ownership loss inside user code so post-callback fencing can be observed without replacing production logic.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_after_task_work_loses_ownership(): void {
-		$this->prepare_run_action();
-		$observed_state        = null;
-		$this->task->on_handle = function ( array $args ) use ( &$observed_state ): void {
-			$observed_state = $this->option( $this->run_option_name() );
-			( new LatestRunPointer( self::NAME ) )->record( 'run-newer', self::ARGS_HASH );
-			$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+	public function test_task_work_that_loses_ownership_is_superseded(): void {
+		$this->enqueue_task();
+		$this->task->on_handle = function (): void {
+			$this->put_fixture(
+				$this->fixtures->latest(
+					array(
+						array(
+							'run_id'    => 'run-newer',
+							'args_hash' => $this->args_hash(),
+						),
+					)
+				)
+			);
+			$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-newer', self::NOW + 90, self::NOW + 90 ) );
 		};
 
-		$this->lifecycle_deliveries->handle_run_action( self::NAME, self::RUN_ID, $this->action_seq() );
+		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->task->calls );
-		self::assertIsArray( $observed_state );
-		self::assertSame( 'running', $observed_state['status'] ?? null );
-		self::assertTrue( $observed_state['executing'] ?? null );
-		self::assertSame( self::NOW + 90, $observed_state['heartbeat_at'] ?? null );
-		self::assertSame( array(), $this->backend->calls );
-		$this->assert_post_callback_superseded_task();
+		$this->rig->assert_superseded();
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		$last_completed = $this->client->runs()->last_completed_run_id( self::NAME );
+		self::assertInstanceOf( Success::class, $last_completed );
+		self::assertNull( $last_completed->value );
 	}
 
-	// phpcs:enable Squiz.Commenting.FunctionComment.MissingParamTag
+	/**
+	 * Supplies invalid and runaway runtime declarations.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{declared: int, expected_lease: int}>
+	 */
+	public static function bounded_runtime_values(): array {
+		return array(
+			'zero uses default'      => array(
+				'declared'       => 0,
+				'expected_lease' => 300,
+			),
+			'negative uses default'  => array(
+				'declared'       => -1,
+				'expected_lease' => 300,
+			),
+			'twenty-four hours caps' => array(
+				'declared'       => 24 * 60 * 60,
+				'expected_lease' => 6 * 60 * 60,
+			),
+		);
+	}
+
 	// endregion.
 
 	// region HELPERS.
 
 	/**
-	 * Returns the internal run option name for the deterministic enqueue.
+	 * Enqueues the deterministic task through the owner-bound facade.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::NAME . '_' . self::RUN_ID;
-	}
-
-	/**
-	 * Returns the newest scheduled lifecycle action sequence for one live run.
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  int
-	 */
-	private function action_seq( string $run_id = self::RUN_ID ): int {
-		$state = $this->option( 'a8csp_bgte_run_' . self::NAME . '_' . $run_id );
-		self::assertIsArray( $state );
-		$action_seq = $state['action_seq'] ?? null;
-		self::assertIsInt( $action_seq );
-
-		return $action_seq;
-	}
-
-	/**
-	 * Enqueues the deterministic run and clears enqueue observations before action handling.
-	 *
-	 * @return  void
-	 */
-	private function prepare_run_action(): void {
-		$result = $this->dispatcher->enqueue( self::NAME, self::ARGS );
+	private function enqueue_task(): string {
+		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
 
-		$this->clock->timestamp       = self::NOW + 90;
-		$this->backend->calls         = array();
-		$this->logger->records        = array();
-		$this->wpdb->recorded_queries = array();
-
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		return $result->value;
 	}
 
 	/**
-	 * Asserts a post-callback fence loss terminalizes only the incumbent as Superseded.
+	 * Asserts the task callback observes one exact credited lease.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $lease Expected runtime credit.
 	 *
 	 * @return  void
 	 */
-	private function assert_post_callback_superseded_task(): void {
-		self::assertNull( $this->option( $this->run_option_name() ) );
-		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		self::assertNull( $this->option( 'a8csp_bgte_failed_' . self::NAME ) );
-		self::assertSame(
-			array(
-				array(
-					'hook_name' => 'a8csp_background_tasks/superseded/' . self::NAME,
-					'args'      => array( self::RUN_ID, self::ARGS ),
-				),
-				array(
-					'hook_name' => 'a8csp_background_tasks/superseded',
-					'args'      => array( self::NAME, self::RUN_ID, self::ARGS ),
-				),
-			),
-			\array_slice( $this->fired_actions(), -2 )
-		);
-		$this->assert_terminal_history( RunStatus::Superseded );
+	private function assert_callback_lease( int $lease ): void {
+		$observed              = null;
+		$this->task->on_handle = function () use ( &$observed ): void {
+			$observed = $this->lock();
+		};
+		$this->enqueue_task();
+		$this->rig->clock()->timestamp = self::NOW + 90;
+
+		$this->rig->run_due();
+
+		self::assertIsArray( $observed );
+		self::assertSame( self::NOW + 90 + $lease, $observed['heartbeat_at'] ?? null );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * Asserts that both terminal-history buffers record the terminal outcome.
+	 * Runs one incumbent outcome after staging a replacement in its callback.
 	 *
-	 * @param   RunStatus $status Terminal run status.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable|null $throwable Optional incumbent failure.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_history( RunStatus $status ): void {
-		$entry = array(
-			'run_id' => self::RUN_ID,
-			'status' => $status->value,
-		);
+	private function assert_replacement_generation_survives( ?\Throwable $throwable ): void {
+		$this->enqueue_task();
+		$this->task->throwable = $throwable;
+		$this->task->on_handle = function (): void {
+			$this->install_replacement_generation();
+		};
 
-		self::assertSame(
-			array(
-				'started'   => array( self::RUN_ID ),
-				'completed' => array( $entry ),
-				'by_hash'   => array(
-					self::ARGS_HASH => array(
-						'started'   => array( self::RUN_ID ),
-						'completed' => array( $entry ),
+		$this->rig->run_due();
+
+		$this->assert_replacement_generation_is_retained();
+	}
+
+	/**
+	 * Installs a production-serialized replacement generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function install_replacement_generation(): void {
+		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+		$state  = new RunState( status: RunStatus::Running, kind: 'Task', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: $credit );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
+	}
+
+	/**
+	 * Asserts the replacement generation remains executing with its future credit.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function assert_replacement_generation_is_retained(): void {
+		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+		$lock   = $this->lock();
+		self::assertIsArray( $lock );
+		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
+		self::assertSame( $credit, $lock['heartbeat_at'] ?? null );
+		$run = $this->decoded_row( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		self::assertIsArray( $run );
+		self::assertTrue( $run['executing'] ?? false );
+		self::assertSame( $credit, $run['heartbeat_at'] ?? null );
+	}
+
+	/**
+	 * Seeds one pending task run without registering its implementation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function seed_pending_run(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->fixtures->history(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
 					),
-				),
-			),
-			$this->option( 'a8csp_bgte_history_' . self::NAME )
-		);
-	}
-
-	/**
-	 * Reduces the unified boundary ledger to lifecycle-significant labels.
-	 *
-	 * @return  list<string>
-	 */
-	private function lifecycle_labels(): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
-		self::assertIsArray( $events );
-		$labels = array();
-
-		foreach ( $events as $event ) {
-			self::assertIsArray( $event );
-			$type = $event['type'] ?? null;
-			if ( 'lock' === $type ) {
-				$operation = $event['operation'] ?? null;
-				self::assertIsString( $operation );
-				if ( $this->run_option_name() === ( $event['key'] ?? null ) ) {
-					if ( 'delete' === $operation ) {
-						$labels[] = 'run:delete';
-					} elseif ( 'update' === $operation ) {
-						$value = \maybe_unserialize( $event['raw'] ?? null );
-						self::assertIsArray( $value );
-						self::assertIsString( $value['status'] ?? null );
-						$labels[] = 'run:' . $value['status'];
-					}
-
-					continue;
-				}
-				$labels[] = 'lock:' . $operation;
-				continue;
-			}
-
-			if ( 'task' === $type ) {
-				$labels[] = 'task:handle';
-				continue;
-			}
-
-			if ( 'action' === $type ) {
-				$hook_name = $event['hook_name'];
-				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
-				continue;
-			}
-
-			if ( 'option' !== $type ) {
-				continue;
-			}
-
-			$function = $event['function'] ?? null;
-			$args     = $event['args'] ?? null;
-			self::assertIsArray( $args );
-			$option_name = $args[0] ?? null;
-			self::assertIsString( $option_name );
-			if ( 'delete_option' === $function && $this->run_option_name() === $option_name ) {
-				$labels[] = 'run:delete';
-				continue;
-			}
-
-			if ( 'update_option' !== $function ) {
-				continue;
-			}
-
-			if ( $this->run_option_name() === $option_name ) {
-				$value = $args[1] ?? null;
-				self::assertIsArray( $value );
-				self::assertIsString( $value['status'] ?? null );
-				$labels[] = 'run:' . $value['status'];
-			} elseif ( 'a8csp_bgte_failed_' . self::NAME === $option_name ) {
-				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::NAME === $option_name ) {
-				$labels[] = 'history';
-			}
-		}
-
-		return $labels;
-	}
-
-	/**
-	 * Returns the argument-identity lock option name.
-	 *
-	 * @return  string
-	 */
-	private function lock_option_name(): string {
-		return 'a8csp_bgte_lock_' . self::NAME . '_' . self::ARGS_HASH;
-	}
-
-	/**
-	 * Replaces the current lock with one foreign owner.
-	 *
-	 * @param   string $run_id       Foreign run identifier.
-	 * @param   int    $heartbeat_at Foreign heartbeat timestamp.
-	 *
-	 * @return  void
-	 */
-	private function replace_lock_owner( string $run_id, int $heartbeat_at ): void {
-		$raw = \maybe_serialize(
-			array(
-				'run_id'       => $run_id,
-				'claimed_at'   => $heartbeat_at,
-				'heartbeat_at' => $heartbeat_at,
+				)
 			)
 		);
-		self::assertIsString( $raw );
-		$this->wpdb->put( $this->lock_option_name(), $raw );
-	}
-
-	/**
-	 * Returns the decoded lock row for the deterministic argument identity.
-	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
-	 */
-	private function lock(): ?array {
-		$raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		if ( ! \is_string( $raw ) ) {
-			return null;
-		}
-
-		$value = \maybe_unserialize( $raw );
-		if (
-			! \is_array( $value )
-			|| ! \is_string( $value['run_id'] ?? null )
-			|| ! \is_int( $value['claimed_at'] ?? null )
-			|| ! \is_int( $value['heartbeat_at'] ?? null )
-		) {
-			return null;
-		}
-
-		return array(
-			'run_id'       => $value['run_id'],
-			'claimed_at'   => $value['claimed_at'],
-			'heartbeat_at' => $value['heartbeat_at'],
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
 		);
 	}
 
 	/**
-	 * Returns one persisted option value.
+	 * Stores one production-built raw fixture in the active database.
 	 *
-	 * @param   string $name Option name.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{string, string} $fixture Option name and raw value.
+	 *
+	 * @return  void
+	 */
+	private function put_fixture( array $fixture ): void {
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+	}
+
+	/**
+	 * Returns the canonical argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	private function args_hash(): string {
+		return $this->fixtures->args_hash( self::ARGS );
+	}
+
+	/**
+	 * Returns the current decoded overlap lock.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private function lock(): ?array {
+		$value = $this->decoded_row( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() );
+
+		return \is_array( $value ) ? $value : null;
+	}
+
+	/**
+	 * Decodes one authoritative raw row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Option name.
 	 *
 	 * @return  mixed
 	 */
-	private function option( string $name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
-		self::assertIsArray( $options );
+	private function decoded_row( string $option_name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 
-		return $options[ $name ] ?? null;
+		return \is_string( $raw ) ? \maybe_unserialize( $raw ) : null;
 	}
 
 	/**
-	 * Returns fired lifecycle actions.
+	 * Returns all rows owned by the deterministic run and its lock.
 	 *
-	 * @return  list<array{hook_name: string, args: list<mixed>}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, string>
 	 */
-	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
-		self::assertIsArray( $actions );
-		$typed_actions = array();
-		foreach ( $actions as $action ) {
-			self::assertIsArray( $action );
-			$hook_name = $action['hook_name'] ?? null;
-			$args      = $action['args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsArray( $args );
-			$typed_actions[] = array(
-				'hook_name' => $hook_name,
-				'args'      => \array_values( $args ),
-			);
-		}
-
-		return $typed_actions;
+	private function relevant_rows(): array {
+		return \array_filter( $this->rig->wpdb()->rows, static fn ( string $key ): bool => \str_contains( $key, self::IDENTITY ), \ARRAY_FILTER_USE_KEY );
 	}
 
 	/**
-	 * Returns internal action registrations.
+	 * Returns backend calls that accepted task-run delivery.
 	 *
-	 * @return  list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
-	private function action_registrations(): array {
-		$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? null;
-		self::assertIsArray( $registrations );
-		$typed_registrations = array();
-		foreach ( $registrations as $registration ) {
-			self::assertIsArray( $registration );
-			$hook_name     = $registration['hook_name'] ?? null;
-			$priority      = $registration['priority'] ?? null;
-			$accepted_args = $registration['accepted_args'] ?? null;
-			self::assertIsString( $hook_name );
-			self::assertIsInt( $priority );
-			self::assertIsInt( $accepted_args );
-			$typed_registrations[] = array(
-				'hook_name'     => $hook_name,
-				'callback'      => $registration['callback'] ?? null,
-				'priority'      => $priority,
-				'accepted_args' => $accepted_args,
-			);
-		}
+	private function run_delivery_calls(): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
+	}
 
-		return $typed_registrations;
+	/**
+	 * Asserts one mapped facade failure code.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed        $result Facade result.
+	 * @param   ApiErrorCode $code   Expected public code.
+	 *
+	 * @return  ApiError
+	 */
+	private function assert_failure_code( mixed $result, ApiErrorCode $code ): ApiError {
+		self::assertInstanceOf( Failure::class, $result );
+		$error = $result->error;
+		self::assertInstanceOf( ApiError::class, $error );
+		self::assertSame( $code, $error->code );
+
+		return $error;
+	}
+
+	/**
+	 * Scripts one legitimate WordPress filter seam.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook_name Filter hook name.
+	 * @param   mixed  $value     Filter return or callback.
+	 *
+	 * @return  void
+	 */
+	private function set_filter_value( string $hook_name, mixed $value ): void {
+		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
+		self::assertIsArray( $filters );
+		$filters[ $hook_name ]                    = $value;
+		$GLOBALS['a8csp_bgte_test_filter_values'] = $filters;
 	}
 
 	// endregion.

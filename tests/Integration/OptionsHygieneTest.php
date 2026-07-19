@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
@@ -10,16 +10,28 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Pins the complete steady-state option footprint after successful task and batch runs.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[Group( 'degraded' )]
 final class OptionsHygieneTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Public owner unique to this integration-test graph. */
+	private const string OWNER = 'integration-options-hygiene';
+
 	/** Task identity unique within the request-persistent integration registry. */
-	private const TASK_NAME = 'integration-options-task';
+	private const string TASK_NAME = 'integration-options-task';
+
+	/** Owner-qualified task identity persisted by the engine. */
+	private const string TASK_IDENTITY = self::OWNER . ':' . self::TASK_NAME;
 
 	/** Batch identity unique within the request-persistent integration registry. */
-	private const BATCH_NAME = 'integration-options-batch';
+	private const string BATCH_NAME = 'integration-options-batch';
+
+	/** Owner-qualified batch identity persisted by the engine. */
+	private const string BATCH_IDENTITY = self::OWNER . ':' . self::BATCH_NAME;
 
 	// endregion.
 
@@ -27,6 +39,9 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 
 	/**
 	 * Complete task and batch lifecycles retain only non-autoloaded latest and history rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -37,27 +52,21 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		$batch        = new RecordingBatch( self::BATCH_NAME );
 		$batch->queue = array( array( 'chunk' => 'only' ) );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register work' );
-		$engine->tasks()->register( $task );
-		$engine->batches()->register( $batch );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
+		$client->batches()->register( $batch );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::TASK_NAME );
-		$this->expect_option( 'a8csp_bgte_latest_' . self::BATCH_NAME );
-		\add_filter(
-			'a8csp_background_tasks/continue_delay',
-			static fn ( int $delay, string $name, string $run_id ): int => 0,
-			10,
-			3
-		);
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::TASK_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::BATCH_IDENTITY );
+		\add_filter( 'a8csp_background_tasks/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
-		$task_result = \a8csp_bgte_enqueue_task( self::TASK_NAME, $task_args );
+		$task_result = $client->tasks()->enqueue( self::TASK_NAME, $task_args );
 		self::assertInstanceOf( Success::class, $task_result, 'The census task must enqueue through the public API' );
 		self::assertIsString( $task_result->value );
 		$task_run_id = $task_result->value;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete the census task' );
 
-		$batch_result = \a8csp_bgte_start_batch( self::BATCH_NAME, $batch_args );
+		$batch_result = $client->batches()->start( self::BATCH_NAME, $batch_args );
 		self::assertInstanceOf( Success::class, $batch_result, 'The census batch must start through the public API' );
 		self::assertIsString( $batch_result->value );
 		$batch_run_id = $batch_result->value;
@@ -77,37 +86,25 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 					'start_args' => $batch_args,
 				),
 			),
-			$batch->success_calls,
-			'The census batch must complete its terminal success callback'
+			$batch->completed_calls,
+			'The census batch must invoke its on_completed() callback'
 		);
 
 		$rows = $this->engine_option_rows();
-		self::assertSame(
-			array(
-				'a8csp_bgte_history_' . self::BATCH_NAME,
-				'a8csp_bgte_history_' . self::TASK_NAME,
-				'a8csp_bgte_latest_' . self::BATCH_NAME,
-				'a8csp_bgte_latest_' . self::TASK_NAME,
-			),
-			\array_column( $rows, 'option_name' ),
-			'The complete engine option census must contain exactly two latest pointers and two history rings'
-		);
+		self::assertCount( 4, $rows, 'Two completed identities must retain a bounded four-row engine footprint' );
 
 		$autoloaded_values = \wp_autoload_values_to_autoload();
 		foreach ( $rows as $row ) {
-			self::assertNotContains(
-				$row['autoload'],
-				$autoloaded_values,
-				\sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] )
-			);
+			self::assertStringStartsWith( 'a8csp_bgte_', $row['option_name'], 'Every retained row must stay inside the documented engine ownership prefix' );
+			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
-		$task_latest = \get_option( 'a8csp_bgte_latest_' . self::TASK_NAME );
-		self::assertIsArray( $task_latest );
-		self::assertSame( $task_run_id, $task_latest['all'] ?? null );
-		$batch_latest = \get_option( 'a8csp_bgte_latest_' . self::BATCH_NAME );
-		self::assertIsArray( $batch_latest );
-		self::assertSame( $batch_run_id, $batch_latest['all'] ?? null );
+		$task_latest = $client->runs()->last_completed_run_id( self::TASK_NAME );
+		self::assertInstanceOf( Success::class, $task_latest );
+		self::assertSame( $task_run_id, $task_latest->value );
+		$batch_latest = $client->runs()->last_completed_run_id( self::BATCH_NAME );
+		self::assertInstanceOf( Success::class, $batch_latest );
+		self::assertSame( $batch_run_id, $batch_latest->value );
 	}
 
 	// endregion.

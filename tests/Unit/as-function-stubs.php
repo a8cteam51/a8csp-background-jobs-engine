@@ -4,7 +4,7 @@
  * Scriptable Action Scheduler functions for unit tests outside WordPress.
  *
  * Each guarded stub records its positional arguments and shifts a scripted return value. The
- * guards keep this file inert when a consumer loads the real Action Scheduler API.
+ * guards keep this file inert when a client loads the real Action Scheduler API.
  *
  * @package A8C\SpecialProjects\BackgroundTasksEngine
  */
@@ -85,10 +85,7 @@ if ( ! \function_exists( 'as_enqueue_async_action' ) ) {
 	 * @return  int
 	 */
 	function as_enqueue_async_action( $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call(
-			'as_enqueue_async_action',
-			array( $hook, $args, $group, $unique, $priority )
-		);
+		a8csp_bgte_test_record_as_call( 'as_enqueue_async_action', array( $hook, $args, $group, $unique, $priority ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_enqueue_async_action', 1 );
 		if ( ! \is_int( $result ) ) {
@@ -113,10 +110,7 @@ if ( ! \function_exists( 'as_schedule_single_action' ) ) {
 	 * @return  int
 	 */
 	function as_schedule_single_action( $timestamp, $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call(
-			'as_schedule_single_action',
-			array( $timestamp, $hook, $args, $group, $unique, $priority )
-		);
+		a8csp_bgte_test_record_as_call( 'as_schedule_single_action', array( $timestamp, $hook, $args, $group, $unique, $priority ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_schedule_single_action', 1 );
 		if ( ! \is_int( $result ) ) {
@@ -142,10 +136,7 @@ if ( ! \function_exists( 'as_schedule_recurring_action' ) ) {
 	 * @return  int
 	 */
 	function as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call(
-			'as_schedule_recurring_action',
-			array( $timestamp, $interval_in_seconds, $hook, $args, $group, $unique, $priority )
-		);
+		a8csp_bgte_test_record_as_call( 'as_schedule_recurring_action', array( $timestamp, $interval_in_seconds, $hook, $args, $group, $unique, $priority ) );
 
 		$result = a8csp_bgte_test_scripted_as_result( 'as_schedule_recurring_action', 1 );
 		if ( ! \is_int( $result ) ) {
@@ -168,6 +159,47 @@ if ( ! \function_exists( 'as_unschedule_all_actions' ) ) {
 	 */
 	function as_unschedule_all_actions( $hook, $args = array(), $group = '' ) {
 		a8csp_bgte_test_record_as_call( 'as_unschedule_all_actions', array( $hook, $args, $group ) );
+	}
+}
+
+if ( ! \function_exists( 'as_get_scheduled_actions' ) ) {
+	/**
+	 * Records and resolves a scheduled-action query.
+	 *
+	 * @param   array<string, mixed> $args          Query arguments.
+	 * @param   string               $return_format Return format.
+	 *
+	 * @return  array<int, object>|list<int>
+	 */
+	function as_get_scheduled_actions( $args = array(), $return_format = OBJECT ) {
+		a8csp_bgte_test_record_as_call( 'as_get_scheduled_actions', array( $args, $return_format ) );
+
+		$result = a8csp_bgte_test_scripted_as_result( 'as_get_scheduled_actions', array() );
+		if ( ! \is_array( $result ) ) {
+			throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with an array result.' );
+		}
+
+		if ( 'ids' === $return_format || 'int' === $return_format ) {
+			if ( ! \array_is_list( $result ) ) {
+				throw new \UnexpectedValueException( 'Script Action Scheduler IDs with a list result.' );
+			}
+
+			foreach ( $result as $action_id ) {
+				if ( ! \is_int( $action_id ) ) {
+					throw new \UnexpectedValueException( 'Script Action Scheduler IDs with integer action identifiers.' );
+				}
+			}
+
+			return $result;
+		}
+
+		foreach ( $result as $action_id => $action ) {
+			if ( ! \is_int( $action_id ) || ! \is_object( $action ) || ! \method_exists( $action, 'get_args' ) || ! \method_exists( $action, 'get_group' ) ) {
+				throw new \UnexpectedValueException( 'Script Action Scheduler objects with integer keys, get_args(), and get_group().' );
+			}
+		}
+
+		return $result;
 	}
 }
 

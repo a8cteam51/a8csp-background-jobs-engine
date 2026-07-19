@@ -19,7 +19,7 @@ trait ActionSchedulerIsolationTrait {
 	 *
 	 * @var     list<string>
 	 */
-	private const ACTION_SCHEDULER_TABLE_SUFFIXES = array(
+	private const array ACTION_SCHEDULER_TABLE_SUFFIXES = array(
 		'actionscheduler_logs',
 		'actionscheduler_claims',
 		'actionscheduler_actions',
@@ -62,14 +62,9 @@ trait ActionSchedulerIsolationTrait {
 
 		foreach ( self::ACTION_SCHEDULER_TABLE_SUFFIXES as $suffix ) {
 			$table_name   = $wpdb->prefix . $suffix;
-			$lookup_query = $wpdb->prepare(
-				'SHOW TABLES LIKE %s',
-				$wpdb->esc_like( $table_name )
-			);
+			$lookup_query = $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table_name ) );
 			if ( ! \is_string( $lookup_query ) ) {
-				throw new \UnexpectedValueException(
-					\sprintf( 'WordPress must prepare the Action Scheduler table lookup for "%s".', $table_name )
-				);
+				throw new \UnexpectedValueException( \sprintf( 'WordPress must prepare the Action Scheduler table lookup for "%s".', $table_name ) );
 			}
 
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared and validated above.
@@ -91,9 +86,7 @@ trait ActionSchedulerIsolationTrait {
 
 			$delete_query = $wpdb->prepare( 'DELETE FROM %i', $table_name );
 			if ( ! \is_string( $delete_query ) ) {
-				throw new \UnexpectedValueException(
-					\sprintf( 'WordPress must prepare the Action Scheduler table deletion for "%s".', $table_name )
-				);
+				throw new \UnexpectedValueException( \sprintf( 'WordPress must prepare the Action Scheduler table deletion for "%s".', $table_name ) );
 			}
 
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Identifier prepared above.

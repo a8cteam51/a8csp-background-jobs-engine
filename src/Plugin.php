@@ -2,16 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Component as CLIComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component as EngineComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundTasksEngine\CLI;
+use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * A plugin is a list of components: `COMPONENTS` below is that list, and `boot()` runs it — a
- * component is a class with `is_needed()` and `initialize()`, and the boot is a foreach you can
- * read. This is the one file you edit to wire a component in.
+ * The plugin's composition root: assembles the top-level components and runs the boot pipeline.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -20,46 +17,45 @@ final class Plugin {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Add the plugin's top-level components here; they boot in registration order.
+	 * Add the plugin's top-level components here; they run through each phase in registration
+	 * order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<int, class-string<Component>>
+	 * @var     array<int, class-string<ComponentInterface>>
 	 */
-	private const COMPONENTS = array(
-		ErrorLogSink::class,
-		EngineComponent::class,
-		CLIComponent::class,
+	private const array COMPONENTS = array(
+		Engine\Component::class,
+		CLI\Component::class,
 	);
 
 	/**
-	 * Whether `boot()` has already run.
+	 * Tri-state boot flag: null until `boot()` is first entered, false from entry until the hook
+	 * phase completes — which also latches reentrant calls and post-failure retries into no-ops,
+	 * since a half-attached boot must never be replayed — and true only on success.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     bool
+	 * @var     bool|null
 	 */
-	private bool $booted = false;
+	private ?bool $booted = null;
 
 	// endregion
 
 	// region METHODS
 
 	/**
-	 * Returns true if the plugin should boot on the current site.
-	 *
-	 * A plugin that is gated as a whole expresses that check here once instead of in every
-	 * component.
+	 * Whether the boot pipeline completed successfully for this request.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  bool
 	 */
-	public function is_needed(): bool {
-		return true;
+	public function is_booted(): bool {
+		return true === $this->booted;
 	}
 
 	// endregion
@@ -67,8 +63,10 @@ final class Plugin {
 	// region HOOKS
 
 	/**
-	 * Boots every registered component whose gate is open; idempotent — only the first eligible call
-	 * has any effect.
+	 * Runs the plugin's boot pipeline.
+	 *
+	 * A boot failure propagates uncaught — fail loud; the entry latch already guarantees it cannot
+	 * be retried into duplicate hook registrations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -76,18 +74,17 @@ final class Plugin {
 	 * @return  void
 	 */
 	public function boot(): void {
-		if ( $this->booted || ! $this->is_needed() ) {
+		if ( null !== $this->booted ) {
 			return;
 		}
 
-		$this->booted = true;
+		$this->booted = false;
 
-		foreach ( self::COMPONENTS as $component_class ) {
-			$component = new $component_class();
-			if ( $component->is_needed() ) {
-				$component->initialize();
-			}
-		}
+		$components = ComponentCollection::assemble( self::COMPONENTS );
+		$components->initialize();
+		$components->register_hooks();
+
+		$this->booted = true;
 	}
 
 	// endregion

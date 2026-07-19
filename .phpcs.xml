@@ -14,13 +14,10 @@
 
 	<!-- Check that the proper prefix is used everywhere. -->
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
-		<!-- Slash-delimited hook namespaces are valid WordPress hooks but not PHP identifiers. -->
-		<exclude name="WordPress.NamingConventions.PrefixAllGlobals.InvalidPrefixPassed"/>
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="a8csp/background_tasks/"/>
-				<element value="a8csp_"/>
-				<element value="a8csp_bgte_"/>
+				<element value="a8csp_background_tasks"/>
+				<element value="a8csp_bgte"/>
 				<element value="A8C\SpecialProjects\BackgroundTasksEngine"/>
 			</property>
 		</properties>

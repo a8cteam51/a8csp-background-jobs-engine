@@ -2,24 +2,38 @@
 
 namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Tasks\Exceptions\NonRetryableTaskException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Errors\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Utilities\Result\Success;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies task persistence, scheduler dispatch, callbacks, hooks, and terminal cleanup.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 final class TaskLifecycleTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
+	/** Public owner unique to this integration-test graph. */
+	private const string OWNER = 'integration-task-lifecycle';
+
 	/** Successful task identity unique within the request-persistent integration registry. */
-	private const SUCCESS_NAME = 'integration-task-lifecycle-success';
+	private const string SUCCESS_NAME = 'integration-task-lifecycle-success';
+
+	/** Owner-qualified successful task identity persisted by the engine. */
+	private const string SUCCESS_IDENTITY = self::OWNER . ':' . self::SUCCESS_NAME;
 
 	/** Failed task identity unique within the request-persistent integration registry. */
-	private const FAILURE_NAME = 'integration-task-lifecycle-failure';
+	private const string FAILURE_NAME = 'integration-task-lifecycle-failure';
+
+	/** Owner-qualified failed task identity persisted by the engine. */
+	private const string FAILURE_IDENTITY = self::OWNER . ':' . self::FAILURE_NAME;
 
 	// endregion.
 
@@ -27,6 +41,9 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 
 	/**
 	 * A registered task runs through the available scheduler and leaves only bounded terminal state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -38,16 +55,15 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 		);
 		$task = new RecordingTask( self::SUCCESS_NAME );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register tasks' );
-		$engine->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::SUCCESS_NAME );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::SUCCESS_IDENTITY );
 
 		$named_completed   = array();
 		$generic_completed = array();
 		\add_action(
-			'a8csp_background_tasks/completed/' . self::SUCCESS_NAME,
+			'a8csp_background_tasks/completed/' . self::SUCCESS_IDENTITY,
 			static function ( string $run_id, array $start_args ) use ( &$named_completed ): void {
 				$named_completed[] = array( $run_id, $start_args );
 			},
@@ -63,262 +79,127 @@ final class TaskLifecycleTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = \a8csp_bgte_enqueue_task( self::SUCCESS_NAME, $args );
+		$result = $client->tasks()->enqueue( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered task must enqueue through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
-		$group  = self::SUCCESS_NAME . '|' . $run_id;
-		if ( \class_exists( \ActionScheduler::class ) ) {
-			$action_id = $this->assert_pending_task_action( self::SUCCESS_NAME, $run_id, $group );
-		} else {
-			$action_id   = null;
-			$cron_events = $this->wordpress_cron_events(
-				'a8csp_background_tasks/run',
-				array( self::SUCCESS_NAME, $run_id, 1 )
-			);
-			self::assertCount( 1, $cron_events, 'The facade fallback must persist exactly one WP-Cron task occurrence' );
-			self::assertFalse( $cron_events[0]['schedule'], 'The facade fallback must enqueue the task as a single WP-Cron event' );
-		}
 
 		self::assertCount( 0, $task->calls, 'Enqueueing a task must not invoke its handler inline' );
-		self::assertCount( 0, $named_completed, 'Enqueueing a task must not fire its name-specific completed hook inline' );
+		self::assertCount( 0, $named_completed, 'Enqueueing a task must not fire its identity-specific completed hook inline' );
 		self::assertCount( 0, $generic_completed, 'Enqueueing a task must not fire its generic completed hook inline' );
 
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must execute the pending task action' );
 
 		self::assertCount( 1, $task->calls, 'The runner drive must invoke the task handler exactly once' );
-		self::assertCount( 1, $named_completed, 'The runner drive must fire the name-specific completed hook exactly once' );
+		self::assertCount( 1, $named_completed, 'The runner drive must fire the identity-specific completed hook exactly once' );
 		self::assertCount( 1, $generic_completed, 'The runner drive must fire the generic completed hook exactly once' );
 		self::assertSame( array( $args ), $task->calls, 'The task must receive its original argument array exactly once' );
-		self::assertSame(
-			array( array( $run_id, $args ) ),
-			$named_completed,
-			'The name-specific completed hook must receive run ID and start arguments'
-		);
-		self::assertSame(
-			array( array( self::SUCCESS_NAME, $run_id, $args ) ),
-			$generic_completed,
-			'The generic completed hook must prepend the task name to the same payload'
-		);
-		if ( null !== $action_id ) {
-			self::assertSame(
-				\ActionScheduler_Store::STATUS_COMPLETE,
-				$this->action_scheduler_store()->get_status( $action_id ),
-				'Action Scheduler must mark the engine run action complete'
-			);
-		} else {
-			self::assertSame(
-				array(),
-				$this->wordpress_cron_events( 'a8csp_background_tasks/run', array( self::SUCCESS_NAME, $run_id, 1 ) ),
-				'WP-Cron completion must clear the delivered task occurrence'
-			);
-		}
-
-		$args_hash = self::args_hash( $args );
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::SUCCESS_NAME . '_' . $run_id, false ),
-			'Terminal task success must delete the active run option'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::SUCCESS_NAME . '_' . $args_hash, false ),
-			'Terminal task success must release the overlap lock'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_failed_' . self::SUCCESS_NAME, false ),
-			'Terminal task success must not create a failed-run row'
-		);
+		self::assertSame( array( array( $run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive run ID and start arguments' );
+		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the task name to the same payload' );
+		$last_completed = $client->runs()->last_completed_run_id( self::SUCCESS_NAME );
+		self::assertInstanceOf( Success::class, $last_completed );
+		self::assertSame( $run_id, $last_completed->value );
+		$runs = $this->inspection()->runs( self::SUCCESS_IDENTITY );
+		self::assertSame( array(), $runs['live'], 'Terminal task success must leave no live run' );
 		self::assertSame(
 			array(
-				'all'     => $run_id,
-				'by_hash' => array( $args_hash => $run_id ),
-			),
-			\get_option( 'a8csp_bgte_latest_' . self::SUCCESS_NAME, null ),
-			'Terminal task success must retain the latest global and argument-identity pointers'
-		);
-		self::assertSame(
-			array(
-				'started'   => array( $run_id ),
-				'completed' => array(
-					array(
-						'run_id' => $run_id,
-						'status' => 'completed',
-					),
-				),
-				'by_hash'   => array(
-					$args_hash => array(
-						'started'   => array( $run_id ),
-						'completed' => array(
-							array(
-								'run_id' => $run_id,
-								'status' => 'completed',
-							),
-						),
-					),
+				array(
+					'run_id'       => $run_id,
+					'outcome'      => 'completed',
+					'failed_store' => false,
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::SUCCESS_NAME, null ),
-			'Terminal task success must retain one started and completed history entry'
+			$runs['history']
 		);
 	}
 
 	/**
 	 * A non-retryable throwable fails on attempt one and retains only bounded failure state.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The upstream exception text exists only in the executing fixture and must not cross the RunFailure hook boundary; the public payload alone cannot prove which hidden source text was withheld.
+	 *
 	 * @return  void
 	 */
 	public function test_non_retryable_task_failure_is_terminal_on_attempt_one(): void {
+		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$args            = array(
 			'account_id' => 84,
 			'mode'       => 'delete',
 		);
 		$task            = new RecordingTask( self::FAILURE_NAME );
-		$task->throwable = new NonRetryableTaskException( 'The remote record no longer exists.' );
+		$task->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
-		$engine = \a8csp_bgte_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before integration tests register tasks' );
-		$engine->tasks()->register( $task );
+		$client = \a8csp_bgte( self::OWNER );
+		$client->tasks()->register( $task );
 
-		$this->expect_option( 'a8csp_bgte_latest_' . self::FAILURE_NAME );
-		$this->expect_option( 'a8csp_bgte_failed_' . self::FAILURE_NAME );
+		$this->expect_option( 'a8csp_bgte_latest_run_' . self::FAILURE_IDENTITY );
+		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::FAILURE_IDENTITY );
 
 		$named_failed   = array();
 		$generic_failed = array();
 		\add_action(
-			'a8csp_background_tasks/failed/' . self::FAILURE_NAME,
-			static function ( string $run_id, array $start_args, EngineError $error ) use ( &$named_failed ): void {
-				$named_failed[] = array( $run_id, $start_args, $error );
+			'a8csp_background_tasks/failed/' . self::FAILURE_IDENTITY,
+			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
+				$named_failed[] = array( $run_id, $start_args, $failure );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_background_tasks/failed',
-			static function (
-				string $name,
-				string $run_id,
-				array $start_args,
-				EngineError $error
-			) use ( &$generic_failed ): void {
-				$generic_failed[] = array( $name, $run_id, $start_args, $error );
+			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
+				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
 			},
 			10,
 			4
 		);
 
-		$result = \a8csp_bgte_enqueue_task( self::FAILURE_NAME, $args );
+		$result = $client->tasks()->enqueue( self::FAILURE_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The failing task must enqueue before its handler executes' );
 		self::assertIsString( $result->value );
-		$run_id    = $result->value;
-		$group     = self::FAILURE_NAME . '|' . $run_id;
-		$action_id = $this->assert_pending_task_action( self::FAILURE_NAME, $run_id, $group );
+		$run_id = $result->value;
 
 		self::assertCount( 0, $task->calls, 'Enqueueing a task must not invoke its handler inline' );
-		self::assertCount( 0, $named_failed, 'Enqueueing a task must not fire its name-specific failed hook inline' );
+		self::assertCount( 0, $named_failed, 'Enqueueing a task must not fire its identity-specific failed hook inline' );
 		self::assertCount( 0, $generic_failed, 'Enqueueing a task must not fire its generic failed hook inline' );
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the failing task action' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must execute the failing task action' );
 
 		self::assertCount( 1, $task->calls, 'The runner drive must invoke the failing task handler exactly once' );
 		self::assertSame( array( $args ), $task->calls, 'A non-retryable task must execute exactly once' );
-		self::assertCount( 1, $named_failed, 'The name-specific failed hook must fire exactly once' );
+		self::assertCount( 1, $named_failed, 'The identity-specific failed hook must fire exactly once' );
 		self::assertCount( 1, $generic_failed, 'The generic failed hook must fire exactly once' );
-		$error = $named_failed[0][2] ?? null;
-		self::assertInstanceOf( EngineError::class, $error );
-		self::assertSame( 'The remote record no longer exists.', $error->message );
-		self::assertSame( NonRetryableTaskException::class, $error->exception_class );
-		self::assertSame(
-			array( array( $run_id, $args, $error ) ),
-			$named_failed,
-			'The name-specific failed hook must receive run ID, start arguments, and engine error'
-		);
-		self::assertSame(
-			array( array( self::FAILURE_NAME, $run_id, $args, $error ) ),
-			$generic_failed,
-			'The generic failed hook must prepend the task name to the same failure payload'
-		);
-		self::assertSame(
-			\ActionScheduler_Store::STATUS_COMPLETE,
-			$this->action_scheduler_store()->get_status( $action_id ),
-			'Action Scheduler must complete a run action whose engine failure is terminally handled'
-		);
-
-		$args_hash = self::args_hash( $args );
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_run_' . self::FAILURE_NAME . '_' . $run_id, false ),
-			'Terminal task failure must delete the active run option'
-		);
-		self::assertFalse(
-			\get_option( 'a8csp_bgte_lock_' . self::FAILURE_NAME . '_' . $args_hash, false ),
-			'Terminal task failure must release the overlap lock'
-		);
+		$failure = $named_failed[0][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
+		self::assertSame( self::FAILURE_IDENTITY, $failure->identity );
+		self::assertSame( $run_id, $failure->run_id );
+		self::assertSame( 1, $failure->attempts );
+		self::assertSame( RunFailureStage::Execution, $failure->stage );
+		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( $expected_message, $failure->summary );
+		self::assertStringNotContainsString( 'The remote record no longer exists.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
+		self::assertNull( $failure->failed_chunk );
+		self::assertSame( array( array( $run_id, $args, $failure ) ), $named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and run failure' );
+		self::assertSame( array( array( self::FAILURE_IDENTITY, $run_id, $args, $failure ) ), $generic_failed, 'The generic failed hook must prepend the task name to the same failure payload' );
+		self::assertSame( 0, $this->run_next_engine_action(), 'A non-retryable failure must not schedule another run attempt' );
+		$runs = $this->inspection()->runs( self::FAILURE_IDENTITY );
+		self::assertSame( array(), $runs['live'], 'Terminal task failure must leave no live run' );
 		self::assertSame(
 			array(
-				'all'     => $run_id,
-				'by_hash' => array( $args_hash => $run_id ),
-			),
-			\get_option( 'a8csp_bgte_latest_' . self::FAILURE_NAME, null ),
-			'Terminal task failure must retain the latest pointers'
-		);
-		self::assertSame(
-			array(
-				'started'   => array( $run_id ),
-				'completed' => array(
-					array(
-						'run_id' => $run_id,
-						'status' => 'failed',
-					),
-				),
-				'by_hash'   => array(
-					$args_hash => array(
-						'started'   => array( $run_id ),
-						'completed' => array(
-							array(
-								'run_id' => $run_id,
-								'status' => 'failed',
-							),
-						),
-					),
+				array(
+					'run_id'       => $run_id,
+					'outcome'      => 'failed',
+					'failed_store' => true,
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::FAILURE_NAME, null ),
-			'Terminal task failure must retain one started and terminal history entry'
+			$runs['history'],
+			'Inspection must expose the retained failed outcome for manual retry'
 		);
-
-		$failed_entries = \get_option( 'a8csp_bgte_failed_' . self::FAILURE_NAME, null );
-		self::assertIsArray( $failed_entries );
-		self::assertCount( 1, $failed_entries, 'A first-attempt terminal failure must retain exactly one failed entry' );
-		$failed_entry = $failed_entries[0] ?? null;
-		self::assertIsArray( $failed_entry );
-		self::assertSame(
-			array( 'run_id', 'failed_at', 'start_args', 'attempts', 'error' ),
-			\array_keys( $failed_entry ),
-			'The failed store entry must contain exactly the manual-retry fields'
-		);
-		self::assertSame( $run_id, $failed_entry['run_id'] ?? null );
-		self::assertIsInt( $failed_entry['failed_at'] ?? null );
-		self::assertSame( $args, $failed_entry['start_args'] ?? null );
-		self::assertSame(
-			1,
-			$failed_entry['attempts'] ?? null,
-			'The failed store must record terminal failure on attempt one'
-		);
-		self::assertSame(
-			array(
-				'class'   => NonRetryableTaskException::class,
-				'message' => 'The remote record no longer exists.',
-			),
-			$failed_entry['error'] ?? null
-		);
-
-		$pending = $this->action_scheduler_store()->query_actions(
-			array(
-				'hook'     => 'a8csp_background_tasks/run',
-				'group'    => $group,
-				'status'   => \ActionScheduler_Store::STATUS_PENDING,
-				'per_page' => -1,
-			)
-		);
-		self::assertSame( array(), $pending, 'A non-retryable failure must not schedule another run attempt' );
 	}
 
 	// endregion.
