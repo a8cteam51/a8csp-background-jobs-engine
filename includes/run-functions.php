@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -11,16 +11,16 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
  * @version 1.0.0
  *
  * @param   string $owner Client plugin owner.
- * @param   string $name  Owner-local task or batch name.
+ * @param   string $name  Owner-local job or chunked job name.
  *
  * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
  *
  * @return  string|null|\WP_Error
  */
 #[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-function a8csp_bgte_run_last_completed( string $owner, string $name ): string|null|\WP_Error {
+function a8csp_bgje_run_last_completed( string $owner, string $name ): string|null|\WP_Error {
 	try {
-		$result = \a8csp_bgte( $owner )->runs()->last_completed_run_id( $name );
+		$result = \a8csp_bgje( $owner )->runs()->last_completed_run_id( $name );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -39,7 +39,7 @@ function a8csp_bgte_run_last_completed( string $owner, string $name ): string|nu
  * @version 1.0.0
  *
  * @param   string $owner  Client plugin owner.
- * @param   string $name   Owner-local task or batch name.
+ * @param   string $name   Owner-local job or chunked job name.
  * @param   string $run_id Retained failed-run identifier.
  *
  * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
@@ -47,9 +47,9 @@ function a8csp_bgte_run_last_completed( string $owner, string $name ): string|nu
  * @return  string|\WP_Error
  */
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-function a8csp_bgte_run_retry_failed( string $owner, string $name, string $run_id ): string|\WP_Error {
+function a8csp_bgje_run_retry_failed( string $owner, string $name, string $run_id ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgte( $owner )->runs()->retry_failed( $name, $run_id );
+		$result = \a8csp_bgje( $owner )->runs()->retry_failed( $name, $run_id );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -62,13 +62,13 @@ function a8csp_bgte_run_retry_failed( string $owner, string $name, string $run_i
 }
 
 /**
- * Cancels one retained run that is not executing or pending batch cleanup.
+ * Cancels one retained run that is not executing or pending chunked job cleanup.
  *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner  Client plugin owner.
- * @param   string $name   Owner-local task or batch name.
+ * @param   string $name   Owner-local job or chunked job name.
  * @param   string $run_id Retained run identifier.
  *
  * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
@@ -76,9 +76,9 @@ function a8csp_bgte_run_retry_failed( string $owner, string $name, string $run_i
  * @return  string|\WP_Error
  */
 #[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-function a8csp_bgte_run_cancel( string $owner, string $name, string $run_id ): string|\WP_Error {
+function a8csp_bgje_run_cancel( string $owner, string $name, string $run_id ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgte( $owner )->runs()->cancel( $name, $run_id );
+		$result = \a8csp_bgje( $owner )->runs()->cancel( $name, $run_id );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -99,13 +99,13 @@ function a8csp_bgte_run_cancel( string $owner, string $name, string $run_id ): s
  * @phpstan-param callable(string, array<array-key, mixed>): void $listener
  *
  * @param   string   $owner    Client plugin owner.
- * @param   string   $name     Owner-local task or batch name.
+ * @param   string   $name     Owner-local job or chunked job name.
  * @param   callable $listener Completion listener.
  *
  * @return  void
  */
-function a8csp_bgte_run_on_completed( string $owner, string $name, callable $listener ): void {
-	\add_action( 'a8csp_background_tasks/completed/' . $owner . ':' . $name, $listener, 10, 2 );
+function a8csp_bgje_run_on_completed( string $owner, string $name, callable $listener ): void {
+	\add_action( 'a8csp_jobs_engine/completed/' . $owner . ':' . $name, $listener, 10, 2 );
 }
 
 /**
@@ -117,11 +117,11 @@ function a8csp_bgte_run_on_completed( string $owner, string $name, callable $lis
  * @phpstan-param callable(string, array<array-key, mixed>, RunFailure): void $listener
  *
  * @param   string   $owner    Client plugin owner.
- * @param   string   $name     Owner-local task or batch name.
+ * @param   string   $name     Owner-local job or chunked job name.
  * @param   callable $listener Failure listener.
  *
  * @return  void
  */
-function a8csp_bgte_run_on_failed( string $owner, string $name, callable $listener ): void {
-	\add_action( 'a8csp_background_tasks/failed/' . $owner . ':' . $name, $listener, 10, 3 );
+function a8csp_bgje_run_on_failed( string $owner, string $name, callable $listener ): void {
+	\add_action( 'a8csp_jobs_engine/failed/' . $owner . ':' . $name, $listener, 10, 3 );
 }

@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\CLI;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
 final class ResetCommandTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string MAINTENANCE_CURSOR_OPTION = 'a8csp_bgte_maintenance_sweep';
+	private const string MAINTENANCE_CURSOR_OPTION = 'a8csp_bgje_maintenance_sweep';
 	private const string UNRELATED_OPTION          = 'consumer_plugin_state';
 
 	private EngineRig $rig;
@@ -96,9 +96,9 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
-		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-bgte:maintenance' );
+		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-jobs-engine:maintenance' );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
-		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_TASK_HOOK ]  = 2;
+		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_JOB_HOOK ]   = 2;
 		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_CHUNK_HOOK ] = 3;
 		$owned_before = $this->engine_option_names();
 		self::assertNotEmpty( $owned_before );
@@ -109,7 +109,7 @@ final class ResetCommandTest extends TestCase {
 		self::assertSame( '', $result->stderr );
 		self::assertStringContainsString( 'Option rows deleted: ' . \count( $owned_before ), $result->stdout );
 		self::assertStringContainsString( 'Pending backend actions unscheduled: 5', $result->stdout );
-		self::assertStringContainsString( 'Success: Background tasks development state reset.', $result->stdout );
+		self::assertStringContainsString( 'Success: Background jobs development state reset.', $result->stdout );
 		self::assertSame( array(), $this->engine_option_names() );
 		self::assertSame( array(), $this->rig->backend()->pending_actions );
 		self::assertSame( 'keep', $this->rig->wpdb()->rows[ self::UNRELATED_OPTION ] ?? null );
@@ -174,7 +174,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_reports_a_row_changed_during_reset(): void {
 		$this->seed_engine_state();
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
 		$option_name = ScheduleRegistry::option_name( 'reset-tests' );
 		$before      = $this->rig->wpdb()->rows;
 		$this->rig->wpdb()->before_next(
@@ -230,7 +230,7 @@ final class ResetCommandTest extends TestCase {
 		$result = CliHarness::run( 'reset', array( 'extra' ), array( 'yes' => true ) );
 
 		self::assertSame( 1, $result->exit_code );
-		self::assertSame( "Error: Reset accepts only --yes; use wp background-tasks reset [--yes].\n", $result->stderr );
+		self::assertSame( "Error: Reset accepts only --yes; use wp background-jobs reset [--yes].\n", $result->stderr );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 
@@ -248,8 +248,8 @@ final class ResetCommandTest extends TestCase {
 	 */
 	private function seed_engine_state(): void {
 		$client = $this->rig->client( 'reset-tests' );
-		$client->tasks()->register( new RecordingTask( 'refresh' ) );
-		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		$client->jobs()->register( new RecordingJob( 'refresh' ) );
+		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
@@ -262,9 +262,9 @@ final class ResetCommandTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function engine_option_names(): array {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
-		$names = \array_values( \array_filter( \array_unique( \array_merge( \array_keys( $this->rig->wpdb()->rows ), \array_keys( $options ) ) ), static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
+		$names = \array_values( \array_filter( \array_unique( \array_merge( \array_keys( $this->rig->wpdb()->rows ), \array_keys( $options ) ) ), static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgje_' ) ) );
 		\sort( $names, \SORT_STRING );
 
 		return $names;

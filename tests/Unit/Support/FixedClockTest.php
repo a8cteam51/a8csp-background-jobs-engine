@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 

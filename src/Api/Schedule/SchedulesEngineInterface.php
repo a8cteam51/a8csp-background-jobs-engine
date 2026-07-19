@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,7 +22,7 @@ interface SchedulesEngineInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-param array<string, array{schedule: Schedule, job: string}> $declarations
 	 *
 	 * @param   array $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *

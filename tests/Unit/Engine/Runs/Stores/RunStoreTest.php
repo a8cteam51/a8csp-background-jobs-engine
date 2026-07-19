@@ -1,21 +1,21 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -53,7 +53,7 @@ final class RunStoreTest extends TestCase {
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
-	private RecordingTask $task;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -73,7 +73,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Boots one registered task against deterministic interface fakes.
+	 * Boots one registered job against deterministic interface fakes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -86,8 +86,8 @@ final class RunStoreTest extends TestCase {
 
 		$this->rig    = EngineRig::set_up( self::NOW );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->task   = new RecordingTask( self::NAME );
-		$this->client->tasks()->register( $this->task );
+		$this->job    = new RecordingJob( self::NAME );
+		$this->client->jobs()->register( $this->job );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -122,11 +122,11 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_live_state_is_visible_while_running_and_disappears_after_completion(): void {
-		$during_callback       = null;
-		$this->task->on_handle = function () use ( &$during_callback ): void {
+		$during_callback      = null;
+		$this->job->on_handle = function () use ( &$during_callback ): void {
 			$during_callback = $this->single_live_run();
 		};
-		$result                = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		$result               = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$queued = $this->single_live_run();
@@ -155,10 +155,10 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
-		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
-		$this->task->throwable          = new \RuntimeException( 'Transient failure.' );
+		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
+		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
-		$result                         = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->rig->run_due();
@@ -214,7 +214,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * A stored work kind outside the canonical Task/Batch vocabulary is corrupt.
+	 * A stored work kind outside the canonical Job/Chunked Job vocabulary is corrupt.
 	 *
 	 * @return  void
 	 */
@@ -222,7 +222,7 @@ final class RunStoreTest extends TestCase {
 		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
 		$stored  = \maybe_unserialize( $fixture[1] );
 		self::assertIsArray( $stored );
-		$stored['kind'] = 'task';
+		$stored['kind'] = 'job';
 		$raw            = \maybe_serialize( $stored );
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( $fixture[0], $raw );
@@ -283,8 +283,8 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_lost_state_cas_preserves_the_fixture_built_rival_generation(): void {
 		$running = $this->state();
-		$rival   = $running->with_action_seq( 2 );
-		$caller  = $running->with_action_seq( 3 );
+		$rival   = $running->with_action_sequence( 2 );
+		$caller  = $running->with_action_sequence( 3 );
 		$before  = $this->fixtures->run( self::RUN_ID, $running );
 		$winner  = $this->fixtures->run( self::RUN_ID, $rival );
 		$this->put_fixture( $before );
@@ -351,8 +351,8 @@ final class RunStoreTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 
 		$last_rival = $fixture;
-		for ( $action_seq = 2; $action_seq <= 6; ++$action_seq ) {
-			$rival      = $this->fixtures->run( self::RUN_ID, $terminal->with_action_seq( $action_seq ) );
+		for ( $action_sequence = 2; $action_sequence <= 6; ++$action_sequence ) {
+			$rival      = $this->fixtures->run( self::RUN_ID, $terminal->with_action_sequence( $action_sequence ) );
 			$last_rival = $rival;
 			$this->rig->wpdb()->before_next(
 				'update',
@@ -406,13 +406,13 @@ final class RunStoreTest extends TestCase {
 		$raw = \maybe_serialize(
 			array(
 				'status'          => 'running',
-				'kind'            => 'Task',
+				'kind'            => 'Job',
 				'executing'       => false,
 				'start_args'      => array(),
 				'args_hash'       => 'hash-a',
 				'queue'           => array( array( 'payload' => new RunStoreWakeupProbe() ) ),
 				'failed_attempts' => 0,
-				'action_seq'      => 1,
+				'action_sequence' => 1,
 				'created_at'      => self::NOW,
 				'heartbeat_at'    => self::NOW,
 			)
@@ -592,7 +592,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  RunState
 	 */
 	private function state(): RunState {
-		return new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		return new RunState( status: RunStatus::Running, kind: 'Job', executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 	}
 
 	/**
@@ -634,13 +634,13 @@ final class RunStoreTest extends TestCase {
 	private function put_corrupt_state( array $metadata ): void {
 		$value = array(
 			'status'          => 'failed',
-			'kind'            => 'Task',
+			'kind'            => 'Job',
 			'executing'       => false,
 			'start_args'      => array(),
 			'args_hash'       => 'hash-a',
 			'queue'           => array(),
 			'failed_attempts' => 0,
-			'action_seq'      => 1,
+			'action_sequence' => 1,
 			'created_at'      => self::NOW,
 			'heartbeat_at'    => self::NOW,
 			...$metadata,

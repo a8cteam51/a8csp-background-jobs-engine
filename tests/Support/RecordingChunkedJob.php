@@ -1,0 +1,250 @@
+<?php declare( strict_types=1 );
+
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
+
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+
+/**
+ * Records chunked job lifecycle invocations with optional observation callbacks and failures.
+ */
+final class RecordingChunkedJob implements ChunkedJobInterface {
+	/**
+	 * Initial chunks returned by queue generation.
+	 *
+	 * @var array<array-key, array<array-key, mixed>>
+	 */
+	public array $queue = array();
+
+	/**
+	 * Queue-generation arguments in call order.
+	 *
+	 * @var list<array<array-key, mixed>>
+	 */
+	public array $generate_calls = array();
+
+	/**
+	 * Chunk-processing arguments and contexts in call order.
+	 *
+	 * @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}>
+	 */
+	public array $process_calls = array();
+
+	/**
+	 * Completed-run callback payloads in call order.
+	 *
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>}>
+	 */
+	public array $completed_calls = array();
+
+	/**
+	 * Failed-run callback payloads in call order.
+	 *
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: RunFailure}>
+	 */
+	public array $failed_calls = array();
+
+	/** Throwable raised after queue generation is recorded and observed. */
+	public ?\Throwable $generate_throwable = null;
+
+	/** @var (\Closure(): iterable<array-key, array<array-key, mixed>>)|null Lazy generated queue factory. */
+	public ?\Closure $generate_queue_factory = null;
+
+	/** Throwable raised after chunk processing is recorded and observed. */
+	public ?\Throwable $process_throwable = null;
+
+	/** Throwable raised after completed-run handling is recorded. */
+	public ?\Throwable $completed_throwable = null;
+
+	/** Throwable raised after failed-run handling is recorded. */
+	public ?\Throwable $failed_throwable = null;
+
+	/**
+	 * Observation run after recording completed-run handling and before an optional failure.
+	 *
+	 * @var (\Closure(string, array<array-key, mixed>): void)|null
+	 */
+	public ?\Closure $on_completed = null;
+
+	/**
+	 * Observation run after recording failed-run handling and before an optional failure.
+	 *
+	 * @var (\Closure(string, array<array-key, mixed>, RunFailure): void)|null
+	 */
+	public ?\Closure $on_failed = null;
+
+	/**
+	 * Observation run after recording queue generation and before an optional failure.
+	 *
+	 * @var (\Closure(array<array-key, mixed>): void)|null
+	 */
+	public ?\Closure $on_generate = null;
+
+	/**
+	 * Observation run after recording chunk processing and before an optional failure.
+	 *
+	 * @var (\Closure(array<array-key, mixed>, ChunkContextInterface): void)|null
+	 */
+	public ?\Closure $on_process = null;
+
+	/** Configured retry policy. */
+	public RetryPolicy $retry_policy;
+
+	/** Declared ceiling for one queue generation or chunk invocation. */
+	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param   string $name Stable chunked job name.
+	 */
+	public function __construct(
+		private readonly string $name,
+	) {
+		$this->retry_policy = new RetryPolicy();
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function get_name(): string {
+		return $this->name;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function max_callback_runtime(): int {
+		return $this->max_callback_runtime;
+	}
+
+	/**
+	 * Records queue generation before applying scripted behavior.
+	 *
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 *
+	 * @return  iterable<array<array-key, mixed>>
+	 */
+	#[\Override]
+	public function generate_queue( array $start_args ): iterable {
+		$this->generate_calls[] = $start_args;
+		$this->record_lifecycle_event( 'generate' );
+
+		if ( null !== $this->on_generate ) {
+			( $this->on_generate )( $start_args );
+		}
+
+		if ( null !== $this->generate_throwable ) {
+			throw $this->generate_throwable;
+		}
+		if ( null !== $this->generate_queue_factory ) {
+			return ( $this->generate_queue_factory )();
+		}
+
+		return $this->queue;
+	}
+
+	/**
+	 * Records one chunk invocation before applying scripted behavior.
+	 *
+	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
+	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {
+		$this->process_calls[] = array(
+			'chunk_args' => $chunk_args,
+			'context'    => $context,
+		);
+		$this->record_lifecycle_event( 'process' );
+
+		if ( null !== $this->on_process ) {
+			( $this->on_process )( $chunk_args, $context );
+		}
+
+		if ( null !== $this->process_throwable ) {
+			throw $this->process_throwable;
+		}
+	}
+
+	/**
+	 * Records one completed-run callback.
+	 *
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_completed( string $run_id, array $start_args ): void {
+		$this->completed_calls[] = array(
+			'run_id'     => $run_id,
+			'start_args' => $start_args,
+		);
+		$this->record_lifecycle_event( 'completed' );
+
+		if ( null !== $this->on_completed ) {
+			( $this->on_completed )( $run_id, $start_args );
+		}
+
+		if ( null !== $this->completed_throwable ) {
+			throw $this->completed_throwable;
+		}
+	}
+
+	/**
+	 * Records one failed-run callback.
+	 *
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+		$this->failed_calls[] = array(
+			'run_id'     => $run_id,
+			'start_args' => $start_args,
+			'error'      => $failure,
+		);
+		$this->record_lifecycle_event( 'failed' );
+
+		if ( null !== $this->on_failed ) {
+			( $this->on_failed )( $run_id, $start_args, $failure );
+		}
+
+		if ( null !== $this->failed_throwable ) {
+			throw $this->failed_throwable;
+		}
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function get_retry_policy(): RetryPolicy {
+		return $this->retry_policy;
+	}
+
+	/**
+	 * Appends one chunked job boundary to the shared lifecycle ledger when enabled.
+	 *
+	 * @param   string $operation Chunked Job lifecycle operation.
+	 *
+	 * @return  void
+	 */
+	private function record_lifecycle_event( string $operation ): void {
+		$lifecycle_events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
+		if ( ! \is_array( $lifecycle_events ) ) {
+			return;
+		}
+
+		$lifecycle_events[] = array(
+			'type'      => 'chunked_job',
+			'operation' => $operation,
+		);
+
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = $lifecycle_events;
+	}
+}

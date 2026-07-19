@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -93,7 +93,7 @@ final readonly class RunOutput {
 				'status'    => 'running',
 				'phase'     => $entry['executing'] ? 'executing' : 'waiting',
 				'attempts'  => $entry['attempts'],
-				'queue'     => 'task' === $entry['kind']
+				'queue'     => 'job' === $entry['kind']
 					? '—'
 					: ( $entry['queue_depth'] ?? 'unknown' ),
 				'heartbeat' => self::heartbeat_label( $entry['heartbeat_at'], $observed_at, $entry['stale'] ),
@@ -231,7 +231,7 @@ final readonly class RunOutput {
 	 * } $snapshot
 	 *
 	 * @param   array  $snapshot Run inspection snapshot.
-	 * @param   string $name     Composed task or batch identity.
+	 * @param   string $name     Composed job or chunked job identity.
 	 * @param   string $format   WP-CLI output format.
 	 *
 	 * @return  void

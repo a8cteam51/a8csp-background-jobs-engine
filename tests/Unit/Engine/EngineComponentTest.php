@@ -1,18 +1,18 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -65,35 +65,35 @@ final class EngineComponentTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_options']              = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']         = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']      = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 
-		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] = array();
 
-		$GLOBALS['a8csp_bgte_test_filter_values']     = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']     = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']           = 1;
+		$GLOBALS['a8csp_bgje_test_filter_values']     = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']     = array();
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']           = 1;
 
-		$GLOBALS['a8csp_bgte_test_blog_stack']         = array();
-		$GLOBALS['a8csp_bgte_test_blog_switch_calls']  = array();
-		$GLOBALS['a8csp_bgte_test_blog_restore_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_blog_stack']         = array();
+		$GLOBALS['a8csp_bgje_test_blog_switch_calls']  = array();
+		$GLOBALS['a8csp_bgje_test_blog_restore_calls'] = array();
 
-		$GLOBALS['a8csp_bgte_test_is_multisite']        = false;
-		$GLOBALS['a8csp_bgte_test_cache']               = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_results']        = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
-		$GLOBALS['a8csp_bgte_test_as_calls']            = array();
-		$GLOBALS['a8csp_bgte_test_as_results']          = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']         = array( 'plugins_loaded' => 1 );
-		$GLOBALS['a8csp_bgte_test_doing_actions']       = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']        = false;
+		$GLOBALS['a8csp_bgje_test_cache']               = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']         = array();
+		$GLOBALS['a8csp_bgje_test_cron_array']          = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_cron_results']        = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence'] = 0;
+		$GLOBALS['a8csp_bgje_test_as_calls']            = array();
+		$GLOBALS['a8csp_bgje_test_as_results']          = array();
+		$GLOBALS['a8csp_bgje_test_did_actions']         = array( 'plugins_loaded' => 1 );
+		$GLOBALS['a8csp_bgje_test_doing_actions']       = array();
 		$GLOBALS['wpdb']                                = new WpdbLockSpy();
 	}
 
@@ -136,9 +136,9 @@ final class EngineComponentTest extends TestCase {
 		$component->initialize();
 		$component->register_hooks();
 
-		$hooks = $GLOBALS['a8csp_bgte_test_hooks'] ?? null;
+		$hooks = $GLOBALS['a8csp_bgje_test_hooks'] ?? null;
 		self::assertIsArray( $hooks );
-		self::assertSame( 'a8csp_background_tasks/log', $hooks[0] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/log', $hooks[0] ?? null );
 	}
 
 	/**
@@ -184,7 +184,7 @@ final class EngineComponentTest extends TestCase {
 	 */
 	public function test_scheduler_filter_reentry_during_hook_registration_has_one_effect(): void {
 		$reentered = false;
-		$callbacks = $GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] ?? null;
+		$callbacks = $GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
 
 		$callbacks['cron_schedules'] = static function () use ( &$reentered ): void {
@@ -192,7 +192,7 @@ final class EngineComponentTest extends TestCase {
 			( new Component() )->initialize();
 		};
 
-		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = $callbacks;
+		$GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] = $callbacks;
 
 		$component = new Component();
 		$component->initialize();
@@ -213,7 +213,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_apply_filters_rejects_an_unset_registration_ledger(): void {
-		unset( $GLOBALS['a8csp_bgte_test_filter_registrations'] );
+		unset( $GLOBALS['a8csp_bgje_test_filter_registrations'] );
 
 		$this->expectException( \UnexpectedValueException::class );
 		$this->expectExceptionMessageIs( 'Initialize the test filter ledger before applying a filter.' );
@@ -233,11 +233,11 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_mid_init_boot_defers_maintenance_sync_until_wp_loaded(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions']   = array(
+		$GLOBALS['a8csp_bgje_test_did_actions']   = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
-		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
+		$GLOBALS['a8csp_bgje_test_doing_actions'] = array( 'init' );
 
 		$component = new Component();
 		$component->initialize();
@@ -258,7 +258,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_late_boot_syncs_maintenance_inline_without_deferral(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
@@ -273,7 +273,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertNotContains( 'wp_loaded', $hook_names );
 		$registry = $this->schedule_registry();
 		self::assertIsArray( $registry );
-		self::assertArrayHasKey( 'a8csp-bgte:maintenance', $registry );
+		self::assertArrayHasKey( 'a8csp-jobs-engine:maintenance', $registry );
 	}
 
 	/**
@@ -285,12 +285,12 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_deferred_maintenance_sync_retains_boot_site_affinity(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions']   = array(
+		$GLOBALS['a8csp_bgje_test_did_actions']   = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
-		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
-		$GLOBALS['a8csp_bgte_test_is_multisite']  = true;
+		$GLOBALS['a8csp_bgje_test_doing_actions'] = array( 'init' );
+		$GLOBALS['a8csp_bgje_test_is_multisite']  = true;
 
 		$component = new Component();
 		$component->initialize();
@@ -298,16 +298,16 @@ final class EngineComponentTest extends TestCase {
 		$registrations = \array_values( \array_filter( $this->action_registrations(), static fn ( array $registration ): bool => 'wp_loaded' === $registration['hook_name'] ) );
 		self::assertCount( 1, $registrations );
 
-		$GLOBALS['a8csp_bgte_test_blog_id'] = 2;
+		$GLOBALS['a8csp_bgje_test_blog_id'] = 2;
 		$registrations[0]['callback']();
 
-		self::assertSame( array( 1 ), $GLOBALS['a8csp_bgte_test_blog_switch_calls'] );
-		self::assertSame( array( 2 ), $GLOBALS['a8csp_bgte_test_blog_restore_calls'] );
-		self::assertSame( 2, $GLOBALS['a8csp_bgte_test_blog_id'] );
+		self::assertSame( array( 1 ), $GLOBALS['a8csp_bgje_test_blog_switch_calls'] );
+		self::assertSame( array( 2 ), $GLOBALS['a8csp_bgje_test_blog_restore_calls'] );
+		self::assertSame( 2, $GLOBALS['a8csp_bgje_test_blog_id'] );
 	}
 
 	/**
-	 * The composed WP-Cron graph accepts task, batch, and schedule operations through a8csp_bgte().
+	 * The composed WP-Cron graph accepts job, chunked job, and schedule operations through a8csp_bgje().
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -315,7 +315,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_front_door_flows_through_the_live_wp_cron_graph(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
@@ -323,13 +323,13 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = \a8csp_bgte( 'consumer-plugin' );
+		$client = \a8csp_bgje( 'consumer-plugin' );
 		self::assertInstanceOf( Client::class, $client );
-		$client->tasks()->register( new RecordingTask( 'refresh' ) );
-		$client->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+		$client->jobs()->register( new RecordingJob( 'refresh' ) );
+		$client->chunked_jobs()->register( new RecordingChunkedJob( 'catalog-sync' ) );
 
-		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->batches()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 
 		$cron = \get_option( 'cron', array() );
@@ -347,7 +347,7 @@ final class EngineComponentTest extends TestCase {
 	 */
 	public function test_live_graph_prefers_action_scheduler_before_wp_cron(): void {
 		require_once \dirname( __DIR__ ) . '/as-function-stubs.php';
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'plugins_loaded'        => 1,
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
@@ -356,16 +356,16 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = \a8csp_bgte( 'consumer-plugin' );
-		$client->tasks()->register( new RecordingTask( 'preferred' ) );
-		$GLOBALS['a8csp_bgte_test_as_calls']   = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls'] = array();
+		$client = \a8csp_bgje( 'consumer-plugin' );
+		$client->jobs()->register( new RecordingJob( 'preferred' ) );
+		$GLOBALS['a8csp_bgje_test_as_calls']   = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls'] = array();
 
-		$result = $client->tasks()->enqueue( 'preferred' );
+		$result = $client->jobs()->enqueue( 'preferred' );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgte_test_as_calls'], 'function' ) );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cron_calls'] );
+		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgje_test_as_calls'], 'function' ) );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_cron_calls'] );
 	}
 
 	// endregion.
@@ -383,7 +383,7 @@ final class EngineComponentTest extends TestCase {
 	private function schedule_registry(): ?array {
 		$wpdb = $GLOBALS['wpdb'] ?? null;
 		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
-		$option_name = ScheduleRegistry::option_name( 'a8csp-bgte' );
+		$option_name = ScheduleRegistry::option_name( 'a8csp-jobs-engine' );
 		$raw         = $wpdb->rows[ $option_name ] ?? null;
 		if ( \is_string( $raw ) ) {
 			$registry = \maybe_unserialize( $raw );
@@ -407,7 +407,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}>
 	 */
 	private function action_registrations(): array {
-		return $this->registrations( 'a8csp_bgte_test_action_registrations' );
+		return $this->registrations( 'a8csp_bgje_test_action_registrations' );
 	}
 
 	/**
@@ -419,7 +419,7 @@ final class EngineComponentTest extends TestCase {
 	 * @return  list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}>
 	 */
 	private function filter_registrations(): array {
-		return $this->registrations( 'a8csp_bgte_test_filter_registrations' );
+		return $this->registrations( 'a8csp_bgje_test_filter_registrations' );
 	}
 
 	/**

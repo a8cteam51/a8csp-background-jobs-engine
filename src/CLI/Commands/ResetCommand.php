@@ -1,21 +1,21 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -48,7 +48,7 @@ final readonly class ResetCommand {
 		OverlapGuard::OPTION_PREFIX,
 		OccurrenceLease::OPTION_PREFIX,
 		CleanupIntents::OPTION_PREFIX,
-		'a8csp_bgte_maintenance_sweep',
+		'a8csp_bgje_maintenance_sweep',
 	);
 
 	/**
@@ -62,7 +62,7 @@ final readonly class ResetCommand {
 	private const array ACTION_HOOKS = array(
 		ActionDeliveries::START_HOOK,
 		ActionDeliveries::CONTINUE_HOOK,
-		ActionDeliveries::RUN_TASK_HOOK,
+		ActionDeliveries::RUN_JOB_HOOK,
 		ActionDeliveries::RUN_CHUNK_HOOK,
 		ActionDeliveries::CLEANUP_HOOK,
 		OccurrenceDelivery::SCHEDULE_HOOK,
@@ -86,8 +86,8 @@ final readonly class ResetCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks reset
-	 *     $ wp background-tasks reset --yes
+	 *     $ wp background-jobs reset
+	 *     $ wp background-jobs reset --yes
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -109,7 +109,7 @@ final readonly class ResetCommand {
 		$option_rows = self::runtime_option_rows();
 		$scheduler   = Component::get_scheduler();
 		if ( null === $scheduler ) {
-			ResetOutput::error( 'The background tasks scheduler is unavailable; run the command after plugins_loaded.' );
+			ResetOutput::error( 'The background jobs scheduler is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
@@ -165,7 +165,7 @@ final readonly class ResetCommand {
 		) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Reset accepts only --yes; use wp background-tasks reset [--yes].',
+				'message' => 'Reset accepts only --yes; use wp background-jobs reset [--yes].',
 			);
 		}
 

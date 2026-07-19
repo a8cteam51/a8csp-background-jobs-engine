@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 
 /**
  * Verifies declarative sync mutates only one owner's engine registration identities.
@@ -23,7 +23,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Internal occurrence hook owned by the engine. */
-	private const string SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
+	private const string SCHEDULE_HOOK = 'a8csp_jobs_engine/schedule_due';
 
 	/** Foreign WP-Cron hook outside the engine namespace. */
 	private const string FOREIGN_CRON_HOOK = 'third_party/integration/declarative_sync/foreign_cron';
@@ -38,7 +38,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	private const array FOREIGN_ACTION_ARGS = array( 'declarative-sync-foreign-action' );
 
 	/** Foreign Action Scheduler group outside every engine registration identity. */
-	private const string FOREIGN_ACTION_GROUP = 'a8csp-bgte-integration-declarative-sync-foreign';
+	private const string FOREIGN_ACTION_GROUP = 'a8csp-jobs-engine-integration-declarative-sync-foreign';
 
 	/** Owner isolated to orphan pruning. */
 	private const string ORPHAN_OWNER = 'integration-declarative-orphan';
@@ -52,8 +52,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	/** Owner-qualified identity isolated to duplicate recurring-chain repair. */
 	private const string DUPLICATE_IDENTITY = self::DUPLICATE_OWNER . ':recurring';
 
-	/** Target task isolated to duplicate recurring-chain repair. */
-	private const string DUPLICATE_TASK = 'integration-declarative-duplicate-task';
+	/** Target job isolated to duplicate recurring-chain repair. */
+	private const string DUPLICATE_JOB = 'integration-declarative-duplicate-job';
 
 	/** Owner isolated to identical redeclaration. */
 	private const string NOOP_OWNER = 'integration-declarative-noop';
@@ -152,8 +152,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 */
 	public function test_owner_sync_prunes_an_orphan_registration_and_occurrence(): void {
 		$this->expect_option( ScheduleRegistry::option_name( self::ORPHAN_OWNER ) );
-		$schedule_a = new Schedule( 'orphan-a', Recurrence::every( 300 ), 'integration-declarative-orphan-task-a' );
-		$schedule_b = new Schedule( 'orphan-b', Recurrence::every( 600 ), 'integration-declarative-orphan-task-b' );
+		$schedule_a = new Schedule( 'orphan-a', Recurrence::every( 300 ), 'integration-declarative-orphan-job-a' );
+		$schedule_b = new Schedule( 'orphan-b', Recurrence::every( 600 ), 'integration-declarative-orphan-job-b' );
 		$this->assert_sync_succeeds( self::ORPHAN_OWNER, array( $schedule_a, $schedule_b ) );
 		$before = $this->schedule_entries( self::ORPHAN_OWNER );
 		self::assertCount( 2, $before );
@@ -178,8 +178,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 */
 	public function test_fingerprint_change_reschedules_the_occurrence(): void {
 		$this->expect_option( ScheduleRegistry::option_name( self::FINGERPRINT_OWNER ) );
-		$original    = new Schedule( 'fingerprint', Recurrence::every( 300 ), 'integration-declarative-fingerprint-task', array( 'mode' => 'original' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 21 );
-		$replacement = new Schedule( 'fingerprint', Recurrence::every( 900 ), 'integration-declarative-fingerprint-task', array( 'mode' => 'replacement' ), OverlapPolicy::Replace, CatchUpPolicy::Skip, 22 );
+		$original    = new Schedule( 'fingerprint', Recurrence::every( 300 ), 'integration-declarative-fingerprint-job', array( 'mode' => 'original' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 21 );
+		$replacement = new Schedule( 'fingerprint', Recurrence::every( 900 ), 'integration-declarative-fingerprint-job', array( 'mode' => 'replacement' ), OverlapPolicy::Replace, CatchUpPolicy::Skip, 22 );
 		$this->assert_sync_succeeds( self::FINGERPRINT_OWNER, array( $original ) );
 		$before = $this->schedule_entry( $this->schedule_entries( self::FINGERPRINT_OWNER ), self::FINGERPRINT_OWNER . ':fingerprint' );
 		self::assertIsArray( $before );
@@ -210,7 +210,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_identical_redeclaration_is_an_exact_noop(): void {
 		$registry_option = ScheduleRegistry::option_name( self::NOOP_OWNER );
 		$this->expect_option( $registry_option );
-		$declaration = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-task', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
+		$declaration = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-job', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $declaration ) );
 		$registration_key  = self::NOOP_OWNER . ':noop';
 		$action_id         = $this->sole_pending_schedule_action_id( $registration_key );
@@ -219,7 +219,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertIsArray( $registry_snapshot );
 		$inspection_snapshot = $this->schedule_entries( self::NOOP_OWNER );
 
-		$identical = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-task', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
+		$identical = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-job', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $identical ) );
 
 		self::assertSame( $inspection_snapshot, $this->schedule_entries( self::NOOP_OWNER ) );
@@ -242,7 +242,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_sync_repairs_a_real_action_scheduler_duplicate_chain(): void {
 		$registry_option = ScheduleRegistry::option_name( self::DUPLICATE_OWNER );
 		$this->expect_option( $registry_option );
-		$schedule = new Schedule( 'recurring', Recurrence::every( 300 ), self::DUPLICATE_TASK, priority: 37 );
+		$schedule = new Schedule( 'recurring', Recurrence::every( 300 ), self::DUPLICATE_JOB, priority: 37 );
 		$this->assert_sync_succeeds( self::DUPLICATE_OWNER, array( $schedule ) );
 		self::assertCount( 1, $this->schedule_entries( self::DUPLICATE_OWNER ) );
 
@@ -253,7 +253,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 37 );
 		self::assertGreaterThan( 0, $gap_action_id );
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		$gap_callback_calls = 0;
 		$gap_status         = null;
 		$gap_visible        = null;
@@ -268,7 +268,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 			$gap_status  = $this->action_scheduler_store()->get_status( (string) $action_id );
 			$gap_visible = \as_has_scheduled_action( self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY );
 			$gap_entries = $this->schedule_entries( self::DUPLICATE_OWNER );
-			$gap_sync    = \a8csp_bgte( self::DUPLICATE_OWNER )->schedules()->sync( array( $schedule ) );
+			$gap_sync    = \a8csp_bgje( self::DUPLICATE_OWNER )->schedules()->sync( array( $schedule ) );
 		};
 		\add_action( 'action_scheduler_completed_action', $on_completed );
 		try {
@@ -338,8 +338,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 */
 	public function test_orphan_detection_is_scoped_to_the_synced_owner(): void {
 		$this->expect_option( ScheduleRegistry::option_name( self::SCOPED_OWNER_B ) );
-		$schedule_a = new Schedule( 'scoped-a', Recurrence::every( 360 ), 'integration-declarative-scoped-task-a' );
-		$schedule_b = new Schedule( 'scoped-b', Recurrence::every( 720 ), 'integration-declarative-scoped-task-b', array( 'owner' => 'b' ), OverlapPolicy::Skip, CatchUpPolicy::Skip, 64 );
+		$schedule_a = new Schedule( 'scoped-a', Recurrence::every( 360 ), 'integration-declarative-scoped-job-a' );
+		$schedule_b = new Schedule( 'scoped-b', Recurrence::every( 720 ), 'integration-declarative-scoped-job-b', array( 'owner' => 'b' ), OverlapPolicy::Skip, CatchUpPolicy::Skip, 64 );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_A, array( $schedule_a ) );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_B, array( $schedule_b ) );
 		$owner_b_snapshot = $this->schedule_entries( self::SCOPED_OWNER_B );
@@ -369,7 +369,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @phpstan-param list<Schedule> $schedules
 	 */
 	private function assert_sync_succeeds( string $owner, array $schedules ): void {
-		$result = \a8csp_bgte( $owner )->schedules()->sync( $schedules );
+		$result = \a8csp_bgje( $owner )->schedules()->sync( $schedules );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
 	}

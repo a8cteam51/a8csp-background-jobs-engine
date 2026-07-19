@@ -1,19 +1,19 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -55,42 +55,42 @@ final readonly class FailureLifecycle {
 	// region METHODS
 
 	/**
-	 * Applies the retry decision ladder after one task attempt fails.
+	 * Applies the retry decision ladder after one job attempt fails.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskInterface $task      Failed task contract.
-	 * @param   string        $task_name Complete owner-qualified task identity.
-	 * @param   string        $run_id    Run identifier.
-	 * @param   RunState      $state     Fenced running state.
-	 * @param   RunStore      $run_store Active-run store.
-	 * @param   \Throwable    $throwable Failed attempt detail.
+	 * @param   OneOffJobInterface $job      Failed job contract.
+	 * @param   string             $job_name Complete owner-qualified job identity.
+	 * @param   string             $run_id    Run identifier.
+	 * @param   RunState           $state     Fenced running state.
+	 * @param   RunStore           $run_store Active-run store.
+	 * @param   \Throwable         $throwable Failed attempt detail.
 	 *
 	 * @return  void
 	 */
-	public function handle_task_failure( TaskInterface $task, string $task_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
-		$this->handle_failure( 'Task', $task, $task_name, $run_id, $state, $run_store, $throwable );
+	public function handle_job_failure( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
+		$this->handle_failure( 'Job', $job, $job_name, $run_id, $state, $run_store, $throwable );
 	}
 
 	/**
-	 * Applies the retry decision ladder after one batch chunk attempt fails.
+	 * Applies the retry decision ladder after one chunked job chunk attempt fails.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface          $batch      Failed batch contract.
-	 * @param   string                  $batch_name Complete owner-qualified batch identity.
+	 * @param   ChunkedJobInterface     $chunked_job      Failed chunked job contract.
+	 * @param   string                  $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   RunState                $state      Fenced running state.
 	 * @param   RunStore                $run_store  Active-run store.
 	 * @param   \Throwable              $throwable  Failed attempt detail.
-	 * @param   array<array-key, mixed> $chunk_args Batch chunk arguments.
+	 * @param   array<array-key, mixed> $chunk_args Chunked Job chunk arguments.
 	 *
 	 * @return  void
 	 */
-	public function handle_batch_failure( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, array $chunk_args ): void {
-		$this->handle_failure( 'Batch', $batch, $batch_name, $run_id, $state, $run_store, $throwable, $chunk_args );
+	public function handle_chunked_job_failure( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, array $chunk_args ): void {
+		$this->handle_failure( 'ChunkedJob', $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable, $chunk_args );
 	}
 
 	/**
@@ -99,18 +99,18 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'               $work_type  Work contract type selected by the typed delivery path.
-	 * @param   TaskInterface|BatchInterface $contract   Failed work contract.
-	 * @param   string                       $identity   Complete owner-qualified work identity.
-	 * @param   string                       $run_id     Run identifier.
-	 * @param   RunState                     $state      Fenced running state.
-	 * @param   RunStore                     $run_store  Active-run store.
-	 * @param   \Throwable                   $throwable  Failed attempt detail.
-	 * @param   array<array-key, mixed>|null $chunk_args Batch chunk arguments, or null for a task.
+	 * @param   'Job'|'ChunkedJob'                     $work_type  Work contract type selected by the typed delivery path.
+	 * @param   OneOffJobInterface|ChunkedJobInterface $contract   Failed work contract.
+	 * @param   string                                 $identity   Complete owner-qualified work identity.
+	 * @param   string                                 $run_id     Run identifier.
+	 * @param   RunState                               $state      Fenced running state.
+	 * @param   RunStore                               $run_store  Active-run store.
+	 * @param   \Throwable                             $throwable  Failed attempt detail.
+	 * @param   array<array-key, mixed>|null           $chunk_args Chunked Job chunk arguments, or null for a job.
 	 *
 	 * @return  void
 	 */
-	private function handle_failure( string $work_type, TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
+	private function handle_failure( string $work_type, OneOffJobInterface|ChunkedJobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -121,7 +121,7 @@ final readonly class FailureLifecycle {
 		}
 
 		$attempts_used = $state->failed_attempts + 1;
-		$error         = 'Batch' === $work_type && $throwable instanceof InvalidBatchChunkException
+		$error         = 'ChunkedJob' === $work_type && $throwable instanceof InvalidChunkException
 			? new EngineError( $throwable->getMessage(), \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
@@ -169,28 +169,28 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'               $work_type     Work contract type selected by the typed delivery path.
-	 * @param   TaskInterface|BatchInterface $contract      Failed work contract.
-	 * @param   string                       $identity      Complete owner-qualified work identity.
-	 * @param   string                       $run_id        Run identifier.
-	 * @param   RunState                     $state         Fenced running state.
-	 * @param   RunStore                     $run_store     Active-run store.
-	 * @param   EngineError                  $error         Terminal failure detail.
-	 * @param   int                          $attempts_used Attempts consumed by the invocation.
-	 * @param   RunFailureStage              $stage         Terminalization stage.
-	 * @param   ApiErrorCode                 $code          Machine-readable cause classification.
-	 * @param   array<array-key, mixed>|null $chunk_args    Batch chunk arguments, or null for a task.
+	 * @param   'Job'|'ChunkedJob'                     $work_type     Work contract type selected by the typed delivery path.
+	 * @param   OneOffJobInterface|ChunkedJobInterface $contract      Failed work contract.
+	 * @param   string                                 $identity      Complete owner-qualified work identity.
+	 * @param   string                                 $run_id        Run identifier.
+	 * @param   RunState                               $state         Fenced running state.
+	 * @param   RunStore                               $run_store     Active-run store.
+	 * @param   EngineError                            $error         Terminal failure detail.
+	 * @param   int                                    $attempts_used Attempts consumed by the invocation.
+	 * @param   RunFailureStage                        $stage         Terminalization stage.
+	 * @param   ApiErrorCode                           $code          Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null           $chunk_args    Chunked Job chunk arguments, or null for a job.
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( string $work_type, TaskInterface|BatchInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
-		if ( 'Batch' === $work_type && $contract instanceof BatchInterface ) {
-			$this->terminal_transitions->fail_batch( $contract, $identity, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
+	private function fail_terminally( string $work_type, OneOffJobInterface|ChunkedJobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
+		if ( 'ChunkedJob' === $work_type && $contract instanceof ChunkedJobInterface ) {
+			$this->terminal_transitions->fail_chunked_job( $contract, $identity, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
 
 			return;
 		}
 
-		$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
+		$this->terminal_transitions->fail_job( $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
 	}
 
 	/**
@@ -199,7 +199,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity        Complete owner-qualified task or batch identity.
+	 * @param   string      $identity        Complete owner-qualified job or chunked job identity.
 	 * @param   RetryPolicy $contract_policy Policy supplied by the work contract.
 	 *
 	 * @return  RetryPolicy
@@ -215,7 +215,7 @@ final readonly class FailureLifecycle {
 		 *
 		 * @param   RetryPolicy $contract_policy Retry policy supplied by the work contract.
 		 */
-		$filtered_policy = \apply_filters( 'a8csp_background_tasks/retry_policy/' . $identity, $contract_policy );
+		$filtered_policy = \apply_filters( 'a8csp_jobs_engine/retry_policy/' . $identity, $contract_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
 		}
@@ -237,14 +237,14 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     Exact persisted state before the retry transition.
-	 * @param   RunStore       $run_store Active-run store.
-	 * @param   RetryPolicy    $policy    Resolved retry policy.
-	 * @param   int            $attempt   Consumed-attempt count.
-	 * @param   EngineError    $error     Failed-attempt detail.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string             $run_id    Run identifier.
+	 * @param   RunState           $state     Exact persisted state before the retry transition.
+	 * @param   RunStore           $run_store Active-run store.
+	 * @param   RetryPolicy        $policy    Resolved retry policy.
+	 * @param   int                $attempt   Consumed-attempt count.
+	 * @param   EngineError        $error     Failed-attempt detail.
 	 *
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ApiErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
@@ -276,7 +276,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::single( 'run', $fire_at, 10 ) );
+			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( 'run', $fire_at, 10 ) );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -289,7 +289,7 @@ final readonly class FailureLifecycle {
 		try {
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 		} catch ( \Throwable $throwable ) {
-			$context_name = \strtolower( $work_type ) . '_name';
+			$context_name = ( 'Job' === $work_type ? 'job' : 'chunked_job' ) . '_name';
 			$this->logger->warning(
 				'Retry state could not be persisted; the reconciliation sweep retains the run until storage recovers.',
 				array(
@@ -322,7 +322,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$scheduled = $this->scheduler->schedule_single( 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task', $fire_at, array( $identity, $run_id, $state->action_seq ), $identity . '|' . $run_id, 10 );
+			$scheduled = $this->scheduler->schedule_single( 'ChunkedJob' === $work_type ? 'a8csp_jobs_engine/run_chunk' : 'a8csp_jobs_engine/run_job', $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,
@@ -363,7 +363,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempt    One-indexed number of the failed attempt.
@@ -386,7 +386,7 @@ final readonly class FailureLifecycle {
 			 * @param   int                     $attempt    One-indexed number of the failed attempt.
 			 * @param   int                     $delay      Delay before the next attempt in seconds.
 			 */
-			\do_action( 'a8csp_background_tasks/retry_scheduled/' . $identity, $run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_jobs_engine/retry_scheduled/' . $identity, $run_id, $start_args, $attempt, $delay );
 		} finally {
 			/**
 			 * Fires after the identity-specific retry-scheduled hook.
@@ -394,13 +394,13 @@ final readonly class FailureLifecycle {
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+			 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
 			 * @param   string                  $run_id     Run identifier.
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 			 * @param   int                     $attempt    One-indexed number of the failed attempt.
 			 * @param   int                     $delay      Delay before the next attempt in seconds.
 			 */
-			\do_action( 'a8csp_background_tasks/retry_scheduled', $identity, $run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_jobs_engine/retry_scheduled', $identity, $run_id, $start_args, $attempt, $delay );
 		}
 	}
 

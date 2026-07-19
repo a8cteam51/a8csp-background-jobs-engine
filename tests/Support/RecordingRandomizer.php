@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
 
 /**
  * Returns one deterministic integer while recording requested boundaries.

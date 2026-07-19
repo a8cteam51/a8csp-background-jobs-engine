@@ -1,16 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\ResetCommand;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\RunsCommand;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands\SchedulesCommand;
-use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
+use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Registers the background-task commands only inside WP-CLI.
+ * Registers the background-job commands only inside WP-CLI.
  *
  * @internal
  *
@@ -44,9 +44,9 @@ final class Component extends AbstractComponent {
 	#[\Override]
 	public function register_hooks(): void {
 		// The last registration supplies the namespace description, so the inspection surface registers last.
-		\WP_CLI::add_command( 'background-tasks', SchedulesCommand::class );
-		\WP_CLI::add_command( 'background-tasks', ResetCommand::class );
-		\WP_CLI::add_command( 'background-tasks', RunsCommand::class );
+		\WP_CLI::add_command( 'background-jobs', SchedulesCommand::class );
+		\WP_CLI::add_command( 'background-jobs', ResetCommand::class );
+		\WP_CLI::add_command( 'background-jobs', RunsCommand::class );
 	}
 
 	// endregion

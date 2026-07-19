@@ -7,7 +7,7 @@
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
-				<element value="a8csp-background-tasks-engine"/>
+				<element value="a8csp-background-jobs-engine"/>
 			</property>
 		</properties>
 	</rule>
@@ -16,9 +16,9 @@
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="a8csp_background_tasks"/>
-				<element value="a8csp_bgte"/>
-				<element value="A8C\SpecialProjects\BackgroundTasksEngine"/>
+				<element value="a8csp_jobs_engine"/>
+				<element value="a8csp_bgje"/>
+				<element value="A8C\SpecialProjects\BackgroundJobsEngine"/>
 			</property>
 		</properties>
 	</rule>

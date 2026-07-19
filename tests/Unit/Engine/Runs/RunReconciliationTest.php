@@ -1,47 +1,47 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceLockSweep;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\MaintenanceLockSweep;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -60,7 +60,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunReconciliation::class )]
 #[UsesClass( Dispatcher::class )]
-#[UsesClass( MaintenanceTask::class )]
+#[UsesClass( MaintenanceJob::class )]
 #[UsesClass( MaintenanceLockSweep::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( OptionRows::class )]
@@ -68,25 +68,25 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunFailure::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( LifecycleEffects::class )]
-#[UsesClass( WorkRegistry::class )]
+#[UsesClass( JobRegistry::class )]
 final class RunReconciliationTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const array ARGS       = array( 'site_id' => 7 );
 	private const string ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
 	private const string IDENTITY  = self::OWNER . ':' . self::NAME;
-	private const string NAME      = 'crashed-task';
+	private const string NAME      = 'crashed-job';
 	private const int NOW          = 1_700_000_000;
 	private const string OWNER     = 'runs-tests';
 	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
-	private WorkRegistry $work;
+	private JobRegistry $work;
 	private RecordingBackend $backend;
 	private Dispatcher $dispatcher;
 	private ActionDeliveries $lifecycle_deliveries;
 	private RecordingLogger $logger;
-	private MaintenanceTask $maintenance;
+	private MaintenanceJob $maintenance;
 	private StoreFactory $stores;
 	private LifecycleEffects $terminal_effects;
 	private RunTransitions $terminal_transitions;
@@ -115,7 +115,7 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Constructs one maintenance task over the real orchestration stores and lock guard.
+	 * Constructs one maintenance job over the real orchestration stores and lock guard.
 	 *
 	 * @return  void
 	 */
@@ -123,27 +123,27 @@ final class RunReconciliationTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']               = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']       = array();
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']         = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations']  = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']         = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']      = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']               = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                 = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$GLOBALS['a8csp_bgje_test_options']               = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']       = array();
+		$GLOBALS['a8csp_bgje_test_update_option_results'] = array();
+		$GLOBALS['a8csp_bgje_test_update_option_values']  = array();
+		$GLOBALS['a8csp_bgje_test_delete_option_results'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']         = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations']  = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']         = array();
+		$GLOBALS['a8csp_bgje_test_action_throwables']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events']      = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']               = 1;
+		$GLOBALS['a8csp_bgje_test_cache']                 = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']           = array();
+		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock  = new FixedClock( self::NOW );
-		$this->work   = new WorkRegistry();
+		$this->work   = new JobRegistry();
 		$this->logger = new RecordingLogger();
 		$this->wpdb   = new WpdbLockSpy();
-		$this->work->register_task( self::IDENTITY, new RecordingTask( self::NAME ) );
+		$this->work->register_job( self::IDENTITY, new RecordingJob( self::NAME ) );
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
@@ -157,7 +157,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->dispatcher           = new Dispatcher( $this->work, $this->backend, $guard, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->work, $this->backend );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
-		$this->maintenance          = new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
+		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
 	// endregion.
@@ -165,11 +165,11 @@ final class RunReconciliationTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The maintenance task exposes one stable owner-local task name.
+	 * The maintenance job exposes one stable owner-local job name.
 	 *
 	 * @return  void
 	 */
-	public function test_task_name_is_owner_local(): void {
+	public function test_job_name_is_owner_local(): void {
 		self::assertSame( 'maintenance', $this->maintenance->get_name() );
 	}
 
@@ -195,7 +195,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_deletes_a_stale_orphaned_lock(): void {
-		$orphan_name = self::identity( 'orphan-task' );
+		$orphan_name = self::identity( 'orphan-job' );
 		$lock_name   = OverlapGuard::OPTION_PREFIX . $orphan_name . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
@@ -213,7 +213,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_leaves_a_fresh_orphaned_lock_untouched(): void {
-		$lock_name = OverlapGuard::OPTION_PREFIX . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
+		$lock_name = OverlapGuard::OPTION_PREFIX . self::identity( 'orphan-job' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW );
 
 		$this->maintenance->handle( array() );
@@ -234,7 +234,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $state );
 		$state['executing']                  = true;
 		$options[ $this->run_option_name() ] = $state;
-		$GLOBALS['a8csp_bgte_test_options']  = $options;
+		$GLOBALS['a8csp_bgje_test_options']  = $options;
 		$this->clock->timestamp              = self::NOW + 901;
 
 		$this->maintenance->handle( array() );
@@ -259,17 +259,17 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A stale committed batch continuation is redelivered and advances through one chunk without failure.
+	 * A stale committed chunked job continuation is redelivered and advances through one chunk without failure.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_redelivers_a_stale_pending_batch_continue_and_processes_its_chunk(): void {
-		$name         = self::identity( 'redelivered-batch' );
-		$chunk        = array( 'page' => 1 );
-		$batch        = new RecordingBatch( 'redelivered-batch' );
-		$batch->queue = array( $chunk );
-		$this->work->register_batch( $name, $batch );
-		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+	public function test_sweep_redelivers_a_stale_pending_chunked_job_continue_and_processes_its_chunk(): void {
+		$name               = self::identity( 'redelivered-chunked-job' );
+		$chunk              = array( 'page' => 1 );
+		$chunked_job        = new RecordingChunkedJob( 'redelivered-chunked-job' );
+		$chunked_job->queue = array( $chunk );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
 		$this->backend->calls   = array();
@@ -282,7 +282,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_background_tasks/continue_batch',
+						'hook'     => 'a8csp_jobs_engine/continue_chunked_job',
 						'args'     => array( $name, self::RUN_ID, 2 ),
 						'group'    => $name . '|' . self::RUN_ID,
 						'priority' => 10,
@@ -294,31 +294,31 @@ final class RunReconciliationTest extends TestCase {
 		$state = $this->run_state( $name );
 		self::assertSame( 'running', $state['status'] ?? null );
 		self::assertFalse( $state['executing'] ?? true );
-		self::assertSame( 2, $state['action_seq'] ?? null );
+		self::assertSame( 2, $state['action_sequence'] ?? null );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $chunked_job->failed_calls );
 
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
 		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
 
-		self::assertCount( 1, $batch->process_calls );
-		self::assertSame( $chunk, $batch->process_calls[0]['chunk_args'] ?? null );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertCount( 1, $chunked_job->process_calls );
+		self::assertSame( $chunk, $chunked_job->process_calls[0]['chunk_args'] ?? null );
+		self::assertSame( array(), $chunked_job->failed_calls );
 	}
 
 	/**
-	 * A pending batch-start descriptor preserves the scheduler request derived from either policy.
+	 * A pending chunked-job-start descriptor preserves the scheduler request derived from either policy.
 	 *
 	 * @param   string $existing_value Existing-run policy value used for admission.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'batch_start_redelivery_policies' )]
-	public function test_sweep_redelivers_a_stale_pending_batch_start_for_both_existing_run_policies( string $existing_value ): void {
-		$name  = self::identity( 'redelivered-start-batch' );
-		$batch = new RecordingBatch( 'redelivered-start-batch' );
-		$this->work->register_batch( $name, $batch );
-		$result = $this->dispatcher->start_batch( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
+	#[DataProvider( 'chunked_job_start_redelivery_policies' )]
+	public function test_sweep_redelivers_a_stale_pending_chunked_job_start_for_both_existing_run_policies( string $existing_value ): void {
+		$name        = self::identity( 'redelivered-start-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'redelivered-start-chunked-job' );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame(
@@ -340,7 +340,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_background_tasks/start_batch',
+						'hook'     => 'a8csp_jobs_engine/start_chunked_job',
 						'args'     => array( $name, self::RUN_ID, 1 ),
 						'group'    => $name . '|' . self::RUN_ID,
 						'priority' => 23,
@@ -350,15 +350,15 @@ final class RunReconciliationTest extends TestCase {
 			$this->backend->calls
 		);
 		self::assertSame( 'running', $this->run_state( $name )['status'] ?? null );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $chunked_job->failed_calls );
 	}
 
 	/**
-	 * Supplies every existing-run policy that can schedule a batch start.
+	 * Supplies every existing-run policy that can schedule a chunked job start.
 	 *
 	 * @return  array<string, array{existing_value: string}>
 	 */
-	public static function batch_start_redelivery_policies(): array {
+	public static function chunked_job_start_redelivery_policies(): array {
 		return array(
 			'reject'  => array(
 				'existing_value' => 'reject',
@@ -370,12 +370,12 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A stale schedule-driven task descriptor preserves its priority.
+	 * A stale schedule-driven job descriptor preserves its priority.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_redelivers_a_stale_pending_task_action(): void {
-		$result = $this->dispatcher->dispatch_scheduled_task( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, priority: 23 );
+	public function test_sweep_redelivers_a_stale_pending_job_action(): void {
+		$result = $this->dispatcher->dispatch_scheduled_job( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
@@ -387,7 +387,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_background_tasks/run_task',
+						'hook'     => 'a8csp_jobs_engine/run_job',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'priority' => 23,
@@ -401,11 +401,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A missing lock is reconstructed for the retained generation before its task action is redelivered.
+	 * A missing lock is reconstructed for the retained generation before its job action is redelivered.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_restores_a_missing_lock_before_redelivering_a_stale_pending_task(): void {
+	public function test_sweep_restores_a_missing_lock_before_redelivering_a_stale_pending_job(): void {
 		$this->create_running_run();
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 		$this->backend->calls   = array();
@@ -426,7 +426,7 @@ final class RunReconciliationTest extends TestCase {
 			\maybe_unserialize( $lock_raw )
 		);
 
-		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_job_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
@@ -437,14 +437,14 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_allows_a_redelivered_task_to_complete_during_scheduler_acceptance(): void {
+	public function test_sweep_allows_a_redelivered_job_to_complete_during_scheduler_acceptance(): void {
 		$this->create_running_run();
 		$this->clock->timestamp = self::NOW + 901;
 		$this->backend->calls   = array();
 		$this->backend->before_next(
 			'enqueue_async',
 			function (): void {
-				$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+				$this->lifecycle_deliveries->handle_run_job_action( self::IDENTITY, self::RUN_ID, 1 );
 			}
 		);
 
@@ -457,8 +457,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->assert_history_status( $options, 'completed' );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . self::IDENTITY,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -493,7 +493,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run_task',
+						'hook'      => 'a8csp_jobs_engine/run_job',
 						'timestamp' => self::NOW + 2_101,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'     => self::IDENTITY . '|' . self::RUN_ID,
@@ -509,7 +509,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $restored_lock );
 		self::assertSame( self::NOW, $restored_lock['heartbeat_at'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_job_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
@@ -549,7 +549,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp_background_tasks/run_task',
+						'hook'      => 'a8csp_jobs_engine/run_job',
 						'timestamp' => $expected_fire_at,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'     => self::IDENTITY . '|' . self::RUN_ID,
@@ -586,10 +586,10 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_preserves_a_stale_pending_run_when_redelivery_is_rejected(): void {
-		$name  = self::identity( 'redelivery-rejection-batch' );
-		$batch = new RecordingBatch( 'redelivery-rejection-batch' );
-		$this->work->register_batch( $name, $batch );
-		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+		$name        = self::identity( 'redelivery-rejection-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'redelivery-rejection-chunked-job' );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -603,7 +603,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->results['enqueue_async']  = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before redelivering.', array( 'client_payload' => self::ARGS ) ) );
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 
 		$this->maintenance->handle( array() );
 
@@ -619,7 +619,7 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		self::assertArrayHasKey( $this->run_option_name( $name ), $options );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $options );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $chunked_job->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -636,7 +636,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $rejected_call, $this->backend->calls[1] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $chunked_job->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 	}
 
@@ -679,8 +679,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -792,12 +792,12 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_two_sweeps_redeliver_twice_but_duplicate_delivery_processes_once(): void {
-		$name         = self::identity( 'idempotent-batch' );
-		$chunk        = array( 'page' => 1 );
-		$batch        = new RecordingBatch( 'idempotent-batch' );
-		$batch->queue = array( $chunk );
-		$this->work->register_batch( $name, $batch );
-		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+		$name               = self::identity( 'idempotent-chunked-job' );
+		$chunk              = array( 'page' => 1 );
+		$chunked_job        = new RecordingChunkedJob( 'idempotent-chunked-job' );
+		$chunked_job->queue = array( $chunk );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
@@ -810,82 +810,82 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
 		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
-		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( $name, self::RUN_ID, 3 ), $this->backend->calls[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
 		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
 
-		self::assertCount( 1, $batch->process_calls );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertCount( 1, $chunked_job->process_calls );
+		self::assertSame( array(), $chunked_job->failed_calls );
 	}
 
 	/**
-	 * A retained Batch run cannot be delivered through a Task that reused its identity.
+	 * A retained Chunked Job run cannot be delivered through a Job that reused its identity.
 	 *
 	 * @return  void
 	 */
-	public function test_pending_batch_redelivery_ignores_a_current_task_with_the_same_identity(): void {
+	public function test_pending_chunked_job_redelivery_ignores_a_current_job_with_the_same_identity(): void {
 		$chunk = array( 'page' => 1 );
-		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'ChunkedJob', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
-		$current_task = $this->work->task( self::IDENTITY );
-		self::assertInstanceOf( RecordingTask::class, $current_task );
+		$current_job = $this->work->job( self::IDENTITY );
+		self::assertInstanceOf( RecordingJob::class, $current_job );
 
 		$this->maintenance->handle( array() );
 
-		self::assertSame( 'a8csp_background_tasks/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_run_chunk_action( self::IDENTITY, self::RUN_ID, 1 );
 
-		self::assertSame( array(), $current_task->calls );
+		self::assertSame( array(), $current_job->calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $this->options() );
+		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $this->options() );
 		$record = $this->log_record(
 			'warning',
 			array(
-				'batch_name' => self::IDENTITY,
-				'run_id'     => self::RUN_ID,
+				'chunked_job_name' => self::IDENTITY,
+				'run_id'           => self::RUN_ID,
 			)
 		);
 		self::assertNotNull( $record );
-		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
+		self::assertSame( self::IDENTITY, $record['context']['chunked_job_name'] ?? null );
 	}
 
 	/**
-	 * A retained Task run cannot be delivered through a Batch that reused its identity.
+	 * A retained Job run cannot be delivered through a Chunked Job that reused its identity.
 	 *
 	 * @return  void
 	 */
-	public function test_pending_task_redelivery_ignores_a_current_batch_with_the_same_identity(): void {
-		$name          = self::identity( 'reused-as-batch' );
-		$current_batch = new RecordingBatch( 'reused-as-batch' );
-		$this->work->register_batch( $name, $current_batch );
-		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+	public function test_pending_job_redelivery_ignores_a_current_chunked_job_with_the_same_identity(): void {
+		$name                = self::identity( 'reused-as-chunked-job' );
+		$current_chunked_job = new RecordingChunkedJob( 'reused-as-chunked-job' );
+		$this->work->register_chunked_job( $name, $current_chunked_job );
+		$state = new RunState( status: RunStatus::Running, kind: 'Job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( $name, $state );
-		$this->put_lock( 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
+		$this->put_lock( 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
 
 		$this->maintenance->handle( array() );
 
-		self::assertSame( 'a8csp_background_tasks/run_task', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/run_job', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_task_action( $name, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_job_action( $name, self::RUN_ID, 1 );
 
-		self::assertSame( array(), $current_batch->process_calls );
+		self::assertSame( array(), $current_chunked_job->process_calls );
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $this->options() );
-		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $this->options() );
+		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . $name, $this->options() );
 		$record = $this->log_record(
 			'warning',
 			array(
-				'task_name' => $name,
-				'run_id'    => self::RUN_ID,
+				'job_name' => $name,
+				'run_id'   => self::RUN_ID,
 			)
 		);
 		self::assertNotNull( $record );
-		self::assertSame( $name, $record['context']['task_name'] ?? null );
+		self::assertSame( $name, $record['context']['job_name'] ?? null );
 	}
 
 	/**
@@ -903,19 +903,19 @@ final class RunReconciliationTest extends TestCase {
 		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock_raw );
 
-		$healthy_name  = self::identity( 'healthy-batch' );
-		$healthy_batch = new RecordingBatch( 'healthy-batch' );
-		$this->work->register_batch( $healthy_name, $healthy_batch );
-		$result = $this->dispatcher->start_batch( $healthy_name, self::ARGS );
+		$healthy_name        = self::identity( 'healthy-chunked-job' );
+		$healthy_chunked_job = new RecordingChunkedJob( 'healthy-chunked-job' );
+		$this->work->register_chunked_job( $healthy_name, $healthy_chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $healthy_name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->set_run_fields( $healthy_name, array( 'executing' => true ) );
-		unset( $this->wpdb->rows[ 'a8csp_bgte_overlap_lock_' . $healthy_name . '_' . self::ARGS_HASH ] );
+		unset( $this->wpdb->rows[ 'a8csp_bgje_overlap_lock_' . $healthy_name . '_' . self::ARGS_HASH ] );
 
 		$throwable = new \RuntimeException( 'Run staleness filter exploded.' );
 
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp_background_tasks/lock_staleness/' . self::IDENTITY => static function () use ( $throwable ): int {
+		$GLOBALS['a8csp_bgje_test_filter_values'] = array(
+			'a8csp_jobs_engine/lock_staleness/' . self::IDENTITY => static function () use ( $throwable ): int {
 				throw $throwable;
 			},
 		);
@@ -929,8 +929,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $run_raw, \maybe_serialize( $options[ $run_name ] ) );
 		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
 		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $healthy_name . '_' . self::RUN_ID, $options );
-		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $healthy_name, $options );
-		self::assertCount( 1, $healthy_batch->failed_calls );
+		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . $healthy_name, $options );
+		self::assertCount( 1, $healthy_chunked_job->failed_calls );
 		$diagnostic = $this->exception_diagnostic( $throwable );
 		self::assertSame( 'warning', $diagnostic['level'] ?? null );
 		self::assertSame(
@@ -961,8 +961,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$throwable = new \RuntimeException( 'Run continue-delay filter exploded.' );
 
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp_background_tasks/continue_delay' => static function ( int $delay, string $name, string $run_id ) use ( $throwable ): int {
+		$GLOBALS['a8csp_bgje_test_filter_values'] = array(
+			'a8csp_jobs_engine/continue_delay' => static function ( int $delay, string $name, string $run_id ) use ( $throwable ): int {
 				if ( self::IDENTITY === $name && self::RUN_ID === $run_id ) {
 					throw $throwable;
 				}
@@ -990,7 +990,7 @@ final class RunReconciliationTest extends TestCase {
 			$diagnostic['context']
 		);
 
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values'] = array();
 		$this->clock->timestamp                   = self::NOW + 901;
 
 		$this->maintenance->handle( array() );
@@ -1034,7 +1034,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_aborts_lock_reconciliation_when_a_run_read_fails(): void {
 		$this->create_running_run();
-		$orphan_lock = 'a8csp_bgte_overlap_lock_' . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
+		$orphan_lock = 'a8csp_bgje_overlap_lock_' . self::identity( 'orphan-job' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $orphan_lock, 'orphan-run', self::NOW - 901 );
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
@@ -1065,7 +1065,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_aborts_lock_reconciliation_when_run_enumeration_fails(): void {
-		$lock_name = 'a8csp_bgte_overlap_lock_' . self::identity( 'orphan-task' ) . '_' . \str_repeat( 'a', 64 );
+		$lock_name = 'a8csp_bgje_overlap_lock_' . self::identity( 'orphan-job' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, 'orphan-run', self::NOW - 901 );
 		$lock_raw = $this->wpdb->rows[ $lock_name ] ?? null;
 		self::assertIsString( $lock_raw );
@@ -1087,12 +1087,12 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A retained Batch run keeps Batch supersession routing after its identity is reused by a Task.
+	 * A retained Chunked Job run keeps Chunked Job supersession routing after its identity is reused by a Job.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_supersedes_a_stale_persisted_batch_whose_lock_has_transferred(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+	public function test_sweep_supersedes_a_stale_persisted_chunked_job_whose_lock_has_transferred(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'ChunkedJob', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->clock->timestamp = self::NOW + 901;
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
@@ -1105,12 +1105,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1129,13 +1129,13 @@ final class RunReconciliationTest extends TestCase {
 		$record = $this->log_record(
 			'info',
 			array(
-				'batch_name' => self::IDENTITY,
-				'run_id'     => self::RUN_ID,
+				'chunked_job_name' => self::IDENTITY,
+				'run_id'           => self::RUN_ID,
 			)
 		);
 		self::assertNotNull( $record );
-		self::assertSame( self::IDENTITY, $record['context']['batch_name'] ?? null );
-		self::assertArrayNotHasKey( 'task_name', $record['context'] );
+		self::assertSame( self::IDENTITY, $record['context']['chunked_job_name'] ?? null );
+		self::assertArrayNotHasKey( 'job_name', $record['context'] );
 	}
 
 	/**
@@ -1157,12 +1157,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1202,8 +1202,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$replacement_run_id = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW );
-		$GLOBALS['a8csp_bgte_test_filter_values'] = array(
-			'a8csp_background_tasks/continue_delay' => static function (
+		$GLOBALS['a8csp_bgje_test_filter_values'] = array(
+			'a8csp_jobs_engine/continue_delay' => static function (
 				int $delay,
 				string $name,
 				string $run_id
@@ -1228,8 +1228,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1253,7 +1253,7 @@ final class RunReconciliationTest extends TestCase {
 				self::assertIsArray( $state );
 				$state['heartbeat_at']               = $this->clock->timestamp;
 				$options[ $this->run_option_name() ] = $state;
-				$GLOBALS['a8csp_bgte_test_options']  = $options;
+				$GLOBALS['a8csp_bgje_test_options']  = $options;
 			}
 		);
 
@@ -1264,37 +1264,37 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $state );
 		self::assertSame( $this->clock->timestamp, $state['heartbeat_at'] ?? null );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame( array(), $history['terminal'] ?? null );
 		self::assertSame( array(), $this->fired_actions() );
 	}
 
 	/**
-	 * A crashed batch follows its registered `on_failed()` callback before common terminal cleanup.
+	 * A crashed chunked job follows its registered `on_failed()` callback before common terminal cleanup.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_terminalizes_a_running_batch_through_batch_failure_machinery(): void {
-		$name  = self::identity( 'crashed-batch' );
-		$batch = new RecordingBatch( 'crashed-batch' );
-		$this->work->register_batch( $name, $batch );
-		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+	public function test_sweep_terminalizes_a_running_chunked_job_through_chunked_job_failure_machinery(): void {
+		$name        = self::identity( 'crashed-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'crashed-chunked-job' );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
-		$lock_name = 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH;
+		$lock_name = 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH;
 		$this->set_run_fields( $name, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $lock_name ] );
 		$this->logger->records                    = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 
 		$this->maintenance->handle( array() );
 
-		self::assertCount( 1, $batch->failed_calls );
-		self::assertSame( self::RUN_ID, $batch->failed_calls[0]['run_id'] ?? null );
-		self::assertSame( self::ARGS, $batch->failed_calls[0]['start_args'] ?? null );
-		$failure = $batch->failed_calls[0]['error'];
+		self::assertCount( 1, $chunked_job->failed_calls );
+		self::assertSame( self::RUN_ID, $chunked_job->failed_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $chunked_job->failed_calls[0]['start_args'] ?? null );
+		$failure = $chunked_job->failed_calls[0]['error'];
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
@@ -1305,11 +1305,11 @@ final class RunReconciliationTest extends TestCase {
 		$actions = $this->fired_actions();
 		$options = $this->options();
 		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID, $options );
-		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . $name, $options );
+		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . $name, $options );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . $name,
-				'a8csp_background_tasks/failed',
+				'a8csp_jobs_engine/failed/' . $name,
+				'a8csp_jobs_engine/failed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -1318,12 +1318,12 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A retained Batch row keeps Batch crash routing after its identity is reused by a Task.
+	 * A retained Chunked Job row keeps Chunked Job crash routing after its identity is reused by a Job.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_routes_a_running_row_by_its_persisted_batch_kind(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'Batch', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
+	public function test_sweep_routes_a_running_row_by_its_persisted_chunked_job_kind(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'ChunkedJob', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
 
@@ -1332,11 +1332,11 @@ final class RunReconciliationTest extends TestCase {
 		$options                 = $this->options();
 		$options[ $option_name ] = $decoded;
 
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 
 		$this->maintenance->handle( array() );
 
-		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
+		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
 		$failed_entry = $failed[0] ?? null;
 		self::assertIsArray( $failed_entry );
@@ -1347,42 +1347,42 @@ final class RunReconciliationTest extends TestCase {
 			$this->log_record(
 				'warning',
 				array(
-					'batch_name' => self::IDENTITY,
-					'run_id'     => self::RUN_ID,
-					'status'     => 'failed',
+					'chunked_job_name' => self::IDENTITY,
+					'run_id'           => self::RUN_ID,
+					'status'           => 'failed',
 				)
 			)
 		);
 	}
 
 	/**
-	 * A throwing batch `on_failed()` callback cannot starve a later client's crash reconciliation.
+	 * A throwing chunked job `on_failed()` callback cannot starve a later client's crash reconciliation.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_continues_after_a_batch_on_failed_callback_throws(): void {
-		$throwing_name  = self::identity( 'broken-batch' );
-		$throwing_batch = new RecordingBatch( 'broken-batch' );
-		$this->work->register_batch( $throwing_name, $throwing_batch );
-		$result = $this->dispatcher->start_batch( $throwing_name, self::ARGS );
+	public function test_sweep_continues_after_a_chunked_job_on_failed_callback_throws(): void {
+		$throwing_name        = self::identity( 'broken-chunked-job' );
+		$throwing_chunked_job = new RecordingChunkedJob( 'broken-chunked-job' );
+		$this->work->register_chunked_job( $throwing_name, $throwing_chunked_job );
+		$result = $this->dispatcher->start_chunked_job( $throwing_name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->set_run_fields( $throwing_name, array( 'executing' => true ) );
-		unset( $this->wpdb->rows[ 'a8csp_bgte_overlap_lock_' . $throwing_name . '_' . self::ARGS_HASH ] );
+		unset( $this->wpdb->rows[ 'a8csp_bgje_overlap_lock_' . $throwing_name . '_' . self::ARGS_HASH ] );
 
 		$this->create_running_run();
 		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
-		$throwable                        = new \RuntimeException( 'Batch on_failed callback exploded.' );
-		$throwing_batch->failed_throwable = $throwable;
+		$throwable                              = new \RuntimeException( 'Chunked Job on_failed callback exploded.' );
+		$throwing_chunked_job->failed_throwable = $throwable;
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		self::assertCount( 1, $throwing_batch->failed_calls );
+		self::assertCount( 1, $throwing_chunked_job->failed_calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		self::assertArrayHasKey( 'a8csp_bgte_failed_runs_' . self::IDENTITY, $options );
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $options );
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1411,7 +1411,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_deletes_a_schema_invalid_lock_row(): void {
-		$corrupt_name = self::identity( 'corrupt-task' );
+		$corrupt_name = self::identity( 'corrupt-job' );
 		$lock_name    = OverlapGuard::OPTION_PREFIX . $corrupt_name . '_' . \str_repeat( 'b', 64 );
 		$this->wpdb->put( $lock_name, 'not-serialized' );
 
@@ -1471,12 +1471,12 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_reclaims_a_stale_lock_whose_run_row_is_corrupt(): void {
-		$name                               = self::identity( 'corrupt-task' );
+		$name                               = self::identity( 'corrupt-job' );
 		$args_hash                          = \str_repeat( 'b', 64 );
 		$run_name                           = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
 		$options                            = $this->options();
 		$options[ $run_name ]               = 'corrupt-run';
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 		$lock_name                          = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
@@ -1511,10 +1511,10 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_exact_deletes_an_unpaired_corrupt_run_row(): void {
-		$run_name                           = RunStore::OPTION_PREFIX . self::identity( 'corrupt-task' ) . '_' . self::RUN_ID;
+		$run_name                           = RunStore::OPTION_PREFIX . self::identity( 'corrupt-job' ) . '_' . self::RUN_ID;
 		$options                            = $this->options();
 		$options[ $run_name ]               = 'corrupt-run';
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 
 		$this->maintenance->handle( array() );
 
@@ -1523,11 +1523,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Task crash reconciliation saturates the failed-attempt count at PHP_INT_MAX.
+	 * Job crash reconciliation saturates the failed-attempt count at PHP_INT_MAX.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_saturates_task_failure_attempts_at_php_int_max(): void {
+	public function test_sweep_saturates_job_failure_attempts_at_php_int_max(): void {
 		$this->create_running_run();
 		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
 		$this->set_run_failed_attempts( $this->run_option_name(), \PHP_INT_MAX );
@@ -1535,7 +1535,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
-		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
+		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
 		$failure = $failed[0] ?? null;
 		self::assertIsArray( $failure );
@@ -1543,23 +1543,23 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Batch crash reconciliation saturates the failed-attempt count at PHP_INT_MAX.
+	 * Chunked Job crash reconciliation saturates the failed-attempt count at PHP_INT_MAX.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_saturates_batch_failure_attempts_at_php_int_max(): void {
-		$name = self::identity( 'crashed-batch' );
-		$this->work->register_batch( $name, new RecordingBatch( 'crashed-batch' ) );
-		$result = $this->dispatcher->start_batch( $name, self::ARGS );
+	public function test_sweep_saturates_chunked_job_failure_attempts_at_php_int_max(): void {
+		$name = self::identity( 'crashed-chunked-job' );
+		$this->work->register_chunked_job( $name, new RecordingChunkedJob( 'crashed-chunked-job' ) );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
-		$run_name = 'a8csp_bgte_run_' . $name . '_' . self::RUN_ID;
+		$run_name = 'a8csp_bgje_run_' . $name . '_' . self::RUN_ID;
 		$this->set_run_fields( $name, array( 'executing' => true ) );
 		$this->set_run_failed_attempts( $run_name, \PHP_INT_MAX );
-		unset( $this->wpdb->rows[ 'a8csp_bgte_overlap_lock_' . $name . '_' . self::ARGS_HASH ] );
+		unset( $this->wpdb->rows[ 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH ] );
 
 		$this->maintenance->handle( array() );
 
-		$failed = $this->options()[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . $name ] ?? null;
 		self::assertIsArray( $failed );
 		$failure = $failed[0] ?? null;
 		self::assertIsArray( $failure );
@@ -1583,17 +1583,17 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->lifecycle_deliveries->handle_run_task_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_run_job_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
-		$history = $this->options()[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $this->options()[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1610,33 +1610,33 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A failed batch left after its terminal claim replays every missing durable effect.
+	 * A failed chunked job left after its terminal claim replays every missing durable effect.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_replays_all_effects_for_an_old_failed_batch(): void {
-		$name  = self::identity( 'failed-batch' );
-		$batch = new RecordingBatch( 'failed-batch' );
-		$this->work->register_batch( $name, $batch );
+	public function test_sweep_replays_all_effects_for_an_old_failed_chunked_job(): void {
+		$name        = self::identity( 'failed-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'failed-chunked-job' );
+		$this->work->register_chunked_job( $name, $chunked_job );
 		$this->store_terminal_run(
 			$name,
 			'failed',
 			array(),
 			array(
 				'class'   => \RuntimeException::class,
-				'message' => 'Persisted batch failure.',
+				'message' => 'Persisted chunked job failure.',
 				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			3,
-			'Batch'
+			'ChunkedJob'
 		);
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
-		$failed = $options[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		$failed = $options[ 'a8csp_bgje_failed_runs_' . $name ] ?? null;
 		self::assertIsArray( $failed );
 		self::assertSame(
 			array(
@@ -1647,7 +1647,7 @@ final class RunReconciliationTest extends TestCase {
 					'attempts'   => 3,
 					'error'      => array(
 						'class'   => \RuntimeException::class,
-						'message' => 'Persisted batch failure.',
+						'message' => 'Persisted chunked job failure.',
 						'stage'   => RunFailureStage::Execution->value,
 						'code'    => ApiErrorCode::ExecutionFailed->value,
 					),
@@ -1655,22 +1655,22 @@ final class RunReconciliationTest extends TestCase {
 			),
 			$failed
 		);
-		self::assertCount( 1, $batch->failed_calls );
-		self::assertSame( self::RUN_ID, $batch->failed_calls[0]['run_id'] ?? null );
-		self::assertSame( self::ARGS, $batch->failed_calls[0]['start_args'] ?? null );
-		$failure = $batch->failed_calls[0]['error'];
+		self::assertCount( 1, $chunked_job->failed_calls );
+		self::assertSame( self::RUN_ID, $chunked_job->failed_calls[0]['run_id'] ?? null );
+		self::assertSame( self::ARGS, $chunked_job->failed_calls[0]['start_args'] ?? null );
+		$failure = $chunked_job->failed_calls[0]['error'];
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
 		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
-		self::assertSame( 'Persisted batch failure.', $failure->summary );
+		self::assertSame( 'Persisted chunked job failure.', $failure->summary );
 		self::assertNull( $failure->failed_chunk );
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . $name,
-				'a8csp_background_tasks/failed',
+				'a8csp_jobs_engine/failed/' . $name,
+				'a8csp_jobs_engine/failed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -1685,15 +1685,15 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_classifies_missing_persisted_failure_detail_as_storage_failure(): void {
-		$name  = self::identity( 'failed-without-detail' );
-		$batch = new RecordingBatch( 'failed-without-detail' );
-		$this->work->register_batch( $name, $batch );
-		$this->store_terminal_run( $name, 'failed', array(), null, 2, 'Batch' );
+		$name        = self::identity( 'failed-without-detail' );
+		$chunked_job = new RecordingChunkedJob( 'failed-without-detail' );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$this->store_terminal_run( $name, 'failed', array(), null, 2, 'ChunkedJob' );
 
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
-		$failed  = $options[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		$failed  = $options[ 'a8csp_bgje_failed_runs_' . $name ] ?? null;
 		self::assertIsArray( $failed );
 		$expected_summary = \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', self::RUN_ID, $name );
 		self::assertSame(
@@ -1713,8 +1713,8 @@ final class RunReconciliationTest extends TestCase {
 			),
 			$failed
 		);
-		self::assertCount( 1, $batch->failed_calls );
-		$failure = $batch->failed_calls[0]['error'];
+		self::assertCount( 1, $chunked_job->failed_calls );
+		$failure = $chunked_job->failed_calls[0]['error'];
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
@@ -1728,16 +1728,16 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Durable effect markers prevent a replay from repeating already completed batch effects.
+	 * Durable effect markers prevent a replay from repeating already completed chunked job effects.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_replays_only_missing_failed_batch_effects(): void {
-		$name  = self::identity( 'partially-effected-batch' );
-		$batch = new RecordingBatch( 'partially-effected-batch' );
-		$this->work->register_batch( $name, $batch );
-		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted batch failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted batch failure.', failed_chunk: null, ) ) );
-		$failed_option = 'a8csp_bgte_failed_runs_' . $name;
+	public function test_sweep_replays_only_missing_failed_chunked_job_effects(): void {
+		$name        = self::identity( 'partially-effected-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'partially-effected-chunked-job' );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', failed_chunk: null, ) ) );
+		$failed_option = 'a8csp_bgje_failed_runs_' . $name;
 		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
 		self::assertIsString( $failed_raw );
 		$this->store_terminal_run(
@@ -1746,18 +1746,18 @@ final class RunReconciliationTest extends TestCase {
 			array( 'retention', 'callbacks', 'hooks' ),
 			array(
 				'class'   => \RuntimeException::class,
-				'message' => 'Persisted batch failure.',
+				'message' => 'Persisted chunked job failure.',
 				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			2,
-			'Batch'
+			'ChunkedJob'
 		);
 
 		$this->maintenance->handle( array() );
 
 		self::assertSame( $failed_raw, $this->wpdb->rows[ $failed_option ] ?? null );
-		self::assertSame( array(), $batch->failed_calls );
+		self::assertSame( array(), $chunked_job->failed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
@@ -1770,24 +1770,24 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_failed_callback_race_stops_after_a_rival_finishes_the_terminal_row(): void {
-		$name  = self::identity( 'racing-failed-batch' );
-		$batch = new RecordingBatch( 'racing-failed-batch' );
+		$name        = self::identity( 'racing-failed-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'racing-failed-chunked-job' );
 		$this->store_terminal_run(
 			$name,
 			'failed',
 			array(),
 			array(
 				'class'   => \RuntimeException::class,
-				'message' => 'Persisted batch failure.',
+				'message' => 'Persisted chunked job failure.',
 				'stage'   => RunFailureStage::Execution->value,
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			2,
-			'Batch'
+			'ChunkedJob'
 		);
-		$run_store        = $this->stores->run_store( $name );
-		$rival_started    = false;
-		$batch->on_failed = function () use ( $batch, $name, $run_store, &$rival_started ): void {
+		$run_store              = $this->stores->run_store( $name );
+		$rival_started          = false;
+		$chunked_job->on_failed = function () use ( $chunked_job, $name, $run_store, &$rival_started ): void {
 			if ( $rival_started ) {
 				return;
 			}
@@ -1799,7 +1799,7 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsArray( $snapshot );
 			$state = $snapshot['state'];
 			self::assertNotNull( $state );
-			self::assertTrue( $this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch ) );
+			self::assertTrue( $this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'ChunkedJob', $chunked_job ) );
 
 			throw new \RuntimeException( 'Original callback worker resumed after rival cleanup.' );
 		};
@@ -1813,39 +1813,39 @@ final class RunReconciliationTest extends TestCase {
 		$caught = null;
 
 		try {
-			$this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Batch', $batch );
+			$this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'ChunkedJob', $chunked_job );
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
 
 		self::assertInstanceOf( \RuntimeException::class, $caught );
 		self::assertSame( 'Original callback worker resumed after rival cleanup.', $caught->getMessage() );
-		self::assertCount( 2, $batch->failed_calls );
+		self::assertCount( 2, $chunked_job->failed_calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . $name,
-				'a8csp_background_tasks/failed',
+				'a8csp_jobs_engine/failed/' . $name,
+				'a8csp_jobs_engine/failed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
-		$failed = $options[ 'a8csp_bgte_failed_runs_' . $name ] ?? null;
+		$failed = $options[ 'a8csp_bgje_failed_runs_' . $name ] ?? null;
 		self::assertIsArray( $failed );
 		self::assertCount( 1, $failed );
 		$this->assert_history_status( $options, 'failed', $name );
 	}
 
 	/**
-	 * A completed batch left after its terminal claim replays its callback, hooks, and history.
+	 * A completed chunked job left after its terminal claim replays its callback, hooks, and history.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_replays_all_effects_for_an_old_completed_batch(): void {
-		$name  = self::identity( 'completed-batch' );
-		$batch = new RecordingBatch( 'completed-batch' );
-		$this->work->register_batch( $name, $batch );
-		$this->store_terminal_run( $name, 'completed', kind: 'Batch' );
+	public function test_sweep_replays_all_effects_for_an_old_completed_chunked_job(): void {
+		$name        = self::identity( 'completed-chunked-job' );
+		$chunked_job = new RecordingChunkedJob( 'completed-chunked-job' );
+		$this->work->register_chunked_job( $name, $chunked_job );
+		$this->store_terminal_run( $name, 'completed', kind: 'ChunkedJob' );
 
 		$this->maintenance->handle( array() );
 
@@ -1858,12 +1858,12 @@ final class RunReconciliationTest extends TestCase {
 					'start_args' => self::ARGS,
 				),
 			),
-			$batch->completed_calls
+			$chunked_job->completed_calls
 		);
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . $name,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . $name,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1871,11 +1871,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A completed task left after its terminal claim replays hooks and history before deletion.
+	 * A completed job left after its terminal claim replays hooks and history before deletion.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_replays_all_effects_for_an_old_completed_task(): void {
+	public function test_sweep_replays_all_effects_for_an_old_completed_job(): void {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
 
 		$this->maintenance->handle( array() );
@@ -1885,8 +1885,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->assert_history_status( $options, 'completed' );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . self::IDENTITY,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1894,12 +1894,12 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A retained Batch row keeps Batch terminal routing after its identity is reused by a Task.
+	 * A retained Chunked Job row keeps Chunked Job terminal routing after its identity is reused by a Job.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_routes_a_terminal_row_by_its_persisted_batch_kind(): void {
-		$this->store_terminal_run( self::IDENTITY, 'completed', kind: 'Batch' );
+	public function test_sweep_routes_a_terminal_row_by_its_persisted_chunked_job_kind(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed', kind: 'ChunkedJob' );
 
 		$this->maintenance->handle( array() );
 
@@ -1908,9 +1908,9 @@ final class RunReconciliationTest extends TestCase {
 			$this->log_record(
 				'warning',
 				array(
-					'batch_name' => self::IDENTITY,
-					'run_id'     => self::RUN_ID,
-					'status'     => 'completed',
+					'chunked_job_name' => self::IDENTITY,
+					'run_id'           => self::RUN_ID,
+					'status'           => 'completed',
 				)
 			)
 		);
@@ -1921,9 +1921,9 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_skips_an_unregistered_batch_callback_and_finishes_the_row(): void {
+	public function test_sweep_skips_an_unregistered_chunked_job_callback_and_finishes_the_row(): void {
 		$name = self::identity( 'deactivated-client' );
-		$this->store_terminal_run( $name, 'completed', kind: 'Batch' );
+		$this->store_terminal_run( $name, 'completed', kind: 'ChunkedJob' );
 
 		$this->maintenance->handle( array() );
 
@@ -1932,8 +1932,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->assert_history_status( $options, 'completed', $name );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . $name,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . $name,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1941,9 +1941,9 @@ final class RunReconciliationTest extends TestCase {
 			$this->log_record(
 				'warning',
 				array(
-					'batch_name' => $name,
-					'run_id'     => self::RUN_ID,
-					'status'     => 'completed',
+					'chunked_job_name' => $name,
+					'run_id'           => self::RUN_ID,
+					'status'           => 'completed',
 				)
 			)
 		);
@@ -1964,7 +1964,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = $snapshot['state'];
 		self::assertNotNull( $state );
 
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Task' ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Job' ) );
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 
 		$this->maintenance->handle( array() );
@@ -1983,7 +1983,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
 		$options = $this->options();
 		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
-		$options[ 'a8csp_bgte_history_' . self::IDENTITY ] = array(
+		$options[ 'a8csp_bgje_history_' . self::IDENTITY ] = array(
 			'started'  => array( 'existing-run' ),
 			'terminal' => array(
 				array(
@@ -1993,7 +1993,7 @@ final class RunReconciliationTest extends TestCase {
 			),
 			'by_hash'  => array(),
 		);
-		$GLOBALS['a8csp_bgte_test_options']                = $options;
+		$GLOBALS['a8csp_bgje_test_options']                = $options;
 		$this->wpdb->script_result( 'delete', false );
 
 		$this->maintenance->handle( array() );
@@ -2002,7 +2002,7 @@ final class RunReconciliationTest extends TestCase {
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
 		self::assertSame( array( 'hooks', 'history' ), $state['effects'] ?? null );
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -2022,12 +2022,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'error', $this->logger->records[0]['level'] ?? null );
 
 		$this->logger->records                    = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 		$this->maintenance->handle( array() );
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		$terminal = $history['terminal'] ?? null;
 		self::assertIsArray( $terminal );
@@ -2053,7 +2053,7 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Creates one ordinary running task through the dispatcher.
+	 * Creates one ordinary running job through the dispatcher.
 	 *
 	 * @return  void
 	 */
@@ -2064,7 +2064,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 	}
 
 	/**
@@ -2072,12 +2072,12 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @param   array<array-key, mixed> $options Persisted options.
 	 * @param   string                  $status  Expected terminal status.
-	 * @param   string                  $name    Stable task or batch name.
+	 * @param   string                  $name    Stable job or chunked job name.
 	 *
 	 * @return  void
 	 */
 	private function assert_history_status( array $options, string $status, string $name = self::IDENTITY ): void {
-		$history = $options[ 'a8csp_bgte_history_' . $name ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . $name ] ?? null;
 		self::assertIsArray( $history );
 		$terminal = $history['terminal'] ?? null;
 		self::assertIsArray( $terminal );
@@ -2102,7 +2102,7 @@ final class RunReconciliationTest extends TestCase {
 		$options                 = $this->options();
 		$options[ $option_name ] = $decoded;
 
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 	}
 
 	/**
@@ -2110,9 +2110,9 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
-	 * @phpstan-param 'Task'|'Batch' $kind
+	 * @phpstan-param 'Job'|'ChunkedJob' $kind
 	 *
-	 * @param   string     $name            Stable task or batch name.
+	 * @param   string     $name            Stable job or chunked job name.
 	 * @param   string     $status          Terminal status value.
 	 * @param   array      $effects         Completed terminal effect keys.
 	 * @param   array|null $error           Persisted terminal failure detail.
@@ -2121,8 +2121,8 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'Task' ): void {
-		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_seq: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'Job' ): void {
+		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
 
@@ -2133,7 +2133,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$options[ $option_name ] = $decoded;
 
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 	}
 
 	/**
@@ -2151,7 +2151,7 @@ final class RunReconciliationTest extends TestCase {
 		} else {
 			self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		}
-		$failed = $options[ 'a8csp_bgte_failed_runs_' . self::IDENTITY ] ?? null;
+		$failed = $options[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
 		self::assertCount( 1, $failed );
 		$failed_entry = $failed[0] ?? null;
@@ -2168,8 +2168,8 @@ final class RunReconciliationTest extends TestCase {
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/failed/' . self::IDENTITY,
-				'a8csp_background_tasks/failed',
+				'a8csp_jobs_engine/failed/' . self::IDENTITY,
+				'a8csp_jobs_engine/failed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -2185,7 +2185,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $message, $failure->summary );
 		self::assertNull( $failure->failed_chunk );
 		self::assertSame( array( self::IDENTITY, ...( $actions[0]['args'] ?? array() ) ), $actions[1]['args'] ?? null );
-		$history = $options[ 'a8csp_bgte_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -2233,13 +2233,13 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $state );
 		$state['failed_attempts']           = $failed_attempts;
 		$options[ $option_name ]            = $state;
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 	}
 
 	/**
 	 * Replaces selected fields in one retained running state.
 	 *
-	 * @param   string                  $name   Stable task or batch name.
+	 * @param   string                  $name   Stable job or chunked job name.
 	 * @param   array<array-key, mixed> $fields Replacement fields.
 	 *
 	 * @return  void
@@ -2251,7 +2251,7 @@ final class RunReconciliationTest extends TestCase {
 	/**
 	 * Stores one decoded run-state fixture.
 	 *
-	 * @param   string                  $name  Stable task or batch name.
+	 * @param   string                  $name  Stable job or chunked job name.
 	 * @param   array<array-key, mixed> $state Persisted run state.
 	 *
 	 * @return  void
@@ -2259,13 +2259,13 @@ final class RunReconciliationTest extends TestCase {
 	private function replace_run_state( string $name, array $state ): void {
 		$options                                    = $this->options();
 		$options[ $this->run_option_name( $name ) ] = $state;
-		$GLOBALS['a8csp_bgte_test_options']         = $options;
+		$GLOBALS['a8csp_bgje_test_options']         = $options;
 	}
 
 	/**
 	 * Returns one retained decoded run state.
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Stable job or chunked job name.
 	 *
 	 * @return  array<array-key, mixed>
 	 */
@@ -2279,7 +2279,7 @@ final class RunReconciliationTest extends TestCase {
 	/**
 	 * Returns the deterministic run option name.
 	 *
-	 * @param   string $name Stable task or batch name.
+	 * @param   string $name Stable job or chunked job name.
 	 *
 	 * @return  string
 	 */
@@ -2344,7 +2344,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */
 	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
+		$actions = $GLOBALS['a8csp_bgje_test_fired_actions'] ?? null;
 		self::assertIsArray( $actions );
 		$typed = array();
 		foreach ( $actions as $action ) {
@@ -2368,14 +2368,14 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private function options(): array {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
 		self::assertIsArray( $options );
 		foreach ( $this->wpdb->rows as $name => $raw ) {
 			self::assertIsString( $name );
 			self::assertIsString( $raw );
 			if (
-				\str_starts_with( $name, 'a8csp_bgte_failed_runs_' )
-				|| \str_starts_with( $name, 'a8csp_bgte_history_' )
+				\str_starts_with( $name, 'a8csp_bgje_failed_runs_' )
+				|| \str_starts_with( $name, 'a8csp_bgje_history_' )
 			) {
 				$options[ $name ] = RawOptionDecoder::decode( $raw );
 			}

@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -44,18 +44,18 @@ final readonly class EngineError implements ErrorInterface {
 	// region METHODS
 
 	/**
-	 * Returns the public held-lock task failure without relying on message inspection.
+	 * Returns the public held-lock job failure without relying on message inspection.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $task_name      Complete owner-qualified task identity.
+	 * @param   string $job_name      Complete owner-qualified job identity.
 	 * @param   string $running_run_id Discoverable incumbent run identifier.
 	 *
 	 * @return  self
 	 */
-	public static function held_task( string $task_name, string $running_run_id ): self {
-		return new self( \sprintf( 'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.', $task_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+	public static function held_job( string $job_name, string $running_run_id ): self {
+		return new self( \sprintf( 'Job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.', $job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**
@@ -64,8 +64,8 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'                     $work_type Work contract type.
-	 * @param   string                             $identity  Complete owner-qualified task or batch identity.
+	 * @param   'Job'|'ChunkedJob'                 $work_type Work contract type.
+	 * @param   string                             $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
 	 * @param   SchedulingError                    $error     Scheduling failure.
 	 *
@@ -120,9 +120,9 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   \Throwable     $throwable Retry-policy provider or filter failure.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   \Throwable         $throwable Retry-policy provider or filter failure.
 	 *
 	 * @return  self
 	 */
@@ -138,9 +138,9 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   \Throwable     $throwable Retry-state construction failure.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   \Throwable         $throwable Retry-state construction failure.
 	 *
 	 * @return  self
 	 */
@@ -156,9 +156,9 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   \Throwable     $throwable Retry-policy, randomness, hook, or scheduler failure.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   \Throwable         $throwable Retry-policy, randomness, hook, or scheduler failure.
 	 *
 	 * @return  self
 	 */

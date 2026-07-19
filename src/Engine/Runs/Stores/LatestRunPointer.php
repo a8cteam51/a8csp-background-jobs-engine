@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -40,7 +40,7 @@ final readonly class LatestRunPointer {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_latest_run_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_latest_run_';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended write fails safely.
@@ -62,7 +62,7 @@ final readonly class LatestRunPointer {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $identity Complete owner-qualified task or batch identity.
+	 * @param   string     $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows $rows     Authoritative raw pointer-row I/O.
 	 */
 	public function __construct(

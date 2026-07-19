@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 
 /**
  * Verifies the requirements gate degrades gracefully on a below-floor runtime.
@@ -25,12 +25,12 @@ final class RequirementsCheckTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_requirements_gate_matches_runtime(): void {
-		$requirements = \constant( 'A8CSP_BGTE_REQUIREMENTS_RESULT' );
+		$requirements = \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' );
 		$wp_version   = \get_bloginfo( 'version' );
 
 		if ( \version_compare( $wp_version, '7.0', '<' ) ) {
 			self::assertInstanceOf( \WP_Error::class, $requirements );
-			self::assertFalse( \function_exists( 'a8csp_bgte_plugin' ) );
+			self::assertFalse( \function_exists( 'a8csp_bgje_plugin' ) );
 		} else {
 			self::assertTrue( $requirements );
 		}

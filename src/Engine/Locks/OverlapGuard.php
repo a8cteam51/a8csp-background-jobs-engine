@@ -1,15 +1,15 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -56,7 +56,7 @@ final readonly class OverlapGuard {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_overlap_lock_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_overlap_lock_';
 
 	// endregion
 
@@ -91,7 +91,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity         Complete owner-qualified task or batch identity.
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   string $run_id           Claiming run identifier.
 	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
@@ -143,7 +143,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
@@ -171,7 +171,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity           Complete owner-qualified task or batch identity.
+	 * @param   string $identity           Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash          Stable single-flight identity.
 	 * @param   string $replacement_run_id Replacement owner.
 	 *
@@ -200,7 +200,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity              Complete owner-qualified task or batch identity.
+	 * @param   string   $identity              Complete owner-qualified job or chunked job identity.
 	 * @param   string   $args_hash             Stable single-flight identity.
 	 * @param   string   $run_id                Owning run identifier.
 	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time. A future value marks
@@ -270,7 +270,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Owning run identifier.
 	 *
@@ -316,7 +316,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity         Complete owner-qualified task or batch identity.
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
 	 *
@@ -346,7 +346,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null, EngineError>
@@ -379,7 +379,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  MaintenanceLockSweep Actionable owner or malformed-row reclaim result.
@@ -410,7 +410,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity     Complete owner-qualified task or batch identity.
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $expected_raw Exact inspected row value.
 	 *
@@ -434,7 +434,7 @@ final readonly class OverlapGuard {
 	 */
 	public static function identity_from_option_name( string $option_name ): ?array {
 		$matched = \preg_match( '/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<args_hash>[a-f0-9]{64})\z/D', $option_name, $matches );
-		if ( 1 !== $matched || null === WorkIdentity::parts( $matches['name'] ) ) {
+		if ( 1 !== $matched || null === JobIdentity::parts( $matches['name'] ) ) {
 			return null;
 		}
 
@@ -452,7 +452,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity         Complete owner-qualified task or batch identity.
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   string $run_id           Expected lock owner.
 	 * @param   int    $staleness_window Resolved staleness window in seconds.
@@ -489,7 +489,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity         Complete owner-qualified task or batch identity.
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash        Stable single-flight identity.
 	 * @param   string $run_id           Expected lock owner.
 	 * @param   int    $staleness_window Resolved staleness window in seconds.
@@ -533,7 +533,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Expected lock owner.
 	 *
@@ -568,7 +568,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity     Complete owner-qualified task or batch identity.
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $run_id       Expected lock owner.
 	 * @param   int    $claimed_at   Original run claim timestamp.
@@ -646,7 +646,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity     Complete owner-qualified task or batch identity.
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $run_id       Expected lock owner.
 	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
@@ -691,7 +691,7 @@ final readonly class OverlapGuard {
 	 * @param   string                                                         $raw       Exact selected value.
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}|null $old_lock  Parsed stale row, or null when malformed.
 	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}      $new_lock  Replacement row.
-	 * @param   string                                                         $identity  Complete owner-qualified task or batch identity.
+	 * @param   string                                                         $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string                                                         $args_hash Stable single-flight identity.
 	 * @param   string                                                         $run_id    Claiming run identifier.
 	 *
@@ -735,7 +735,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  string

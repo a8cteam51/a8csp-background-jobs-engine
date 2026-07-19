@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

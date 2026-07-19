@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Client-ready permanent task failure without a custom exception hierarchy.
+ * Client-ready permanent job failure without a custom exception hierarchy.
  *
  * @since   1.0.0
  * @version 1.0.0

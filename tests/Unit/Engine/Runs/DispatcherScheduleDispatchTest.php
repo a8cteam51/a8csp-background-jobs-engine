@@ -1,26 +1,26 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -55,14 +55,14 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		EngineRig::bootstrap();
 	}
 
-	/** Boots one registered task against deterministic interface fakes. */
+	/** Boots one registered job against deterministic interface fakes. */
 	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
 		$this->rig    = EngineRig::set_up( self::NOW );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->client->tasks()->register( new RecordingTask( self::NAME ) );
+		$this->client->jobs()->register( new RecordingJob( self::NAME ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -129,7 +129,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
 				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::IDENTITY, $wpdb->rows );
-				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started' ) );
+				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
 			}
 		);
 
@@ -139,15 +139,15 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertTrue( $observed );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::IDENTITY,
-				'a8csp_background_tasks/started',
+				'a8csp_jobs_engine/started/' . self::IDENTITY,
+				'a8csp_jobs_engine/started',
 			),
 			$this->rig->hooks()->sequence()
 		);
 	}
 
 	/**
-	 * Allow salts the fence identity while retaining the original task arguments.
+	 * Allow salts the fence identity while retaining the original job arguments.
 	 *
 	 * @return  void
 	 */
@@ -160,7 +160,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
-		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
@@ -179,7 +179,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$first = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 		self::assertInstanceOf( Success::class, $first );
-		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		$salted_hash = $run['args_hash'] ?? null;
 		self::assertIsString( $salted_hash );
@@ -220,7 +220,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_skip_dispatch_returns_a_typed_held_outcome(): void {
 		$this->sync_schedule( OverlapPolicy::Skip );
 		$this->seed_held_lock();
-		$latest_pointer = 'a8csp_bgte_latest_run_' . self::IDENTITY;
+		$latest_pointer = 'a8csp_bgje_latest_run_' . self::IDENTITY;
 		unset( $this->rig->wpdb()->rows[ $latest_pointer ], $this->rig->wpdb()->autoload[ $latest_pointer ] );
 
 		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
@@ -384,19 +384,19 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @param   string $name Option name.
 	 */
 	private function option( string $name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
 
 		return $options[ $name ] ?? null;
 	}
 
 	/**
-	 * Returns backend calls that schedule task-run delivery.
+	 * Returns backend calls that schedule job-run delivery.
 	 *
 	 * @return list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,13 +22,13 @@ final readonly class RunFailure implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                       $identity     Complete owner-qualified task or batch identity.
+	 * @param   string                       $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string                       $run_id       Run identifier.
 	 * @param   int                          $attempts     Attempts consumed before terminal failure.
 	 * @param   RunFailureStage              $stage        Terminalization stage.
 	 * @param   ApiErrorCode                 $code         Machine-readable cause classification.
 	 * @param   string                       $summary      Engine-authored redacted failure summary.
-	 * @param   array<array-key, mixed>|null $failed_chunk Batch chunk arguments for the failing chunk, or null for a task or non-chunk failure.
+	 * @param   array<array-key, mixed>|null $failed_chunk Chunked Job chunk arguments for the failing chunk, or null for a job or non-chunk failure.
 	 */
 	public function __construct(
 		public string $identity,

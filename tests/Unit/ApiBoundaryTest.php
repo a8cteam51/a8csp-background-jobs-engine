@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
@@ -13,59 +13,59 @@ use PHPUnit\Framework\TestCase;
 final class ApiBoundaryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string API_NAMESPACE           = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\';
-	private const string ROOT_NAMESPACE          = 'A8C\\SpecialProjects\\BackgroundTasksEngine\\';
+	private const string API_NAMESPACE           = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\';
+	private const string ROOT_NAMESPACE          = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\';
 	private const array PROCEDURAL_BUILTIN_TYPES = array( 'array', 'bool', 'callable', 'false', 'int', 'null', 'string', 'true', 'void' );
 	private const array PROCEDURAL_FUNCTIONS     = array(
-		'a8csp_bgte_task_register',
-		'a8csp_bgte_task_enqueue',
-		'a8csp_bgte_batch_register',
-		'a8csp_bgte_batch_start',
-		'a8csp_bgte_schedule_sync',
-		'a8csp_bgte_schedule_dispatch',
-		'a8csp_bgte_run_last_completed',
-		'a8csp_bgte_run_retry_failed',
-		'a8csp_bgte_run_cancel',
-		'a8csp_bgte_run_on_completed',
-		'a8csp_bgte_run_on_failed',
+		'a8csp_bgje_job_register',
+		'a8csp_bgje_job_enqueue',
+		'a8csp_bgje_chunked_job_register',
+		'a8csp_bgje_chunked_job_start',
+		'a8csp_bgje_schedule_sync',
+		'a8csp_bgje_schedule_dispatch',
+		'a8csp_bgje_run_last_completed',
+		'a8csp_bgje_run_retry_failed',
+		'a8csp_bgje_run_cancel',
+		'a8csp_bgje_run_on_completed',
+		'a8csp_bgje_run_on_failed',
 	);
 
 	private const array EXPECTED_API_TYPES = array(
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\AdmissionValidator',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\AbstractBatch',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchContextInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\Batches',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchesEngineInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\ExistingRunPolicy',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Client',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ApiError',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ApiErrorCode',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\ErrorInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailure',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Error\\RunFailureStage',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\NonRetryableException',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\NonRetryableExceptionInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\PortableArguments',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\AbstractResult',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Failure',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Result\\Success',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\RetryPolicy',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Run\\Runs',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Run\\RunsEngineInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\CatchUpPolicy',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\OverlapPolicy',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\Recurrence',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\Schedule',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\Schedules',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Schedule\\SchedulesEngineInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\AbstractTask',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\CallableTask',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\TaskInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\Tasks',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Task\\TasksEngineInterface',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\WorkIdentity',
-		'A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\WorkInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\AdmissionValidator',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\AbstractChunkedJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkContextInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobsEngineInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ExistingRunPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Client',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Error\\ApiError',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Error\\ApiErrorCode',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Error\\ErrorInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Error\\RunFailure',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Error\\RunFailureStage',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\JobIdentity',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\JobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\AbstractJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\CallableJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\Jobs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\JobsEngineInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\OneOffJobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\NonRetryableException',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\NonRetryableExceptionInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\PortableArguments',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Result\\AbstractResult',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Result\\Failure',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Result\\Success',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\RetryPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Run\\Runs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Run\\RunsEngineInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\CatchUpPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\OverlapPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\Recurrence',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\Schedule',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\Schedules',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\SchedulesEngineInterface',
 	);
 
 	// endregion.

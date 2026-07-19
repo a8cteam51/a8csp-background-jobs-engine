@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
@@ -22,24 +22,24 @@ final class MultisiteTest extends IntegrationTestCase {
 
 	/** One sentinel from every option family documented for operators. */
 	private const array DOCUMENTED_OPTION_TEMPLATES = array(
-		'a8csp_bgte_schedule_registrations_multisite-%d',
-		'a8csp_bgte_run_multisite-%d:task_run-1',
-		'a8csp_bgte_failed_runs_multisite-%d:task',
-		'a8csp_bgte_latest_run_multisite-%d:task',
-		'a8csp_bgte_history_multisite-%d:task',
-		'a8csp_bgte_overlap_lock_multisite-%d:task_args-hash',
-		'a8csp_bgte_occurrence_lease_multisite-%d-registration-hash',
-		'a8csp_bgte_cleanup_intent_multisite-%d-registration-hash',
+		'a8csp_bgje_schedule_registrations_multisite-%d',
+		'a8csp_bgje_run_multisite-%d:job_run-1',
+		'a8csp_bgje_failed_runs_multisite-%d:job',
+		'a8csp_bgje_latest_run_multisite-%d:job',
+		'a8csp_bgje_history_multisite-%d:job',
+		'a8csp_bgje_overlap_lock_multisite-%d:job_args-hash',
+		'a8csp_bgje_occurrence_lease_multisite-%d-registration-hash',
+		'a8csp_bgje_cleanup_intent_multisite-%d-registration-hash',
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_background_tasks/start_batch',
-		'a8csp_background_tasks/continue_batch',
-		'a8csp_background_tasks/run_task',
-		'a8csp_background_tasks/run_chunk',
-		'a8csp_background_tasks/cleanup_batch',
-		'a8csp_background_tasks/schedule_due',
+		'a8csp_jobs_engine/start_chunked_job',
+		'a8csp_jobs_engine/continue_chunked_job',
+		'a8csp_jobs_engine/run_job',
+		'a8csp_jobs_engine/run_chunk',
+		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/schedule_due',
 	);
 
 	/**
@@ -169,7 +169,7 @@ final class MultisiteTest extends IntegrationTestCase {
 			try {
 				// Action Scheduler binds its table names when a store initializes, not when the blog switches.
 				self::initialize_action_scheduler_schema();
-				self::assertSame( array(), self::engine_option_names(), "Network uninstall must leave site {$site_id} with zero a8csp_bgte_ rows" );
+				self::assertSame( array(), self::engine_option_names(), "Network uninstall must leave site {$site_id} with zero a8csp_bgje_ rows" );
 
 				$schedule_args    = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
 				$schedule_group   = \sprintf( 'multisite-uninstall|site-%d', $site_id );
@@ -204,12 +204,12 @@ final class MultisiteTest extends IntegrationTestCase {
 
 		\switch_to_blog( $other_site_id );
 		try {
-			$client = \a8csp_bgte( 'multisite-contract' );
-			$client->tasks()->register( new RecordingTask( 'site-bound-task' ) );
+			$client = \a8csp_bgje( 'multisite-contract' );
+			$client->jobs()->register( new RecordingJob( 'site-bound-job' ) );
 
 			$this->expectException( \LogicException::class );
 
-			$result = $client->tasks()->enqueue( 'site-bound-task' );
+			$result = $client->jobs()->enqueue( 'site-bound-job' );
 			self::fail( \sprintf( 'Expected storage access to fail after switch_to_blog(); got %s.', \get_debug_type( $result ) ) );
 		} finally {
 			\restore_current_blog();
@@ -268,7 +268,7 @@ final class MultisiteTest extends IntegrationTestCase {
 			require_once \ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		self::assertTrue( \is_plugin_active_for_network( \A8CSP_BGTE_BASENAME ), 'The multisite wp-env must network-activate the engine before running the contract group' );
+		self::assertTrue( \is_plugin_active_for_network( \A8CSP_BGJE_BASENAME ), 'The multisite wp-env must network-activate the engine before running the contract group' );
 	}
 
 	/**
@@ -289,14 +289,14 @@ final class MultisiteTest extends IntegrationTestCase {
 
 		while ( $site_count < $minimum ) {
 			$suffix = \strtolower( \wp_generate_password( 10, false, false ) );
-			$domain = \is_subdomain_install() ? 'bgte-' . $suffix . '.' . $network->domain : $network->domain;
-			$path   = \is_subdomain_install() ? $network->path : \trailingslashit( $network->path ) . 'bgte-' . $suffix . '/';
+			$domain = \is_subdomain_install() ? 'bgje-' . $suffix . '.' . $network->domain : $network->domain;
+			$path   = \is_subdomain_install() ? $network->path : \trailingslashit( $network->path ) . 'bgje-' . $suffix . '/';
 			$result = \wp_insert_site(
 				array(
 					'domain'     => $domain,
 					'network_id' => (int) $network->id,
 					'path'       => $path,
-					'title'      => 'Background tasks multisite fixture',
+					'title'      => 'Background jobs multisite fixture',
 					'user_id'    => \get_current_user_id(),
 				)
 			);
@@ -355,7 +355,7 @@ final class MultisiteTest extends IntegrationTestCase {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
-		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
+		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( 'a8csp_bgje_' ) . '%' ) );
 		self::assertIsArray( $names );
 		self::assertContainsOnlyString( $names );
 

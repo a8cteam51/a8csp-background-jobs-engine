@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -27,10 +27,10 @@ final class PluginBootTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_plugin_boots_on_supported_runtime(): void {
-		self::assertTrue( \constant( 'A8CSP_BGTE_REQUIREMENTS_RESULT' ) );
-		self::assertTrue( \function_exists( 'a8csp_bgte_plugin' ) );
-		self::assertSame( 0, has_action( 'plugins_loaded', array( a8csp_bgte_plugin(), 'boot' ) ) );
-		self::assertInstanceOf( Plugin::class, a8csp_bgte_plugin() );
+		self::assertTrue( \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' ) );
+		self::assertTrue( \function_exists( 'a8csp_bgje_plugin' ) );
+		self::assertSame( 0, has_action( 'plugins_loaded', array( a8csp_bgje_plugin(), 'boot' ) ) );
+		self::assertInstanceOf( Plugin::class, a8csp_bgje_plugin() );
 	}
 
 	/**
@@ -43,12 +43,12 @@ final class PluginBootTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_second_boot_does_not_replace_cached_plugin(): void {
-		$plugin = a8csp_bgte_plugin();
+		$plugin = a8csp_bgje_plugin();
 		self::assertInstanceOf( Plugin::class, $plugin );
 
 		$plugin->boot();
 
-		self::assertSame( $plugin, a8csp_bgte_plugin() );
+		self::assertSame( $plugin, a8csp_bgje_plugin() );
 	}
 
 	// endregion.

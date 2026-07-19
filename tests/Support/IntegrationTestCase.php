@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -122,11 +122,11 @@ abstract class IntegrationTestCase extends TestCase {
 	 * @return  int Number of actions processed.
 	 */
 	protected function run_next_due_action(): int {
-		$one_action       = static fn ( mixed $batch_size ): int => 1;
-		$stop_after_batch = static fn ( mixed $memory_exceeded ): bool => true;
+		$one_action             = static fn ( mixed $batch_size ): int => 1;
+		$stop_after_chunked_job = static fn ( mixed $memory_exceeded ): bool => true;
 
 		\add_filter( 'action_scheduler_queue_runner_batch_size', $one_action );
-		\add_filter( 'action_scheduler_memory_exceeded', $stop_after_batch );
+		\add_filter( 'action_scheduler_memory_exceeded', $stop_after_chunked_job );
 
 		try {
 			$runner = \ActionScheduler::runner();
@@ -137,7 +137,7 @@ abstract class IntegrationTestCase extends TestCase {
 			return $processed;
 		} finally {
 			\remove_filter( 'action_scheduler_queue_runner_batch_size', $one_action );
-			\remove_filter( 'action_scheduler_memory_exceeded', $stop_after_batch );
+			\remove_filter( 'action_scheduler_memory_exceeded', $stop_after_chunked_job );
 		}
 	}
 
@@ -207,22 +207,22 @@ abstract class IntegrationTestCase extends TestCase {
 	}
 
 	/**
-	 * Asserts and returns the sole pending engine run action for a task.
+	 * Asserts and returns the sole pending engine run action for a job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable task name.
+	 * @param   string $name   Stable job name.
 	 * @param   string $run_id Run identifier.
 	 * @param   string $group  Per-run Action Scheduler group.
 	 *
 	 * @return  string
 	 */
-	protected function assert_pending_task_action( string $name, string $run_id, string $group ): string {
+	protected function assert_pending_job_action( string $name, string $run_id, string $group ): string {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_background_tasks/run_task',
+				'hook'     => 'a8csp_jobs_engine/run_job',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -231,13 +231,13 @@ abstract class IntegrationTestCase extends TestCase {
 			)
 		);
 		self::assertIsArray( $action_ids );
-		self::assertCount( 1, $action_ids, 'The engine must store exactly one pending task run action' );
+		self::assertCount( 1, $action_ids, 'The engine must store exactly one pending job run action' );
 		self::assertIsString( $action_ids[0] ?? null );
 		$action_id = $action_ids[0];
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_background_tasks/run_task', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/run_job', $action->get_hook() );
 		self::assertSame( array( $name, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
@@ -246,12 +246,12 @@ abstract class IntegrationTestCase extends TestCase {
 	}
 
 	/**
-	 * Asserts and returns one pending batch chunk action.
+	 * Asserts and returns one pending chunked job chunk action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name           Stable batch name.
+	 * @param   string                  $name           Stable chunked job name.
 	 * @param   string                  $run_id         Run identifier.
 	 * @param   string                  $group          Per-run Action Scheduler group.
 	 * @param   array<array-key, mixed> $expected_chunk Expected chunk arguments.
@@ -259,18 +259,18 @@ abstract class IntegrationTestCase extends TestCase {
 	 * @return  string
 	 */
 	protected function assert_pending_chunk_action( string $name, string $run_id, string $group, array $expected_chunk ): string {
-		$run_state = \get_option( 'a8csp_bgte_run_' . $name . '_' . $run_id, null );
+		$run_state = \get_option( 'a8csp_bgje_run_' . $name . '_' . $run_id, null );
 		self::assertIsArray( $run_state, 'A pending chunk action must retain its authoritative run row' );
 		$queue = $run_state['queue'] ?? null;
 		self::assertIsArray( $queue, 'A pending chunk action must retain its authoritative queue' );
 		self::assertSame( $expected_chunk, $queue[0] ?? null, 'The expected chunk must be the authoritative queue head' );
-		$action_seq = $run_state['action_seq'] ?? null;
-		self::assertIsInt( $action_seq, 'A pending chunk action must retain its lifecycle sequence token' );
+		$action_sequence = $run_state['action_sequence'] ?? null;
+		self::assertIsInt( $action_sequence, 'A pending chunk action must retain its lifecycle sequence token' );
 
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_background_tasks/run_chunk',
+				'hook'     => 'a8csp_jobs_engine/run_chunk',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -279,15 +279,15 @@ abstract class IntegrationTestCase extends TestCase {
 			)
 		);
 		self::assertIsArray( $action_ids );
-		self::assertCount( 1, $action_ids, 'Queue advancement must expose exactly one pending batch chunk action' );
+		self::assertCount( 1, $action_ids, 'Queue advancement must expose exactly one pending chunked job chunk action' );
 		self::assertIsString( $action_ids[0] ?? null );
 		$action_id = $action_ids[0];
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_background_tasks/run_chunk', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/run_chunk', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
-		self::assertSame( array( $name, $run_id, $action_seq ), $action->get_args(), 'A chunk action must carry only its fenced delivery token' );
+		self::assertSame( array( $name, $run_id, $action_sequence ), $action->get_args(), 'A chunk action must carry only its fenced delivery token' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
 
 		return $action_id;

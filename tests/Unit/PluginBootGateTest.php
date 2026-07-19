@@ -1,14 +1,14 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\ComponentCollection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Plugin;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\ComponentCollection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -57,23 +57,23 @@ final class PluginBootGateTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 
-		$GLOBALS['a8csp_bgte_test_filter_registration_callbacks'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] = array();
 
-		$GLOBALS['a8csp_bgte_test_filter_values']       = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']         = array();
-		$GLOBALS['a8csp_bgte_test_doing_actions']       = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']             = 1;
-		$GLOBALS['a8csp_bgte_test_options']             = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']        = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']     = array();
-		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_results']        = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = 0;
+		$GLOBALS['a8csp_bgje_test_filter_values']       = array();
+		$GLOBALS['a8csp_bgje_test_did_actions']         = array();
+		$GLOBALS['a8csp_bgje_test_doing_actions']       = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']             = 1;
+		$GLOBALS['a8csp_bgje_test_options']             = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']        = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']     = array();
+		$GLOBALS['a8csp_bgje_test_cron_array']          = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_cron_results']        = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence'] = 0;
 		$GLOBALS['wpdb']                                = new WpdbLockSpy();
 	}
 
@@ -88,9 +88,9 @@ final class PluginBootGateTest extends TestCase {
 
 		$plugin->boot();
 		self::assertTrue( $plugin->is_booted() );
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 
-		self::assertInstanceOf( Client::class, \a8csp_bgte( 'plugin-boot-gate' ) );
+		self::assertInstanceOf( Client::class, \a8csp_bgje( 'plugin-boot-gate' ) );
 	}
 
 	/**
@@ -101,7 +101,7 @@ final class PluginBootGateTest extends TestCase {
 	public function test_failed_accessor_boot_leaves_the_public_client_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
-		$plugin          = \a8csp_bgte_plugin();
+		$plugin          = \a8csp_bgje_plugin();
 		try {
 			$plugin->boot();
 		} catch ( \TypeError $caught ) {
@@ -114,10 +114,10 @@ final class PluginBootGateTest extends TestCase {
 		$plugin->boot();
 		self::assertFalse( $plugin->is_booted() );
 
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 
 		$this->expectException( \LogicException::class );
 
-		\a8csp_bgte( 'plugin-boot-gate' );
+		\a8csp_bgje( 'plugin-boot-gate' );
 	}
 }

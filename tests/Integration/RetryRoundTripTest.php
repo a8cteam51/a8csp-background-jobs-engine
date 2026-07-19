@@ -1,14 +1,14 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
 /**
  * Verifies retry exhaustion, retained failure state, and manual retry through the public API.
@@ -22,10 +22,10 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	/** Client owner isolated to retry round-trip coverage. */
 	private const string OWNER = 'integration-retry';
 
-	/** Task identity unique within the request-persistent integration registry. */
+	/** Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-retry-round-trip';
 
-	/** Owner-qualified task identity persisted by the engine. */
+	/** Owner-qualified job identity persisted by the engine. */
 	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
@@ -48,24 +48,24 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	 */
 	public function test_retry_exhaustion_round_trips_through_the_failed_store(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$args            = array(
+		$args           = array(
 			'account_id' => 91,
 			'operation'  => 'synchronize',
 		);
-		$task            = new RecordingTask( self::NAME );
-		$task->throwable = new \RuntimeException( 'The upstream service remains unavailable.' );
+		$job            = new RecordingJob( self::NAME );
+		$job->throwable = new \RuntimeException( 'The upstream service remains unavailable.' );
 
-		$client = \a8csp_bgte( self::OWNER );
-		$client->tasks()->register( $task );
+		$client = \a8csp_bgje( self::OWNER );
+		$client->jobs()->register( $job );
 
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
-		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
 
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 1, multiplier: 1, max_delay: 1 );
 		/** @var list<array{arity: int, policy: RetryPolicy}> $retry_policy_calls */
 		$retry_policy_calls = array();
 		\add_filter(
-			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
+			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			static function ( RetryPolicy $policy ) use ( $retry_policy, &$retry_policy_calls ): RetryPolicy {
 				$retry_policy_calls[] = array(
 					'arity'  => \func_num_args(),
@@ -91,7 +91,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		/** @var list<array{string, string, array<array-key, mixed>}> $generic_completed */
 		$generic_completed = array();
 		\add_action(
-			'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY,
+			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
 			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
 				$named_retry_scheduled[] = array( $run_id, $start_args, $attempt, $delay );
 			},
@@ -99,7 +99,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_background_tasks/retry_scheduled',
+			'a8csp_jobs_engine/retry_scheduled',
 			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
 				$generic_retry_scheduled[] = array( $name, $run_id, $start_args, $attempt, $delay );
 			},
@@ -107,7 +107,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp_background_tasks/failed/' . self::IDENTITY,
+			'a8csp_jobs_engine/failed/' . self::IDENTITY,
 			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
 				$named_failed[] = array( $run_id, $start_args, $failure );
 			},
@@ -115,7 +115,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_background_tasks/failed',
+			'a8csp_jobs_engine/failed',
 			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
 				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
 			},
@@ -123,7 +123,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_background_tasks/completed/' . self::IDENTITY,
+			'a8csp_jobs_engine/completed/' . self::IDENTITY,
 			static function ( string $run_id, array $start_args ) use ( &$named_completed ): void {
 				$named_completed[] = array( $run_id, $start_args );
 			},
@@ -131,7 +131,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp_background_tasks/completed',
+			'a8csp_jobs_engine/completed',
 			static function ( string $name, string $run_id, array $start_args ) use ( &$generic_completed ): void {
 				$generic_completed[] = array( $name, $run_id, $start_args );
 			},
@@ -139,21 +139,21 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			3
 		);
 
-		$result = $client->tasks()->enqueue( self::NAME, $args );
-		self::assertInstanceOf( Success::class, $result, 'The retryable task must enqueue before its handler fails' );
+		$result = $client->jobs()->enqueue( self::NAME, $args );
+		self::assertInstanceOf( Success::class, $result, 'The retryable job must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$failed_run_id     = $result->value;
 		$failed_group      = self::IDENTITY . '|' . $failed_run_id;
-		$initial_action_id = $this->assert_pending_task_action( self::IDENTITY, $failed_run_id, $failed_group );
+		$initial_action_id = $this->assert_pending_job_action( self::IDENTITY, $failed_run_id, $failed_group );
 
 		$first_attempt_before = \time();
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the first retryable attempt' );
 		$first_attempt_after = \time();
 
-		self::assertSame( array( $args ), $task->calls, 'The first runner drive must execute one task attempt' );
+		self::assertSame( array( $args ), $job->calls, 'The first runner drive must execute one job attempt' );
 		self::assertCount( 1, $retry_policy_calls, 'The first failure must resolve the filtered retry policy once' );
 		self::assertSame( 1, $retry_policy_calls[0]['arity'] );
-		self::assertSame( $task->retry_policy, $retry_policy_calls[0]['policy'] );
+		self::assertSame( $job->retry_policy, $retry_policy_calls[0]['policy'] );
 		self::assertCount( 1, $named_retry_scheduled, 'The first failure must fire the identity-specific retry-scheduled hook once' );
 		self::assertCount( 1, $generic_retry_scheduled, 'The first failure must fire the generic retry-scheduled hook once' );
 		self::assertSame( array(), $named_failed, 'The first failure must remain non-terminal below the retry cap' );
@@ -163,7 +163,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertIsInt( $delay );
 		self::assertContains( $delay, array( 0, 1 ), 'Full jitter must stay within the filtered one-second ceiling' );
 		self::assertSame( array( array( $failed_run_id, $args, 1, $delay ) ), $named_retry_scheduled, 'The identity-specific retry-scheduled hook must pin the failed attempt number and jittered delay' );
-		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retry_scheduled, 'The generic retry-scheduled hook must prepend the task name to the same payload' );
+		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retry_scheduled, 'The generic retry-scheduled hook must prepend the job name to the same payload' );
 
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ), 'Action Scheduler must complete the first action after the engine handles its failure' );
@@ -173,30 +173,30 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertLessThanOrEqual( $first_attempt_after + $delay, $scheduled_at, 'The retry timestamp must not exceed the completed attempt timestamp plus its jittered delay' );
 
 		$args_hash = self::args_hash( $args );
-		$run_state = \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, null );
+		$run_state = \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $failed_run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
 		self::assertSame( 1, $run_state['failed_attempts'] ?? null );
-		self::assertSame( 2, $run_state['action_seq'] ?? null );
+		self::assertSame( 2, $run_state['action_sequence'] ?? null );
 		self::assertSame( $scheduled_at, $run_state['heartbeat_at'] ?? null );
-		$lock = \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
+		$lock = \get_option( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $failed_run_id, $lock['run_id'] ?? null );
 		self::assertSame( $scheduled_at, $lock['heartbeat_at'] ?? null );
 
 		$this->drive_action_through_claim_cutoff( $retry_action_id );
 
-		self::assertSame( array( $args, $args ), $task->calls, 'The claimed retry action must execute the second attempt exactly once' );
+		self::assertSame( array( $args, $args ), $job->calls, 'The claimed retry action must execute the second attempt exactly once' );
 		self::assertCount( 2, $retry_policy_calls, 'Both retryable failures must resolve the filtered retry policy' );
 		self::assertSame(
 			array(
 				array(
 					'arity'  => 1,
-					'policy' => $task->retry_policy,
+					'policy' => $job->retry_policy,
 				),
 				array(
 					'arity'  => 1,
-					'policy' => $task->retry_policy,
+					'policy' => $job->retry_policy,
 				),
 			),
 			$retry_policy_calls,
@@ -222,7 +222,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );
 		self::assertSame( array( array( $failed_run_id, $args, $failure ) ), $recorded_named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and terminal error' );
-		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ), $recorded_generic_failed, 'The generic failed hook must prepend the task name to the same terminal payload' );
+		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ), $recorded_generic_failed, 'The generic failed hook must prepend the job name to the same terminal payload' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $retry_action_id ), 'Action Scheduler must complete the retry action after terminal engine handling' );
 		self::assertSame(
 			array( $initial_action_id, $retry_action_id ),
@@ -236,10 +236,10 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			'Retry exhaustion must leave exactly the initial and retry Action Scheduler rows'
 		);
 
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $failed_run_id, false ), 'Terminal retry exhaustion must delete the active run option' );
-		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal retry exhaustion must release the overlap lock' );
+		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $failed_run_id, false ), 'Terminal retry exhaustion must delete the active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal retry exhaustion must release the overlap lock' );
 
-		$failed_entries = \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, null );
+		$failed_entries = \get_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY, null );
 		self::assertIsArray( $failed_entries );
 		self::assertCount( 1, $failed_entries, 'Retry exhaustion must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;
@@ -264,25 +264,25 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertIsString( $manual_result->value );
 		$successful_run_id = $manual_result->value;
 		self::assertNotSame( $failed_run_id, $successful_run_id, 'Manual retry must allocate a fresh run identifier' );
-		self::assertSame( array( $args, $args ), $task->calls, 'Manual retry must not invoke the task inline' );
-		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, null );
+		self::assertSame( array( $args, $args ), $job->calls, 'Manual retry must not invoke the job inline' );
+		$remaining_failed_entries = \get_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY, null );
 		self::assertIsArray( $remaining_failed_entries );
 		self::assertSame( array(), $remaining_failed_entries, 'Manual retry must remove the consumed failed entry after fresh enqueue succeeds' );
 
 		$successful_group     = self::IDENTITY . '|' . $successful_run_id;
-		$successful_action_id = $this->assert_pending_task_action( self::IDENTITY, $successful_run_id, $successful_group );
-		$task->throwable      = null;
+		$successful_action_id = $this->assert_pending_job_action( self::IDENTITY, $successful_run_id, $successful_group );
+		$job->throwable       = null;
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the manually retried task' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the manually retried job' );
 
-		self::assertSame( array( $args, $args, $args ), $task->calls, 'The manually retried task must succeed on its third fixture invocation' );
+		self::assertSame( array( $args, $args, $args ), $job->calls, 'The manually retried job must succeed on its third fixture invocation' );
 		self::assertSame( array( array( $successful_run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive the fresh run ID and original arguments' );
-		self::assertSame( array( array( self::IDENTITY, $successful_run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the task name to the same fresh-run payload' );
+		self::assertSame( array( array( self::IDENTITY, $successful_run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same fresh-run payload' );
 		self::assertSame( array( array( $failed_run_id, $args, 1, $delay ) ), $named_retry_scheduled, 'The successful manual retry must not repeat the identity-specific retry-scheduled hook' );
 		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retry_scheduled, 'The successful manual retry must not repeat the generic retry-scheduled hook' );
 		self::assertSame( $recorded_named_failed, $named_failed, 'The successful manual retry must not repeat the identity-specific failed hook' );
 		self::assertSame( $recorded_generic_failed, $generic_failed, 'The successful manual retry must not repeat the generic failed hook' );
-		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $successful_action_id ), 'Action Scheduler must complete the manually retried task action' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $successful_action_id ), 'Action Scheduler must complete the manually retried job action' );
 		self::assertSame(
 			array( $initial_action_id, $retry_action_id, $successful_action_id ),
 			$store->query_actions(
@@ -294,9 +294,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			),
 			'The complete retry round-trip must leave exactly its three Action Scheduler rows'
 		);
-		self::assertFalse( \get_option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $successful_run_id, false ), 'The successful manual retry must delete its active run option' );
-		self::assertFalse( \get_option( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'The successful manual retry must release its overlap lock' );
-		$remaining_failed_entries = \get_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY, null );
+		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $successful_run_id, false ), 'The successful manual retry must delete its active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'The successful manual retry must release its overlap lock' );
+		$remaining_failed_entries = \get_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY, null );
 		self::assertIsArray( $remaining_failed_entries );
 		self::assertSame( array(), $remaining_failed_entries );
 		self::assertSame(
@@ -304,7 +304,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 				'all'     => $successful_run_id,
 				'by_hash' => array( $args_hash => $successful_run_id ),
 			),
-			\get_option( 'a8csp_bgte_latest_run_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgje_latest_run_' . self::IDENTITY, null ),
 			'Manual retry success must retain the fresh run as the latest pointer'
 		);
 		self::assertSame(
@@ -336,14 +336,14 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgte_history_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgje_history_' . self::IDENTITY, null ),
 			'History must retain the exhausted run and successful manual retry in lifecycle order'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgte_failed_runs_' . self::IDENTITY,
-				'a8csp_bgte_history_' . self::IDENTITY,
-				'a8csp_bgte_latest_run_' . self::IDENTITY,
+				'a8csp_bgje_failed_runs_' . self::IDENTITY,
+				'a8csp_bgje_history_' . self::IDENTITY,
+				'a8csp_bgje_latest_run_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Retry round-trip state must retain only the empty failed store, history ring, and latest pointer'
@@ -355,7 +355,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	// region HELPERS.
 
 	/**
-	 * Asserts and returns the sole pending retry action for a task run.
+	 * Asserts and returns the sole pending retry action for a job run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -369,7 +369,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_background_tasks/run_task',
+				'hook'     => 'a8csp_jobs_engine/run_job',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -384,7 +384,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_background_tasks/run_task', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/run_job', $action->get_hook() );
 		self::assertSame( array( self::IDENTITY, $run_id, 2 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );

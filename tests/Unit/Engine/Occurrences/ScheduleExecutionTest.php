@@ -1,23 +1,23 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -70,13 +70,13 @@ final class ScheduleExecutionTest extends TestCase {
 	private const int NOW                 = 1_700_000_000;
 	private const string OWNER            = 'owner-a';
 	private const string REGISTRATION_KEY = self::OWNER . ':' . self::NAME;
-	private const string TASK             = 'refresh-index';
-	private const string TASK_IDENTITY    = self::OWNER . ':' . self::TASK;
+	private const string JOB              = 'refresh-index';
+	private const string JOB_IDENTITY     = self::OWNER . ':' . self::JOB;
 
 	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
-	private RecordingTask $task;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -96,7 +96,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * Boots one declared task against deterministic production boundaries.
+	 * Boots one declared job against deterministic production boundaries.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -109,9 +109,9 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig    = EngineRig::set_up( self::NOW );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->task   = new RecordingTask( self::TASK );
-		$this->client->tasks()->register( $this->task );
-		$this->fixtures = StoreFixtureBuilder::for_identity( self::TASK_IDENTITY );
+		$this->job    = new RecordingJob( self::JOB );
+		$this->client->jobs()->register( $this->job );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
 		$this->reset_observations();
 	}
 
@@ -150,8 +150,8 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( 0, $registration['misfire_skips'] ?? null );
@@ -172,8 +172,8 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( $fired_at, $registration['last_fired'] ?? null );
@@ -195,14 +195,14 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
 		self::assertSame(
 			array( array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
-			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped/' . self::REGISTRATION_KEY )
+			$this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped/' . self::REGISTRATION_KEY )
 		);
 		self::assertSame(
 			array( array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
-			$this->rig->hooks()->fired( 'a8csp_background_tasks/misfire_skipped' )
+			$this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped' )
 		);
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
@@ -232,7 +232,7 @@ final class ScheduleExecutionTest extends TestCase {
 		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
 
 		self::assertSame( array(), $this->rig->backend()->calls );
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( 'scripted occurrence registry read failure', $this->rig->wpdb()->last_error );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
@@ -329,8 +329,8 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	public function test_invalid_misfire_grace_filter_logs_warning(): void {
 		$this->sync_schedule( self::schedule() );
-		self::assertIsArray( $GLOBALS['a8csp_bgte_test_filter_values'] ?? null );
-		$GLOBALS['a8csp_bgte_test_filter_values'][ 'a8csp_background_tasks/misfire_grace/' . self::REGISTRATION_KEY ] = '300';
+		self::assertIsArray( $GLOBALS['a8csp_bgje_test_filter_values'] ?? null );
+		$GLOBALS['a8csp_bgje_test_filter_values'][ 'a8csp_jobs_engine/misfire_grace/' . self::REGISTRATION_KEY ] = '300';
 
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 
@@ -377,7 +377,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsString( $warning_message );
 		self::assertStringContainsString( 'reinstate', $warning_message );
 		self::assertStringContainsString( 'sync( array() )', $warning_message );
-		self::assertStringContainsString( 'wp background-tasks schedules remove ' . self::OWNER, $warning_message );
+		self::assertStringContainsString( 'wp background-jobs schedules remove ' . self::OWNER, $warning_message );
 
 		$this->rig->run_due();
 
@@ -443,7 +443,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * A stale request declaration cannot dispatch a newer persisted registration generation.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Production-built replacement bytes retain a newer fingerprint while the request keeps its original declaration, proving delivery fences the registry generation before task admission.
+	 * @pin-rationale Production-built replacement bytes retain a newer fingerprint while the request keeps its original declaration, proving delivery fences the registry generation before job admission.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -509,7 +509,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * A poisoned lock row is recovered without constructing its serialized class.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale The deliberately corrupt row bypasses production serialization and places an object at the task-lock boundary, proving occurrence admission neither runs wakeup code nor treats poison as an incumbent generation.
+	 * @pin-rationale The deliberately corrupt row bypasses production serialization and places an object at the job-lock boundary, proving occurrence admission neither runs wakeup code nor treats poison as an incumbent generation.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -530,7 +530,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( 0, ScheduleExecutionWakeupProbe::$wakeups );
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_background_tasks/started/' . self::TASK_IDENTITY ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
 	}
 
 	// endregion.
@@ -550,7 +550,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  Schedule
 	 */
 	private static function schedule( int $interval = self::INTERVAL, OverlapPolicy $overlap = OverlapPolicy::Skip, CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce ): Schedule {
-		return new Schedule( self::NAME, Recurrence::every( $interval ), self::TASK, self::ARGS, $overlap, $catch_up, 23 );
+		return new Schedule( self::NAME, Recurrence::every( $interval ), self::JOB, self::ARGS, $overlap, $catch_up, 23 );
 	}
 
 	/**
@@ -577,7 +577,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @param   Schedule $schedule Schedule declaration.
 	 * @param   int      $next_due Next occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture( Schedule $schedule, int $next_due ): array {
 		return array(
@@ -585,7 +585,7 @@ final class ScheduleExecutionTest extends TestCase {
 			'declarations'  => array(
 				self::REGISTRATION_KEY => array(
 					'schedule' => $schedule,
-					'task'     => self::TASK_IDENTITY,
+					'job'      => self::JOB_IDENTITY,
 				),
 			),
 			'registrations' => array( self::REGISTRATION_KEY => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due ) ),
@@ -652,7 +652,7 @@ final class ScheduleExecutionTest extends TestCase {
 		return \array_values(
 			\array_filter(
 				$this->rig->logger()->records,
-				static fn ( array $record ): bool => 'warning' === $record['level'] && \str_contains( $record['message'], 'wp background-tasks schedules remove' )
+				static fn ( array $record ): bool => 'warning' === $record['level'] && \str_contains( $record['message'], 'wp background-jobs schedules remove' )
 			)
 		);
 	}

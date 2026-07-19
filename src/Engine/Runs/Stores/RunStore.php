@@ -1,21 +1,21 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -44,7 +44,7 @@ final readonly class RunStore {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_run_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_run_';
 
 	/**
 	 * Maximum exact-row attempts before a contended terminal effect append fails safely.
@@ -66,7 +66,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity Complete owner-qualified task or batch identity.
+	 * @param   string         $identity Complete owner-qualified job or chunked job identity.
 	 * @param   ClockInterface $clock    Timestamp source.
 	 * @param   OptionRows     $rows     Authoritative raw option-row I/O.
 	 */
@@ -86,7 +86,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'Task'|'Batch' $kind
+	 * @phpstan-param 'Job'|'ChunkedJob' $kind
 	 *
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   string                        $kind       Admitted work contract type.
@@ -100,7 +100,7 @@ final readonly class RunStore {
 	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
 
 		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
@@ -380,13 +380,13 @@ final readonly class RunStore {
 	 *
 	 * @return  array{
 	 *     status: string,
-	 *     kind: 'Task'|'Batch',
+	 *     kind: 'Job'|'ChunkedJob',
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     failed_attempts: int,
-	 *     action_seq: int,
+	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
@@ -403,7 +403,7 @@ final readonly class RunStore {
 			'args_hash'       => $state->args_hash,
 			'queue'           => $state->queue,
 			'failed_attempts' => $state->failed_attempts,
-			'action_seq'      => $state->action_seq,
+			'action_sequence' => $state->action_sequence,
 			'created_at'      => $state->created_at,
 			'heartbeat_at'    => $state->heartbeat_at,
 		);
@@ -481,7 +481,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_seq: $value['action_seq'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
+		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
 	}
 
 	/**
@@ -492,13 +492,13 @@ final readonly class RunStore {
 	 *
 	 * @phpstan-assert-if-true array{
 	 *     status: string,
-	 *     kind: 'Task'|'Batch',
+	 *     kind: 'Job'|'ChunkedJob',
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     failed_attempts: int,
-	 *     action_seq: int,
+	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: StoredPendingAction,
@@ -523,7 +523,7 @@ final readonly class RunStore {
 			|| ! \is_array( $value['queue'] ?? null )
 			|| ! \array_is_list( $value['queue'] )
 			|| ! \is_int( $value['failed_attempts'] ?? null )
-			|| ! \is_int( $value['action_seq'] ?? null )
+			|| ! \is_int( $value['action_sequence'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )

@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -16,7 +16,7 @@ enum RunFailureStage: string {
 	/** Client work or a lifecycle effect failed during execution. */
 	case Execution = 'execution';
 
-	/** A batch queue could not be generated or admitted. */
+	/** A chunked job queue could not be generated or admitted. */
 	case QueueGeneration = 'queue_generation';
 
 	/** Maintenance terminalized a run while reclaiming a crash. */

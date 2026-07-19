@@ -16,10 +16,10 @@ parameters:
     # functions.php, uninstall.php); the entry file's name is per-repo, so it is pinned here
     # explicitly and WPCompat.pluginFile below names it for the same reason.
     paths:
-        - %currentWorkingDirectory%/a8csp-background-tasks-engine.php
+        - %currentWorkingDirectory%/a8csp-background-jobs-engine.php
         - %currentWorkingDirectory%/tests
     WPCompat:
         # wp-compat's own fallback guesses "{cwd}/{basename(cwd)}.php", which only holds
         # by coincidence when a repo's directory name matches its entry file; declared
         # explicitly so it doesn't depend on that coincidence.
-        pluginFile: %currentWorkingDirectory%/a8csp-background-tasks-engine.php
+        pluginFile: %currentWorkingDirectory%/a8csp-background-jobs-engine.php

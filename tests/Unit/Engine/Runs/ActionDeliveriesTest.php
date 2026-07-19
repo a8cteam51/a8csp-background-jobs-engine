@@ -1,29 +1,29 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises task deliveries through the registered production action graph.
+ * Exercises job deliveries through the registered production action graph.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -45,7 +45,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
-	private RecordingTask $task;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -65,7 +65,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Boots one registered task against deterministic interface fakes.
+	 * Boots one registered job against deterministic interface fakes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -78,8 +78,8 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->rig    = EngineRig::set_up( self::NOW );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->task   = new RecordingTask( self::NAME );
-		$this->client->tasks()->register( $this->task );
+		$this->job    = new RecordingJob( self::NAME );
+		$this->client->jobs()->register( $this->job );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -105,28 +105,28 @@ final class ActionDeliveriesTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The registered start, continue, run, and cleanup actions complete one real batch.
+	 * The registered start, continue, run, and cleanup actions complete one real chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registered_delivery_hooks_drive_every_batch_stage(): void {
-		$batch        = new RecordingBatch( 'hook-registration-probe' );
-		$batch->queue = array( array( 'chunk' => 'only' ) );
-		$this->client->batches()->register( $batch );
-		$result = $this->client->batches()->start( $batch->get_name(), self::ARGS );
+	public function test_registered_delivery_hooks_drive_every_chunked_job_stage(): void {
+		$chunked_job        = new RecordingChunkedJob( 'hook-registration-probe' );
+		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
+		$this->client->chunked_jobs()->register( $chunked_job );
+		$result = $this->client->chunked_jobs()->start( $chunked_job->get_name(), self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 5; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
-		self::assertSame( array( self::ARGS ), $batch->generate_calls );
-		self::assertCount( 1, $batch->process_calls );
-		self::assertSame( array( 'chunk' => 'only' ), $batch->process_calls[0]['chunk_args'] );
-		self::assertCount( 1, $batch->completed_calls );
+		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
+		self::assertCount( 1, $chunked_job->process_calls );
+		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
+		self::assertCount( 1, $chunked_job->completed_calls );
 		$this->rig->assert_completed();
 	}
 
@@ -144,54 +144,54 @@ final class ActionDeliveriesTest extends TestCase {
 			'site_id' => 8,
 			'mode'    => 'delta',
 		);
-		$first          = $this->client->tasks()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
+		$first          = $this->client->jobs()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
 		self::assertInstanceOf( Success::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$duplicate                     = $this->client->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$duplicate                     = $this->client->jobs()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
 		$this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
-		$reused                        = $this->client->tasks()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$reused                        = $this->client->jobs()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
 		self::assertInstanceOf( Success::class, $reused );
 		$this->rig->run_due();
-		self::assertSame( array( self::ARGS, $successor_args ), $this->task->calls );
+		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );
 	}
 
 	/**
-	 * A delivered task executes once and exposes its completed public lifecycle.
+	 * A delivered job executes once and exposes its completed public lifecycle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_run_delivery_executes_and_completes_the_task(): void {
-		$run_id = $this->enqueue_task();
+	public function test_run_delivery_executes_and_completes_the_job(): void {
+		$run_id = $this->enqueue_job();
 
 		$this->rig->run_due();
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertSame(
 			array(
 				array( $run_id, self::ARGS ),
 			),
-			$this->rig->hooks()->fired( 'a8csp_background_tasks/completed/' . self::IDENTITY )
+			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY )
 		);
 		self::assertSame(
 			array(
 				array( self::IDENTITY, $run_id, self::ARGS ),
 			),
-			$this->rig->hooks()->fired( 'a8csp_background_tasks/completed' )
+			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' )
 		);
 		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A task without an override receives the shared callback liveness credit.
+	 * A job without an override receives the shared callback liveness credit.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The callback observes the credited lock generation while production delivery owns it; no public result exposes an in-flight lease.
@@ -201,8 +201,8 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_run_delivery_credits_the_default_runtime_before_task_execution(): void {
-		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
+	public function test_run_delivery_credits_the_default_runtime_before_job_execution(): void {
+		$this->assert_callback_lease( JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
 	}
 
 	/**
@@ -221,7 +221,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	#[DataProvider( 'bounded_runtime_values' )]
 	public function test_run_delivery_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
-		$this->task->max_callback_runtime = $declared;
+		$this->job->max_callback_runtime = $declared;
 		$this->assert_callback_lease( $expected_lease );
 	}
 
@@ -237,19 +237,19 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_delivery_defaults_the_lease_when_the_runtime_declaration_throws(): void {
-		$this->task->max_callback_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
-		$this->assert_callback_lease( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
+		$this->job->max_callback_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
+		$this->assert_callback_lease( JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
 
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
 		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
 		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['exception_class'] ?? null );
-		self::assertSame( WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME, $this->rig->logger()->records[0]['context']['default_runtime'] ?? null );
+		self::assertSame( JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME, $this->rig->logger()->records[0]['context']['default_runtime'] ?? null );
 	}
 
 	/**
-	 * An indeterminate admission fence performs no task, terminal hook, or storage write.
+	 * An indeterminate admission fence performs no job, terminal hook, or storage write.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The nested read failure occurs between run-marker admission and lock-heartbeat authority; exact pre/post bytes prove the fail-closed path makes no write.
@@ -260,7 +260,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_delivery_fails_closed_when_lock_heartbeat_read_fails(): void {
-		$this->enqueue_task();
+		$this->enqueue_job();
 		$before                              = $this->relevant_rows();
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->before_next(
@@ -277,10 +277,10 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( $before, $this->relevant_rows() );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/completed' ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/failed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
 		foreach ( $this->rig->wpdb()->recorded_queries as $query ) {
 			self::assertStringStartsWith( 'SELECT ', $query );
 		}
@@ -298,49 +298,49 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_delivery_drops_a_reentrant_same_sequence_delivery(): void {
-		$this->enqueue_task();
-		$reentered             = false;
-		$this->task->on_handle = function () use ( &$reentered ): void {
+		$this->enqueue_job();
+		$reentered            = false;
+		$this->job->on_handle = function () use ( &$reentered ): void {
 			if ( $reentered ) {
 				return;
 			}
 
 			$reentered = true;
-			\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
+			\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 1 );
 		};
 
 		$this->rig->run_due();
 
 		self::assertTrue( $reentered );
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->assert_completed();
 	}
 
 	/**
-	 * A task-hook payload with a non-integer sequence is rejected before admission.
+	 * A job-hook payload with a non-integer sequence is rejected before admission.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale Direct registered-hook delivery proves the typed task boundary rejects a chunk-shaped payload without mutating authoritative run state.
+	 * @pin-rationale Direct registered-hook delivery proves the typed job boundary rejects a chunk-shaped payload without mutating authoritative run state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_run_task_handler_rejects_a_non_integer_sequence_before_admission(): void {
-		$this->enqueue_task();
+	public function test_run_job_handler_rejects_a_non_integer_sequence_before_admission(): void {
+		$this->enqueue_job();
 		$before = $this->relevant_rows();
 		$thrown = null;
 
 		try {
-			\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ) );
+			\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ) );
 		} catch ( \TypeError $error ) {
 			$thrown = $error;
 		}
 
 		self::assertInstanceOf( \TypeError::class, $thrown );
 		self::assertSame( $before, $this->relevant_rows() );
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 	}
 
 	/**
@@ -388,10 +388,10 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_policy_preserves_a_replacement_execution_lease(): void {
-		$this->enqueue_task();
-		$this->task->throwable = new \RuntimeException( 'Attempt failed before retry-policy resolution.' );
+		$this->enqueue_job();
+		$this->job->throwable = new \RuntimeException( 'Attempt failed before retry-policy resolution.' );
 		$this->set_filter_value(
-			'a8csp_background_tasks/retry_policy/' . self::IDENTITY,
+			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				$this->install_replacement_generation();
 
@@ -405,7 +405,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * A fixed-token chunk hook delivered against a task run routes by the persisted kind and runs the task.
+	 * A fixed-token chunk hook delivered against a job run routes by the persisted kind and runs the job.
 	 *
 	 * @load-bearing security
 	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, without stranding the execution marker.
@@ -415,34 +415,34 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_chunk_hook_delivery_routes_a_task_run_by_its_persisted_kind(): void {
-		$this->enqueue_task();
+	public function test_chunk_hook_delivery_routes_a_job_run_by_its_persisted_kind(): void {
+		$this->enqueue_job();
 
-		\do_action( 'a8csp_background_tasks/run_chunk', self::IDENTITY, self::RUN_ID, 1 );
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID, 1 );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->assert_completed();
 
 		$this->rig->run_due();
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 	}
 
 	/**
-	 * An unregistered task delivery fails its live run instead of orphaning it.
+	 * An unregistered job delivery fails its live run instead of orphaning it.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_unregistered_task_delivery_terminalizes_the_live_run(): void {
+	public function test_unregistered_job_delivery_terminalizes_the_live_run(): void {
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
 		$this->client   = $this->rig->client( self::OWNER );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
-		\do_action( 'a8csp_background_tasks/run_task', self::IDENTITY, self::RUN_ID, 1 );
+		\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 1 );
 
 		$this->rig->assert_failed( ApiErrorCode::UnknownWork );
 		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
@@ -450,7 +450,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Ownership loss during task work supersedes only the incumbent.
+	 * Ownership loss during job work supersedes only the incumbent.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Production-built latest-pointer and foreign-lock bytes stage ownership loss inside user code so post-callback fencing can be observed without replacing production logic.
@@ -461,9 +461,9 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_task_work_that_loses_ownership_is_superseded(): void {
-		$this->enqueue_task();
-		$this->task->on_handle = function (): void {
+	public function test_job_work_that_loses_ownership_is_superseded(): void {
+		$this->enqueue_job();
+		$this->job->on_handle = function (): void {
 			$this->put_fixture(
 				$this->fixtures->latest(
 					array(
@@ -479,7 +479,7 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		$last_completed = $this->client->runs()->last_completed_run_id( self::NAME );
@@ -517,15 +517,15 @@ final class ActionDeliveriesTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Enqueues the deterministic task through the owner-bound facade.
+	 * Enqueues the deterministic job through the owner-bound facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	private function enqueue_task(): string {
-		$result = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+	private function enqueue_job(): string {
+		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -533,7 +533,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Asserts the task callback observes one exact credited lease.
+	 * Asserts the job callback observes one exact credited lease.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -543,11 +543,11 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_callback_lease( int $lease ): void {
-		$observed              = null;
-		$this->task->on_handle = function () use ( &$observed ): void {
+		$observed             = null;
+		$this->job->on_handle = function () use ( &$observed ): void {
 			$observed = $this->lock();
 		};
-		$this->enqueue_task();
+		$this->enqueue_job();
 		$this->rig->clock()->timestamp = self::NOW + 90;
 
 		$this->rig->run_due();
@@ -568,9 +568,9 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_replacement_generation_survives( ?\Throwable $throwable ): void {
-		$this->enqueue_task();
-		$this->task->throwable = $throwable;
-		$this->task->on_handle = function (): void {
+		$this->enqueue_job();
+		$this->job->throwable = $throwable;
+		$this->job->on_handle = function (): void {
 			$this->install_replacement_generation();
 		};
 
@@ -588,8 +588,8 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function install_replacement_generation(): void {
-		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
-		$state  = new RunState( status: RunStatus::Running, kind: 'Task', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: $credit );
+		$credit = self::NOW + 90 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+		$state  = new RunState( status: RunStatus::Running, kind: 'Job', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $credit );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
 	}
@@ -603,19 +603,19 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_replacement_generation_is_retained(): void {
-		$credit = self::NOW + 90 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+		$credit = self::NOW + 90 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
 		$lock   = $this->lock();
 		self::assertIsArray( $lock );
 		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
 		self::assertSame( $credit, $lock['heartbeat_at'] ?? null );
-		$run = $this->decoded_row( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->decoded_row( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertTrue( $run['executing'] ?? false );
 		self::assertSame( $credit, $run['heartbeat_at'] ?? null );
 	}
 
 	/**
-	 * Seeds one pending task run without registering its implementation.
+	 * Seeds one pending job run without registering its implementation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -623,7 +623,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_pending_run(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'Job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
 		$this->put_fixture(
@@ -683,7 +683,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private function lock(): ?array {
-		$value = $this->decoded_row( 'a8csp_bgte_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() );
+		$value = $this->decoded_row( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $this->args_hash() );
 
 		return \is_array( $value ) ? $value : null;
 	}
@@ -717,7 +717,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Returns backend calls that accepted task-run delivery.
+	 * Returns backend calls that accepted job-run delivery.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -725,7 +725,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**
@@ -760,10 +760,10 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function set_filter_value( string $hook_name, mixed $value ): void {
-		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
+		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
 		$filters[ $hook_name ]                    = $value;
-		$GLOBALS['a8csp_bgte_test_filter_values'] = $filters;
+		$GLOBALS['a8csp_bgje_test_filter_values'] = $filters;
 	}
 
 	// endregion.

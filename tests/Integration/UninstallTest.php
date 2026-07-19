@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 /**
@@ -28,10 +28,10 @@ final class UninstallTest extends IntegrationTestCase {
 	 * exercises "delete only what's owned" rather than "delete everything".
 	 *
 	 */
-	private const string LIKE_CANARY_OPTION = 'a8cspXbgteYtest_uninstall_canary';
+	private const string LIKE_CANARY_OPTION = 'a8cspXbgjeYtest_uninstall_canary';
 
 	/** A case-distinct canary that may match the prefix query under a case-insensitive collation. */
-	private const string BYTE_CANARY_OPTION = 'A8CSP_BGTE_test_uninstall_canary';
+	private const string BYTE_CANARY_OPTION = 'A8CSP_BGJE_test_uninstall_canary';
 
 	/**
 	 * One sentinel from every option family documented for operators.
@@ -39,24 +39,24 @@ final class UninstallTest extends IntegrationTestCase {
 	 * @var list<string>
 	 */
 	private const array DOCUMENTED_OPTIONS = array(
-		'a8csp_bgte_schedule_registrations_uninstall-test',
-		'a8csp_bgte_run_uninstall-test:task_run-1',
-		'a8csp_bgte_failed_runs_uninstall-test:task',
-		'a8csp_bgte_latest_run_uninstall-test',
-		'a8csp_bgte_history_uninstall-test',
-		'a8csp_bgte_overlap_lock_uninstall-test_args-hash',
-		'a8csp_bgte_occurrence_lease_registration-hash',
-		'a8csp_bgte_cleanup_intent_registration-hash',
+		'a8csp_bgje_schedule_registrations_uninstall-test',
+		'a8csp_bgje_run_uninstall-test:job_run-1',
+		'a8csp_bgje_failed_runs_uninstall-test:job',
+		'a8csp_bgje_latest_run_uninstall-test',
+		'a8csp_bgje_history_uninstall-test',
+		'a8csp_bgje_overlap_lock_uninstall-test_args-hash',
+		'a8csp_bgje_occurrence_lease_registration-hash',
+		'a8csp_bgje_cleanup_intent_registration-hash',
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_background_tasks/start_batch',
-		'a8csp_background_tasks/continue_batch',
-		'a8csp_background_tasks/run_task',
-		'a8csp_background_tasks/run_chunk',
-		'a8csp_background_tasks/cleanup_batch',
-		'a8csp_background_tasks/schedule_due',
+		'a8csp_jobs_engine/start_chunked_job',
+		'a8csp_jobs_engine/continue_chunked_job',
+		'a8csp_jobs_engine/run_job',
+		'a8csp_jobs_engine/run_chunk',
+		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/schedule_due',
 	);
 
 	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */
@@ -130,7 +130,7 @@ final class UninstallTest extends IntegrationTestCase {
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
-		self::assertSame( array(), self::engine_option_names(), 'uninstall.php must leave no option inside the documented a8csp_bgte_ ownership prefix' );
+		self::assertSame( array(), self::engine_option_names(), 'uninstall.php must leave no option inside the documented a8csp_bgje_ ownership prefix' );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
 			self::assertFalse( $wp_cron->is_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
 			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
@@ -173,11 +173,11 @@ final class UninstallTest extends IntegrationTestCase {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
-		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( 'a8csp_bgte_' ) . '%' ) );
+		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( 'a8csp_bgje_' ) . '%' ) );
 		self::assertIsArray( $names );
 		self::assertContainsOnlyString( $names );
 
-		return \array_values( \array_filter( $names, static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgte_' ) ) );
+		return \array_values( \array_filter( $names, static fn ( string $name ): bool => \str_starts_with( $name, 'a8csp_bgje_' ) ) );
 	}
 
 	// endregion.

@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -47,7 +47,7 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
@@ -62,7 +62,7 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Retained failed-run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
@@ -73,12 +73,12 @@ final readonly class EngineFacade {
 	}
 
 	/**
-	 * Cancels one retained run that is not executing or pending batch cleanup.
+	 * Cancels one retained run that is not executing or pending chunked job cleanup.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Retained run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>

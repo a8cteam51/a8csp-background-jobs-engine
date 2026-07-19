@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -98,7 +98,7 @@ final readonly class FailedRunOutput {
 	 *
 	 * @phpstan-param array<string, list<FailedRunEntry>> $entries_by_name
 	 *
-	 * @param   array       $entries_by_name Failed runs keyed by composed task or batch identity.
+	 * @param   array       $entries_by_name Failed runs keyed by composed job or chunked job identity.
 	 * @param   string|null $owner           Exact owner filter, or null for every owner.
 	 *
 	 * @phpstan-return list<FailedRunRow>
@@ -110,7 +110,7 @@ final readonly class FailedRunOutput {
 
 		$rows = array();
 		foreach ( $entries_by_name as $name => $entries ) {
-			$parts = WorkIdentity::parts( $name );
+			$parts = JobIdentity::parts( $name );
 			if ( null === $parts || ( null !== $owner && $owner !== $parts[0] ) ) {
 				continue;
 			}

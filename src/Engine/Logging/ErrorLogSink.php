@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -48,12 +48,12 @@ final class ErrorLogSink {
 		 *
 		 * @param   bool $log_to_error_log Whether to register the default error-log handler.
 		 */
-		$log_to_error_log = \apply_filters( 'a8csp_background_tasks/log_to_error_log', true );
+		$log_to_error_log = \apply_filters( 'a8csp_jobs_engine/log_to_error_log', true );
 		if ( false === $log_to_error_log ) {
 			return;
 		}
 
-		\add_action( 'a8csp_background_tasks/log', array( self::class, 'log' ), 10, 3 );
+		\add_action( 'a8csp_jobs_engine/log', array( self::class, 'log' ), 10, 3 );
 	}
 
 	// endregion
@@ -74,7 +74,7 @@ final class ErrorLogSink {
 	 */
 	public static function log( string $level, string $message, array $context ): void {
 		$line = \strtr(
-			'a8csp-background-tasks-engine.' . $level . ': ' . $message,
+			'a8csp-background-jobs-engine.' . $level . ': ' . $message,
 			array(
 				"\r" => '\\r',
 				"\n" => '\\n',

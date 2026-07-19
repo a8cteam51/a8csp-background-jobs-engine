@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -49,7 +49,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_history_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_history_';
 
 	/**
 	 * Distinct single-flight identities are evicted least-recently-recorded past this count; without
@@ -73,7 +73,7 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
@@ -280,7 +280,7 @@ final readonly class RunHistory {
 		 *
 		 * @param   int $size Default per-buffer history cap.
 		 */
-		$size = \apply_filters( 'a8csp_background_tasks/history_size', self::DEFAULT_SIZE );
+		$size = \apply_filters( 'a8csp_jobs_engine/history_size', self::DEFAULT_SIZE );
 		if ( \is_int( $size ) && 0 < $size ) {
 			return $size;
 		}

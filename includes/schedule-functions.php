@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,7 +22,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
  * @return  true|\WP_Error
  */
 #[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
-function a8csp_bgte_schedule_sync( string $owner, array $schedules ): true|\WP_Error {
+function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_Error {
 	try {
 		$declarations = array();
 		foreach ( $schedules as $specification ) {
@@ -30,15 +30,15 @@ function a8csp_bgte_schedule_sync( string $owner, array $schedules ): true|\WP_E
 				throw new \InvalidArgumentException( 'schedule entries must be arrays' );
 			}
 
-			if ( ! isset( $specification['name'], $specification['every'], $specification['task'] ) ) {
-				throw new \InvalidArgumentException( 'schedule entries must include name, every, and task' );
+			if ( ! isset( $specification['name'], $specification['every'], $specification['job'] ) ) {
+				throw new \InvalidArgumentException( 'schedule entries must include name, every, and job' );
 			}
 
 			$name  = $specification['name'];
 			$every = $specification['every'];
-			$task  = $specification['task'];
-			if ( ! \is_string( $name ) || ! \is_string( $task ) ) {
-				throw new \InvalidArgumentException( 'name and task must be strings' );
+			$job   = $specification['job'];
+			if ( ! \is_string( $name ) || ! \is_string( $job ) ) {
+				throw new \InvalidArgumentException( 'name and job must be strings' );
 			}
 			if ( ! \is_int( $every ) ) {
 				throw new \InvalidArgumentException( 'every must be an integer number of seconds' );
@@ -72,10 +72,10 @@ function a8csp_bgte_schedule_sync( string $owner, array $schedules ): true|\WP_E
 				throw new \InvalidArgumentException( 'priority must be an integer' );
 			}
 
-			$declarations[] = new Schedule( $name, Recurrence::every( $every ), $task, $args, $overlap, $catch_up, $priority );
+			$declarations[] = new Schedule( $name, Recurrence::every( $every ), $job, $args, $overlap, $catch_up, $priority );
 		}
 
-		$result = \a8csp_bgte( $owner )->schedules()->sync( $declarations );
+		$result = \a8csp_bgje( $owner )->schedules()->sync( $declarations );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -102,9 +102,9 @@ function a8csp_bgte_schedule_sync( string $owner, array $schedules ): true|\WP_E
  * @return  string|\WP_Error
  */
 #[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
-function a8csp_bgte_schedule_dispatch( string $owner, string $name ): string|\WP_Error {
+function a8csp_bgje_schedule_dispatch( string $owner, string $name ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgte( $owner )->schedules()->dispatch_now( $name );
+		$result = \a8csp_bgje( $owner )->schedules()->dispatch_now( $name );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}

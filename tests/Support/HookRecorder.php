@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 /**
  * Records every engine action observed through the unit-test WordPress hook boundary.
@@ -11,7 +11,7 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
 final class HookRecorder {
 	// region FIELDS AND CONSTANTS.
 
-	private const string PREFIX = 'a8csp_background_tasks/';
+	private const string PREFIX = 'a8csp_jobs_engine/';
 
 	/**
 	 * Engine actions in fire order.
@@ -31,7 +31,7 @@ final class HookRecorder {
 	 * @version 1.0.0
 	 */
 	public function __construct() {
-		$observers = $GLOBALS['a8csp_bgte_test_action_observers'] ?? array();
+		$observers = $GLOBALS['a8csp_bgje_test_action_observers'] ?? array();
 		if ( ! \is_array( $observers ) ) {
 			throw new \UnexpectedValueException( 'Initialize the action-observer test ledger as an array.' );
 		}
@@ -46,7 +46,7 @@ final class HookRecorder {
 				'args' => \array_values( $args ),
 			);
 		};
-		$GLOBALS['a8csp_bgte_test_action_observers'] = $observers;
+		$GLOBALS['a8csp_bgje_test_action_observers'] = $observers;
 	}
 
 	// endregion.

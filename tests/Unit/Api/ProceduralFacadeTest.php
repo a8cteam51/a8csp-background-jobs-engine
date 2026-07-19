@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WPErrorStub;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WPErrorStub;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -22,17 +22,17 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgte_task_register' )]
-#[CoversFunction( 'a8csp_bgte_task_enqueue' )]
-#[CoversFunction( 'a8csp_bgte_batch_register' )]
-#[CoversFunction( 'a8csp_bgte_batch_start' )]
-#[CoversFunction( 'a8csp_bgte_schedule_sync' )]
-#[CoversFunction( 'a8csp_bgte_schedule_dispatch' )]
-#[CoversFunction( 'a8csp_bgte_run_last_completed' )]
-#[CoversFunction( 'a8csp_bgte_run_retry_failed' )]
-#[CoversFunction( 'a8csp_bgte_run_cancel' )]
-#[CoversFunction( 'a8csp_bgte_run_on_completed' )]
-#[CoversFunction( 'a8csp_bgte_run_on_failed' )]
+#[CoversFunction( 'a8csp_bgje_job_register' )]
+#[CoversFunction( 'a8csp_bgje_job_enqueue' )]
+#[CoversFunction( 'a8csp_bgje_chunked_job_register' )]
+#[CoversFunction( 'a8csp_bgje_chunked_job_start' )]
+#[CoversFunction( 'a8csp_bgje_schedule_sync' )]
+#[CoversFunction( 'a8csp_bgje_schedule_dispatch' )]
+#[CoversFunction( 'a8csp_bgje_run_last_completed' )]
+#[CoversFunction( 'a8csp_bgje_run_retry_failed' )]
+#[CoversFunction( 'a8csp_bgje_run_cancel' )]
+#[CoversFunction( 'a8csp_bgje_run_on_completed' )]
+#[CoversFunction( 'a8csp_bgje_run_on_failed' )]
 final class ProceduralFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -86,7 +86,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_task_registration_and_enqueue_round_trip_every_command_argument(): void {
+	public function test_job_registration_and_enqueue_round_trip_every_command_argument(): void {
 		/** @var list<array<array-key, mixed>> $calls */
 		$calls   = array();
 		$args    = array( 'site_id' => 7 );
@@ -99,16 +99,16 @@ final class ProceduralFacadeTest extends TestCase {
 			'retry'       => $retry,
 		);
 
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', $handler, $options ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler, $options ) );
 
-		$run_id = \a8csp_bgte_task_enqueue( self::OWNER, 'task', $args, 37, 'shared-flight', 23 );
+		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $args, 37, 'shared-flight', 23 );
 		self::assertIsString( $run_id );
 		$schedule_call = $this->latest_backend_call( 'schedule_single' );
 		self::assertSame( self::NOW + 37, $schedule_call['args']['timestamp'] ?? null );
 		self::assertSame( 23, $schedule_call['args']['priority'] ?? null );
 
 		++$this->rig->clock()->timestamp;
-		$overlap = \a8csp_bgte_task_enqueue( self::OWNER, 'task', array( 'site_id' => 8 ), 0, 'shared-flight', 99 );
+		$overlap = \a8csp_bgje_job_enqueue( self::OWNER, 'job', array( 'site_id' => 8 ), 0, 'shared-flight', 99 );
 		$error   = self::assert_wp_error( $overlap, 'overlap_held' );
 		self::assertSame( array( 'run_id' => $run_id ), $error->get_error_data() );
 
@@ -117,45 +117,45 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Duplicate task and batch registrations expose the same stable WordPress error.
+	 * Duplicate job and chunked job registrations expose the same stable WordPress error.
 	 *
 	 * @return  void
 	 */
 	public function test_duplicate_registrations_return_already_registered_errors(): void {
-		$handler = static function ( array $args ): void {};
-		$batch   = new RecordingBatch( 'batch' );
+		$handler     = static function ( array $args ): void {};
+		$chunked_job = new RecordingChunkedJob( 'chunked_job' );
 
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', $handler ) );
-		self::assert_wp_error( \a8csp_bgte_task_register( self::OWNER, 'task', $handler ), 'already_registered' );
-		self::assertTrue( \a8csp_bgte_batch_register( self::OWNER, $batch ) );
-		self::assert_wp_error( \a8csp_bgte_batch_register( self::OWNER, $batch ), 'already_registered' );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ) );
+		self::assert_wp_error( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ), 'already_registered' );
+		self::assertTrue( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ) );
+		self::assert_wp_error( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ), 'already_registered' );
 	}
 
 	/**
-	 * Batch starts default to rejection, accept replacement explicitly, and preserve priority.
+	 * Chunked Job starts default to rejection, accept replacement explicitly, and preserve priority.
 	 *
 	 * @return  void
 	 */
-	public function test_batch_start_maps_existing_policy_and_priority(): void {
-		$batch = new RecordingBatch( 'batch' );
-		self::assertTrue( \a8csp_bgte_batch_register( self::OWNER, $batch ) );
+	public function test_chunked_job_start_maps_existing_policy_and_priority(): void {
+		$chunked_job = new RecordingChunkedJob( 'chunked_job' );
+		self::assertTrue( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ) );
 
-		$run_id = \a8csp_bgte_batch_start( self::OWNER, 'batch', array( 'scope' => 'all' ), priority: 31 );
+		$run_id = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ), priority: 31 );
 		self::assertIsString( $run_id );
 		$enqueue_call = $this->latest_backend_call( 'enqueue_async' );
 		self::assertSame( 31, $enqueue_call['args']['priority'] ?? null );
 
 		++$this->rig->clock()->timestamp;
-		$overlap = \a8csp_bgte_batch_start( self::OWNER, 'batch', array( 'scope' => 'all' ) );
+		$overlap = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ) );
 		$error   = self::assert_wp_error( $overlap, 'overlap_held' );
 		self::assertSame( array( 'run_id' => $run_id ), $error->get_error_data() );
 
-		$invalid = \a8csp_bgte_batch_start( self::OWNER, 'batch', existing: 'invalid' );
+		$invalid = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', existing: 'invalid' );
 		$error   = self::assert_wp_error( $invalid, 'invalid_argument' );
 		self::assertSame( 'existing must be reject or replace', $error->get_error_message() );
 
 		++$this->rig->clock()->timestamp;
-		$replacement = \a8csp_bgte_batch_start( self::OWNER, 'batch', array( 'scope' => 'all' ), 'replace' );
+		$replacement = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ), 'replace' );
 		self::assertIsString( $replacement );
 		self::assertNotSame( $run_id, $replacement );
 	}
@@ -172,28 +172,28 @@ final class ProceduralFacadeTest extends TestCase {
 		$handler = static function ( array $handler_args ) use ( &$calls ): void {
 			$calls[] = $handler_args;
 		};
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'scheduled-task', $handler ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'scheduled-job', $handler ) );
 
 		$spec = array(
 			'name'     => 'recurring',
 			'every'    => 300,
-			'task'     => 'scheduled-task',
+			'job'      => 'scheduled-job',
 			'args'     => $args,
 			'overlap'  => 'replace',
 			'catch_up' => 'skip',
 			'priority' => 41,
 		);
-		self::assertTrue( \a8csp_bgte_schedule_sync( self::OWNER, array( $spec ) ) );
+		self::assertTrue( \a8csp_bgje_schedule_sync( self::OWNER, array( $spec ) ) );
 		$facade_snapshot = $this->rig->inspection()->schedules( self::OWNER );
 		$write_count     = $this->backend_call_count( 'schedule_recurring' );
 
-		$schedule      = new Schedule( 'recurring', Recurrence::every( 300 ), 'scheduled-task', $args, OverlapPolicy::Replace, CatchUpPolicy::Skip, 41 );
+		$schedule      = new Schedule( 'recurring', Recurrence::every( 300 ), 'scheduled-job', $args, OverlapPolicy::Replace, CatchUpPolicy::Skip, 41 );
 		$client_result = $this->rig->client( self::OWNER )->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $client_result );
 		self::assertSame( $facade_snapshot, $this->rig->inspection()->schedules( self::OWNER ) );
 		self::assertSame( $write_count, $this->backend_call_count( 'schedule_recurring' ) );
 
-		$run_id = \a8csp_bgte_schedule_dispatch( self::OWNER, 'recurring' );
+		$run_id = \a8csp_bgje_schedule_dispatch( self::OWNER, 'recurring' );
 		self::assertIsString( $run_id );
 		$this->rig->run_due();
 		self::assertSame( array( $args ), $calls );
@@ -209,7 +209,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_schedules' )]
 	public function test_schedule_sync_returns_invalid_argument_for_invalid_declarations( array $schedules, string $message ): void {
-		$error = self::assert_wp_error( \a8csp_bgte_schedule_sync( self::OWNER, $schedules ), 'invalid_argument' );
+		$error = self::assert_wp_error( \a8csp_bgje_schedule_sync( self::OWNER, $schedules ), 'invalid_argument' );
 
 		self::assertSame( $message, $error->get_error_message() );
 	}
@@ -229,37 +229,37 @@ final class ProceduralFacadeTest extends TestCase {
 				'schedules' => array(
 					array(
 						'every' => 300,
-						'task'  => 'task',
+						'job'   => 'job',
 					),
 				),
-				'message'   => 'schedule entries must include name, every, and task',
+				'message'   => 'schedule entries must include name, every, and job',
 			),
 			'non-string name'        => array(
 				'schedules' => array(
 					array(
 						'name'  => 7,
 						'every' => 300,
-						'task'  => 'task',
+						'job'   => 'job',
 					),
 				),
-				'message'   => 'name and task must be strings',
+				'message'   => 'name and job must be strings',
 			),
-			'non-string task'        => array(
+			'non-string job'         => array(
 				'schedules' => array(
 					array(
 						'name'  => 'schedule',
 						'every' => 300,
-						'task'  => 7,
+						'job'   => 7,
 					),
 				),
-				'message'   => 'name and task must be strings',
+				'message'   => 'name and job must be strings',
 			),
 			'non-array args'         => array(
 				'schedules' => array(
 					array(
 						'name'  => 'schedule',
 						'every' => 300,
-						'task'  => 'task',
+						'job'   => 'job',
 						'args'  => 'invalid',
 					),
 				),
@@ -270,7 +270,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'    => 'schedule',
 						'every'   => 300,
-						'task'    => 'task',
+						'job'     => 'job',
 						'overlap' => array(),
 					),
 				),
@@ -281,7 +281,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'    => 'schedule',
 						'every'   => 300,
-						'task'    => 'task',
+						'job'     => 'job',
 						'overlap' => 'invalid',
 					),
 				),
@@ -292,7 +292,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'     => 'schedule',
 						'every'    => 300,
-						'task'     => 'task',
+						'job'      => 'job',
 						'catch_up' => array(),
 					),
 				),
@@ -303,7 +303,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'     => 'schedule',
 						'every'    => 300,
-						'task'     => 'task',
+						'job'      => 'job',
 						'catch_up' => 'invalid',
 					),
 				),
@@ -314,7 +314,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'  => 'schedule',
 						'every' => 0,
-						'task'  => 'task',
+						'job'   => 'job',
 					),
 				),
 				'message'   => 'Recurrence interval must be positive; pass a value of at least one second.',
@@ -324,7 +324,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'  => 'schedule',
 						'every' => '1.9',
-						'task'  => 'task',
+						'job'   => 'job',
 					),
 				),
 				'message'   => 'every must be an integer number of seconds',
@@ -334,7 +334,7 @@ final class ProceduralFacadeTest extends TestCase {
 					array(
 						'name'     => 'schedule',
 						'every'    => 300,
-						'task'     => 'task',
+						'job'      => 'job',
 						'priority' => '10',
 					),
 				),
@@ -349,7 +349,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_dispatch_returns_the_client_failure_as_wp_error(): void {
-		self::assert_wp_error( \a8csp_bgte_schedule_dispatch( self::OWNER, 'missing' ), 'unknown_schedule' );
+		self::assert_wp_error( \a8csp_bgje_schedule_dispatch( self::OWNER, 'missing' ), 'unknown_schedule' );
 	}
 
 	/**
@@ -358,14 +358,14 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_last_completed_run_id_preserves_null_and_string_success_values(): void {
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', static function ( array $args ): void {} ) );
-		self::assertNull( \a8csp_bgte_run_last_completed( self::OWNER, 'task' ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {} ) );
+		self::assertNull( \a8csp_bgje_run_last_completed( self::OWNER, 'job' ) );
 
-		$run_id = \a8csp_bgte_task_enqueue( self::OWNER, 'task' );
+		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job' );
 		self::assertIsString( $run_id );
 		$this->rig->run_due();
 
-		self::assertSame( $run_id, \a8csp_bgte_run_last_completed( self::OWNER, 'task' ) );
+		self::assertSame( $run_id, \a8csp_bgje_run_last_completed( self::OWNER, 'job' ) );
 	}
 
 	/**
@@ -377,17 +377,17 @@ final class ProceduralFacadeTest extends TestCase {
 		$handler = static function ( array $args ): void {
 			throw new NonRetryableException( 'Permanent failure.' );
 		};
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', $handler ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ) );
 
-		$failed_run = \a8csp_bgte_task_enqueue( self::OWNER, 'task', array( 'site_id' => 7 ) );
+		$failed_run = \a8csp_bgje_job_enqueue( self::OWNER, 'job', array( 'site_id' => 7 ) );
 		self::assertIsString( $failed_run );
 		$this->rig->run_due();
 
 		++$this->rig->clock()->timestamp;
-		$retry_run = \a8csp_bgte_run_retry_failed( self::OWNER, 'task', $failed_run );
+		$retry_run = \a8csp_bgje_run_retry_failed( self::OWNER, 'job', $failed_run );
 		self::assertIsString( $retry_run );
 		self::assertNotSame( $failed_run, $retry_run );
-		self::assert_wp_error( \a8csp_bgte_run_retry_failed( self::OWNER, 'task', self::MISSING_RUN_ID ), 'run_not_retained' );
+		self::assert_wp_error( \a8csp_bgje_run_retry_failed( self::OWNER, 'job', self::MISSING_RUN_ID ), 'run_not_retained' );
 	}
 
 	/**
@@ -396,12 +396,12 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_cancel_returns_the_run_id_and_maps_a_second_cancel(): void {
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', static function ( array $args ): void {} ) );
-		$run_id = \a8csp_bgte_task_enqueue( self::OWNER, 'task', delay_seconds: 60 );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {} ) );
+		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job', delay_seconds: 60 );
 		self::assertIsString( $run_id );
 
-		self::assertSame( $run_id, \a8csp_bgte_run_cancel( self::OWNER, 'task', $run_id ) );
-		self::assert_wp_error( \a8csp_bgte_run_cancel( self::OWNER, 'task', $run_id ), 'run_not_retained' );
+		self::assertSame( $run_id, \a8csp_bgje_run_cancel( self::OWNER, 'job', $run_id ) );
+		self::assert_wp_error( \a8csp_bgje_run_cancel( self::OWNER, 'job', $run_id ), 'run_not_retained' );
 	}
 
 	/**
@@ -410,12 +410,12 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_mutations_map_malformed_identifiers_to_invalid_argument_errors(): void {
-		self::assertTrue( \a8csp_bgte_task_register( self::OWNER, 'task', static function ( array $args ): void {} ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {} ) );
 
 		foreach (
 			array(
-				\a8csp_bgte_run_retry_failed( self::OWNER, 'task', 'malformed_run_id' ),
-				\a8csp_bgte_run_cancel( self::OWNER, 'task', 'malformed_run_id' ),
+				\a8csp_bgje_run_retry_failed( self::OWNER, 'job', 'malformed_run_id' ),
+				\a8csp_bgje_run_cancel( self::OWNER, 'job', 'malformed_run_id' ),
 			) as $result
 		) {
 			$error = self::assert_wp_error( $result, 'invalid_argument' );
@@ -431,13 +431,13 @@ final class ProceduralFacadeTest extends TestCase {
 	public function test_run_on_completed_registers_the_exact_public_hook(): void {
 		$listener = static function ( string $run_id, array $args ): void {};
 
-		\a8csp_bgte_run_on_completed( self::OWNER, 'task', $listener );
+		\a8csp_bgje_run_on_completed( self::OWNER, 'job', $listener );
 
 		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
-		$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'];
+		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
 		self::assertSame(
 			array(
-				'hook_name'     => 'a8csp_background_tasks/completed/' . self::OWNER . ':task',
+				'hook_name'     => 'a8csp_jobs_engine/completed/' . self::OWNER . ':job',
 				'callback'      => $listener,
 				'priority'      => 10,
 				'accepted_args' => 2,
@@ -454,13 +454,13 @@ final class ProceduralFacadeTest extends TestCase {
 	public function test_run_on_failed_registers_the_exact_public_hook(): void {
 		$listener = static function ( string $run_id, array $args, mixed $failure ): void {};
 
-		\a8csp_bgte_run_on_failed( self::OWNER, 'task', $listener );
+		\a8csp_bgje_run_on_failed( self::OWNER, 'job', $listener );
 
 		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
-		$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'];
+		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
 		self::assertSame(
 			array(
-				'hook_name'     => 'a8csp_background_tasks/failed/' . self::OWNER . ':task',
+				'hook_name'     => 'a8csp_jobs_engine/failed/' . self::OWNER . ':job',
 				'callback'      => $listener,
 				'priority'      => 10,
 				'accepted_args' => 3,
@@ -487,11 +487,11 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_client_init_timing_exception_propagates(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'plugins_loaded' => 1 );
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'plugins_loaded' => 1 );
 
 		$this->expectException( \LogicException::class );
 
-		(void) \a8csp_bgte_task_enqueue( self::OWNER, 'task' );
+		(void) \a8csp_bgje_job_enqueue( self::OWNER, 'job' );
 	}
 
 	/**
@@ -503,15 +503,15 @@ final class ProceduralFacadeTest extends TestCase {
 		$owner = 'Invalid Owner';
 
 		return array(
-			'task register'     => array( 'call' => static fn (): mixed => \a8csp_bgte_task_register( $owner, 'task', static function ( array $args ): void {} ) ),
-			'task enqueue'      => array( 'call' => static fn (): mixed => \a8csp_bgte_task_enqueue( $owner, 'task' ) ),
-			'batch register'    => array( 'call' => static fn (): mixed => \a8csp_bgte_batch_register( $owner, new RecordingBatch( 'batch' ) ) ),
-			'batch start'       => array( 'call' => static fn (): mixed => \a8csp_bgte_batch_start( $owner, 'batch' ) ),
-			'schedule sync'     => array( 'call' => static fn (): mixed => \a8csp_bgte_schedule_sync( $owner, array() ) ),
-			'schedule dispatch' => array( 'call' => static fn (): mixed => \a8csp_bgte_schedule_dispatch( $owner, 'schedule' ) ),
-			'last completed'    => array( 'call' => static fn (): mixed => \a8csp_bgte_run_last_completed( $owner, 'task' ) ),
-			'retry failed'      => array( 'call' => static fn (): mixed => \a8csp_bgte_run_retry_failed( $owner, 'task', self::MISSING_RUN_ID ) ),
-			'cancel'            => array( 'call' => static fn (): mixed => \a8csp_bgte_run_cancel( $owner, 'task', self::MISSING_RUN_ID ) ),
+			'job register'         => array( 'call' => static fn (): mixed => \a8csp_bgje_job_register( $owner, 'job', static function ( array $args ): void {} ) ),
+			'job enqueue'          => array( 'call' => static fn (): mixed => \a8csp_bgje_job_enqueue( $owner, 'job' ) ),
+			'chunked job register' => array( 'call' => static fn (): mixed => \a8csp_bgje_chunked_job_register( $owner, new RecordingChunkedJob( 'chunked_job' ) ) ),
+			'chunked job start'    => array( 'call' => static fn (): mixed => \a8csp_bgje_chunked_job_start( $owner, 'chunked_job' ) ),
+			'schedule sync'        => array( 'call' => static fn (): mixed => \a8csp_bgje_schedule_sync( $owner, array() ) ),
+			'schedule dispatch'    => array( 'call' => static fn (): mixed => \a8csp_bgje_schedule_dispatch( $owner, 'schedule' ) ),
+			'last completed'       => array( 'call' => static fn (): mixed => \a8csp_bgje_run_last_completed( $owner, 'job' ) ),
+			'retry failed'         => array( 'call' => static fn (): mixed => \a8csp_bgje_run_retry_failed( $owner, 'job', self::MISSING_RUN_ID ) ),
+			'cancel'               => array( 'call' => static fn (): mixed => \a8csp_bgje_run_cancel( $owner, 'job', self::MISSING_RUN_ID ) ),
 		);
 	}
 
@@ -525,17 +525,17 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	public function test_public_function_signatures_and_no_discard_contracts(): void {
 		$signatures = array(
-			'a8csp_bgte_task_register'      => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
-			'a8csp_bgte_task_enqueue'       => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, ?string $dedup_key = null, int $priority = 10): WP_Error|string',
-			'a8csp_bgte_batch_register'     => '(string $owner, A8C\\SpecialProjects\\BackgroundTasksEngine\\Api\\Batch\\BatchInterface $batch): WP_Error|true',
-			'a8csp_bgte_batch_start'        => '(string $owner, string $name, array $start_args = array(), string $existing = \'reject\', int $priority = 10): WP_Error|string',
-			'a8csp_bgte_schedule_sync'      => '(string $owner, array $schedules): WP_Error|true',
-			'a8csp_bgte_schedule_dispatch'  => '(string $owner, string $name): WP_Error|string',
-			'a8csp_bgte_run_last_completed' => '(string $owner, string $name): WP_Error|string|null',
-			'a8csp_bgte_run_retry_failed'   => '(string $owner, string $name, string $run_id): WP_Error|string',
-			'a8csp_bgte_run_cancel'         => '(string $owner, string $name, string $run_id): WP_Error|string',
-			'a8csp_bgte_run_on_completed'   => '(string $owner, string $name, callable $listener): void',
-			'a8csp_bgte_run_on_failed'      => '(string $owner, string $name, callable $listener): void',
+			'a8csp_bgje_job_register'         => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
+			'a8csp_bgje_job_enqueue'          => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, ?string $dedup_key = null, int $priority = 10): WP_Error|string',
+			'a8csp_bgje_chunked_job_register' => '(string $owner, A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobInterface $chunked_job): WP_Error|true',
+			'a8csp_bgje_chunked_job_start'    => '(string $owner, string $name, array $start_args = array(), string $existing = \'reject\', int $priority = 10): WP_Error|string',
+			'a8csp_bgje_schedule_sync'        => '(string $owner, array $schedules): WP_Error|true',
+			'a8csp_bgje_schedule_dispatch'    => '(string $owner, string $name): WP_Error|string',
+			'a8csp_bgje_run_last_completed'   => '(string $owner, string $name): WP_Error|string|null',
+			'a8csp_bgje_run_retry_failed'     => '(string $owner, string $name, string $run_id): WP_Error|string',
+			'a8csp_bgje_run_cancel'           => '(string $owner, string $name, string $run_id): WP_Error|string',
+			'a8csp_bgje_run_on_completed'     => '(string $owner, string $name, callable $listener): void',
+			'a8csp_bgje_run_on_failed'        => '(string $owner, string $name, callable $listener): void',
 		);
 
 		foreach ( $signatures as $function => $signature ) {

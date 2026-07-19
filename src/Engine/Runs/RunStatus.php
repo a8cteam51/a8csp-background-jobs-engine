@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Lifecycle state persisted for a task or batch run.
+ * Lifecycle state persisted for a job or chunked job run.
  *
  * @internal
  *

@@ -1,8 +1,8 @@
 {
-  "name": "a8csp/background-tasks-engine",
+  "name": "a8csp/background-jobs-engine",
   "type": "wordpress-plugin",
 
-  "description": "A background-work engine for WordPress sites: Tasks, Schedules, and Batches using Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
+  "description": "A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
   "homepage": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
   "license": "GPL-2.0-or-later",
   "authors": [
@@ -50,12 +50,12 @@
 
   "autoload": {
     "psr-4": {
-      "A8C\\SpecialProjects\\BackgroundTasksEngine\\": "src/"
+      "A8C\\SpecialProjects\\BackgroundJobsEngine\\": "src/"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "A8C\\SpecialProjects\\BackgroundTasksEngine\\Tests\\": "tests/"
+      "A8C\\SpecialProjects\\BackgroundJobsEngine\\Tests\\": "tests/"
     }
   },
 
@@ -83,8 +83,8 @@
       "@i18n:makemo",
       "@i18n:makephp"
     ],
-    "i18n:makepot": "wp i18n make-pot ./ --slug=a8csp-background-tasks-engine",
-    "i18n:updatepo": "wp i18n update-po ./languages/a8csp-background-tasks-engine.pot",
+    "i18n:makepot": "wp i18n make-pot ./ --slug=a8csp-background-jobs-engine",
+    "i18n:updatepo": "wp i18n update-po ./languages/a8csp-background-jobs-engine.pot",
     "i18n:makemo": "wp i18n make-mo ./languages/",
     "i18n:makephp": "wp i18n make-php ./languages/",
 

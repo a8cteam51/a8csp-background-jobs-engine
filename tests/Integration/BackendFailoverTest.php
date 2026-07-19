@@ -1,31 +1,31 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\ReadinessControlledBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Randomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\SystemClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ReadinessControlledBackend;
 
 /**
  * Not-ready Action Scheduler occurrences remain dormant and return when readiness recovers.
@@ -37,13 +37,13 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook isolated to the backend-readiness transition. */
-	private const string HOOK = 'a8csp_bgte/integration/backend_failover';
+	private const string HOOK = 'a8csp_bgje/integration/backend_failover';
 
 	/** Action Scheduler group isolated to the dormant occurrence. */
-	private const string ACTION_SCHEDULER_GROUP = 'a8csp-bgte-integration-backend-failover-as';
+	private const string ACTION_SCHEDULER_GROUP = 'a8csp-jobs-engine-integration-backend-failover-as';
 
 	/** Advisory group isolated to the WP-Cron fallback occurrence. */
-	private const string WP_CRON_GROUP = 'a8csp-bgte-integration-backend-failover-cron';
+	private const string WP_CRON_GROUP = 'a8csp-jobs-engine-integration-backend-failover-cron';
 
 	/** Owner isolated to recurring-chain convergence. */
 	private const string CONVERGENCE_OWNER = 'integration-backend-convergence';
@@ -51,8 +51,8 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	/** Owner-qualified schedule identity isolated to recurring-chain convergence. */
 	private const string CONVERGENCE_IDENTITY = 'integration-backend-convergence:recurring';
 
-	/** Target task isolated to recurring-chain convergence. */
-	private const string CONVERGENCE_TASK = 'integration-backend-convergence-task';
+	/** Target job isolated to recurring-chain convergence. */
+	private const string CONVERGENCE_JOB = 'integration-backend-convergence-job';
 
 	// endregion.
 
@@ -128,11 +128,11 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		$action_scheduler       = new ReadinessControlledBackend();
 		$scheduler              = $this->scheduler_facade_with_controllable_action_scheduler( $action_scheduler );
 		$schedules              = $this->schedules_with_scheduler( $scheduler );
-		$schedule               = new Schedule( 'recurring', Recurrence::every( 300 ), self::CONVERGENCE_TASK, priority: 37 );
+		$schedule               = new Schedule( 'recurring', Recurrence::every( 300 ), self::CONVERGENCE_JOB, priority: 37 );
 		$declarations           = array(
 			self::CONVERGENCE_IDENTITY => array(
 				'schedule' => $schedule,
-				'task'     => self::CONVERGENCE_OWNER . ':' . self::CONVERGENCE_TASK,
+				'job'      => self::CONVERGENCE_OWNER . ':' . self::CONVERGENCE_JOB,
 			),
 		);
 		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend() ) );
@@ -179,7 +179,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
-		$work                 = new WorkRegistry();
+		$work                 = new JobRegistry();
 		$clock                = new SystemClock();
 		$logger               = new HookLogger();
 		$registry             = new ScheduleRegistry( $rows, $logger );

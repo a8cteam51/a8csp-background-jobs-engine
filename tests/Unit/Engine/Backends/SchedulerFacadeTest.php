@@ -1,21 +1,21 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Backends;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Backends;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -29,10 +29,10 @@ use PHPUnit\Framework\TestCase;
 final class SchedulerFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string IDENTITY  = self::OWNER . ':' . self::TASK_NAME;
-	private const int NOW          = 1_700_000_000;
-	private const string OWNER     = 'scheduler-tests';
-	private const string TASK_NAME = 'refresh-index';
+	private const string IDENTITY = self::OWNER . ':' . self::JOB_NAME;
+	private const int NOW         = 1_700_000_000;
+	private const string OWNER    = 'scheduler-tests';
+	private const string JOB_NAME = 'refresh-index';
 
 	private Client $client;
 	private EngineRig $rig;
@@ -68,7 +68,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		$this->rig    = EngineRig::set_up( self::NOW, 2 );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->client->tasks()->register( new RecordingTask( self::TASK_NAME ) );
+		$this->client->jobs()->register( new RecordingJob( self::JOB_NAME ) );
 		$this->reset_backend_observations();
 	}
 
@@ -101,8 +101,8 @@ final class SchedulerFacadeTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_ready_preferred_backend_accepts_public_task_admission(): void {
-		$result = $this->client->tasks()->enqueue( self::TASK_NAME, array( 'site_id' => 7 ) );
+	public function test_ready_preferred_backend_accepts_public_job_admission(): void {
+		$result = $this->client->jobs()->enqueue( self::JOB_NAME, array( 'site_id' => 7 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->preferred() ) );
@@ -112,17 +112,17 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
-	 * An unavailable Action Scheduler candidate yields public task admission to the WP-Cron fallback.
+	 * An unavailable Action Scheduler candidate yields public job admission to the WP-Cron fallback.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_unready_preferred_backend_falls_back_for_public_task_admission(): void {
+	public function test_unready_preferred_backend_falls_back_for_public_job_admission(): void {
 		$this->preferred()->ready = false;
 
-		$result = $this->client->tasks()->enqueue( self::TASK_NAME, array( 'site_id' => 7 ) );
+		$result = $this->client->jobs()->enqueue( self::JOB_NAME, array( 'site_id' => 7 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'is_ready' ), $this->verbs( $this->preferred() ) );
@@ -142,7 +142,7 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_mid_write_readiness_loss_falls_through_without_losing_the_run(): void {
 		$this->preferred()->readiness_results = array( true, false );
 
-		$result = $this->client->tasks()->enqueue( self::TASK_NAME, array( 'site_id' => 7 ) );
+		$result = $this->client->jobs()->enqueue( self::JOB_NAME, array( 'site_id' => 7 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), $this->verbs( $this->preferred() ) );
@@ -234,7 +234,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_public_schedule_removal_clears_every_ready_backend(): void {
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), self::TASK_NAME );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), self::JOB_NAME );
 		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
 		$this->reset_backend_observations();
 
@@ -257,8 +257,8 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_duplicate_ready_chains_converge_to_the_current_preferred_declaration(): void {
-		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), self::TASK_NAME, priority: 21 );
-		$current = new Schedule( 'nightly', Recurrence::every( 900 ), self::TASK_NAME, priority: 73 );
+		$initial = new Schedule( 'nightly', Recurrence::every( 300 ), self::JOB_NAME, priority: 21 );
+		$current = new Schedule( 'nightly', Recurrence::every( 900 ), self::JOB_NAME, priority: 73 );
 		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $initial ) ) );
 		$this->preferred()->scheduled = true;
 		$this->preferred()->ready     = false;
@@ -295,7 +295,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_single_fallback_chain_is_not_migrated_after_preferred_recovery(): void {
-		$schedule                 = new Schedule( 'nightly', Recurrence::every( 300 ), self::TASK_NAME );
+		$schedule                 = new Schedule( 'nightly', Recurrence::every( 300 ), self::JOB_NAME );
 		$this->preferred()->ready = false;
 		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
 		$this->fallback()->scheduled = true;
@@ -324,7 +324,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dormant_preferred_backend_is_not_consulted_for_convergence(): void {
-		$schedule                 = new Schedule( 'nightly', Recurrence::every( 300 ), self::TASK_NAME );
+		$schedule                 = new Schedule( 'nightly', Recurrence::every( 300 ), self::JOB_NAME );
 		$this->preferred()->ready = false;
 		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
 		$this->fallback()->scheduled = true;
@@ -350,7 +350,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_convergence_clear_failure_preserves_registration_without_recreating(): void {
-		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), self::TASK_NAME );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), self::JOB_NAME );
 		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
 		$registration = $this->schedule_registration();
 		$next_due     = $registration['next_due'] ?? null;
@@ -389,7 +389,7 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertInstanceOf( SchedulerFacade::class, $scheduler );
 
 		$accepted = $scheduler->enqueue_async(
-			'a8csp_background_tasks/payload_boundary',
+			'a8csp_jobs_engine/payload_boundary',
 			self::args_with_json_length( 8_000 ),
 			'scheduler-tests:payload-boundary'
 		);
@@ -401,7 +401,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$this->reset_backend_observations();
 
 		$rejected = $scheduler->enqueue_async(
-			'a8csp_background_tasks/payload_boundary',
+			'a8csp_jobs_engine/payload_boundary',
 			self::args_with_json_length( 8_001 ),
 			'scheduler-tests:payload-boundary'
 		);

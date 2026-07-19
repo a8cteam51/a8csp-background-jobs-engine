@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 
 /**
  * Demonstrates a client plugin entry point built entirely on the public engine facade.
  *
  * A client plugin constructs this class from its main file. The registered `init` callback then
- * declares its task, batch, and complete owner-scoped schedule set on every request.
+ * declares its job, chunked job, and complete owner-scoped schedule set on every request.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -47,7 +47,7 @@ final readonly class DemoClient {
 	 *
 	 * @var     string
 	 */
-	public const string LOG_HOOK = 'a8csp_bgte_demo/log';
+	public const string LOG_HOOK = 'a8csp_bgje_demo/log';
 
 	// endregion.
 
@@ -91,7 +91,7 @@ final readonly class DemoClient {
 	}
 
 	/**
-	 * Registers one task, one batch, and the owner's complete schedule set.
+	 * Registers one job, one chunked job, and the owner's complete schedule set.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -99,13 +99,13 @@ final readonly class DemoClient {
 	 * @return  void
 	 */
 	public function register_background_work(): void {
-		$client = \a8csp_bgte( self::OWNER );
-		$client->tasks()->register( new SiteHealthPingTask() );
-		$client->batches()->register( new CommentCountRecountBatch() );
+		$client = \a8csp_bgje( self::OWNER );
+		$client->jobs()->register( new SiteHealthPingJob() );
+		$client->chunked_jobs()->register( new CommentCountRecountChunkedJob() );
 
 		$synced = $client->schedules()->sync(
 			array(
-				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingTask::NAME, array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 10 ),
+				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingJob::NAME, array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 10 ),
 			)
 		);
 		if ( $synced->is_failure() ) {

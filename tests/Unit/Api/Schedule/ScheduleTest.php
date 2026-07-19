@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\AdmissionValidator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -44,11 +44,11 @@ final class ScheduleTest extends TestCase {
 	 */
 	public function test_constructor_retains_the_complete_definition_and_defaults(): void {
 		$recurrence = Recurrence::every( 300 );
-		$schedule   = new Schedule( name: 'refresh_index-2', recurrence: $recurrence, task: 'refresh-index', args: array( 'site_id' => 7 ), );
+		$schedule   = new Schedule( name: 'refresh_index-2', recurrence: $recurrence, job: 'refresh-index', args: array( 'site_id' => 7 ), );
 
 		self::assertSame( 'refresh_index-2', $schedule->name );
 		self::assertSame( $recurrence, $schedule->recurrence );
-		self::assertSame( 'refresh-index', $schedule->task );
+		self::assertSame( 'refresh-index', $schedule->job );
 		self::assertSame( array( 'site_id' => 7 ), $schedule->args );
 		self::assertSame( OverlapPolicy::Skip, $schedule->overlap );
 		self::assertSame( CatchUpPolicy::RunOnce, $schedule->catch_up );
@@ -102,11 +102,11 @@ final class ScheduleTest extends TestCase {
 	}
 
 	/**
-	 * Target task names obey the same stable grammar at definition construction.
+	 * Target job names obey the same stable grammar at definition construction.
 	 *
 	 * @return  void
 	 */
-	public function test_constructor_rejects_an_invalid_target_task_name(): void {
+	public function test_constructor_rejects_an_invalid_target_job_name(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
@@ -143,8 +143,8 @@ final class ScheduleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_constructor_accepts_both_priority_boundaries(): void {
-		self::assertSame( 0, ( new Schedule( 'lowest', Recurrence::every( 1 ), 'task', priority: 0 ) )->priority );
-		self::assertSame( 255, ( new Schedule( 'highest', Recurrence::every( 1 ), 'task', priority: 255 ) )->priority );
+		self::assertSame( 0, ( new Schedule( 'lowest', Recurrence::every( 1 ), 'job', priority: 0 ) )->priority );
+		self::assertSame( 255, ( new Schedule( 'highest', Recurrence::every( 1 ), 'job', priority: 255 ) )->priority );
 	}
 
 	/**
@@ -240,6 +240,6 @@ final class ScheduleTest extends TestCase {
 	 * @return  Schedule
 	 */
 	private function schedule(): Schedule {
-		return new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), task: 'refresh-index', args: array( 'site_id' => 7 ), );
+		return new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), job: 'refresh-index', args: array( 'site_id' => 7 ), );
 	}
 }

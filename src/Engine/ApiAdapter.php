@@ -1,18 +1,18 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchesEngineInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\RunsEngineInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\SchedulesEngineInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TasksEngineInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\SchedulesEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\JobsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -24,7 +24,7 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineInterface, SchedulesEngineInterface, RunsEngineInterface {
+final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngineInterface, SchedulesEngineInterface, RunsEngineInterface {
 	// region MAGIC METHODS
 
 	/**
@@ -33,15 +33,15 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string       $owner      Client plugin owner.
-	 * @param   WorkRegistry $work       Registered task and batch instances.
-	 * @param   Schedules    $schedules  Schedule engine operations.
-	 * @param   Dispatcher   $dispatcher Background-work admission coordinator.
-	 * @param   Inspection   $inspection Read-only run inspection.
+	 * @param   string      $owner      Client plugin owner.
+	 * @param   JobRegistry $work       Registered job and chunked job instances.
+	 * @param   Schedules   $schedules  Schedule engine operations.
+	 * @param   Dispatcher  $dispatcher Background-work admission coordinator.
+	 * @param   Inspection  $inspection Read-only run inspection.
 	 */
 	public function __construct(
 		private string $owner,
-		private WorkRegistry $work,
+		private JobRegistry $work,
 		private Schedules $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
@@ -52,56 +52,56 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	// region METHODS
 
 	/**
-	 * Registers one task under its complete owner-qualified identity.
+	 * Registers one job under its complete owner-qualified identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity Complete owner-qualified task identity.
-	 * @param   TaskInterface $task     Task to register.
+	 * @param   string             $identity Complete owner-qualified job identity.
+	 * @param   OneOffJobInterface $job     Job to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity and task name disagree, or a batch owns the identity.
-	 * @throws  \LogicException           When the task identity is already registered.
+	 * @throws  \InvalidArgumentException When the identity and job name disagree, or a chunked job owns the identity.
+	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function register_task( string $identity, TaskInterface $task ): void {
-		$this->work->register_task( $identity, $task );
+	public function register_job( string $identity, OneOffJobInterface $job ): void {
+		$this->work->register_job( $identity, $job );
 	}
 
 	/**
-	 * Registers one batch under its complete owner-qualified identity.
+	 * Registers one chunked job under its complete owner-qualified identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity Complete owner-qualified batch identity.
-	 * @param   BatchInterface $batch    Batch to register.
+	 * @param   string              $identity Complete owner-qualified chunked job identity.
+	 * @param   ChunkedJobInterface $chunked_job    Chunked Job to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity and batch name disagree, or a task owns the identity.
-	 * @throws  \LogicException           When the batch identity is already registered.
+	 * @throws  \InvalidArgumentException When the identity and chunked job name disagree, or a job owns the identity.
+	 * @throws  \LogicException           When the chunked job identity is already registered.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function register_batch( string $identity, BatchInterface $batch ): void {
-		$this->work->register_batch( $identity, $batch );
+	public function register_chunked_job( string $identity, ChunkedJobInterface $chunked_job ): void {
+		$this->work->register_chunked_job( $identity, $chunked_job );
 	}
 
 	/**
-	 * Creates and schedules one run for a registered task.
+	 * Creates and schedules one run for a registered job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity  Complete owner-qualified task identity.
-	 * @param   array<array-key, mixed> $args      Task arguments.
+	 * @param   string                  $identity  Complete owner-qualified job identity.
+	 * @param   array<array-key, mixed> $args      Job arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
 	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	#[\Override]
@@ -110,22 +110,22 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	}
 
 	/**
-	 * Creates and schedules one run for a registered batch.
+	 * Creates and schedules one run for a registered chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity   Complete owner-qualified batch identity.
+	 * @param   string                  $identity   Complete owner-qualified chunked job identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
-	#[\NoDiscard( 'a batch-start failure must be handled, not dropped' )]
+	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 	#[\Override]
 	public function start( string $identity, array $start_args, ExistingRunPolicy $existing, int $priority ): AbstractResult {
-		return ApiErrorMapper::map( $this->dispatcher->start_batch( $identity, $start_args, $existing, $priority ) );
+		return ApiErrorMapper::map( $this->dispatcher->start_chunked_job( $identity, $start_args, $existing, $priority ) );
 	}
 
 	/**
@@ -134,11 +134,11 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: \A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule, task: string}> $declarations
+	 * @phpstan-param array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule, job: string}> $declarations
 	 *
 	 * @param   array $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *
-	 * @return  AbstractResult<true, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	#[\Override]
@@ -154,7 +154,7 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 *
 	 * @param   string $identity Complete owner-qualified schedule identity.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	#[\Override]
@@ -168,9 +168,9 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
-	 * @return  AbstractResult<string|null, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	#[\Override]
@@ -184,10 +184,10 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Retained failed-run identifier.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	#[\Override]
@@ -196,15 +196,15 @@ final readonly class ApiAdapter implements TasksEngineInterface, BatchesEngineIn
 	}
 
 	/**
-	 * Cancels one retained run that is not executing or pending batch cleanup.
+	 * Cancels one retained run that is not executing or pending chunked job cleanup.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Retained run identifier.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	#[\Override]

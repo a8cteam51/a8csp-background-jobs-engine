@@ -1,31 +1,31 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\BatchContext;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\TaskInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Delivers the engine's internal task and batch actions.
+ * Delivers the engine's internal job and chunked job actions.
  *
  * Fresh execution markers exclude same-sequence redelivery; stale crash recovery remains at-least-once
- * and relies on task and batch idempotency.
+ * and relies on job and chunked job idempotency.
  *
  * @internal
  *
@@ -36,7 +36,7 @@ final readonly class ActionDeliveries {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum encoded JSON bytes accepted for one generated or filtered batch chunk.
+	 * Maximum encoded JSON bytes accepted for one generated or filtered chunked job chunk.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -46,7 +46,7 @@ final readonly class ActionDeliveries {
 	private const int MAX_CHUNK_BYTES = 8_192;
 
 	/**
-	 * Maximum persisted serialization bytes accepted for one materialized batch queue.
+	 * Maximum persisted serialization bytes accepted for one materialized chunked job queue.
 	 *
 	 * This bounds the queue stored in the wp_options run-state row; the JSON chunk cap separately
 	 * bounds the portable payload contract.
@@ -59,54 +59,54 @@ final readonly class ActionDeliveries {
 	private const int MAX_QUEUE_BYTES = 1_048_576;
 
 	/**
-	 * Internal hook that resumes a batch after its inter-chunk delay.
+	 * Internal hook that resumes a chunked job after its inter-chunk delay.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string CONTINUE_HOOK = 'a8csp_background_tasks/continue_batch';
+	public const string CONTINUE_HOOK = 'a8csp_jobs_engine/continue_chunked_job';
 
 	/**
-	 * Internal hook that reconciles a terminal batch run.
+	 * Internal hook that reconciles a terminal chunked job run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string CLEANUP_HOOK = 'a8csp_background_tasks/cleanup_batch';
+	public const string CLEANUP_HOOK = 'a8csp_jobs_engine/cleanup_chunked_job';
 
 	/**
-	 * Internal hook that executes task work.
+	 * Internal hook that executes job work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string RUN_TASK_HOOK = 'a8csp_background_tasks/run_task';
+	public const string RUN_JOB_HOOK = 'a8csp_jobs_engine/run_job';
 
 	/**
-	 * Internal hook that executes one batch chunk.
+	 * Internal hook that executes one chunked job chunk.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string RUN_CHUNK_HOOK = 'a8csp_background_tasks/run_chunk';
+	public const string RUN_CHUNK_HOOK = 'a8csp_jobs_engine/run_chunk';
 
 	/**
-	 * Internal hook that generates and starts a batch queue.
+	 * Internal hook that generates and starts a chunked job queue.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string START_HOOK = 'a8csp_background_tasks/start_batch';
+	public const string START_HOOK = 'a8csp_jobs_engine/start_chunked_job';
 
 	// endregion
 
@@ -118,7 +118,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   WorkRegistry     $work                 Registered task and batch instances.
+	 * @param   JobRegistry      $work                 Registered job and chunked job instances.
 	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
 	 * @param   StoreFactory     $stores               Name-bound store factory.
 	 * @param   LoggerInterface  $logger               Log event sink.
@@ -129,7 +129,7 @@ final readonly class ActionDeliveries {
 	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private WorkRegistry $work,
+		private JobRegistry $work,
 		private BackendInterface $scheduler,
 		private StoreFactory $stores,
 		private LoggerInterface $logger,
@@ -145,53 +145,53 @@ final readonly class ActionDeliveries {
 	// region METHODS
 
 	/**
-	 * Handles queue generation for one scheduled batch run.
+	 * Handles queue generation for one scheduled chunked job run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_start_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$registered_batch = $this->work->batch( $batch_name );
-		$liveness_at      = null !== $registered_batch
-			? fn (): int => $this->execution_lease_at( $registered_batch, $batch_name, $run_id )
+	public function handle_start_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
+		$registered_chunked_job = $this->work->chunked_job( $chunked_job_name );
+		$liveness_at            = null !== $registered_chunked_job
+			? fn (): int => $this->execution_lease_at( $registered_chunked_job, $chunked_job_name, $run_id )
 			: null;
-		$run_store        = $this->stores->run_store( $batch_name );
-		$state            = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store, $liveness_at );
+		$run_store              = $this->stores->run_store( $chunked_job_name );
+		$state                  = $this->terminal_transitions->claim_delivery_ownership( 'ChunkedJob', $chunked_job_name, $run_id, $action_sequence, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
 
-		$batch = $this->batch_for_action( $batch_name, $run_id, 'start' );
-		if ( null === $batch ) {
-			$this->fail_orphaned_run( 'Batch', $batch_name, $run_id, $state, $run_store );
+		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'start' );
+		if ( null === $chunked_job ) {
+			$this->fail_orphaned_run( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		try {
-			$queue = $this->materialize_queue( $batch->generate_queue( $state->start_args ) );
+			$queue = $this->materialize_queue( $chunked_job->generate_queue( $state->start_args ) );
 		} catch ( \Throwable $throwable ) {
-			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
 		if ( $queue instanceof EngineError ) {
-			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
 
 			return;
 		}
 
 		try {
 			/**
-			 * Filters the generated chunk queue for a batch.
+			 * Filters the generated chunk queue for a chunked job.
 			 *
-			 * The dynamic portion of the hook name, `$batch_name`, refers to the owner-qualified work identity.
+			 * The dynamic portion of the hook name, `$chunked_job_name`, refers to the owner-qualified work identity.
 			 *
 			 * @since   1.0.0
 			 * @version 1.0.0
@@ -200,138 +200,138 @@ final readonly class ActionDeliveries {
 			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
 			 * @param   string                        $run_id     Run identifier.
 			 */
-			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_background_tasks/queue/' . $batch_name, $queue, $state->start_args, $run_id ) );
+			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_jobs_engine/queue/' . $chunked_job_name, $queue, $state->start_args, $run_id ) );
 		} catch ( \Throwable $throwable ) {
-			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
 		if ( $queue instanceof EngineError ) {
-			$this->fail_batch_start_action( $batch, $batch_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
 
 			return;
 		}
 
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
-		$replacement = $state->with_queue( $queue )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
+		$replacement = $state->with_queue( $queue )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state = $replacement;
 		try {
-			$this->terminal_effects->fire_started( $batch_name, $run_id, $state->start_args );
+			$this->terminal_effects->fire_started( $chunked_job_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
-		$scheduled = $this->scheduler->enqueue_async( self::CONTINUE_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
+		$scheduled = $this->scheduler->enqueue_async( self::CONTINUE_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 
 			return;
 		}
 	}
 
 	/**
-	 * Schedules the current retained queue head for a batch run.
+	 * Schedules the current retained queue head for a chunked job run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_continue_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+	public function handle_continue_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
+		$run_store = $this->stores->run_store( $chunked_job_name );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'ChunkedJob', $chunked_job_name, $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
-		$batch = $this->batch_for_action( $batch_name, $run_id, 'continue' );
-		if ( null === $batch ) {
-			$this->fail_orphaned_run( 'Batch', $batch_name, $run_id, $state, $run_store );
+		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'continue' );
+		if ( null === $chunked_job ) {
+			$this->fail_orphaned_run( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		if ( array() === $state->queue ) {
-			$replacement = $state->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
+			$replacement = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
 			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 				return;
 			}
 			$state     = $replacement;
-			$scheduled = $this->scheduler->enqueue_async( self::CLEANUP_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
+			$scheduled = $this->scheduler->enqueue_async( self::CLEANUP_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
 			if ( $scheduled->is_failure() ) {
-				$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'cleanup', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+				$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'cleanup', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 			}
 
 			return;
 		}
 
 		$chunk_args  = $state->queue[0];
-		$replacement = $state->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::async( 'run', 10 ) );
+		$replacement = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'run', 10 ) );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state     = $replacement;
-		$scheduled = $this->scheduler->enqueue_async( self::RUN_CHUNK_HOOK, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id );
+		$scheduled = $this->scheduler->enqueue_async( self::RUN_CHUNK_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
 		}
 	}
 
 	/**
-	 * Handles one scheduled task run action.
+	 * Handles one scheduled job run action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $task_name  Complete owner-qualified task identity.
+	 * @param   string $job_name  Complete owner-qualified job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_run_task_action( string $task_name, string $run_id, int $action_seq ): void {
-		$this->handle_run_action( $task_name, $run_id, $action_seq );
+	public function handle_run_job_action( string $job_name, string $run_id, int $action_sequence ): void {
+		$this->handle_run_action( $job_name, $run_id, $action_sequence );
 	}
 
 	/**
-	 * Handles one scheduled batch-chunk run action.
+	 * Handles one scheduled chunked-job-chunk run action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_run_chunk_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$this->handle_run_action( $batch_name, $run_id, $action_seq );
+	public function handle_run_chunk_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
+		$this->handle_run_action( $chunked_job_name, $run_id, $action_sequence );
 	}
 
 	/**
-	 * Handles terminal completion for one drained batch run.
+	 * Handles terminal completion for one drained chunked job run.
 	 *
 	 * Once completion handling begins, remaining writes are exact-CAS or owner-guarded. The identity-shared
 	 * run-history row is CAS-guarded and idempotent, and lock release self-guards against a new owner, so
@@ -341,33 +341,33 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	public function handle_cleanup_action( string $batch_name, string $run_id, int $action_seq ): void {
-		$run_store = $this->stores->run_store( $batch_name );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Batch', $batch_name, $run_id, $action_seq, $run_store );
+	public function handle_cleanup_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
+		$run_store = $this->stores->run_store( $chunked_job_name );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( 'ChunkedJob', $chunked_job_name, $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
-		$batch = $this->batch_for_action( $batch_name, $run_id, 'cleanup' );
-		if ( null === $batch ) {
-			$this->fail_orphaned_run( 'Batch', $batch_name, $run_id, $state, $run_store );
+		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'cleanup' );
+		if ( null === $chunked_job ) {
+			$this->fail_orphaned_run( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		if ( array() !== $state->queue ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Batch "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $batch_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $chunked_job_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
 
 			return;
 		}
 
-		$this->terminal_transitions->complete_batch( $batch, $batch_name, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -381,7 +381,7 @@ final readonly class ActionDeliveries {
 	public function register_hooks(): void {
 		\add_action( self::START_HOOK, array( $this, 'handle_start_action' ), 10, 3 );
 		\add_action( self::CONTINUE_HOOK, array( $this, 'handle_continue_action' ), 10, 3 );
-		\add_action( self::RUN_TASK_HOOK, array( $this, 'handle_run_task_action' ), 10, 3 );
+		\add_action( self::RUN_JOB_HOOK, array( $this, 'handle_run_job_action' ), 10, 3 );
 		\add_action( self::RUN_CHUNK_HOOK, array( $this, 'handle_run_chunk_action' ), 10, 3 );
 		\add_action( self::CLEANUP_HOOK, array( $this, 'handle_cleanup_action' ), 10, 3 );
 	}
@@ -396,42 +396,42 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity   Complete owner-qualified task or batch identity.
+	 * @param   string $identity   Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Expected lifecycle action sequence.
+	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	private function handle_run_action( string $identity, string $run_id, int $action_seq ): void {
+	private function handle_run_action( string $identity, string $run_id, int $action_sequence ): void {
 		$liveness_at = function ( RunState $persisted_state ) use ( $identity, $run_id ): int {
-			$contract = 'Task' === $persisted_state->kind
-				? $this->work->task( $identity )
-				: $this->work->batch( $identity );
+			$contract = 'Job' === $persisted_state->kind
+				? $this->work->job( $identity )
+				: $this->work->chunked_job( $identity );
 
 			return null !== $contract
 				? $this->execution_lease_at( $contract, $identity, $run_id )
 				: $this->clock->now()->getTimestamp();
 		};
 		$run_store   = $this->stores->run_store( $identity );
-		$state       = $this->terminal_transitions->claim_delivery_ownership( null, $identity, $run_id, $action_seq, $run_store, $liveness_at );
+		$state       = $this->terminal_transitions->claim_delivery_ownership( null, $identity, $run_id, $action_sequence, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
 
 		$work_type = $state->kind;
-		if ( 'Task' === $work_type ) {
-			$task = $this->work->task( $identity );
-			if ( null !== $task ) {
-				$this->handle_task_run_action( $task, $identity, $run_id, $state, $run_store );
+		if ( 'Job' === $work_type ) {
+			$job = $this->work->job( $identity );
+			if ( null !== $job ) {
+				$this->handle_job_run_action( $job, $identity, $run_id, $state, $run_store );
 
 				return;
 			}
 
 			$this->logger->warning(
-				'Task run action references an unregistered task; register the task before dispatching its run action.',
+				'Job run action references an unregistered job; register the job before dispatching its run action.',
 				array(
-					'task_name' => $identity,
-					'run_id'    => $run_id,
+					'job_name' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 			$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
@@ -439,42 +439,42 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$batch = $this->work->batch( $identity );
-		if ( null !== $batch ) {
-			$this->handle_batch_run_action( $batch, $identity, $run_id, $state, $run_store );
+		$chunked_job = $this->work->chunked_job( $identity );
+		if ( null !== $chunked_job ) {
+			$this->handle_chunked_job_run_action( $chunked_job, $identity, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		$this->logger->warning(
-			'Batch run action references an unregistered batch; register the batch before dispatching its run action.',
+			'Chunked Job run action references an unregistered chunked job; register the chunked job before dispatching its run action.',
 			array(
-				'batch_name' => $identity,
-				'run_id'     => $run_id,
+				'chunked_job_name' => $identity,
+				'run_id'           => $run_id,
 			)
 		);
 		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
 	}
 
 	/**
-	 * Fails batch startup after preserving its post-callback liveness fence.
+	 * Fails chunked job startup after preserving its post-callback liveness fence.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface $batch      Registered batch.
-	 * @param   string         $batch_name Complete owner-qualified batch identity.
-	 * @param   string         $run_id     Run identifier.
-	 * @param   RunState       $state      Fenced running state.
-	 * @param   RunStore       $run_store  Active-run store.
-	 * @param   EngineError    $error      Terminal failure detail.
-	 * @param   ApiErrorCode   $code       Machine-readable cause classification.
+	 * @param   ChunkedJobInterface $chunked_job      Registered chunked job.
+	 * @param   string              $chunked_job_name Complete owner-qualified chunked job identity.
+	 * @param   string              $run_id     Run identifier.
+	 * @param   RunState            $state      Fenced running state.
+	 * @param   RunStore            $run_store  Active-run store.
+	 * @param   EngineError         $error      Terminal failure detail.
+	 * @param   ApiErrorCode        $code       Machine-readable cause classification.
 	 *
 	 * @return  void
 	 */
-	private function fail_batch_start_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
+	private function fail_chunked_job_start_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
@@ -482,107 +482,107 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, $error, RunFailureStage::QueueGeneration, $code );
+		$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $error, RunFailureStage::QueueGeneration, $code );
 	}
 
 	/**
-	 * Executes one task run after shared delivery admission.
+	 * Executes one job run after shared delivery admission.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskInterface $task      Registered task.
-	 * @param   string        $task_name Complete owner-qualified task identity.
-	 * @param   string        $run_id    Run identifier.
-	 * @param   RunState      $state     Fenced running state.
-	 * @param   RunStore      $run_store Active-run store.
+	 * @param   OneOffJobInterface $job      Registered job.
+	 * @param   string             $job_name Complete owner-qualified job identity.
+	 * @param   string             $run_id    Run identifier.
+	 * @param   RunState           $state     Fenced running state.
+	 * @param   RunStore           $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function handle_task_run_action( TaskInterface $task, string $task_name, string $run_id, RunState $state, RunStore $run_store ): void {
+	private function handle_job_run_action( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		try {
-			$task->handle( $state->start_args );
+			$job->handle( $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_task_failure( $task, $task_name, $run_id, $state, $run_store, $throwable );
+			$this->failure_lifecycle->handle_job_failure( $job, $job_name, $run_id, $state, $run_store, $throwable );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Task', $task_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'Job', $job_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
 			return;
 		}
 
-		$this->terminal_transitions->complete_task( $task_name, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_job( $job_name, $run_id, $state, $run_store );
 	}
 
 	/**
-	 * Executes one batch chunk and schedules the next continue after a normal return.
+	 * Executes one chunked job chunk and schedules the next continue after a normal return.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface $batch      Registered batch.
-	 * @param   string         $batch_name Complete owner-qualified batch identity.
-	 * @param   string         $run_id     Run identifier.
-	 * @param   RunState       $state      Fenced running state.
-	 * @param   RunStore       $run_store  Active-run store.
+	 * @param   ChunkedJobInterface $chunked_job      Registered chunked job.
+	 * @param   string              $chunked_job_name Complete owner-qualified chunked job identity.
+	 * @param   string              $run_id     Run identifier.
+	 * @param   RunState            $state      Fenced running state.
+	 * @param   RunStore            $run_store  Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function handle_batch_run_action( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store ): void {
+	private function handle_chunked_job_run_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$chunk_args = $state->queue[0] ?? null;
 		if ( ! \is_array( $chunk_args ) ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Batch "%s" reached chunk execution without a queued chunk; schedule run only while the authoritative queue has a head.', $batch_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached chunk execution without a queued chunk; schedule run only while the authoritative queue has a head.', $chunked_job_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
 
 			return;
 		}
 
-		$context = new BatchContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
+		$context = new ChunkContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
 		try {
-			$batch->process_chunk( $chunk_args, $context );
+			$chunked_job->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_batch_failure( $batch, $batch_name, $run_id, $state, $run_store, $throwable, $chunk_args );
+			$this->failure_lifecycle->handle_chunked_job_failure( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable, $chunk_args );
 
 			return;
 		}
 
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		try {
-			$delay = $this->lock_windows->continue_delay( $batch_name, $run_id );
+			$delay = $this->lock_windows->continue_delay( $chunked_job_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
 
-			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+			$this->fail_processed_chunk( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Batch', $batch_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 			return;
 		}
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->fail_processed_batch_chunk( $batch, $batch_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Batch "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $batch_name ) ), RunFailureStage::Scheduling, ApiErrorCode::BackendRejected );
+			$this->fail_processed_chunk( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Chunked Job "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $chunked_job_name ) ), RunFailureStage::Scheduling, ApiErrorCode::BackendRejected );
 
 			return;
 		}
 		$fire_at     = $now + $delay;
-		$replacement = $state->with_queue( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
+		$replacement = $state->with_queue( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 		$state = $replacement;
 
-		$scheduled = $this->scheduler->schedule_single( self::CONTINUE_HOOK, $fire_at, array( $batch_name, $run_id, $state->action_seq ), $batch_name . '|' . $run_id, 10 );
+		$scheduled = $this->scheduler->schedule_single( self::CONTINUE_HOOK, $fire_at, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id, 10 );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $state, $run_store, EngineError::scheduling( 'Batch', $batch_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
 	}
 
@@ -592,8 +592,8 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BatchInterface                $batch      Registered batch.
-	 * @param   string                        $batch_name Complete owner-qualified batch identity.
+	 * @param   ChunkedJobInterface           $chunked_job      Registered chunked job.
+	 * @param   string                        $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string                        $run_id     Run identifier.
 	 * @param   RunState                      $state      Fenced running state.
 	 * @param   RunStore                      $run_store  Active-run store.
@@ -605,13 +605,13 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	private function fail_processed_batch_chunk( BatchInterface $batch, string $batch_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ApiErrorCode $code ): void {
-		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_seq( $state->action_seq + 1 )->with_executing( false )->with_pending( null );
+	private function fail_processed_chunk( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ApiErrorCode $code ): void {
+		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( null );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
 
-		$this->terminal_transitions->fail_batch( $batch, $batch_name, $run_id, $replacement, $run_store, $error, $stage, $code );
+		$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $replacement, $run_store, $error, $stage, $code );
 	}
 
 	/**
@@ -620,13 +620,13 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   TaskInterface|BatchInterface $contract Registered work contract.
-	 * @param   string                       $identity Complete owner-qualified task or batch identity.
-	 * @param   string                       $run_id   Run identifier.
+	 * @param   OneOffJobInterface|ChunkedJobInterface $contract Registered work contract.
+	 * @param   string                                 $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string                                 $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	private function execution_lease_at( TaskInterface|BatchInterface $contract, string $identity, string $run_id ): int {
+	private function execution_lease_at( OneOffJobInterface|ChunkedJobInterface $contract, string $identity, string $run_id ): int {
 		try {
 			$declared = $contract->max_callback_runtime();
 		} catch ( \Throwable $throwable ) {
@@ -637,7 +637,7 @@ final readonly class ActionDeliveries {
 					'name'            => $identity,
 					'run_id'          => $run_id,
 					'exception_class' => \get_debug_type( $throwable ),
-					'default_runtime' => WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME,
+					'default_runtime' => JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME,
 				)
 			);
 			$declared = null;
@@ -653,50 +653,50 @@ final readonly class ActionDeliveries {
 	}
 
 	/**
-	 * Returns the batch recorded for one internal action.
+	 * Returns the chunked job recorded for one internal action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified batch identity.
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   string $run_id     Run identifier.
-	 * @param   string $stage      Internal batch stage.
+	 * @param   string $stage      Internal chunked job stage.
 	 *
-	 * @return  BatchInterface|null
+	 * @return  ChunkedJobInterface|null
 	 */
-	private function batch_for_action( string $batch_name, string $run_id, string $stage ): ?BatchInterface {
-		$batch = $this->work->batch( $batch_name );
+	private function chunked_job_for_action( string $chunked_job_name, string $run_id, string $stage ): ?ChunkedJobInterface {
+		$chunked_job = $this->work->chunked_job( $chunked_job_name );
 
-		if ( null === $batch ) {
+		if ( null === $chunked_job ) {
 			$this->logger->warning(
-				'Batch action references an unregistered batch; register the batch before dispatching its action.',
+				'Chunked Job action references an unregistered chunked job; register the chunked job before dispatching its action.',
 				array(
-					'batch_name' => $batch_name,
-					'run_id'     => $run_id,
-					'stage'      => $stage,
+					'chunked_job_name' => $chunked_job_name,
+					'run_id'           => $run_id,
+					'stage'            => $stage,
 				)
 			);
 		}
 
-		return $batch;
+		return $chunked_job;
 	}
 
 	/**
-	 * Fails a live run whose required task or batch is no longer registered.
+	 * Fails a live run whose required job or chunked job is no longer registered.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     Fenced running state.
-	 * @param   RunStore       $run_store Active-run store.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string             $run_id    Run identifier.
+	 * @param   RunState           $state     Fenced running state.
+	 * @param   RunStore           $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
 	private function fail_orphaned_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type, $identity, $run_id, \strtolower( $work_type ) ) );
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type, $identity, $run_id, 'Job' === $work_type ? 'job' : 'chunked job' ) );
 
 		$this->terminal_transitions->fail_unregistered_run( $work_type, $identity, $run_id, $state, $run_store, $error );
 	}
@@ -713,7 +713,7 @@ final readonly class ActionDeliveries {
 	 */
 	private function materialize_filtered_queue( mixed $chunks ): array|EngineError {
 		if ( ! \is_array( $chunks ) ) {
-			return new EngineError( 'Batch queue filter returned a non-array value; return one argument array per chunk.', \UnexpectedValueException::class );
+			return new EngineError( 'Chunked Job queue filter returned a non-array value; return one argument array per chunk.', \UnexpectedValueException::class );
 		}
 
 		return $this->materialize_queue( $chunks );
@@ -736,10 +736,10 @@ final readonly class ActionDeliveries {
 		foreach ( $chunks as $chunk_args ) {
 			$index = \count( $queue );
 			if ( ! \is_array( $chunk_args ) ) {
-				return new EngineError( \sprintf( 'Batch queue chunk at index %d must be an argument array.', $index ), \UnexpectedValueException::class );
+				return new EngineError( \sprintf( 'Chunked Job queue chunk at index %d must be an argument array.', $index ), \UnexpectedValueException::class );
 			}
 			if ( ! PortableArguments::is_valid( $chunk_args ) ) {
-				return new EngineError( \sprintf( 'Batch queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
+				return new EngineError( \sprintf( 'Chunked Job queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
 			}
 			try {
 				$encoded_chunk = \wp_json_encode( $chunk_args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
@@ -747,22 +747,22 @@ final readonly class ActionDeliveries {
 				$encoded_chunk = false;
 			}
 			if ( ! \is_string( $encoded_chunk ) ) {
-				return new EngineError( \sprintf( 'Batch queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
+				return new EngineError( \sprintf( 'Chunked Job queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
 			}
 
 			$chunk_bytes = \strlen( $encoded_chunk );
 			if ( self::MAX_CHUNK_BYTES < $chunk_bytes ) {
-				return new EngineError( \sprintf( 'Batch queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, self::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
+				return new EngineError( \sprintf( 'Chunked Job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, self::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
 			}
 
 			$queue[]          = $chunk_args;
 			$serialized_queue = \maybe_serialize( $queue );
 			if ( ! \is_string( $serialized_queue ) ) {
-				return new EngineError( 'Batch queue could not be serialized for persistence.', \UnexpectedValueException::class );
+				return new EngineError( 'Chunked Job queue could not be serialized for persistence.', \UnexpectedValueException::class );
 			}
 			$queue_bytes = \strlen( $serialized_queue );
 			if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
-				return new EngineError( \sprintf( 'Batch queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
+				return new EngineError( \sprintf( 'Chunked Job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
 			}
 		}
 

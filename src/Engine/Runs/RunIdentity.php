@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -102,7 +102,7 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  string
 	 */
@@ -116,7 +116,7 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  string
@@ -139,7 +139,7 @@ final class RunIdentity {
 		$matched = \preg_match( '/\A' . \preg_quote( self::option_prefix(), '/' ) . '(?<identity>.+)_(?<run_id>' . self::pattern() . ')\z/D', $option_name, $matches );
 		if (
 			1 !== $matched
-			|| null === WorkIdentity::parts( $matches['identity'] )
+			|| null === JobIdentity::parts( $matches['identity'] )
 		) {
 			return null;
 		}

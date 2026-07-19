@@ -1,13 +1,13 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -60,7 +60,7 @@ final class EngineErrorTest extends TestCase {
 	}
 
 	/**
-	 * Terminal failures without a failed batch chunk expose null through the public value.
+	 * Terminal failures without a failed chunked job chunk expose null through the public value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -94,8 +94,8 @@ final class EngineErrorTest extends TestCase {
 	public function test_throwable_content_is_redacted_before_terminal_detail_is_retained( string $boundary, \Throwable $throwable, string $secret, string $expected_class, string $corrective_prose ): void {
 		$error = match ( $boundary ) {
 			'callback', 'anonymous callback' => EngineError::from_throwable( $throwable ),
-			'retry policy'                   => EngineError::retry_policy( 'Task', 'email-digest', $throwable ),
-			'retry preparation'              => EngineError::retry_preparation( 'Batch', 'catalog-sync', $throwable ),
+			'retry policy'                   => EngineError::retry_policy( 'Job', 'email-digest', $throwable ),
+			'retry preparation'              => EngineError::retry_preparation( 'ChunkedJob', 'catalog-sync', $throwable ),
 			default                          => self::fail( 'Unknown throwable boundary: ' . $boundary ),
 		};
 

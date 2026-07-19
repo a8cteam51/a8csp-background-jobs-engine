@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging;
 
 use Psr\Log\AbstractLogger;
 use Psr\Log\InvalidArgumentException;
@@ -70,11 +70,11 @@ final class HookLogger extends AbstractLogger {
 			 * @param   string                  $message The interpolated log message.
 			 * @param   array<array-key, mixed> $context The structured context.
 			 */
-			\do_action( 'a8csp_background_tasks/log', $rendered_level, $rendered_message, $rendered_context );
+			\do_action( 'a8csp_jobs_engine/log', $rendered_level, $rendered_message, $rendered_context );
 		} catch ( \Throwable $throwable ) {
 			try {
 				$breadcrumb = \strtr(
-					\sprintf( 'a8csp-background-tasks-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]', 'a8csp_background_tasks/log', $rendered_level, \get_debug_type( $throwable ) ),
+					\sprintf( 'a8csp-background-jobs-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]', 'a8csp_jobs_engine/log', $rendered_level, \get_debug_type( $throwable ) ),
 					array(
 						"\0" => '\\0',
 						"\r" => '\\r',

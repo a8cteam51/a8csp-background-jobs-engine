@@ -11,7 +11,7 @@
  *
  * @since       1.0.0
  * @version     1.0.0
- * @package     A8C\SpecialProjects\BackgroundTasksEngine
+ * @package     A8C\SpecialProjects\BackgroundJobsEngine
  * @author      A8C Special Projects
  * @license     GPL-2.0-or-later
  */
@@ -30,7 +30,7 @@
  *
  * @return  ($property is null ? PluginMetaData : ($property is PluginMetaKey ? PluginMetaData[PluginMetaKey] : null))
  */
-function a8csp_bgte_get_plugin_metadata( $property = null ) {
+function a8csp_bgje_get_plugin_metadata( $property = null ) {
 	/**
 	 * Metadata cache, keyed raw vs translated.
 	 *
@@ -48,7 +48,7 @@ function a8csp_bgte_get_plugin_metadata( $property = null ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		$plugin_file = trailingslashit( WP_PLUGIN_DIR ) . A8CSP_BGTE_BASENAME;
+		$plugin_file = trailingslashit( WP_PLUGIN_DIR ) . A8CSP_BGJE_BASENAME;
 		$metadata    = get_plugin_data( $plugin_file, false, $can_translate );
 
 		// Extra plugin headers registered by other plugins exist only once those plugins have
@@ -78,8 +78,8 @@ function a8csp_bgte_get_plugin_metadata( $property = null ) {
  *
  * @return  string
  */
-function a8csp_bgte_get_plugin_slug() {
-	$text_domain = a8csp_bgte_get_plugin_metadata( 'TextDomain' );
+function a8csp_bgje_get_plugin_slug() {
+	$text_domain = a8csp_bgje_get_plugin_metadata( 'TextDomain' );
 	return sanitize_key( $text_domain );
 }
 
@@ -91,8 +91,8 @@ function a8csp_bgte_get_plugin_slug() {
  *
  * @return  string
  */
-function a8csp_bgte_get_plugin_name() {
-	return a8csp_bgte_get_plugin_metadata( 'Name' );
+function a8csp_bgje_get_plugin_name() {
+	return a8csp_bgje_get_plugin_metadata( 'Name' );
 }
 
 /**
@@ -103,8 +103,8 @@ function a8csp_bgte_get_plugin_name() {
  *
  * @return  string
  */
-function a8csp_bgte_get_plugin_version() {
-	return a8csp_bgte_get_plugin_metadata( 'Version' );
+function a8csp_bgje_get_plugin_version() {
+	return a8csp_bgje_get_plugin_metadata( 'Version' );
 }
 
 /**
@@ -122,13 +122,13 @@ function a8csp_bgte_get_plugin_version() {
  *
  * @return  array<string, mixed>|false
  */
-function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_file ) {
-	if ( \constant( 'A8CSP_BGTE_BASENAME' ) !== $plugin_file || false !== $update ) {
+function a8csp_bgje_check_github_release_update( $update, $plugin_data, $plugin_file ) {
+	if ( \constant( 'A8CSP_BGJE_BASENAME' ) !== $plugin_file || false !== $update ) {
 		return $update;
 	}
 
 	$prerelease_channel = \str_contains( (string) ( $plugin_data['Version'] ?? '' ), '-' );
-	$transient_key      = 'a8csp_bgte_github_latest_release_' . ( $prerelease_channel ? 'prerelease' : 'stable' );
+	$transient_key      = 'a8csp_bgje_github_latest_release_' . ( $prerelease_channel ? 'prerelease' : 'stable' );
 
 	$latest_release_info = get_transient( $transient_key );
 	if ( false === $latest_release_info ) {
@@ -176,7 +176,7 @@ function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_
 		}
 
 		$asset_name = $asset['name'] ?? null;
-		if ( 'a8csp-background-tasks-engine.zip' !== $asset_name ) {
+		if ( 'a8csp-background-jobs-engine.zip' !== $asset_name ) {
 			continue;
 		}
 
@@ -218,7 +218,7 @@ function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_
  *
  * @return  bool
  */
-function a8csp_bgte_is_wp_version_compatible( $min_wp_version ) {
+function a8csp_bgje_is_wp_version_compatible( $min_wp_version ) {
 	if ( ! \function_exists( 'is_wp_version_compatible' ) ) {
 		return false;
 	}
@@ -236,7 +236,7 @@ function a8csp_bgte_is_wp_version_compatible( $min_wp_version ) {
  *
  * @return  bool
  */
-function a8csp_bgte_is_php_version_compatible( $min_php_version ) {
+function a8csp_bgje_is_php_version_compatible( $min_php_version ) {
 	if ( ! \function_exists( 'is_php_version_compatible' ) ) {
 		return false;
 	}
@@ -252,8 +252,8 @@ function a8csp_bgte_is_php_version_compatible( $min_php_version ) {
  *
  * @return  true|\WP_Error
  */
-function a8csp_bgte_validate_requirements() {
-	$plugin_metadata = a8csp_bgte_get_plugin_metadata();
+function a8csp_bgje_validate_requirements() {
+	$plugin_metadata = a8csp_bgje_get_plugin_metadata();
 	if ( ! isset( $plugin_metadata['RequiresPHP'] ) || '' === $plugin_metadata['RequiresPHP'] ) {
 		$plugin_metadata['RequiresPHP'] = '8.5';
 	}
@@ -261,8 +261,8 @@ function a8csp_bgte_validate_requirements() {
 		$plugin_metadata['RequiresWP'] = '7.0';
 	}
 
-	$is_php_compatible = a8csp_bgte_is_php_version_compatible( $plugin_metadata['RequiresPHP'] );
-	$is_wp_compatible  = a8csp_bgte_is_wp_version_compatible( $plugin_metadata['RequiresWP'] );
+	$is_php_compatible = a8csp_bgje_is_php_version_compatible( $plugin_metadata['RequiresPHP'] );
+	$is_wp_compatible  = a8csp_bgje_is_wp_version_compatible( $plugin_metadata['RequiresWP'] );
 
 	$wp_error = new \WP_Error();
 	if ( ! $is_wp_compatible ) {
@@ -289,7 +289,7 @@ function a8csp_bgte_validate_requirements() {
  *
  * @return  void
  */
-function a8csp_bgte_output_requirements_error( $error ) {
+function a8csp_bgje_output_requirements_error( $error ) {
 	add_action(
 		'all_admin_notices',
 		static function () use ( $error ) {
@@ -299,13 +299,13 @@ function a8csp_bgte_output_requirements_error( $error ) {
 
 			$requirements_error = wp_sprintf(
 				/* translators: 1: Plugin name, 2: Plugin version */
-				__( '<strong>%1$s (version %2$s)</strong> could not be initialized.', 'a8csp-background-tasks-engine' ),
-				a8csp_bgte_get_plugin_metadata( 'Name' ),
-				a8csp_bgte_get_plugin_metadata( 'Version' )
+				__( '<strong>%1$s (version %2$s)</strong> could not be initialized.', 'a8csp-background-jobs-engine' ),
+				a8csp_bgje_get_plugin_metadata( 'Name' ),
+				a8csp_bgje_get_plugin_metadata( 'Version' )
 			);
 
 			if ( $error->has_errors() ) {
-				$requirements_error .= ' ' . __( 'Your environment does not meet all the system requirements listed below:', 'a8csp-background-tasks-engine' );
+				$requirements_error .= ' ' . __( 'Your environment does not meet all the system requirements listed below:', 'a8csp-background-jobs-engine' );
 				$requirements_error .= '<ul class="ul-disc">';
 
 				/**
@@ -323,7 +323,7 @@ function a8csp_bgte_output_requirements_error( $error ) {
 						case 'plugin_wp_incompatible':
 							$error_message = wp_sprintf(
 								/* translators: 1: Current WP version, 2: Minimum WP version */
-								__( 'Current <em>WordPress version (%1$s)</em> does not meet minimum required version of %2$s.', 'a8csp-background-tasks-engine' ),
+								__( 'Current <em>WordPress version (%1$s)</em> does not meet minimum required version of %2$s.', 'a8csp-background-jobs-engine' ),
 								get_bloginfo( 'version' ),
 								$error_data['requires_wp']
 							);
@@ -331,13 +331,13 @@ function a8csp_bgte_output_requirements_error( $error ) {
 						case 'plugin_php_incompatible':
 							$error_message = wp_sprintf(
 								/* translators: 1: Current PHP version, 2: Minimum PHP version */
-								__( 'Current <em>PHP version (%1$s)</em> does not meet minimum required version of %2$s.', 'a8csp-background-tasks-engine' ),
+								__( 'Current <em>PHP version (%1$s)</em> does not meet minimum required version of %2$s.', 'a8csp-background-jobs-engine' ),
 								PHP_VERSION,
 								$error_data['requires_php']
 							);
 							break;
 						case 'missing_autoloader':
-							$error_message = __( 'The autoloader file is missing. Please run <code>composer install</code> to generate it.', 'a8csp-background-tasks-engine' );
+							$error_message = __( 'The autoloader file is missing. Please run <code>composer install</code> to generate it.', 'a8csp-background-jobs-engine' );
 							break;
 						default:
 							$error_message = $error->get_error_message( $error_code );

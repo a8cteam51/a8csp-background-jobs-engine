@@ -5,7 +5,7 @@
  *
  * The guards keep this file inert wherever WordPress is loaded.
  *
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
 if ( ! \defined( 'MINUTE_IN_SECONDS' ) ) {

@@ -1,34 +1,34 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceSchedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -169,7 +169,7 @@ final class EngineRig {
 	 * @return  Client
 	 */
 	public function client( string $owner ): Client {
-		$client                  = \a8csp_bgte( $owner );
+		$client                  = \a8csp_bgje( $owner );
 		$this->clients[ $owner ] = $client;
 
 		return $client;
@@ -286,7 +286,7 @@ final class EngineRig {
 	public function assert_completed(): void {
 		$args                  = $this->latest_event( 'completed' );
 		[ $identity, $run_id ] = $this->identity_and_run_id( $args );
-		$parts                 = WorkIdentity::parts( $identity );
+		$parts                 = JobIdentity::parts( $identity );
 		Assert::assertNotNull( $parts );
 		$client = $this->clients[ $parts[0] ] ?? null;
 		Assert::assertInstanceOf( Client::class, $client );
@@ -344,7 +344,7 @@ final class EngineRig {
 	 * @version 1.0.0
 	 */
 	public function assert_no_retry(): void {
-		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_background_tasks/retry_scheduled' ) );
+		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
 	}
 
 	/**
@@ -376,7 +376,7 @@ final class EngineRig {
 	private function build_graph(): void {
 		// This graph mirrors Component's two phases because the component has no injection seam; wiring changes require lockstep updates here.
 		$rows                 = new OptionRows( $this->wpdb );
-		$work                 = new WorkRegistry();
+		$work                 = new JobRegistry();
 		$schedules            = new ScheduleRegistry( $rows, $this->logger );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
 		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
@@ -391,7 +391,7 @@ final class EngineRig {
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
-		$work->register_task( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
+		$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
@@ -429,7 +429,7 @@ final class EngineRig {
 			};
 		}
 
-		$GLOBALS['a8csp_bgte_test_action_callbacks'] = $callbacks;
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 	}
 
 	/**
@@ -443,7 +443,7 @@ final class EngineRig {
 	 * @return  array
 	 */
 	private static function action_registrations(): array {
-		$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? array();
+		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'] ?? array();
 		if ( ! \is_array( $registrations ) ) {
 			throw new \UnexpectedValueException( 'Initialize the action-registration test ledger as an array.' );
 		}
@@ -481,13 +481,13 @@ final class EngineRig {
 	 * @param   EngineFacade    $engine     Engine facade.
 	 * @param   Inspection      $inspection Inspection facade.
 	 * @param   SchedulerFacade $scheduler  Scheduler facade.
-	 * @param   WorkRegistry    $work       Registered task and batch instances.
+	 * @param   JobRegistry    $work       Registered job and chunked job instances.
 	 * @param   Schedules       $schedules  Schedule engine operations.
 	 * @param   Dispatcher      $dispatcher Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, WorkRegistry $work, Schedules $schedules, Dispatcher $dispatcher ): void {
+	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $work, Schedules $schedules, Dispatcher $dispatcher ): void {
 		self::set_component_property( 'engine', $engine );
 		self::set_component_property( 'inspection', $inspection );
 		self::set_component_property( 'scheduler', $scheduler );
@@ -540,34 +540,34 @@ final class EngineRig {
 	 * @return  void
 	 */
 	private static function reset_wordpress_state(): void {
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_callbacks']     = array();
-		$GLOBALS['a8csp_bgte_test_action_observers']     = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		$GLOBALS['a8csp_bgte_test_did_actions']          = array(
+		$GLOBALS['a8csp_bgje_test_options']              = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']         = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']      = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']        = array();
+		$GLOBALS['a8csp_bgje_test_action_callbacks']     = array();
+		$GLOBALS['a8csp_bgje_test_action_observers']     = array();
+		$GLOBALS['a8csp_bgje_test_action_throwables']    = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events']     = array();
+		$GLOBALS['a8csp_bgje_test_did_actions']          = array(
 			'plugins_loaded' => 1,
 			'init'           => 1,
 		);
-		$GLOBALS['a8csp_bgte_test_doing_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_is_multisite']         = false;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_doing_actions']        = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']              = 1;
+		$GLOBALS['a8csp_bgje_test_is_multisite']         = false;
+		$GLOBALS['a8csp_bgje_test_cache']                = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']          = array();
 		unset(
-			$GLOBALS['a8csp_bgte_test_before_add_option'],
-			$GLOBALS['a8csp_bgte_test_cron_array'],
-			$GLOBALS['a8csp_bgte_test_delete_option_results'],
-			$GLOBALS['a8csp_bgte_test_get_option'],
-			$GLOBALS['a8csp_bgte_test_update_option_results'],
-			$GLOBALS['a8csp_bgte_test_update_option_values']
+			$GLOBALS['a8csp_bgje_test_before_add_option'],
+			$GLOBALS['a8csp_bgje_test_cron_array'],
+			$GLOBALS['a8csp_bgje_test_delete_option_results'],
+			$GLOBALS['a8csp_bgje_test_get_option'],
+			$GLOBALS['a8csp_bgje_test_update_option_results'],
+			$GLOBALS['a8csp_bgje_test_update_option_values']
 		);
 	}
 
@@ -582,7 +582,7 @@ final class EngineRig {
 	 * @return list<mixed>
 	 */
 	private function latest_event( string $event ): array {
-		$events = $this->hooks->fired( 'a8csp_background_tasks/' . $event );
+		$events = $this->hooks->fired( 'a8csp_jobs_engine/' . $event );
 		Assert::assertNotEmpty( $events, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
 
 		return $events[ \count( $events ) - 1 ];

@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -18,7 +18,7 @@ enum ApiErrorCode: string {
 	/** The engine cannot prepare or continue the requested operation. */
 	case EngineUnavailable = 'engine_unavailable';
 
-	/** The requested task or batch is not registered. */
+	/** The requested job or chunked job is not registered. */
 	case UnknownWork = 'unknown_work';
 
 	/** The requested schedule is unsynchronized, inactive, or stale. */

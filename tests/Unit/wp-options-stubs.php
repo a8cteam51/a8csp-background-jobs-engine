@@ -6,10 +6,10 @@
  * The shared get stub also exposes the existing cron fake so guarded global functions remain
  * deterministic regardless of PHPUnit's test-class load order.
  *
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
-if ( ! \function_exists( 'a8csp_bgte_test_record_option_call' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_record_option_call' ) ) {
 	/**
 	 * Appends an option-function call to the test ledger.
 	 *
@@ -20,17 +20,17 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_option_call' ) ) {
 	 *
 	 * @return  void
 	 */
-	function a8csp_bgte_test_record_option_call( string $function_name, array $args ): void {
+	function a8csp_bgje_test_record_option_call( string $function_name, array $args ): void {
 		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls   = $GLOBALS['a8csp_bgte_test_option_calls'] ?? array();
+		$calls   = $GLOBALS['a8csp_bgje_test_option_calls'] ?? array();
 		$calls[] = array(
 			'function' => $function_name,
 			'args'     => $args,
 		);
 
-		$GLOBALS['a8csp_bgte_test_option_calls'] = $calls;
+		$GLOBALS['a8csp_bgje_test_option_calls'] = $calls;
 
-		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		$lifecycle_events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
 		if ( \is_array( $lifecycle_events ) ) {
 			$lifecycle_events[] = array(
 				'type'     => 'option',
@@ -38,7 +38,7 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_option_call' ) ) {
 				'args'     => $args,
 			);
 
-			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
+			$GLOBALS['a8csp_bgje_test_lifecycle_events'] = $lifecycle_events;
 		}
 	}
 }
@@ -56,7 +56,7 @@ if ( ! \function_exists( 'get_option' ) ) {
 	 */
 	function get_option( $option, $default_value = false ) {
 		/** @var callable(string, mixed): mixed|null $reader */
-		$reader = $GLOBALS['a8csp_bgte_test_get_option'] ?? null;
+		$reader = $GLOBALS['a8csp_bgje_test_get_option'] ?? null;
 		if ( null !== $reader ) {
 			if ( ! \is_callable( $reader ) ) {
 				throw new \UnexpectedValueException( 'Initialize the get-option test seam as a callable.' );
@@ -65,12 +65,12 @@ if ( ! \function_exists( 'get_option' ) ) {
 			return $reader( $option, $default_value );
 		}
 
-		if ( 'cron' === $option && \array_key_exists( 'a8csp_bgte_test_cron_array', $GLOBALS ) ) {
-			return $GLOBALS['a8csp_bgte_test_cron_array'];
+		if ( 'cron' === $option && \array_key_exists( 'a8csp_bgje_test_cron_array', $GLOBALS ) ) {
+			return $GLOBALS['a8csp_bgje_test_cron_array'];
 		}
 
 		/** @var array<string, mixed> $options */
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 
 		return \array_key_exists( $option, $options ) ? $options[ $option ] : $default_value;
 	}
@@ -90,10 +90,10 @@ if ( ! \function_exists( 'add_option' ) ) {
 	 * @phpstan-impure
 	 */
 	function add_option( $option, $value = '', $deprecated = '', $autoload = null ) {
-		a8csp_bgte_test_record_option_call( 'add_option', array( $option, $value, $deprecated, $autoload ) );
+		a8csp_bgje_test_record_option_call( 'add_option', array( $option, $value, $deprecated, $autoload ) );
 
 		/** @var callable(string, mixed, string, bool|string|null): void|null $before_add */
-		$before_add = $GLOBALS['a8csp_bgte_test_before_add_option'] ?? null;
+		$before_add = $GLOBALS['a8csp_bgje_test_before_add_option'] ?? null;
 		if ( null !== $before_add ) {
 			if ( ! \is_callable( $before_add ) ) {
 				throw new \UnexpectedValueException( 'Initialize the before-add-option test hook as a callable.' );
@@ -103,20 +103,20 @@ if ( ! \function_exists( 'add_option' ) ) {
 		}
 
 		/** @var array<string, mixed> $options */
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( \array_key_exists( $option, $options ) ) {
 			return false;
 		}
 
 		/** @var array<string, bool|string|null> $autoload_flags */
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? array();
+		$autoload_flags = $GLOBALS['a8csp_bgje_test_option_autoload'] ?? array();
 
 		$options[ $option ] = $value;
 
 		$autoload_flags[ $option ] = $autoload;
 
-		$GLOBALS['a8csp_bgte_test_options']         = $options;
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = $autoload_flags;
+		$GLOBALS['a8csp_bgje_test_options']         = $options;
+		$GLOBALS['a8csp_bgje_test_option_autoload'] = $autoload_flags;
 
 		return true;
 	}
@@ -135,33 +135,33 @@ if ( ! \function_exists( 'update_option' ) ) {
 	 * @phpstan-impure
 	 */
 	function update_option( $option, $value, $autoload = null ) {
-		a8csp_bgte_test_record_option_call( 'update_option', array( $option, $value, $autoload ) );
+		a8csp_bgje_test_record_option_call( 'update_option', array( $option, $value, $autoload ) );
 
 		/** @var array<string, bool> $results */
-		$results = $GLOBALS['a8csp_bgte_test_update_option_results'] ?? array();
+		$results = $GLOBALS['a8csp_bgje_test_update_option_results'] ?? array();
 		if ( false === ( $results[ $option ] ?? true ) ) {
 			return false;
 		}
 
 		/** @var array<string, mixed> $stored_values */
-		$stored_values = $GLOBALS['a8csp_bgte_test_update_option_values'] ?? array();
+		$stored_values = $GLOBALS['a8csp_bgje_test_update_option_values'] ?? array();
 		if ( \array_key_exists( $option, $stored_values ) ) {
 			$value = $stored_values[ $option ];
 		}
 
 		/** @var array<string, mixed> $options */
-		$options   = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options   = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		$unchanged = \array_key_exists( $option, $options ) && $value === $options[ $option ];
 
 		/** @var array<string, bool|string|null> $autoload_flags */
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? array();
+		$autoload_flags = $GLOBALS['a8csp_bgje_test_option_autoload'] ?? array();
 
 		$options[ $option ] = $value;
 
 		$autoload_flags[ $option ] = $autoload;
 
-		$GLOBALS['a8csp_bgte_test_options']         = $options;
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = $autoload_flags;
+		$GLOBALS['a8csp_bgje_test_options']         = $options;
+		$GLOBALS['a8csp_bgje_test_option_autoload'] = $autoload_flags;
 
 		return ! $unchanged;
 	}
@@ -178,26 +178,26 @@ if ( ! \function_exists( 'delete_option' ) ) {
 	 * @phpstan-impure
 	 */
 	function delete_option( $option ) {
-		a8csp_bgte_test_record_option_call( 'delete_option', array( $option ) );
+		a8csp_bgje_test_record_option_call( 'delete_option', array( $option ) );
 
 		/** @var array<string, bool> $results */
-		$results = $GLOBALS['a8csp_bgte_test_delete_option_results'] ?? array();
+		$results = $GLOBALS['a8csp_bgje_test_delete_option_results'] ?? array();
 		if ( false === ( $results[ $option ] ?? true ) ) {
 			return false;
 		}
 
 		/** @var array<string, mixed> $options */
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( ! \array_key_exists( $option, $options ) ) {
 			return false;
 		}
 
 		/** @var array<string, bool|string|null> $autoload_flags */
-		$autoload_flags = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? array();
+		$autoload_flags = $GLOBALS['a8csp_bgje_test_option_autoload'] ?? array();
 		unset( $options[ $option ], $autoload_flags[ $option ] );
 
-		$GLOBALS['a8csp_bgte_test_options']         = $options;
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = $autoload_flags;
+		$GLOBALS['a8csp_bgje_test_options']         = $options;
+		$GLOBALS['a8csp_bgje_test_option_autoload'] = $autoload_flags;
 
 		return true;
 	}
@@ -215,11 +215,11 @@ if ( ! \function_exists( 'delete_transient' ) ) {
 	 */
 	function delete_transient( $transient ) {
 		/** @var list<string> $calls */
-		$calls   = $GLOBALS['a8csp_bgte_test_delete_transient_calls'] ?? array();
+		$calls   = $GLOBALS['a8csp_bgje_test_delete_transient_calls'] ?? array();
 		$calls[] = $transient;
 
 		/** @var array<string, mixed> $options */
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		$deleted = false;
 		foreach ( array( '_transient_' . $transient, '_transient_timeout_' . $transient ) as $option_name ) {
 			if ( \array_key_exists( $option_name, $options ) ) {
@@ -228,8 +228,8 @@ if ( ! \function_exists( 'delete_transient' ) ) {
 			}
 		}
 
-		$GLOBALS['a8csp_bgte_test_delete_transient_calls'] = $calls;
-		$GLOBALS['a8csp_bgte_test_options']                = $options;
+		$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = $calls;
+		$GLOBALS['a8csp_bgje_test_options']                = $options;
 
 		return $deleted;
 	}

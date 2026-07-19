@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -30,22 +30,22 @@ final readonly class Client {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string    $owner     Client plugin owner.
-	 * @param   Tasks     $tasks     Owner-bound task facade.
-	 * @param   Batches   $batches   Owner-bound batch facade.
-	 * @param   Schedules $schedules Owner-bound schedule facade.
-	 * @param   Runs      $runs      Owner-bound run facade.
+	 * @param   string      $owner     Client plugin owner.
+	 * @param   Jobs        $jobs     Owner-bound job facade.
+	 * @param   ChunkedJobs $chunked_jobs   Owner-bound chunked job facade.
+	 * @param   Schedules   $schedules Owner-bound schedule facade.
+	 * @param   Runs        $runs      Owner-bound run facade.
 	 *
 	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
 	 */
 	public function __construct(
 		private string $owner,
-		private Tasks $tasks,
-		private Batches $batches,
+		private Jobs $jobs,
+		private ChunkedJobs $chunked_jobs,
 		private Schedules $schedules,
 		private Runs $runs,
 	) {
-		WorkIdentity::validate_owner( $this->owner );
+		JobIdentity::validate_owner( $this->owner );
 	}
 
 	// endregion
@@ -53,27 +53,27 @@ final readonly class Client {
 	// region GETTERS
 
 	/**
-	 * Returns the owner-bound task facade.
+	 * Returns the owner-bound job facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  Tasks
+	 * @return  Jobs
 	 */
-	public function tasks(): Tasks {
-		return $this->tasks;
+	public function jobs(): Jobs {
+		return $this->jobs;
 	}
 
 	/**
-	 * Returns the owner-bound batch facade.
+	 * Returns the owner-bound chunked job facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  Batches
+	 * @return  ChunkedJobs
 	 */
-	public function batches(): Batches {
-		return $this->batches;
+	public function chunked_jobs(): ChunkedJobs {
+		return $this->chunked_jobs;
 	}
 
 	/**

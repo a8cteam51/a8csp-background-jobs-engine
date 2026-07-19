@@ -6,7 +6,7 @@
  *
  * @since   1.0.0
  * @version 1.0.0
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
 if ( ! \defined( 'ABSPATH' ) ) {

@@ -1,28 +1,28 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\SystemClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -35,7 +35,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Schedule-delivery hook shared with the live engine. */
-	private const string HOOK = 'a8csp_background_tasks/schedule_due';
+	private const string HOOK = 'a8csp_jobs_engine/schedule_due';
 
 	/** Unknown registration identity isolated to this integration test. */
 	private const string KEY = 'integration-owner:unknown-cleanup';
@@ -46,17 +46,17 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	/** Schedule component of the unknown registration identity. */
 	private const string SCHEDULE = 'unknown-cleanup';
 
-	/** Task invoked by the legitimately re-declared schedule. */
-	private const string REDECLARED_TASK = 'integration-unknown-cleanup-redeclared-task';
+	/** Job invoked by the legitimately re-declared schedule. */
+	private const string REDECLARED_JOB = 'integration-unknown-cleanup-redeclared-job';
 
-	/** Owner-qualified task identity invoked by the legitimately re-declared schedule. */
-	private const string REDECLARED_IDENTITY = self::OWNER . ':' . self::REDECLARED_TASK;
+	/** Owner-qualified job identity invoked by the legitimately re-declared schedule. */
+	private const string REDECLARED_IDENTITY = self::OWNER . ':' . self::REDECLARED_JOB;
 
 	/** Unknown registration identity isolated to the degraded WP-Cron probe. */
 	private const string WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
 
 	/** Engine-reserved maintenance registration identity. */
-	private const string MAINTENANCE_KEY = 'a8csp-bgte:maintenance';
+	private const string MAINTENANCE_KEY = 'a8csp-jobs-engine:maintenance';
 
 	/** Owner isolated to undeclared-registration aging. */
 	private const string ZOMBIE_OWNER = 'integration-zombie-owner';
@@ -67,8 +67,8 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	/** Registration identity isolated to undeclared-registration aging. */
 	private const string ZOMBIE_KEY = self::ZOMBIE_OWNER . ':' . self::ZOMBIE_SCHEDULE;
 
-	/** Target task persisted only in the isolated declaration fixture. */
-	private const string ZOMBIE_TASK = 'zombie-task';
+	/** Target job persisted only in the isolated declaration fixture. */
+	private const string ZOMBIE_JOB = 'zombie-job';
 
 	// endregion.
 
@@ -88,14 +88,14 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 */
 	public function test_persisted_undeclared_schedule_escalates_once_across_recurring_deliveries(): void {
 		$this->expect_option( ScheduleRegistry::option_name( self::ZOMBIE_OWNER ) );
-		$schedule = new Schedule( self::ZOMBIE_SCHEDULE, Recurrence::every( 300 ), self::ZOMBIE_TASK );
+		$schedule = new Schedule( self::ZOMBIE_SCHEDULE, Recurrence::every( 300 ), self::ZOMBIE_JOB );
 		$fixture  = StoreFixtureBuilder::for_identity( self::ZOMBIE_KEY )->schedule_registration(
 			array(
 				'owner'         => self::ZOMBIE_OWNER,
 				'declarations'  => array(
 					self::ZOMBIE_KEY => array(
 						'schedule' => $schedule,
-						'task'     => self::ZOMBIE_OWNER . ':' . self::ZOMBIE_TASK,
+						'job'      => self::ZOMBIE_OWNER . ':' . self::ZOMBIE_JOB,
 					),
 				),
 				'registrations' => array(
@@ -107,9 +107,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_background_tasks/log',
+			'a8csp_jobs_engine/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -137,7 +137,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			self::assertCount( 3 > $occurrence ? 0 : 1, $warnings );
 		}
 
-		self::assertStringContainsString( 'wp background-tasks schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
+		self::assertStringContainsString( 'wp background-jobs schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
 		$debug_records = \array_values(
 			\array_filter(
 				$log_records,
@@ -164,14 +164,14 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_live_maintenance_sweep_converges_the_unknown_recurring_chain(): void {
-		$this->expect_option( ScheduleRegistry::option_name( 'a8csp-bgte' ) );
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::MAINTENANCE_KEY );
+		$this->expect_option( ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::MAINTENANCE_KEY );
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_background_tasks/log',
+			'a8csp_jobs_engine/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -199,11 +199,11 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
 		$synced = $engine->schedules->sync_owner(
-			'a8csp-bgte',
+			'a8csp-jobs-engine',
 			array(
 				self::MAINTENANCE_KEY => array(
-					'schedule' => new Schedule( MaintenanceTask::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceTask::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce ),
-					'task'     => self::MAINTENANCE_KEY,
+					'schedule' => new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce ),
+					'job'      => self::MAINTENANCE_KEY,
 				),
 			)
 		);
@@ -211,8 +211,8 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertTrue( $synced->value );
 
 		$maintenance = $engine->schedules->dispatch_now( self::MAINTENANCE_KEY );
-		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance task must be dispatchable through the schedule facade' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance task' );
+		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule facade' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance job' );
 
 		self::assertFalse( $scheduler->is_scheduled( self::HOOK, array( self::KEY ), self::KEY ), 'The maintenance sweep must converge the unknown recurring chain' );
 	}
@@ -229,10 +229,10 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_sweep_convergence_preserves_a_redeclared_action_scheduler_chain(): void {
-		$intent_option = 'a8csp_bgte_cleanup_intent_' . \hash( 'sha256', self::KEY );
+		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( ScheduleRegistry::option_name( self::OWNER ) );
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::REDECLARED_IDENTITY );
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::REDECLARED_IDENTITY );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$unknown_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
 		self::assertGreaterThan( 0, $unknown_action_id );
@@ -247,10 +247,10 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$client = \a8csp_bgte( self::OWNER );
-		$task   = new RecordingTask( self::REDECLARED_TASK );
-		$client->tasks()->register( $task );
-		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_TASK, array( 'generation' => 'redeclared' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
+		$client = \a8csp_bgje( self::OWNER );
+		$job    = new RecordingJob( self::REDECLARED_JOB );
+		$client->jobs()->register( $job );
+		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
 		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );
@@ -286,8 +286,8 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertGreaterThanOrEqual( $registry_next_due, $advanced_due, 'The retained occurrence must advance to the original live window or a later recurrence' );
 		self::assertSame( 0, ( $advanced_due - $forced_due ) % 300, 'The advanced due time must remain aligned to the persisted recurrence' );
 		self::assertCount( 1, $this->pending_schedule_action_ids( self::KEY ), 'The retained recurring action must create its live successor after delivery' );
-		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_background_tasks/run_task' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared task' );
-		self::assertSame( array( array( 'generation' => 'redeclared' ) ), $task->calls );
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_jobs_engine/run_job' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared job' );
+		self::assertSame( array( array( 'generation' => 'redeclared' ) ), $job->calls );
 	}
 
 	/**
@@ -302,9 +302,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	public function test_unknown_wp_cron_chain_converges_inline(): void {
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_background_tasks/log',
+			'a8csp_jobs_engine/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -344,9 +344,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_complete_before_repeat_race_re_records_the_intent_on_the_successor_delivery(): void {
-		$intent_option = 'a8csp_bgte_cleanup_intent_' . \hash( 'sha256', self::KEY );
+		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( $intent_option );
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$cleanup_intents = $this->cleanup_intents();
 
@@ -515,7 +515,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	private function registration_next_due( string $owner, string $name ): int {
 		$owner_rows = \get_option( ScheduleRegistry::option_name( $owner ), null );
 		self::assertIsArray( $owner_rows );
-		$registration = $owner_rows[ WorkIdentity::compose( $owner, $name, true ) ] ?? null;
+		$registration = $owner_rows[ JobIdentity::compose( $owner, $name, true ) ] ?? null;
 		self::assertIsArray( $registration );
 		$next_due = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
@@ -539,7 +539,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$option_name = ScheduleRegistry::option_name( $owner );
 		$owner_rows  = \get_option( $option_name, null );
 		self::assertIsArray( $owner_rows );
-		$identity     = WorkIdentity::compose( $owner, $name, true );
+		$identity     = JobIdentity::compose( $owner, $name, true );
 		$registration = $owner_rows[ $identity ] ?? null;
 		self::assertIsArray( $registration );
 		$registration['next_due'] = $next_due;

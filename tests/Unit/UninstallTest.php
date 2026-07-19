@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
@@ -93,7 +93,7 @@ final class UninstallWpdbSpy {
 		$table = \stripcslashes( $last_prepared );
 
 		/** @var list<string> $missing */
-		$missing = $GLOBALS['a8csp_bgte_test_uninstall_missing_tables'] ?? array();
+		$missing = $GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] ?? array();
 		foreach ( $missing as $missing_suffix ) {
 			if ( \str_ends_with( $table, $missing_suffix ) ) {
 				return null;
@@ -116,7 +116,7 @@ final class UninstallWpdbSpy {
 	public function query( string $query ): int|false {
 		$this->write_queries[] = $query;
 
-		$script = $GLOBALS['a8csp_bgte_test_uninstall_query_result'] ?? 0;
+		$script = $GLOBALS['a8csp_bgje_test_uninstall_query_result'] ?? 0;
 		$result = \is_array( $script ) ? ( $script[ \count( $this->write_queries ) - 1 ] ?? 0 ) : $script;
 		if ( ! \is_int( $result ) && false !== $result ) {
 			throw new \UnexpectedValueException( 'Script each uninstall write result as an integer or false.' );
@@ -140,22 +140,22 @@ final class UninstallWpdbSpy {
 
 		if ( \str_contains( $query, 'claim_id' ) ) {
 			/** @var list<mixed> $claim_ids */
-			$claim_ids = $GLOBALS['a8csp_bgte_test_uninstall_claim_ids'] ?? array();
+			$claim_ids = $GLOBALS['a8csp_bgje_test_uninstall_claim_ids'] ?? array();
 
 			return $claim_ids;
 		}
 
 		if ( \str_contains( $query, 'group_id' ) ) {
 			/** @var list<mixed> $group_ids */
-			$group_ids = $GLOBALS['a8csp_bgte_test_uninstall_group_ids'] ?? array();
+			$group_ids = $GLOBALS['a8csp_bgje_test_uninstall_group_ids'] ?? array();
 
 			return $group_ids;
 		}
 
 		/** @var array<string, mixed> $options */
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 
-		return \array_values( \array_filter( \array_keys( $options ), static fn ( string $name ): bool => \str_starts_with( \strtolower( $name ), 'a8csp_bgte_' ) ) );
+		return \array_values( \array_filter( \array_keys( $options ), static fn ( string $name ): bool => \str_starts_with( \strtolower( $name ), 'a8csp_bgje_' ) ) );
 	}
 
 	// endregion.
@@ -172,30 +172,30 @@ final class UninstallTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const array DYNAMIC_OPTIONS   = array(
-		'a8csp_bgte_schedule_registrations_consumer-plugin',
-		'a8csp_bgte_schedule_registrations_a8csp-bgte',
-		'a8csp_bgte_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
-		'a8csp_bgte_latest_run_consumer-plugin:email-digest',
-		'a8csp_bgte_history_consumer-plugin:email-digest',
-		'a8csp_bgte_overlap_lock_consumer-plugin:email-digest_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_occurrence_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_cleanup_intent_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
-		'a8csp_bgte_failed_runs_consumer-plugin:email-digest',
+		'a8csp_bgje_schedule_registrations_consumer-plugin',
+		'a8csp_bgje_schedule_registrations_a8csp-jobs-engine',
+		'a8csp_bgje_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
+		'a8csp_bgje_latest_run_consumer-plugin:email-digest',
+		'a8csp_bgje_history_consumer-plugin:email-digest',
+		'a8csp_bgje_overlap_lock_consumer-plugin:email-digest_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgje_occurrence_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgje_cleanup_intent_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgje_failed_runs_consumer-plugin:email-digest',
 	);
 	private const array LIFECYCLE_HOOKS   = array(
-		'a8csp_background_tasks/start_batch',
-		'a8csp_background_tasks/continue_batch',
-		'a8csp_background_tasks/run_task',
-		'a8csp_background_tasks/run_chunk',
-		'a8csp_background_tasks/cleanup_batch',
-		'a8csp_background_tasks/schedule_due',
+		'a8csp_jobs_engine/start_chunked_job',
+		'a8csp_jobs_engine/continue_chunked_job',
+		'a8csp_jobs_engine/run_job',
+		'a8csp_jobs_engine/run_chunk',
+		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/schedule_due',
 	);
 	private const array UPDATE_TRANSIENTS = array(
-		'a8csp_bgte_github_latest_release_stable',
-		'a8csp_bgte_github_latest_release_prerelease',
+		'a8csp_bgje_github_latest_release_stable',
+		'a8csp_bgje_github_latest_release_prerelease',
 	);
-	private const string BYTE_NEAR_MISS   = 'A8CSP_BGTE_foreign';
-	private const string LIKE_NEAR_MISS   = 'a8cspXbgteYforeign';
+	private const string BYTE_NEAR_MISS   = 'A8CSP_BGJE_foreign';
+	private const string LIKE_NEAR_MISS   = 'a8cspXbgjeYforeign';
 
 	// endregion.
 
@@ -225,41 +225,41 @@ final class UninstallTest extends TestCase {
 		$options[ self::BYTE_NEAR_MISS ] = 'sentinel';
 		$options[ self::LIKE_NEAR_MISS ] = 'sentinel';
 
-		$GLOBALS['a8csp_bgte_test_options']                = $options;
-		$GLOBALS['a8csp_bgte_test_option_calls']           = array();
-		$GLOBALS['a8csp_bgte_test_delete_transient_calls'] = array();
-		$GLOBALS['a8csp_bgte_test_is_multisite']           = false;
-		$GLOBALS['a8csp_bgte_test_blog_id']                = 1;
-		$GLOBALS['a8csp_bgte_test_cron_array']             = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']             = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence']    = 0;
-		$GLOBALS['a8csp_bgte_test_uninstall_claim_ids']    = array( '11' );
-		$GLOBALS['a8csp_bgte_test_uninstall_group_ids']    = array( '7' );
+		$GLOBALS['a8csp_bgje_test_options']                = $options;
+		$GLOBALS['a8csp_bgje_test_option_calls']           = array();
+		$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']           = false;
+		$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
+		$GLOBALS['a8csp_bgje_test_uninstall_claim_ids']    = array( '11' );
+		$GLOBALS['a8csp_bgje_test_uninstall_group_ids']    = array( '7' );
 		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
 
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
-			\a8csp_bgte_test_store_cron_event( 1_700_000_000, $hook, array( $hook ), false );
+			\a8csp_bgje_test_store_cron_event( 1_700_000_000, $hook, array( $hook ), false );
 		}
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
 		foreach ( self::DYNAMIC_OPTIONS as $option ) {
-			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgte_test_options'] );
+			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgje_test_options'] );
 		}
 		foreach ( self::UPDATE_TRANSIENTS as $transient ) {
-			self::assertArrayNotHasKey( '_transient_' . $transient, $GLOBALS['a8csp_bgte_test_options'] );
-			self::assertArrayNotHasKey( '_transient_timeout_' . $transient, $GLOBALS['a8csp_bgte_test_options'] );
+			self::assertArrayNotHasKey( '_transient_' . $transient, $GLOBALS['a8csp_bgje_test_options'] );
+			self::assertArrayNotHasKey( '_transient_timeout_' . $transient, $GLOBALS['a8csp_bgje_test_options'] );
 		}
-		self::assertSame( self::UPDATE_TRANSIENTS, $GLOBALS['a8csp_bgte_test_delete_transient_calls'] );
+		self::assertSame( self::UPDATE_TRANSIENTS, $GLOBALS['a8csp_bgje_test_delete_transient_calls'] );
 		$option_calls      = $this->option_calls();
 		$first_option_call = $option_calls[0] ?? null;
 		self::assertIsArray( $first_option_call );
-		self::assertSame( array( 'a8csp_bgte_schedule_registrations_consumer-plugin' ), $first_option_call['args'] ?? null );
-		self::assertArrayHasKey( self::BYTE_NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
-		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::BYTE_NEAR_MISS ] );
-		self::assertArrayHasKey( self::LIKE_NEAR_MISS, $GLOBALS['a8csp_bgte_test_options'] );
-		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgte_test_options'][ self::LIKE_NEAR_MISS ] );
+		self::assertSame( array( 'a8csp_bgje_schedule_registrations_consumer-plugin' ), $first_option_call['args'] ?? null );
+		self::assertArrayHasKey( self::BYTE_NEAR_MISS, $GLOBALS['a8csp_bgje_test_options'] );
+		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgje_test_options'][ self::BYTE_NEAR_MISS ] );
+		self::assertArrayHasKey( self::LIKE_NEAR_MISS, $GLOBALS['a8csp_bgje_test_options'] );
+		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgje_test_options'][ self::LIKE_NEAR_MISS ] );
 		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
 			self::assertFalse( \wp_next_scheduled( $hook, array( $hook ) ) );
 		}
@@ -270,7 +270,7 @@ final class UninstallTest extends TestCase {
 			array(
 				array(
 					'query' => 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-					'args'  => array( 'wp_options', 'a8csp\\_bgte\\_%' ),
+					'args'  => array( 'wp_options', 'a8csp\\_bgje\\_%' ),
 				),
 			),
 			self::prepared_matching( $wpdb, 'option_name' )
@@ -322,31 +322,31 @@ final class UninstallTest extends TestCase {
 		$failures = array(
 			array(
 				'script'  => array( false ),
-				'message' => 'a8csp-background-tasks-engine: uninstall left Action Scheduler actions and logs behind; actionscheduler_logs table delete failed.',
+				'message' => 'a8csp-background-jobs-engine: uninstall left Action Scheduler actions and logs behind; actionscheduler_logs table delete failed.',
 			),
 			array(
 				'script'  => array( 0, false ),
-				'message' => 'a8csp-background-tasks-engine: uninstall left Action Scheduler actions behind; actionscheduler_actions table delete failed.',
+				'message' => 'a8csp-background-jobs-engine: uninstall left Action Scheduler actions behind; actionscheduler_actions table delete failed.',
 			),
 			array(
 				'script'  => array( 0, 0, false ),
-				'message' => 'a8csp-background-tasks-engine: uninstall left orphaned Action Scheduler claims behind; actionscheduler_claims table delete failed.',
+				'message' => 'a8csp-background-jobs-engine: uninstall left orphaned Action Scheduler claims behind; actionscheduler_claims table delete failed.',
 			),
 		);
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		foreach ( $failures as $failure ) {
-			$GLOBALS['a8csp_bgte_test_options']                = array();
-			$GLOBALS['a8csp_bgte_test_option_calls']           = array();
-			$GLOBALS['a8csp_bgte_test_delete_transient_calls'] = array();
-			$GLOBALS['a8csp_bgte_test_is_multisite']           = false;
-			$GLOBALS['a8csp_bgte_test_blog_id']                = 1;
-			$GLOBALS['a8csp_bgte_test_cron_array']             = array();
-			$GLOBALS['a8csp_bgte_test_cron_calls']             = array();
-			$GLOBALS['a8csp_bgte_test_cron_event_sequence']    = 0;
-			$GLOBALS['a8csp_bgte_test_uninstall_claim_ids']    = array( '11' );
-			$GLOBALS['a8csp_bgte_test_uninstall_group_ids']    = array( '7' );
-			$GLOBALS['a8csp_bgte_test_uninstall_query_result'] = $failure['script'];
+			$GLOBALS['a8csp_bgje_test_options']                = array();
+			$GLOBALS['a8csp_bgje_test_option_calls']           = array();
+			$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
+			$GLOBALS['a8csp_bgje_test_is_multisite']           = false;
+			$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
+			$GLOBALS['a8csp_bgje_test_cron_array']             = array();
+			$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+			$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
+			$GLOBALS['a8csp_bgje_test_uninstall_claim_ids']    = array( '11' );
+			$GLOBALS['a8csp_bgje_test_uninstall_group_ids']    = array( '7' );
+			$GLOBALS['a8csp_bgje_test_uninstall_query_result'] = $failure['script'];
 			$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
 
 			$output = $this->capture_error_log(
@@ -374,16 +374,16 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 
-		$GLOBALS['a8csp_bgte_test_options']                  = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']             = array();
-		$GLOBALS['a8csp_bgte_test_is_multisite']             = false;
-		$GLOBALS['a8csp_bgte_test_blog_id']                  = 1;
-		$GLOBALS['a8csp_bgte_test_cron_array']               = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']               = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence']      = 0;
-		$GLOBALS['a8csp_bgte_test_uninstall_claim_ids']      = array( '11' );
-		$GLOBALS['a8csp_bgte_test_uninstall_group_ids']      = array( '7' );
-		$GLOBALS['a8csp_bgte_test_uninstall_missing_tables'] = array( 'actionscheduler_groups' );
+		$GLOBALS['a8csp_bgje_test_options']                  = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']             = false;
+		$GLOBALS['a8csp_bgje_test_blog_id']                  = 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']               = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']               = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']      = 0;
+		$GLOBALS['a8csp_bgje_test_uninstall_claim_ids']      = array( '11' );
+		$GLOBALS['a8csp_bgje_test_uninstall_group_ids']      = array( '7' );
+		$GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] = array( 'actionscheduler_groups' );
 		$GLOBALS['wpdb']                                     = new UninstallWpdbSpy();
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
@@ -410,20 +410,20 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
 
-		$GLOBALS['a8csp_bgte_test_options']             = array( self::DYNAMIC_OPTIONS[0] => 'sentinel' );
-		$GLOBALS['a8csp_bgte_test_option_calls']        = array();
-		$GLOBALS['a8csp_bgte_test_is_multisite']        = true;
-		$GLOBALS['a8csp_bgte_test_site_ids']            = array( 1, 2 );
-		$GLOBALS['a8csp_bgte_test_get_sites_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']             = 1;
-		$GLOBALS['a8csp_bgte_test_blog_stack']          = array();
-		$GLOBALS['a8csp_bgte_test_blog_switch_calls']   = array();
-		$GLOBALS['a8csp_bgte_test_blog_restore_calls']  = array();
-		$GLOBALS['a8csp_bgte_test_cron_array']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_cron_site_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_uninstall_claim_ids'] = array( '11' );
-		$GLOBALS['a8csp_bgte_test_uninstall_group_ids'] = array( '7' );
+		$GLOBALS['a8csp_bgje_test_options']             = array( self::DYNAMIC_OPTIONS[0] => 'sentinel' );
+		$GLOBALS['a8csp_bgje_test_option_calls']        = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']        = true;
+		$GLOBALS['a8csp_bgje_test_site_ids']            = array( 1, 2 );
+		$GLOBALS['a8csp_bgje_test_get_sites_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']             = 1;
+		$GLOBALS['a8csp_bgje_test_blog_stack']          = array();
+		$GLOBALS['a8csp_bgje_test_blog_switch_calls']   = array();
+		$GLOBALS['a8csp_bgje_test_blog_restore_calls']  = array();
+		$GLOBALS['a8csp_bgje_test_cron_array']          = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_cron_site_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_uninstall_claim_ids'] = array( '11' );
+		$GLOBALS['a8csp_bgje_test_uninstall_group_ids'] = array( '7' );
 		$GLOBALS['wpdb']                                = new UninstallWpdbSpy();
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
@@ -437,11 +437,11 @@ final class UninstallTest extends TestCase {
 					'offset' => 0,
 				),
 			),
-			$GLOBALS['a8csp_bgte_test_get_sites_calls']
+			$GLOBALS['a8csp_bgje_test_get_sites_calls']
 		);
-		self::assertSame( array( 1, 2 ), $GLOBALS['a8csp_bgte_test_blog_switch_calls'] );
-		self::assertSame( array( 1, 1 ), $GLOBALS['a8csp_bgte_test_blog_restore_calls'] );
-		self::assertSame( 1, $GLOBALS['a8csp_bgte_test_blog_id'] );
+		self::assertSame( array( 1, 2 ), $GLOBALS['a8csp_bgje_test_blog_switch_calls'] );
+		self::assertSame( array( 1, 1 ), $GLOBALS['a8csp_bgje_test_blog_restore_calls'] );
+		self::assertSame( 1, $GLOBALS['a8csp_bgje_test_blog_id'] );
 
 		$expected_cron_calls      = array();
 		$expected_cron_site_calls = array();
@@ -461,8 +461,8 @@ final class UninstallTest extends TestCase {
 			}
 		}
 
-		self::assertSame( $expected_cron_calls, $GLOBALS['a8csp_bgte_test_cron_calls'] );
-		self::assertSame( $expected_cron_site_calls, $GLOBALS['a8csp_bgte_test_cron_site_calls'] );
+		self::assertSame( $expected_cron_calls, $GLOBALS['a8csp_bgje_test_cron_calls'] );
+		self::assertSame( $expected_cron_site_calls, $GLOBALS['a8csp_bgje_test_cron_site_calls'] );
 
 		$wpdb = $GLOBALS['wpdb'];
 		self::assertInstanceOf( UninstallWpdbSpy::class, $wpdb );
@@ -470,11 +470,11 @@ final class UninstallTest extends TestCase {
 			array(
 				array(
 					'query' => 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-					'args'  => array( 'wp_options', 'a8csp\\_bgte\\_%' ),
+					'args'  => array( 'wp_options', 'a8csp\\_bgje\\_%' ),
 				),
 				array(
 					'query' => 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-					'args'  => array( 'wp_2_options', 'a8csp\\_bgte\\_%' ),
+					'args'  => array( 'wp_2_options', 'a8csp\\_bgje\\_%' ),
 				),
 			),
 			self::prepared_matching( $wpdb, 'option_name' )
@@ -528,18 +528,18 @@ final class UninstallTest extends TestCase {
 
 		$site_ids = \range( 1, 101 );
 
-		$GLOBALS['a8csp_bgte_test_options']                  = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']             = array();
-		$GLOBALS['a8csp_bgte_test_is_multisite']             = true;
-		$GLOBALS['a8csp_bgte_test_site_ids']                 = $site_ids;
-		$GLOBALS['a8csp_bgte_test_get_sites_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']                  = 1;
-		$GLOBALS['a8csp_bgte_test_blog_stack']               = array();
-		$GLOBALS['a8csp_bgte_test_blog_switch_calls']        = array();
-		$GLOBALS['a8csp_bgte_test_blog_restore_calls']       = array();
-		$GLOBALS['a8csp_bgte_test_cron_array']               = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']               = array();
-		$GLOBALS['a8csp_bgte_test_uninstall_missing_tables'] = array( 'actionscheduler_logs' );
+		$GLOBALS['a8csp_bgje_test_options']                  = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']             = true;
+		$GLOBALS['a8csp_bgje_test_site_ids']                 = $site_ids;
+		$GLOBALS['a8csp_bgje_test_get_sites_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']                  = 1;
+		$GLOBALS['a8csp_bgje_test_blog_stack']               = array();
+		$GLOBALS['a8csp_bgje_test_blog_switch_calls']        = array();
+		$GLOBALS['a8csp_bgje_test_blog_restore_calls']       = array();
+		$GLOBALS['a8csp_bgje_test_cron_array']               = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']               = array();
+		$GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] = array( 'actionscheduler_logs' );
 		$GLOBALS['wpdb']                                     = new UninstallWpdbSpy();
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
@@ -558,11 +558,11 @@ final class UninstallTest extends TestCase {
 					'offset' => 100,
 				),
 			),
-			$GLOBALS['a8csp_bgte_test_get_sites_calls']
+			$GLOBALS['a8csp_bgje_test_get_sites_calls']
 		);
-		self::assertSame( $site_ids, $GLOBALS['a8csp_bgte_test_blog_switch_calls'] );
-		self::assertSame( \array_fill( 0, 101, 1 ), $GLOBALS['a8csp_bgte_test_blog_restore_calls'] );
-		self::assertSame( 1, $GLOBALS['a8csp_bgte_test_blog_id'] );
+		self::assertSame( $site_ids, $GLOBALS['a8csp_bgje_test_blog_switch_calls'] );
+		self::assertSame( \array_fill( 0, 101, 1 ), $GLOBALS['a8csp_bgje_test_blog_restore_calls'] );
+		self::assertSame( 1, $GLOBALS['a8csp_bgje_test_blog_id'] );
 	}
 
 	// endregion.
@@ -578,7 +578,7 @@ final class UninstallTest extends TestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private function option_calls(): array {
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		$calls = $GLOBALS['a8csp_bgje_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 
 		return $calls;
@@ -595,7 +595,7 @@ final class UninstallTest extends TestCase {
 	 * @return  string
 	 */
 	private function capture_error_log( callable $operation ): string {
-		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgte-uninstall-' );
+		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-jobs-engine-uninstall-' );
 		if ( false === $temp_file ) {
 			self::fail( 'Unable to create the uninstall error-log capture file; make the system temporary directory writable.' );
 		}

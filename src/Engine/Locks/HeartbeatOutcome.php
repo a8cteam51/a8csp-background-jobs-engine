@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks;
 
 \defined( 'ABSPATH' ) || exit;
 

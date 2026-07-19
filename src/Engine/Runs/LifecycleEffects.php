@@ -1,15 +1,15 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -34,11 +34,11 @@ final readonly class LifecycleEffects {
 	 * @var     array<string, string>
 	 */
 	private const array LIFECYCLE_HOOKS = array(
-		'started'    => 'a8csp_background_tasks/started',
-		'completed'  => 'a8csp_background_tasks/completed',
-		'failed'     => 'a8csp_background_tasks/failed',
-		'cancelled'  => 'a8csp_background_tasks/cancelled',
-		'superseded' => 'a8csp_background_tasks/superseded',
+		'started'    => 'a8csp_jobs_engine/started',
+		'completed'  => 'a8csp_jobs_engine/completed',
+		'failed'     => 'a8csp_jobs_engine/failed',
+		'cancelled'  => 'a8csp_jobs_engine/cancelled',
+		'superseded' => 'a8csp_jobs_engine/superseded',
 	);
 
 	/**
@@ -47,24 +47,24 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, array<'Task'|'Batch', list<string>>>
+	 * @var     array<string, array<'Job'|'ChunkedJob', list<string>>>
 	 */
 	private const array TERMINAL_EFFECTS = array(
 		'failed'     => array(
-			'Batch' => array( 'retention', 'callbacks', 'hooks', 'history' ),
-			'Task'  => array( 'retention', 'hooks', 'history' ),
+			'ChunkedJob' => array( 'retention', 'callbacks', 'hooks', 'history' ),
+			'Job'        => array( 'retention', 'hooks', 'history' ),
 		),
 		'completed'  => array(
-			'Batch' => array( 'callbacks', 'hooks', 'history' ),
-			'Task'  => array( 'hooks', 'history' ),
+			'ChunkedJob' => array( 'callbacks', 'hooks', 'history' ),
+			'Job'        => array( 'hooks', 'history' ),
 		),
 		'cancelled'  => array(
-			'Batch' => array( 'hooks', 'history' ),
-			'Task'  => array( 'hooks', 'history' ),
+			'ChunkedJob' => array( 'hooks', 'history' ),
+			'Job'        => array( 'hooks', 'history' ),
 		),
 		'superseded' => array(
-			'Batch' => array( 'hooks', 'history' ),
-			'Task'  => array( 'hooks', 'history' ),
+			'ChunkedJob' => array( 'hooks', 'history' ),
+			'Job'        => array( 'hooks', 'history' ),
 		),
 	);
 
@@ -100,8 +100,8 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   RunStatus      $status    Terminal run status.
-	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   RunStatus          $status    Terminal run status.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
 	 *
 	 * @throws  \InvalidArgumentException When the status is not terminal or the work type is invalid.
 	 *
@@ -110,7 +110,7 @@ final readonly class LifecycleEffects {
 	public static function expected_effects( RunStatus $status, string $work_type ): array {
 		$effects = self::TERMINAL_EFFECTS[ $status->value ][ $work_type ] ?? null;
 		if ( null === $effects ) {
-			throw new \InvalidArgumentException( 'Terminal effects require a terminal status and a Task or Batch work type.' );
+			throw new \InvalidArgumentException( 'Terminal effects require a terminal status and a Job or Chunked Job work type.' );
 		}
 
 		return $effects;
@@ -122,7 +122,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
@@ -140,12 +140,12 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity     Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id       Run identifier.
-	 * @param   RunState       $state        Terminalizing run state.
-	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore       $run_store    Active-run store.
-	 * @param   'Task'|'Batch' $work_type    Work contract type.
+	 * @param   string             $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string             $run_id       Run identifier.
+	 * @param   RunState           $state        Terminalizing run state.
+	 * @param   string             $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore           $run_store    Active-run store.
+	 * @param   'Job'|'ChunkedJob' $work_type    Work contract type.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
@@ -161,18 +161,18 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $identity     Complete owner-qualified task or batch identity.
-	 * @param   string              $run_id       Run identifier.
-	 * @param   RunState            $state        Terminal run state.
-	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore            $run_store    Active-run store.
-	 * @param   'Task'|'Batch'      $work_type    Resolved work contract type.
-	 * @param   BatchInterface|null $batch        Resolved batch, or null when no callback is available.
+	 * @param   string                   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string                   $run_id       Run identifier.
+	 * @param   RunState                 $state        Terminal run state.
+	 * @param   string                   $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore                 $run_store    Active-run store.
+	 * @param   'Job'|'ChunkedJob'       $work_type    Resolved work contract type.
+	 * @param   ChunkedJobInterface|null $chunked_job        Resolved chunked job, or null when no callback is available.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
-		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $work_type, $batch );
+	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?ChunkedJobInterface $chunked_job = null ): bool {
+		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $work_type, $chunked_job );
 	}
 
 	/**
@@ -181,19 +181,19 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $identity     Complete owner-qualified task or batch identity.
-	 * @param   string              $run_id       Run identifier.
-	 * @param   RunState            $state        Terminal run state.
-	 * @param   string              $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore            $run_store    Active-run store.
-	 * @param   'Task'|'Batch'      $work_type    Work contract type.
-	 * @param   BatchInterface|null $batch        Batch callback target, or null for a task or unresolved batch.
+	 * @param   string                   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string                   $run_id       Run identifier.
+	 * @param   RunState                 $state        Terminal run state.
+	 * @param   string                   $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore                 $run_store    Active-run store.
+	 * @param   'Job'|'ChunkedJob'       $work_type    Work contract type.
+	 * @param   ChunkedJobInterface|null $chunked_job        Chunked Job callback target, or null for a job or unresolved chunked job.
 	 *
 	 * @throws  \Throwable When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?BatchInterface $batch = null ): bool {
+	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, string $work_type, ?ChunkedJobInterface $chunked_job = null ): bool {
 		$expected       = self::expected_effects( $state->status, $work_type );
 		$missing        = \array_values( \array_diff( $expected, $state->effects ) );
 		$failure_detail = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'callbacks', 'hooks' ), $missing )
@@ -212,7 +212,7 @@ final readonly class LifecycleEffects {
 			}
 
 			try {
-				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $work_type, $batch, $failure_detail );
+				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $work_type, $chunked_job, $failure_detail );
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
@@ -307,23 +307,23 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string              $effect         Terminal effect key.
-	 * @param   string              $identity       Complete owner-qualified task or batch identity.
-	 * @param   string              $run_id         Run identifier.
-	 * @param   RunState            $state          Current terminal state.
-	 * @param   'Task'|'Batch'      $work_type      Work contract type.
-	 * @param   BatchInterface|null $batch          Batch callback target, or null for a task or unresolved batch.
-	 * @param   array|null          $failure_detail Reconstructed internal and client failure detail.
+	 * @param   string                   $effect         Terminal effect key.
+	 * @param   string                   $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string                   $run_id         Run identifier.
+	 * @param   RunState                 $state          Current terminal state.
+	 * @param   'Job'|'ChunkedJob'       $work_type      Work contract type.
+	 * @param   ChunkedJobInterface|null $chunked_job          Chunked Job callback target, or null for a job or unresolved chunked job.
+	 * @param   array|null               $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When the effect table contains an unsupported key.
 	 * @throws  \Throwable      When an effect cannot complete.
 	 *
 	 * @return  bool Whether the effect landed and may be marked complete.
 	 */
-	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, string $work_type, ?BatchInterface $batch, ?array $failure_detail ): bool {
+	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, string $work_type, ?ChunkedJobInterface $chunked_job, ?array $failure_detail ): bool {
 		return match ( $effect ) {
 			'retention' => $this->record_failed_run( $identity, $run_id, $state, $work_type, $failure_detail ),
-			'callbacks' => $this->fire_batch_callback( $identity, $run_id, $state, $batch, $failure_detail['failure'] ?? null ),
+			'callbacks' => $this->fire_chunked_job_callback( $identity, $run_id, $state, $chunked_job, $failure_detail['failure'] ?? null ),
 			'hooks'     => $this->fire_terminal_hooks( $identity, $run_id, $state, $failure_detail['failure'] ?? null ),
 			'history'   => $this->record_terminal_history( $identity, $run_id, $state ),
 			default     => throw new \LogicException( 'The terminal effect table contains an unsupported effect key.' ),
@@ -338,11 +338,11 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string         $identity       Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id         Run identifier.
-	 * @param   RunState       $state          Failed terminal state.
-	 * @param   'Task'|'Batch' $work_type      Work contract type.
-	 * @param   array|null     $failure_detail Reconstructed internal and client failure detail.
+	 * @param   string             $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string             $run_id         Run identifier.
+	 * @param   RunState           $state          Failed terminal state.
+	 * @param   'Job'|'ChunkedJob' $work_type      Work contract type.
+	 * @param   array|null         $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When failure detail is absent.
 	 *
@@ -358,7 +358,7 @@ final readonly class LifecycleEffects {
 			return true;
 		}
 
-		$context_name = \strtolower( $work_type ) . '_name';
+		$context_name = ( 'Job' === $work_type ? 'job' : 'chunked_job' ) . '_name';
 		$this->logger->warning(
 			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
 			array(
@@ -371,30 +371,30 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Fires one completed or failed batch callback with its established throwable policy.
+	 * Fires one completed or failed chunked job callback with its established throwable policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $identity Complete owner-qualified batch identity.
-	 * @param   string              $run_id   Run identifier.
-	 * @param   RunState            $state    Terminal batch state.
-	 * @param   BatchInterface|null $batch    Registered batch, or null when the callback must be skipped.
-	 * @param   RunFailure|null     $failure  Reconstructed client failure value.
+	 * @param   string                   $identity Complete owner-qualified chunked job identity.
+	 * @param   string                   $run_id   Run identifier.
+	 * @param   RunState                 $state    Terminal chunked job state.
+	 * @param   ChunkedJobInterface|null $chunked_job    Registered chunked job, or null when the callback must be skipped.
+	 * @param   RunFailure|null          $failure  Reconstructed client failure value.
 	 *
-	 * @throws  \LogicException When the state cannot support a batch callback.
+	 * @throws  \LogicException When the state cannot support a chunked job callback.
 	 * @throws  \Throwable      When a failed callback fails.
 	 *
 	 * @return  true
 	 */
-	private function fire_batch_callback( string $identity, string $run_id, RunState $state, ?BatchInterface $batch, ?RunFailure $failure ): bool {
-		if ( null === $batch ) {
+	private function fire_chunked_job_callback( string $identity, string $run_id, RunState $state, ?ChunkedJobInterface $chunked_job, ?RunFailure $failure ): bool {
+		if ( null === $chunked_job ) {
 			$this->logger->warning(
-				'Terminal batch callback was skipped because the batch is not registered in this request.',
+				'Terminal chunked job callback was skipped because the chunked job is not registered in this request.',
 				array(
-					'batch_name' => $identity,
-					'run_id'     => $run_id,
-					'status'     => $state->status->value,
+					'chunked_job_name' => $identity,
+					'run_id'           => $run_id,
+					'status'           => $state->status->value,
 				)
 			);
 
@@ -403,14 +403,14 @@ final readonly class LifecycleEffects {
 
 		if ( RunStatus::Completed === $state->status ) {
 			try {
-				$batch->on_completed( $run_id, $state->start_args );
+				$chunked_job->on_completed( $run_id, $state->start_args );
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(
-					'Batch on_completed callback failed after all chunks completed; fix the batch callback.',
+					'Chunked Job on_completed callback failed after all chunks completed; fix the chunked job callback.',
 					array(
-						'batch_name' => $identity,
-						'run_id'     => $run_id,
-						'exception'  => $throwable,
+						'chunked_job_name' => $identity,
+						'run_id'           => $run_id,
+						'exception'        => $throwable,
 					)
 				);
 			}
@@ -419,10 +419,10 @@ final readonly class LifecycleEffects {
 		}
 
 		if ( RunStatus::Failed !== $state->status || null === $failure ) {
-			throw new \LogicException( 'Batch on_failed callbacks require a failed terminal state and failure detail.' );
+			throw new \LogicException( 'Chunked Job on_failed callbacks require a failed terminal state and failure detail.' );
 		}
 
-		$batch->on_failed( $run_id, $state->start_args, $failure );
+		$chunked_job->on_failed( $run_id, $state->start_args, $failure );
 
 		return true;
 	}
@@ -433,7 +433,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string          $run_id   Run identifier.
 	 * @param   RunState        $state    Terminal run state.
 	 * @param   RunFailure|null $failure  Reconstructed client failure value.
@@ -462,7 +462,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified task or batch identity.
+	 * @param   string   $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Terminal run state.
 	 *
@@ -490,10 +490,10 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     Failed terminal state.
-	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string             $run_id    Run identifier.
+	 * @param   RunState           $state     Failed terminal state.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
 	 *
 	 * @return  array{error: EngineError, failure: RunFailure}
 	 */
@@ -525,18 +525,18 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Returns the queued chunk associated with a batch run action.
+	 * Returns the queued chunk associated with a chunked job run action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   RunState       $state     Run state at terminalization.
+	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   RunState           $state     Run state at terminalization.
 	 *
 	 * @return  array<array-key, mixed>|null
 	 */
 	private static function failed_chunk_for_state( string $work_type, RunState $state ): ?array {
-		if ( 'Batch' !== $work_type || 'run' !== $state->pending?->stage ) {
+		if ( 'ChunkedJob' !== $work_type || 'run' !== $state->pending?->stage ) {
 			return null;
 		}
 
@@ -551,12 +551,12 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity     Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id       Run identifier.
-	 * @param   RunState       $state        Terminal run state.
-	 * @param   string         $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore       $run_store    Active-run store.
-	 * @param   'Task'|'Batch' $work_type    Work contract type.
+	 * @param   string             $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string             $run_id       Run identifier.
+	 * @param   RunState           $state        Terminal run state.
+	 * @param   string             $terminal_raw Exact terminal snapshot bytes.
+	 * @param   RunStore           $run_store    Active-run store.
+	 * @param   'Job'|'ChunkedJob' $work_type    Work contract type.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
@@ -602,7 +602,7 @@ final readonly class LifecycleEffects {
 	 * @phpstan-param 'started'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event      Lifecycle event name.
-	 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   RunFailure|null         $failure    Failure detail for a failed event.
@@ -639,7 +639,7 @@ final readonly class LifecycleEffects {
 				 * @since   1.0.0
 				 * @version 1.0.0
 				 *
-				 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+				 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
 				 * @param   string                  $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 */
@@ -673,7 +673,7 @@ final readonly class LifecycleEffects {
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   string                  $identity   Complete owner-qualified task or batch identity.
+			 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
 			 * @param   string                  $run_id     Run identifier.
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 			 * @param   RunFailure              $failure    Reconstructed client failure value.

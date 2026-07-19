@@ -5,7 +5,7 @@
   "port": 8891,
   "testsEnvironment": false,
   "mappings": {
-    "wp-content/plugins/a8csp-background-tasks-engine": "."
+    "wp-content/plugins/a8csp-background-jobs-engine": "."
   },
   "config": {
     "WP_DEBUG_DISPLAY": false,

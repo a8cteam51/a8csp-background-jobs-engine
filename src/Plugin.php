@@ -1,9 +1,9 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
 \defined( 'ABSPATH' ) || exit;
 

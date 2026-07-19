@@ -1,23 +1,23 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -45,22 +45,22 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const string UNREGISTERED_NAME = 'integration-cli-command:integration-cli-command-unregistered';
 
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
-	private const string CANCEL_NAME = 'a8csp-bgte:maintenance';
+	private const string CANCEL_NAME = 'a8csp-jobs-engine:maintenance';
 
 	/** Background-work identity isolated to real reset state. */
 	private const string RESET_NAME = 'integration-cli-command:integration-cli-command-reset-store';
 
-	/** Batch identity registered by the cancel-completeness WP-CLI bootstrap. */
-	private const string CANCEL_BATCH_NAME = 'integration-cli-command:integration-cli-command-cancel-batch';
+	/** Chunked Job identity registered by the cancel-completeness WP-CLI bootstrap. */
+	private const string CANCEL_CHUNKED_JOB_NAME = 'integration-cli-command:integration-cli-command-cancel-chunked-job';
 
-	/** Test-only WP-CLI bootstrap that registers the cancel-completeness batch. */
-	private const string CANCEL_BATCH_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-cancel-batch.php';
+	/** Test-only WP-CLI bootstrap that registers the cancel-completeness chunked job. */
+	private const string CANCEL_CHUNKED_JOB_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-jobs-engine/tests/Support/Fixtures/cli-cancel-chunked-job.php';
 
-	/** Test-only WP-CLI bootstrap that declares the inspection task and schedule. */
-	private const string INSPECTION_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-inspection.php';
+	/** Test-only WP-CLI bootstrap that declares the inspection job and schedule. */
+	private const string INSPECTION_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-jobs-engine/tests/Support/Fixtures/cli-inspection.php';
 
 	/** Test-only WP-CLI bootstrap that fails the retained-run row read after name discovery. */
-	private const string FAILED_READ_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-tasks-engine/tests/Support/Fixtures/cli-failed-read.php';
+	private const string FAILED_READ_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-jobs-engine/tests/Support/Fixtures/cli-failed-read.php';
 
 	/** Owner declared in every isolated inspection request. */
 	private const string INSPECTION_OWNER = 'integration-cli-inspection-owner';
@@ -68,11 +68,11 @@ final class CLICommandTest extends IntegrationTestCase {
 	/** Schedule declared in every isolated inspection request. */
 	private const string INSPECTION_SCHEDULE = 'inspection-schedule';
 
-	/** Task declared in every isolated inspection request. */
-	private const string INSPECTION_TASK = 'integration-cli-inspection-task';
+	/** Job declared in every isolated inspection request. */
+	private const string INSPECTION_JOB = 'integration-cli-inspection-job';
 
-	/** Owner-qualified task identity declared in every isolated inspection request. */
-	private const string INSPECTION_TASK_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_TASK;
+	/** Owner-qualified job identity declared in every isolated inspection request. */
+	private const string INSPECTION_JOB_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_JOB;
 
 	/** Run identity shared by deterministic retained-failure fixtures. */
 	private const string RUN_ID = '00000000001784030000-0000000000000000002';
@@ -84,7 +84,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const int FAILED_AT = 1_700_000_001;
 
 	/** Prefix shared by dynamically named failed-run options. */
-	private const string FAILED_OPTION_PREFIX = 'a8csp_bgte_failed_runs_';
+	private const string FAILED_OPTION_PREFIX = 'a8csp_bgje_failed_runs_';
 
 	/** Owner isolated to real owner-scoped schedule removal. */
 	private const string REMOVE_OWNER = 'integration-cli-remove-owner';
@@ -92,8 +92,8 @@ final class CLICommandTest extends IntegrationTestCase {
 	/** Schedule isolated to real owner-scoped schedule removal. */
 	private const string REMOVE_SCHEDULE = 'removable-schedule';
 
-	/** Task isolated to real owner-scoped schedule removal. */
-	private const string REMOVE_TASK = 'removable-task';
+	/** Job isolated to real owner-scoped schedule removal. */
+	private const string REMOVE_JOB = 'removable-job';
 
 	/** Registration identity isolated to real owner-scoped schedule removal. */
 	private const string REMOVE_KEY = self::REMOVE_OWNER . ':' . self::REMOVE_SCHEDULE;
@@ -113,8 +113,8 @@ final class CLICommandTest extends IntegrationTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->expect_option( 'a8csp_bgte_schedule_registrations_a8csp-bgte' );
-		$this->expect_option( 'a8csp_bgte_schedule_registrations_' . self::INSPECTION_OWNER );
+		$this->expect_option( 'a8csp_bgje_schedule_registrations_a8csp-jobs-engine' );
+		$this->expect_option( 'a8csp_bgje_schedule_registrations_' . self::INSPECTION_OWNER );
 	}
 
 	// endregion.
@@ -135,7 +135,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-bgte:maintenance".' . "\n", $result['stdout'] );
+		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-jobs-engine:maintenance".' . "\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		$inspection = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=json' );
 		self::assertSame( 0, $inspection['exit_code'] );
@@ -164,7 +164,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * The real command preserves the zero-chunk batch completeness refusal.
+	 * The real command preserves the zero-chunk chunked job completeness refusal.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -172,10 +172,10 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_cancel_surfaces_the_zero_chunk_completeness_refusal(): void {
-		$this->expect_option( self::cancel_batch_run_option_name() );
-		$option_name = $this->seed_cancel_batch_pending_cleanup();
+		$this->expect_option( self::cancel_chunked_job_run_option_name() );
+		$option_name = $this->seed_cancel_chunked_job_pending_cleanup();
 
-		$result = self::run_command_with_globals( 'runs', array( '--require=' . self::CANCEL_BATCH_BOOTSTRAP ), 'cancel', self::CANCEL_BATCH_NAME, self::RUN_ID );
+		$result = self::run_command_with_globals( 'runs', array( '--require=' . self::CANCEL_CHUNKED_JOB_BOOTSTRAP ), 'cancel', self::CANCEL_CHUNKED_JOB_NAME, self::RUN_ID );
 		self::assertTrue( \delete_option( $option_name ), 'The completeness fixture must remain retained after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
@@ -196,7 +196,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' . "register the matching task or batch before cancelling its run.\n", $result['stderr'] );
+		self::assertSame( 'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' . "register the matching job or chunked job before cancelling its run.\n", $result['stderr'] );
 	}
 
 	/**
@@ -212,7 +212,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-bgte:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-jobs-engine:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
 	}
 
 	/**
@@ -227,7 +227,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command();
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-tasks runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
+		self::assertSame( "usage: wp background-jobs runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -341,7 +341,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( 'Error: Failed runs for "integration-cli-command:integration-cli-command-list-store" are unavailable because the authoritative ' . "database read failed; resolve the database error and try again.\n", $result['stderr'] );
-		self::assertStringNotContainsString( 'a8csp_bgte_missing_option_rows', $result['stderr'], 'CLI failure output must redact the failed database query' );
+		self::assertStringNotContainsString( 'a8csp_bgje_missing_option_rows', $result['stderr'], 'CLI failure output must redact the failed database query' );
 	}
 
 	/**
@@ -357,7 +357,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' . "register the matching task or batch before retrying its failed run.\n", $result['stderr'] );
+		self::assertSame( 'Error: Background-work "integration-cli-command:integration-cli-command-unregistered" is not registered; ' . "register the matching job or chunked job before retrying its failed run.\n", $result['stderr'] );
 	}
 
 	/**
@@ -479,7 +479,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_command( 'reset', '--yes' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( "Option rows deleted: 3\nPending backend actions unscheduled: 1\nSuccess: Background tasks development state reset.\n", $result['stdout'] );
+		self::assertSame( "Option rows deleted: 3\nPending backend actions unscheduled: 1\nSuccess: Background jobs development state reset.\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		self::assertSame( array(), $this->engine_option_rows() );
 		self::assertFalse( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
@@ -489,13 +489,13 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $next_boot['exit_code'] );
 		self::assertSame( "No failed runs are retained.\n", $next_boot['stdout'] );
 		self::assertSame( '', $next_boot['stderr'] );
-		self::assertSame( array( 'a8csp_bgte_schedule_registrations_a8csp-bgte' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
+		self::assertSame( array( 'a8csp_bgje_schedule_registrations_a8csp-jobs-engine' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
 		self::assertTrue( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
 
 		$cleanup = self::run_command( 'reset', '--yes' );
 
 		self::assertSame( 0, $cleanup['exit_code'] );
-		self::assertSame( "Option rows deleted: 1\nPending backend actions unscheduled: 1\nSuccess: Background tasks development state reset.\n", $cleanup['stdout'] );
+		self::assertSame( "Option rows deleted: 1\nPending backend actions unscheduled: 1\nSuccess: Background jobs development state reset.\n", $cleanup['stdout'] );
 		self::assertSame( '', $cleanup['stderr'] );
 		self::assertSame( array(), $this->engine_option_rows() );
 		self::assertFalse( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
@@ -605,14 +605,14 @@ final class CLICommandTest extends IntegrationTestCase {
 	public function test_schedules_remove_converges_one_owner_and_is_not_silently_idempotent(): void {
 		$option_name = ScheduleRegistry::option_name( self::REMOVE_OWNER );
 		$this->expect_option( $option_name );
-		$schedule = new Schedule( self::REMOVE_SCHEDULE, Recurrence::every( 300 ), self::REMOVE_TASK );
+		$schedule = new Schedule( self::REMOVE_SCHEDULE, Recurrence::every( 300 ), self::REMOVE_JOB );
 		$fixture  = StoreFixtureBuilder::for_identity( self::REMOVE_KEY )->schedule_registration(
 			array(
 				'owner'         => self::REMOVE_OWNER,
 				'declarations'  => array(
 					self::REMOVE_KEY => array(
 						'schedule' => $schedule,
-						'task'     => self::REMOVE_OWNER . ':' . self::REMOVE_TASK,
+						'job'      => self::REMOVE_OWNER . ':' . self::REMOVE_JOB,
 					),
 				),
 				'registrations' => array(
@@ -627,9 +627,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_background_tasks/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_background_tasks/log',
+			'a8csp_jobs_engine/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -692,7 +692,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( "Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n", $result['stderr'] );
-		self::assertStringNotContainsString( 'a8csp_bgte_missing_option_rows', $result['stderr'], 'CLI failure output must redact the failed database query' );
+		self::assertStringNotContainsString( 'a8csp_bgje_missing_option_rows', $result['stderr'], 'CLI failure output must redact the failed database query' );
 	}
 
 	/**
@@ -707,7 +707,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_command( 'schedules' );
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-tasks schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
+		self::assertSame( "usage: wp background-jobs schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -762,7 +762,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp background-tasks schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -777,7 +777,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( array() );
 		$now       = \time();
-		$state     = new RunState( RunStatus::Running, 'Task', true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
+		$state     = new RunState( RunStatus::Running, 'Job', true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
 		$fixtures  = array(
 			$builder->run( self::CANONICAL_RUN_ID, $state ),
 			$builder->history(
@@ -856,13 +856,13 @@ final class CLICommandTest extends IntegrationTestCase {
 				'--require=' . self::FAILED_READ_BOOTSTRAP,
 			),
 			'list',
-			self::INSPECTION_TASK_IDENTITY
+			self::INSPECTION_JOB_IDENTITY
 		);
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( "Warning: Recent run history is unavailable because an authoritative database read failed.\n", $result['stderr'] );
-		self::assertStringNotContainsString( 'a8csp_bgte_missing_option_rows', $result['stderr'], 'CLI warning output must redact the failed database query' );
+		self::assertStringNotContainsString( 'a8csp_bgje_missing_option_rows', $result['stderr'], 'CLI warning output must redact the failed database query' );
 	}
 
 	/**
@@ -874,7 +874,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_runs_without_required_positionals_use_the_native_synopsis(): void {
-		$expected = "usage: wp background-tasks runs <action> <identity> [<run_id>] [--format=<format>]\n";
+		$expected = "usage: wp background-jobs runs <action> <identity> [<run_id>] [--format=<format>]\n";
 
 		foreach ( array( array(), array( 'list' ) ) as $arguments ) {
 			$result = self::run_runs_command( ...$arguments );
@@ -898,7 +898,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -950,27 +950,27 @@ final class CLICommandTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$client          = \a8csp_bgte( self::INSPECTION_OWNER );
-		$task            = new RecordingTask( self::INSPECTION_TASK );
-		$task->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$client->tasks()->register( $task );
-		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_TASK, array( 'source' => 'schedule' ) );
+		$client         = \a8csp_bgje( self::INSPECTION_OWNER );
+		$job            = new RecordingJob( self::INSPECTION_JOB );
+		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
+		$client->jobs()->register( $job );
+		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
 		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
-		\add_filter( 'a8csp_background_tasks/retry_policy/' . self::INSPECTION_TASK_IDENTITY, static fn (): RetryPolicy => $retry_policy );
+		\add_filter( 'a8csp_jobs_engine/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
-		$enqueued = $client->tasks()->enqueue( self::INSPECTION_TASK, array( 'source' => 'manual' ) );
+		$enqueued = $client->jobs()->enqueue( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id = $enqueued->value;
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::INSPECTION_TASK_IDENTITY );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::INSPECTION_JOB_IDENTITY );
 
 		try {
 			self::assertSame( 1, $this->run_next_engine_action() );
 
 			$schedules = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=' . self::INSPECTION_OWNER, '--format=json' );
-			$runs      = self::run_command_with_globals( 'runs', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', self::INSPECTION_TASK_IDENTITY, '--format=json' );
+			$runs      = self::run_command_with_globals( 'runs', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', self::INSPECTION_JOB_IDENTITY, '--format=json' );
 
 			self::assertSame( 0, $schedules['exit_code'] );
 			self::assertSame( '', $schedules['stderr'] );
@@ -1011,7 +1011,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertSame( $run_id, $history_rows[0]['run_id'] ?? null );
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
-			$cancelled = $client->runs()->cancel( self::INSPECTION_TASK, $run_id );
+			$cancelled = $client->runs()->cancel( self::INSPECTION_JOB, $run_id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		}
 	}
@@ -1068,7 +1068,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $subcommand  Background-tasks subcommand.
+	 * @param   string $subcommand  Background-jobs subcommand.
 	 * @param   string ...$arguments Arguments following the subcommand.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
@@ -1085,7 +1085,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 *
 	 * @phpstan-param list<string> $global_arguments
 	 *
-	 * @param   string $subcommand       Background-tasks subcommand.
+	 * @param   string $subcommand       Background-jobs subcommand.
 	 * @param   array  $global_arguments Arguments preceding the registered command.
 	 * @param   string ...$arguments     Arguments following the subcommand.
 	 *
@@ -1105,7 +1105,7 @@ final class CLICommandTest extends IntegrationTestCase {
 				),
 				$global_arguments,
 				array(
-					'background-tasks',
+					'background-jobs',
 					$subcommand,
 				),
 				$arguments
@@ -1154,7 +1154,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Persists one deterministic run under the task registered in every child process.
+	 * Persists one deterministic run under the job registered in every child process.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1167,7 +1167,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, 'Task', $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'Job', $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 
@@ -1175,18 +1175,18 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Persists one materialized zero-chunk batch waiting for cleanup.
+	 * Persists one materialized zero-chunk chunked job waiting for cleanup.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  string Active-run option name.
 	 */
-	private function seed_cancel_batch_pending_cleanup(): string {
+	private function seed_cancel_chunked_job_pending_cleanup(): string {
 		$args    = array( 'source' => 'cli-completeness-boundary' );
-		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_BATCH_NAME );
+		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_CHUNKED_JOB_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, 'Batch', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'ChunkedJob', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 
@@ -1194,15 +1194,15 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Returns the deterministic cancel-completeness batch option name.
+	 * Returns the deterministic cancel-completeness chunked job option name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	private static function cancel_batch_run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::CANCEL_BATCH_NAME . '_' . self::RUN_ID;
+	private static function cancel_chunked_job_run_option_name(): string {
+		return 'a8csp_bgje_run_' . self::CANCEL_CHUNKED_JOB_NAME . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -1260,7 +1260,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function purge_usage_error(): string {
-		return 'Error: Purge requires exactly one identity or --all; ' . "use wp background-tasks failed-runs purge <identity> or purge --all.\n";
+		return 'Error: Purge requires exactly one identity or --all; ' . "use wp background-jobs failed-runs purge <identity> or purge --all.\n";
 	}
 
 	// endregion.

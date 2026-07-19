@@ -1,20 +1,20 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -44,12 +44,12 @@ final class RunHistoryTest extends TestCase {
 	private const int NOW         = 1_700_000_000;
 	private const string OWNER    = 'runs-tests';
 
-	private RecordingBatch $batch;
+	private RecordingChunkedJob $chunked_job;
 	private Client $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
-	private RecordingTask $task;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -69,7 +69,7 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
-	 * Boots registered task and batch contracts against deterministic interfaces.
+	 * Boots registered job and chunked job contracts against deterministic interfaces.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -80,12 +80,12 @@ final class RunHistoryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->task   = new RecordingTask( self::NAME );
-		$this->batch  = new RecordingBatch( self::NAME . '-batch' );
-		$this->client->tasks()->register( $this->task );
-		$this->client->batches()->register( $this->batch );
+		$this->rig         = EngineRig::set_up( self::NOW );
+		$this->client      = $this->rig->client( self::OWNER );
+		$this->job         = new RecordingJob( self::NAME );
+		$this->chunked_job = new RecordingChunkedJob( self::NAME . '-chunked-job' );
+		$this->client->jobs()->register( $this->job );
+		$this->client->chunked_jobs()->register( $this->chunked_job );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -159,14 +159,14 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_history_retention_is_thirty_by_default_and_honors_a_positive_filter(): void {
-		$run_ids = $this->complete_tasks( 31 );
+		$run_ids = $this->complete_jobs( 31 );
 		$history = $this->history();
 		self::assertCount( 30, $history );
 		self::assertNotContains( $run_ids[0], \array_column( $history, 'run_id' ) );
 		self::assertSame( $run_ids[30], $history[0]['run_id'] );
 
 		$this->set_history_size( 2 );
-		$filtered = $this->complete_tasks( 3, 100 );
+		$filtered = $this->complete_jobs( 3, 100 );
 		$history  = $this->history();
 		self::assertCount( 2, $history );
 		self::assertSame( array( $filtered[2], $filtered[1] ), \array_column( $history, 'run_id' ) );
@@ -395,7 +395,7 @@ final class RunHistoryTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Produces one terminal outcome through public task or batch operations.
+	 * Produces one terminal outcome through public job or chunked job operations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -407,13 +407,13 @@ final class RunHistoryTest extends TestCase {
 	private function produce_terminal_outcome( string $status ): array {
 		$this->rig->randomizer()->value = 7;
 		if ( 'superseded' === $status ) {
-			$name     = self::NAME . '-batch';
+			$name     = self::NAME . '-chunked-job';
 			$identity = self::OWNER . ':' . $name;
-			$first    = $this->client->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			$first    = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
 			self::assertInstanceOf( Success::class, $first );
 			self::assertIsString( $first->value );
 			$this->rig->randomizer()->value = 8;
-			$second                         = $this->client->batches()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			$second                         = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 
@@ -421,10 +421,10 @@ final class RunHistoryTest extends TestCase {
 		}
 
 		if ( 'failed' === $status ) {
-			$this->task->retry_policy = new RetryPolicy( max_attempts: 1 );
-			$this->task->throwable    = new \RuntimeException( 'Database unavailable.' );
+			$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
+			$this->job->throwable    = new \RuntimeException( 'Database unavailable.' );
 		}
-		$result = $this->client->tasks()->enqueue( self::NAME, array( 'scope' => $status ) );
+		$result = $this->client->jobs()->enqueue( self::NAME, array( 'scope' => $status ) );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		if ( 'cancelled' === $status ) {
@@ -438,7 +438,7 @@ final class RunHistoryTest extends TestCase {
 	}
 
 	/**
-	 * Completes deterministic task runs and returns their identifiers in start order.
+	 * Completes deterministic job runs and returns their identifiers in start order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -448,11 +448,11 @@ final class RunHistoryTest extends TestCase {
 	 *
 	 * @return  list<string>
 	 */
-	private function complete_tasks( int $count, int $offset = 0 ): array {
+	private function complete_jobs( int $count, int $offset = 0 ): array {
 		$run_ids = array();
 		foreach ( \range( 1, $count ) as $index ) {
 			$this->rig->randomizer()->value = $offset + $index;
-			$result                         = $this->client->tasks()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
+			$result                         = $this->client->jobs()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			self::assertIsString( $result->value );
 			$run_ids[] = $result->value;
@@ -488,10 +488,10 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	private function set_history_size( mixed $size ): void {
-		$filters = $GLOBALS['a8csp_bgte_test_filter_values'] ?? null;
+		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
-		$filters['a8csp_background_tasks/history_size'] = $size;
-		$GLOBALS['a8csp_bgte_test_filter_values']       = $filters;
+		$filters['a8csp_jobs_engine/history_size'] = $size;
+		$GLOBALS['a8csp_bgje_test_filter_values']  = $filters;
 	}
 
 	/**

@@ -1,15 +1,15 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Constructs the stores bound to one task or batch identity.
+ * Constructs the stores bound to one job or chunked job identity.
  *
  * A single factory keeps identity binding at the orchestration boundary without exposing four
  * untyped closure dependencies.
@@ -43,12 +43,12 @@ final readonly class StoreFactory {
 	// region METHODS
 
 	/**
-	 * Constructs the active-run store for a task or batch identity.
+	 * Constructs the active-run store for a job or chunked job identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  RunStore
 	 */
@@ -57,12 +57,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the latest-run pointer for a task or batch identity.
+	 * Constructs the latest-run pointer for a job or chunked job identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  LatestRunPointer
 	 */
@@ -71,12 +71,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the run history for a task or batch identity.
+	 * Constructs the run history for a job or chunked job identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  RunHistory
 	 */
@@ -85,12 +85,12 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the failed-run store for a task or batch identity.
+	 * Constructs the failed-run store for a job or chunked job identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  FailedRunStore
 	 */

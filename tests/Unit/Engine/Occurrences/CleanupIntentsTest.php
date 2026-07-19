@@ -1,36 +1,36 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -60,8 +60,8 @@ final class CleanupIntentsTest extends TestCase {
 	private const int NOW                 = 1_700_000_000;
 	private const string OWNER            = 'owner-a';
 	private const string REGISTRATION_KEY = 'owner-a:nightly';
-	private const string TASK             = 'refresh-index';
-	private const string TASK_IDENTITY    = 'owner-a:refresh-index';
+	private const string JOB              = 'refresh-index';
+	private const string JOB_IDENTITY     = 'owner-a:refresh-index';
 
 	private Schedules $api;
 	private RecordingBackend $backend;
@@ -103,22 +103,22 @@ final class CleanupIntentsTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']               = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']       = array();
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']         = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']         = array();
-		$GLOBALS['a8csp_bgte_test_action_callbacks']      = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']     = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                 = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations']  = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']               = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                 = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$GLOBALS['a8csp_bgje_test_options']               = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']       = array();
+		$GLOBALS['a8csp_bgje_test_update_option_results'] = array();
+		$GLOBALS['a8csp_bgje_test_update_option_values']  = array();
+		$GLOBALS['a8csp_bgje_test_delete_option_results'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']         = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']         = array();
+		$GLOBALS['a8csp_bgje_test_action_callbacks']      = array();
+		$GLOBALS['a8csp_bgje_test_action_throwables']     = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                 = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations']  = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']               = 1;
+		$GLOBALS['a8csp_bgje_test_cache']                 = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']           = array();
+		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->backend  = new RecordingBackend();
 		$this->clock    = new FixedClock( self::NOW );
@@ -172,7 +172,7 @@ final class CleanupIntentsTest extends TestCase {
 		$propagated_error = $this->logger->records[1]['context']['error'] ?? null;
 		self::assertIsString( $propagated_error );
 		self::assertStringContainsString(
-			'a8csp_bgte_schedule_registrations_owner-a',
+			'a8csp_bgje_schedule_registrations_owner-a',
 			$propagated_error,
 			'The propagated corrupt-registry error must name the exact option row so an operator can act on it.'
 		);
@@ -450,8 +450,8 @@ final class CleanupIntentsTest extends TestCase {
 		unset( $this->backend->results['unschedule'] );
 		$this->logger->records = array();
 		$poisoned_names        = array(
-			'a8csp_bgte_cleanup_intent_' . \str_repeat( '0', 64 ),
-			'a8csp_bgte_cleanup_intent_' . \str_repeat( '1', 64 ),
+			'a8csp_bgje_cleanup_intent_' . \str_repeat( '0', 64 ),
+			'a8csp_bgje_cleanup_intent_' . \str_repeat( '1', 64 ),
 		);
 		foreach ( $poisoned_names as $poisoned_name ) {
 			$this->wpdb->put( $poisoned_name, 'O:8:"stdClass":0:{}' );
@@ -485,7 +485,7 @@ final class CleanupIntentsTest extends TestCase {
 		OverlapPolicy $overlap = OverlapPolicy::Skip,
 		CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce
 	): Schedule {
-		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::TASK, self::ARGS, $overlap, $catch_up, 23 );
+		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::JOB, self::ARGS, $overlap, $catch_up, 23 );
 	}
 
 	/**
@@ -494,14 +494,14 @@ final class CleanupIntentsTest extends TestCase {
 	 * @param   string   $owner     Owner identifier.
 	 * @param   Schedule ...$schedules Schedule value objects.
 	 *
-	 * @return  array<string, array{schedule: Schedule, task: string}>
+	 * @return  array<string, array{schedule: Schedule, job: string}>
 	 */
 	private static function declarations( string $owner, Schedule ...$schedules ): array {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
 			$declarations[ $owner . ':' . $schedule->name ] = array(
 				'schedule' => $schedule,
-				'task'     => $owner . ':' . $schedule->task,
+				'job'      => $owner . ':' . $schedule->job,
 			);
 		}
 
@@ -521,8 +521,8 @@ final class CleanupIntentsTest extends TestCase {
 
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']  = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']  = array();
 	}
 
 	/**
@@ -534,8 +534,8 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  OccurrenceDelivery
 	 */
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
-		$work = new WorkRegistry();
-		$work->register_task( self::TASK_IDENTITY, new RecordingTask( self::TASK ) );
+		$work = new JobRegistry();
+		$work->register_job( self::JOB_IDENTITY, new RecordingJob( self::JOB ) );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer           = new RecordingRandomizer( 42 );

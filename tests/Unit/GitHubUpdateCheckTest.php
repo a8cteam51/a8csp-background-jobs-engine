@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\CoversFunction;
@@ -16,13 +16,13 @@ use PHPUnit\Framework\TestCase;
  */
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
-#[CoversFunction( 'a8csp_bgte_check_github_release_update' )]
+#[CoversFunction( 'a8csp_bgje_check_github_release_update' )]
 final class GitHubUpdateCheckTest extends TestCase {
 	private const string API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10';
 	private const string API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases/latest';
-	private const string PLUGIN_FILE              = 'a8csp-background-tasks-engine/a8csp-background-tasks-engine.php';
-	private const string TRANSIENT_KEY_PRERELEASE = 'a8csp_bgte_github_latest_release_prerelease';
-	private const string TRANSIENT_KEY_STABLE     = 'a8csp_bgte_github_latest_release_stable';
+	private const string PLUGIN_FILE              = 'a8csp-background-jobs-engine/a8csp-background-jobs-engine.php';
+	private const string TRANSIENT_KEY_PRERELEASE = 'a8csp_bgje_github_latest_release_prerelease';
+	private const string TRANSIENT_KEY_STABLE     = 'a8csp_bgje_github_latest_release_stable';
 
 	/**
 	 * Loads the named bootstrap helper with guarded WordPress API stubs and clean transient state.
@@ -39,18 +39,18 @@ final class GitHubUpdateCheckTest extends TestCase {
 		if ( ! \defined( 'ABSPATH' ) ) {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
-		if ( ! \defined( 'A8CSP_BGTE_BASENAME' ) ) {
-			\define( 'A8CSP_BGTE_BASENAME', self::PLUGIN_FILE );
+		if ( ! \defined( 'A8CSP_BGJE_BASENAME' ) ) {
+			\define( 'A8CSP_BGJE_BASENAME', self::PLUGIN_FILE );
 		}
 
 		require_once __DIR__ . '/wp-time-constant-stubs.php';
 		require_once __DIR__ . '/wp-update-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/functions-bootstrap.php';
 
-		$GLOBALS['a8csp_bgte_test_remote_requests']     = array();
-		$GLOBALS['a8csp_bgte_test_set_transient_calls'] = array();
-		$GLOBALS['a8csp_bgte_test_transients']          = array();
-		unset( $GLOBALS['a8csp_bgte_test_remote_response'] );
+		$GLOBALS['a8csp_bgje_test_remote_requests']     = array();
+		$GLOBALS['a8csp_bgje_test_set_transient_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_transients']          = array();
+		unset( $GLOBALS['a8csp_bgje_test_remote_response'] );
 	}
 
 	/**
@@ -63,18 +63,18 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 */
 	public function test_newer_release_is_offered_and_cached(): void {
 		$release                                    = $this->release( 'v1.1.0' );
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
 
 		self::assertSame(
 			array(
-				'slug'    => 'a8csp-background-tasks-engine',
+				'slug'    => 'a8csp-background-jobs-engine',
 				'version' => '1.1.0',
 				'url'     => $release['html_url'],
 				'package' => $release['assets'][0]['browser_download_url'],
 			),
 			$this->apply_update_filter( '1.0.0' )
 		);
-		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgje_test_remote_requests'] );
 		self::assertSame(
 			array(
 				array(
@@ -83,7 +83,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 					'expiration' => \HOUR_IN_SECONDS,
 				),
 			),
-			$GLOBALS['a8csp_bgte_test_set_transient_calls']
+			$GLOBALS['a8csp_bgje_test_set_transient_calls']
 		);
 	}
 
@@ -91,7 +91,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 * A foreign asset before the plugin ZIP does not affect the update package.
 	 *
 	 * @load-bearing operator-contract
-	 * @pin-rationale Release automation and installed-site updates agree on the exact a8csp-background-tasks-engine.zip asset name; selecting any other release asset would install the wrong artifact.
+	 * @pin-rationale Release automation and installed-site updates agree on the exact a8csp-background-jobs-engine.zip asset name; selecting any other release asset would install the wrong artifact.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -108,11 +108,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 			),
 			$plugin_asset,
 		);
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
 
 		self::assertSame(
 			array(
-				'slug'    => 'a8csp-background-tasks-engine',
+				'slug'    => 'a8csp-background-jobs-engine',
 				'version' => '1.1.0',
 				'url'     => $release['html_url'],
 				'package' => $plugin_asset['browser_download_url'],
@@ -134,18 +134,18 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$draft['draft'] = true;
 		$beta           = $this->release( 'v1.0.0-beta.2' );
 
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $draft, $beta ) );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( array( $draft, $beta ) );
 
 		self::assertSame(
 			array(
-				'slug'    => 'a8csp-background-tasks-engine',
+				'slug'    => 'a8csp-background-jobs-engine',
 				'version' => '1.0.0-beta.2',
 				'url'     => $beta['html_url'],
 				'package' => $beta['assets'][0]['browser_download_url'],
 			),
 			$this->apply_update_filter( '1.0.0-beta.1' )
 		);
-		self::assertSame( array( self::API_URL_PRERELEASE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_PRERELEASE ), $GLOBALS['a8csp_bgje_test_remote_requests'] );
 		self::assertSame(
 			array(
 				array(
@@ -154,7 +154,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 					'expiration' => \HOUR_IN_SECONDS,
 				),
 			),
-			$GLOBALS['a8csp_bgte_test_set_transient_calls']
+			$GLOBALS['a8csp_bgje_test_set_transient_calls']
 		);
 	}
 
@@ -171,11 +171,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$newer             = $this->release( 'v1.0.0-beta.2' );
 
 		// GitHub orders /releases by publish time, so a re-published older tag can appear before the newer one.
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $republished_older, $newer ) );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( array( $republished_older, $newer ) );
 
 		self::assertSame(
 			array(
-				'slug'    => 'a8csp-background-tasks-engine',
+				'slug'    => 'a8csp-background-jobs-engine',
 				'version' => '1.0.0-beta.2',
 				'url'     => $newer['html_url'],
 				'package' => $newer['assets'][0]['browser_download_url'],
@@ -193,11 +193,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_stable_install_keeps_the_stable_channel(): void {
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $this->release( 'v1.1.0' ) );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $this->release( 'v1.1.0' ) );
 
 		$this->apply_update_filter( '1.0.0' );
 
-		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgje_test_remote_requests'] );
 	}
 
 	/**
@@ -212,15 +212,15 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$stable = $this->release( 'v1.1.0' );
 		$beta   = $this->release( 'v1.2.0-beta.1' );
 
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $stable );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $stable );
 		$this->apply_update_filter( '1.0.0' );
 
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $beta ) );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( array( $beta ) );
 		$this->apply_update_filter( '1.1.0-beta.1' );
 
-		$transient_calls = $GLOBALS['a8csp_bgte_test_set_transient_calls'] ?? null;
+		$transient_calls = $GLOBALS['a8csp_bgje_test_set_transient_calls'] ?? null;
 		self::assertIsArray( $transient_calls );
-		self::assertSame( array( self::API_URL_STABLE, self::API_URL_PRERELEASE ), $GLOBALS['a8csp_bgte_test_remote_requests'] );
+		self::assertSame( array( self::API_URL_STABLE, self::API_URL_PRERELEASE ), $GLOBALS['a8csp_bgje_test_remote_requests'] );
 		self::assertSame(
 			array( self::TRANSIENT_KEY_STABLE, self::TRANSIENT_KEY_PRERELEASE ),
 			\array_column( $transient_calls, 'transient' )
@@ -238,11 +238,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 	public function test_prerelease_install_is_offered_the_stable_successor(): void {
 		$stable = $this->release( 'v1.0.0' );
 
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $stable ) );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( array( $stable ) );
 
 		self::assertSame(
 			array(
-				'slug'    => 'a8csp-background-tasks-engine',
+				'slug'    => 'a8csp-background-jobs-engine',
 				'version' => '1.0.0',
 				'url'     => $stable['html_url'],
 				'package' => $stable['assets'][0]['browser_download_url'],
@@ -264,7 +264,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	#[DataProvider( 'non_newer_versions' )]
 	public function test_equal_or_older_release_is_not_offered( string $installed_version ): void {
 		$release                                    = $this->release( 'v1.1.0' );
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
 
 		self::assertFalse( $this->apply_update_filter( $installed_version ) );
 	}
@@ -278,7 +278,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_api_failure_is_negatively_cached(): void {
-		$GLOBALS['a8csp_bgte_test_remote_response'] = new \WP_Error( 'http_error' );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = new \WP_Error( 'http_error' );
 
 		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
@@ -295,7 +295,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	public function test_empty_assets_are_negatively_cached(): void {
 		$release                                    = $this->release( 'v1.1.0' );
 		$release['assets']                          = array();
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
 
 		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
@@ -317,7 +317,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/v1.1.0/checksums.txt',
 			),
 		);
-		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( $release );
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
 
 		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
@@ -334,7 +334,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 * @return  false|array<string, mixed>
 	 */
 	private function apply_update_filter( string $installed_version ): false|array {
-		$result = \a8csp_bgte_check_github_release_update( false, $this->plugin_data( $installed_version ), self::PLUGIN_FILE );
+		$result = \a8csp_bgje_check_github_release_update( false, $this->plugin_data( $installed_version ), self::PLUGIN_FILE );
 		if ( false === $result ) {
 			return false;
 		}
@@ -379,7 +379,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 	private function plugin_data( string $version ): array {
 		return array(
 			'Version'    => $version,
-			'TextDomain' => 'a8csp-background-tasks-engine',
+			'TextDomain' => 'a8csp-background-jobs-engine',
 		);
 	}
 
@@ -399,8 +399,8 @@ final class GitHubUpdateCheckTest extends TestCase {
 			'html_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/tag/' . $tag,
 			'assets'   => array(
 				array(
-					'name'                 => 'a8csp-background-tasks-engine.zip',
-					'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/' . $tag . '/a8csp-background-tasks-engine.zip',
+					'name'                 => 'a8csp-background-jobs-engine.zip',
+					'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/' . $tag . '/a8csp-background-jobs-engine.zip',
 				),
 			),
 		);
@@ -441,7 +441,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 					'expiration' => 5 * \MINUTE_IN_SECONDS,
 				),
 			),
-			$GLOBALS['a8csp_bgte_test_set_transient_calls']
+			$GLOBALS['a8csp_bgje_test_set_transient_calls']
 		);
 	}
 }

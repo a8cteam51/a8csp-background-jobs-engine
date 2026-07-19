@@ -1,27 +1,27 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\AdmissionValidator;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeBatchesEngine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeRunsEngine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeSchedulesEngine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FakeTasksEngine;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeChunkedJobsEngine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeRunsEngine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeSchedulesEngine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeJobsEngine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -32,12 +32,12 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( Client::class )]
-#[CoversClass( Tasks::class )]
-#[CoversClass( Batches::class )]
+#[CoversClass( Jobs::class )]
+#[CoversClass( ChunkedJobs::class )]
 #[CoversClass( Schedules::class )]
 #[CoversClass( Runs::class )]
 #[UsesClass( AdmissionValidator::class )]
-#[UsesClass( WorkIdentity::class )]
+#[UsesClass( JobIdentity::class )]
 final class ClientTest extends TestCase {
 	/**
 	 * Loads the WordPress seams required by API value objects.
@@ -60,36 +60,36 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_accessors_return_the_bound_facades(): void {
-		$tasks     = new Tasks( 'consumer-plugin', new FakeTasksEngine( new Success( 'task-run' ) ) );
-		$batches   = new Batches( 'consumer-plugin', new FakeBatchesEngine( new Success( 'batch-run' ) ) );
-		$schedules = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
-		$runs      = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
-		$client    = new Client( 'consumer-plugin', $tasks, $batches, $schedules, $runs );
+		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( new Success( 'job-run' ) ) );
+		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) ) );
+		$schedules    = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
+		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
+		$client       = new Client( 'consumer-plugin', $jobs, $chunked_jobs, $schedules, $runs );
 
-		self::assertSame( $tasks, $client->tasks() );
-		self::assertSame( $batches, $client->batches() );
+		self::assertSame( $jobs, $client->jobs() );
+		self::assertSame( $chunked_jobs, $client->chunked_jobs() );
 		self::assertSame( $schedules, $client->schedules() );
 		self::assertSame( $runs, $client->runs() );
 	}
 
 	/**
-	 * Task operations compose once and preserve the delegated result object and arguments.
+	 * Job operations compose once and preserve the delegated result object and arguments.
 	 *
 	 * @return  void
 	 */
-	public function test_tasks_register_and_enqueue_owner_qualified_work(): void {
+	public function test_jobs_register_and_enqueue_owner_qualified_work(): void {
 		$failure = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
-		$task    = new RecordingTask( 'sync' );
-		$engine  = new FakeTasksEngine( $failure );
-		$tasks   = new Tasks( 'consumer-plugin', $engine );
+		$job     = new RecordingJob( 'sync' );
+		$engine  = new FakeJobsEngine( $failure );
+		$jobs    = new Jobs( 'consumer-plugin', $engine );
 
-		$tasks->register( $task );
-		$result = $tasks->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, dedup_key: 'site-7-sync', priority: 5 );
+		$jobs->register( $job );
+		$result = $jobs->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, dedup_key: 'site-7-sync', priority: 5 );
 
 		self::assertSame( $failure, $result );
 		self::assertSame(
 			array(
-				array( 'register_task', 'consumer-plugin:sync', $task ),
+				array( 'register_job', 'consumer-plugin:sync', $job ),
 				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, 'site-7-sync', 5 ),
 			),
 			$engine->calls
@@ -97,23 +97,23 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Batch operations compose once and preserve the delegated result object and arguments.
+	 * Chunked Job operations compose once and preserve the delegated result object and arguments.
 	 *
 	 * @return  void
 	 */
-	public function test_batches_register_and_start_owner_qualified_work(): void {
-		$success = new Success( 'batch-run' );
-		$batch   = new RecordingBatch( 'sync' );
-		$engine  = new FakeBatchesEngine( $success );
-		$batches = new Batches( 'consumer-plugin', $engine );
+	public function test_chunked_jobs_register_and_start_owner_qualified_work(): void {
+		$success      = new Success( 'chunked-job-run' );
+		$chunked_job  = new RecordingChunkedJob( 'sync' );
+		$engine       = new FakeChunkedJobsEngine( $success );
+		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', $engine );
 
-		$batches->register( $batch );
-		$result = $batches->start( 'sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 5 );
+		$chunked_jobs->register( $chunked_job );
+		$result = $chunked_jobs->start( 'sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 5 );
 
 		self::assertSame( $success, $result );
 		self::assertSame(
 			array(
-				array( 'register_batch', 'consumer-plugin:sync', $batch ),
+				array( 'register_chunked_job', 'consumer-plugin:sync', $chunked_job ),
 				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), ExistingRunPolicy::Reject, 5 ),
 			),
 			$engine->calls
@@ -121,7 +121,7 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Task and Batch start arguments accept the byte ceiling and reject its adjacent overflow.
+	 * Job and Chunked Job start arguments accept the byte ceiling and reject its adjacent overflow.
 	 *
 	 * @param   int  $json_bytes Exact encoded argument size.
 	 * @param   bool $accepted   Whether the arguments reach the engine delegate.
@@ -129,32 +129,32 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	#[DataProvider( 'bounded_start_arguments' )]
-	public function test_task_and_batch_start_arguments_observe_the_json_byte_ceiling( int $json_bytes, bool $accepted ): void {
-		$args         = array( 'payload' => \str_repeat( 'a', $json_bytes - 14 ) );
-		$task_engine  = new FakeTasksEngine( new Success( 'task-run' ) );
-		$batch_engine = new FakeBatchesEngine( new Success( 'batch-run' ) );
-		$task_result  = ( new Tasks( 'consumer-plugin', $task_engine ) )->enqueue( 'sync', $args );
-		$batch_result = ( new Batches( 'consumer-plugin', $batch_engine ) )->start( 'sync', $args );
+	public function test_job_and_chunked_job_start_arguments_observe_the_json_byte_ceiling( int $json_bytes, bool $accepted ): void {
+		$args               = array( 'payload' => \str_repeat( 'a', $json_bytes - 14 ) );
+		$job_engine         = new FakeJobsEngine( new Success( 'job-run' ) );
+		$chunked_job_engine = new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) );
+		$job_result         = ( new Jobs( 'consumer-plugin', $job_engine ) )->enqueue( 'sync', $args );
+		$chunked_job_result = ( new ChunkedJobs( 'consumer-plugin', $chunked_job_engine ) )->start( 'sync', $args );
 
 		if ( $accepted ) {
-			self::assertInstanceOf( Success::class, $task_result );
-			self::assertInstanceOf( Success::class, $batch_result );
-			self::assertCount( 1, $task_engine->calls );
-			self::assertCount( 1, $batch_engine->calls );
+			self::assertInstanceOf( Success::class, $job_result );
+			self::assertInstanceOf( Success::class, $chunked_job_result );
+			self::assertCount( 1, $job_engine->calls );
+			self::assertCount( 1, $chunked_job_engine->calls );
 
 			return;
 		}
 
-		self::assertInstanceOf( Failure::class, $task_result );
-		self::assertInstanceOf( ApiError::class, $task_result->error );
-		self::assertSame( ApiErrorCode::PayloadRejected, $task_result->error->code );
-		self::assertSame( 'Task "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $task_result->error->message );
-		self::assertInstanceOf( Failure::class, $batch_result );
-		self::assertInstanceOf( ApiError::class, $batch_result->error );
-		self::assertSame( ApiErrorCode::PayloadRejected, $batch_result->error->code );
-		self::assertSame( 'Batch "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $batch_result->error->message );
-		self::assertSame( array(), $task_engine->calls );
-		self::assertSame( array(), $batch_engine->calls );
+		self::assertInstanceOf( Failure::class, $job_result );
+		self::assertInstanceOf( ApiError::class, $job_result->error );
+		self::assertSame( ApiErrorCode::PayloadRejected, $job_result->error->code );
+		self::assertSame( 'Job "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $job_result->error->message );
+		self::assertInstanceOf( Failure::class, $chunked_job_result );
+		self::assertInstanceOf( ApiError::class, $chunked_job_result->error );
+		self::assertSame( ApiErrorCode::PayloadRejected, $chunked_job_result->error->code );
+		self::assertSame( 'Chunked Job "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $chunked_job_result->error->message );
+		self::assertSame( array(), $job_engine->calls );
+		self::assertSame( array(), $chunked_job_engine->calls );
 	}
 
 	/**
@@ -197,7 +197,7 @@ final class ClientTest extends TestCase {
 					array(
 						'consumer-plugin:nightly' => array(
 							'schedule' => $schedule,
-							'task'     => 'consumer-plugin:sync',
+							'job'      => 'consumer-plugin:sync',
 						),
 					),
 				),
@@ -267,15 +267,15 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_result_methods_preserve_the_delegated_failure_instance(): void {
-		$failure   = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
-		$run_id    = '00000000001700000000-0000000000000000042';
-		$tasks     = new Tasks( 'consumer-plugin', new FakeTasksEngine( $failure ) );
-		$batches   = new Batches( 'consumer-plugin', new FakeBatchesEngine( $failure ) );
-		$schedules = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( $failure, $failure ) );
-		$runs      = new Runs( 'consumer-plugin', new FakeRunsEngine( $failure, $failure, $failure ) );
+		$failure      = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
+		$run_id       = '00000000001700000000-0000000000000000042';
+		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( $failure ) );
+		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( $failure ) );
+		$schedules    = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( $failure, $failure ) );
+		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( $failure, $failure, $failure ) );
 
-		self::assertSame( $failure, $tasks->enqueue( 'sync' ) );
-		self::assertSame( $failure, $batches->start( 'sync' ) );
+		self::assertSame( $failure, $jobs->enqueue( 'sync' ) );
+		self::assertSame( $failure, $chunked_jobs->start( 'sync' ) );
 		self::assertSame( $failure, $schedules->sync( array() ) );
 		self::assertSame( $failure, $schedules->dispatch_now( 'nightly' ) );
 		self::assertSame( $failure, $runs->last_completed_run_id( 'sync' ) );
@@ -284,50 +284,50 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Task commands reject deterministic violations before invoking the admission delegate.
+	 * Job commands reject deterministic violations before invoking the admission delegate.
 	 *
-	 * @param   array<array-key, mixed> $args     Task arguments.
+	 * @param   array<array-key, mixed> $args     Job arguments.
 	 * @param   int                     $delay    Scheduling delay.
 	 * @param   int                     $priority Advisory priority.
 	 * @param   string                  $message  Exact corrective exception message.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'invalid_task_commands' )]
-	public function test_tasks_throw_for_deterministic_contract_violations( array $args, int $delay, int $priority, string $message ): void {
-		$engine = new FakeTasksEngine( new Success( 'unexpected-run' ) );
-		$tasks  = new Tasks( 'consumer-plugin', $engine );
+	#[DataProvider( 'invalid_job_commands' )]
+	public function test_jobs_throw_for_deterministic_contract_violations( array $args, int $delay, int $priority, string $message ): void {
+		$engine = new FakeJobsEngine( new Success( 'unexpected-run' ) );
+		$jobs   = new Jobs( 'consumer-plugin', $engine );
 
-		self::assert_invalid_argument( static fn () => $tasks->enqueue( 'sync', $args, $delay, priority: $priority ), $message );
+		self::assert_invalid_argument( static fn () => $jobs->enqueue( 'sync', $args, $delay, priority: $priority ), $message );
 		self::assertSame( array(), $engine->calls );
 	}
 
 	/**
-	 * Supplies every task-command violation reclassified at the public facade.
+	 * Supplies every job-command violation reclassified at the public facade.
 	 *
 	 * @return  array<string, array{args: array<array-key, mixed>, delay: int, priority: int, message: string}>
 	 */
-	public static function invalid_task_commands(): array {
-		$argument_message = 'Task "sync" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.';
+	public static function invalid_job_commands(): array {
+		$argument_message = 'Job "sync" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.';
 
 		return array(
 			'negative priority'      => array(
 				'args'     => array(),
 				'delay'    => 0,
 				'priority' => -1,
-				'message'  => 'Task "sync" priority -1 is invalid; pass a value from 0 through 255.',
+				'message'  => 'Job "sync" priority -1 is invalid; pass a value from 0 through 255.',
 			),
 			'priority above maximum' => array(
 				'args'     => array(),
 				'delay'    => 0,
 				'priority' => 256,
-				'message'  => 'Task "sync" priority 256 is invalid; pass a value from 0 through 255.',
+				'message'  => 'Job "sync" priority 256 is invalid; pass a value from 0 through 255.',
 			),
 			'negative delay'         => array(
 				'args'     => array(),
 				'delay'    => -1,
 				'priority' => 10,
-				'message'  => 'Task "sync" delay -1 is invalid; pass a non-negative number of seconds.',
+				'message'  => 'Job "sync" delay -1 is invalid; pass a non-negative number of seconds.',
 			),
 			'non-portable arguments' => array(
 				'args'     => array( new \stdClass() ),
@@ -345,26 +345,26 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Task deduplication keys accept opaque bounded bytes and reject invalid lengths.
+	 * Job deduplication keys accept opaque bounded bytes and reject invalid lengths.
 	 *
 	 * @param   string $dedup_key Client deduplication key.
 	 * @param   bool   $accepted  Whether the key reaches the admission delegate.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'task_deduplication_keys' )]
-	public function test_tasks_validate_deduplication_keys( string $dedup_key, bool $accepted ): void {
-		$engine = new FakeTasksEngine( new Success( 'task-run' ) );
-		$tasks  = new Tasks( 'consumer-plugin', $engine );
+	#[DataProvider( 'job_deduplication_keys' )]
+	public function test_jobs_validate_deduplication_keys( string $dedup_key, bool $accepted ): void {
+		$engine = new FakeJobsEngine( new Success( 'job-run' ) );
+		$jobs   = new Jobs( 'consumer-plugin', $engine );
 
 		if ( ! $accepted ) {
-			self::assert_invalid_argument( static fn () => $tasks->enqueue( 'sync', dedup_key: $dedup_key ), 'Task "sync" deduplication key must contain 1 to 64 bytes when provided.' );
+			self::assert_invalid_argument( static fn () => $jobs->enqueue( 'sync', dedup_key: $dedup_key ), 'Job "sync" deduplication key must contain 1 to 64 bytes when provided.' );
 			self::assertSame( array(), $engine->calls );
 
 			return;
 		}
 
-		$result = $tasks->enqueue( 'sync', dedup_key: $dedup_key );
+		$result = $jobs->enqueue( 'sync', dedup_key: $dedup_key );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( array( 'enqueue', 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ), $engine->calls );
@@ -375,7 +375,7 @@ final class ClientTest extends TestCase {
 	 *
 	 * @return  array<string, array{dedup_key: string, accepted: bool}>
 	 */
-	public static function task_deduplication_keys(): array {
+	public static function job_deduplication_keys(): array {
 		return array(
 			'one byte'                   => array(
 				'dedup_key' => "\x00",
@@ -397,41 +397,41 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Batch commands reject deterministic violations before invoking the admission delegate.
+	 * Chunked Job commands reject deterministic violations before invoking the admission delegate.
 	 *
-	 * @param   array<array-key, mixed> $args     Batch start arguments.
+	 * @param   array<array-key, mixed> $args     Chunked Job start arguments.
 	 * @param   int                     $priority Advisory priority.
 	 * @param   string                  $message  Exact corrective exception message.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'invalid_batch_commands' )]
-	public function test_batches_throw_for_deterministic_contract_violations( array $args, int $priority, string $message ): void {
-		$engine  = new FakeBatchesEngine( new Success( 'unexpected-run' ) );
-		$batches = new Batches( 'consumer-plugin', $engine );
+	#[DataProvider( 'invalid_chunked_job_commands' )]
+	public function test_chunked_jobs_throw_for_deterministic_contract_violations( array $args, int $priority, string $message ): void {
+		$engine       = new FakeChunkedJobsEngine( new Success( 'unexpected-run' ) );
+		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', $engine );
 
-		self::assert_invalid_argument( static fn () => $batches->start( 'sync', $args, priority: $priority ), $message );
+		self::assert_invalid_argument( static fn () => $chunked_jobs->start( 'sync', $args, priority: $priority ), $message );
 		self::assertSame( array(), $engine->calls );
 	}
 
 	/**
-	 * Supplies every batch-command violation reclassified at the public facade.
+	 * Supplies every chunked-job-command violation reclassified at the public facade.
 	 *
 	 * @return  array<string, array{args: array<array-key, mixed>, priority: int, message: string}>
 	 */
-	public static function invalid_batch_commands(): array {
-		$argument_message = 'Batch "sync" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.';
+	public static function invalid_chunked_job_commands(): array {
+		$argument_message = 'Chunked Job "sync" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.';
 
 		return array(
 			'negative priority'      => array(
 				'args'     => array(),
 				'priority' => -1,
-				'message'  => 'Batch "sync" priority -1 is invalid; pass a value from 0 through 255.',
+				'message'  => 'Chunked Job "sync" priority -1 is invalid; pass a value from 0 through 255.',
 			),
 			'priority above maximum' => array(
 				'args'     => array(),
 				'priority' => 256,
-				'message'  => 'Batch "sync" priority 256 is invalid; pass a value from 0 through 255.',
+				'message'  => 'Chunked Job "sync" priority 256 is invalid; pass a value from 0 through 255.',
 			),
 			'non-portable arguments' => array(
 				'args'     => array( new \stdClass() ),
@@ -447,25 +447,25 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Task and batch facade defaults match the supported operation contracts.
+	 * Job and chunked job facade defaults match the supported operation contracts.
 	 *
 	 * @return  void
 	 */
 	public function test_dispatch_defaults_match_the_deleted_wrapper_contracts(): void {
-		$tasks_engine   = new FakeTasksEngine( new Success( 'task-run' ) );
-		$batches_engine = new FakeBatchesEngine( new Success( 'batch-run' ) );
-		$tasks          = new Tasks( 'consumer-plugin', $tasks_engine );
-		$batches        = new Batches( 'consumer-plugin', $batches_engine );
+		$jobs_engine         = new FakeJobsEngine( new Success( 'job-run' ) );
+		$chunked_jobs_engine = new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) );
+		$jobs                = new Jobs( 'consumer-plugin', $jobs_engine );
+		$chunked_jobs        = new ChunkedJobs( 'consumer-plugin', $chunked_jobs_engine );
 
-		self::assertInstanceOf( Success::class, $tasks->enqueue( 'sync' ) );
-		self::assertInstanceOf( Success::class, $batches->start( 'sync' ) );
+		self::assertInstanceOf( Success::class, $jobs->enqueue( 'sync' ) );
+		self::assertInstanceOf( Success::class, $chunked_jobs->start( 'sync' ) );
 
 		self::assertSame(
 			array(
 				array( 'enqueue', 'consumer-plugin:sync', array(), 0, null, 10 ),
 				array( 'start', 'consumer-plugin:sync', array(), ExistingRunPolicy::Reject, 10 ),
 			),
-			\array_merge( $tasks_engine->calls, $batches_engine->calls )
+			\array_merge( $jobs_engine->calls, $chunked_jobs_engine->calls )
 		);
 	}
 
@@ -476,8 +476,8 @@ final class ClientTest extends TestCase {
 	 */
 	public function test_result_methods_declare_no_discard_directly(): void {
 		$methods = array(
-			array( Tasks::class, 'enqueue' ),
-			array( Batches::class, 'start' ),
+			array( Jobs::class, 'enqueue' ),
+			array( ChunkedJobs::class, 'start' ),
 			array( Schedules::class, 'sync' ),
 			array( Schedules::class, 'dispatch_now' ),
 			array( Runs::class, 'last_completed_run_id' ),
