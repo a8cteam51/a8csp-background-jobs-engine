@@ -79,7 +79,7 @@ final class WorkIdentity {
 
 		$identity = $owner . ':' . $name;
 		if ( self::IDENTITY_MAX_BYTES < \strlen( $identity ) ) {
-			throw new \InvalidArgumentException( 'Background-work identity must be at most 97 bytes; shorten the owner or name.' );
+			throw new \InvalidArgumentException( \sprintf( 'Background-work identity must be at most %d bytes; shorten the owner or name.', self::IDENTITY_MAX_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
 		return $identity;

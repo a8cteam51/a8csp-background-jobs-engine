@@ -159,6 +159,32 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
+	 * The highest-versioned prerelease is offered even when a lower version is published more recently and appears first.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_prerelease_install_selects_the_highest_version_over_publish_order(): void {
+		$republished_older = $this->release( 'v1.0.0-beta.1' );
+		$newer             = $this->release( 'v1.0.0-beta.2' );
+
+		// GitHub orders /releases by publish time, so a re-published older tag can appear before the newer one.
+		$GLOBALS['a8csp_bgte_test_remote_response'] = $this->http_response( array( $republished_older, $newer ) );
+
+		self::assertSame(
+			array(
+				'slug'    => 'a8csp-background-tasks-engine',
+				'version' => '1.0.0-beta.2',
+				'url'     => $newer['html_url'],
+				'package' => $newer['assets'][0]['browser_download_url'],
+			),
+			$this->apply_update_filter( '1.0.0-beta.1' )
+		);
+	}
+
+	/**
 	 * A stable install keeps the stable latest-release channel.
 	 *
 	 * @since   1.0.0

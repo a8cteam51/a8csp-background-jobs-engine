@@ -142,12 +142,23 @@ function a8csp_bgte_check_github_release_update( $update, $plugin_data, $plugin_
 	}
 
 	if ( array() !== $latest_release_info && \array_is_list( $latest_release_info ) ) {
-		// The release list arrives newest first; the first non-draft entry is the channel's latest.
-		$channel_latest = null;
+		// The GitHub /releases list is ordered by publish time, not version, so keep the highest-versioned non-draft entry rather than the first.
+		$channel_latest         = null;
+		$channel_latest_version = null;
 		foreach ( $latest_release_info as $release_candidate ) {
-			if ( \is_array( $release_candidate ) && true !== ( $release_candidate['draft'] ?? null ) ) {
-				$channel_latest = $release_candidate;
-				break;
+			if ( ! \is_array( $release_candidate ) || true === ( $release_candidate['draft'] ?? null ) ) {
+				continue;
+			}
+
+			$candidate_tag = $release_candidate['tag_name'] ?? null;
+			if ( ! \is_string( $candidate_tag ) ) {
+				continue;
+			}
+
+			$candidate_version = \ltrim( $candidate_tag, 'v' );
+			if ( null === $channel_latest_version || \version_compare( $candidate_version, $channel_latest_version, '>' ) ) {
+				$channel_latest         = $release_candidate;
+				$channel_latest_version = $candidate_version;
 			}
 		}
 
