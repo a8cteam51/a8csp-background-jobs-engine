@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
@@ -941,7 +942,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	public function test_run_chunk_handler_terminalizes_a_pending_run_without_a_queue_head(): void {
 		$state = new RunState(
 			status: RunStatus::Running,
-			kind: 'ChunkedJob',
+			kind: JobType::ChunkedJob,
 			executing: false,
 			start_args: self::ARGS,
 			args_hash: $this->args_hash(),

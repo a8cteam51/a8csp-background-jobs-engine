@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
@@ -229,7 +230,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$first     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 		$expected_run  = $this->option( $this->run_option_name() );
@@ -240,7 +241,7 @@ final class RunTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 
-		$duplicate = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$duplicate = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 
 		self::assertNull( $duplicate );
 		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
@@ -263,14 +264,14 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$first     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 
 		$this->clock->timestamp = self::NOW + 991;
 		$this->logger->records  = array();
 
-		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 
 		self::assertInstanceOf( RunState::class, $reclaimed );
 		self::assertTrue( $reclaimed->executing );
@@ -289,7 +290,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
-		$incumbent = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store, static fn (): int => $credit_at );
+		$incumbent = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store, static fn (): int => $credit_at );
 		self::assertInstanceOf( RunState::class, $incumbent );
 
 		$reset_at               = $credit_at + 901;
@@ -298,12 +299,12 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
-				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( 'Job', self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
+				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
 				self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $incumbent, $advanced ) );
 			}
 		);
 
-		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, self::RUN_ID, $incumbent->action_sequence, $run_store, static fn (): int => $reset_at + 300 );
+		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $incumbent->action_sequence, $run_store, static fn (): int => $reset_at + 300 );
 
 		self::assertNull( $reclaimed );
 		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
@@ -342,7 +343,7 @@ final class RunTransitionsTest extends TestCase {
 			}
 		);
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( 'Job', self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		$after = $run_store->inspect( self::RUN_ID );
@@ -393,7 +394,7 @@ final class RunTransitionsTest extends TestCase {
 
 		try {
 			$this->terminal_transitions->cancel_run(
-				'Job',
+				JobType::Job,
 				self::IDENTITY,
 				self::RUN_ID,
 				$snapshot['state'],
@@ -683,7 +684,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( 'Job', self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -911,7 +912,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	private function handle_job_run_action( string $run_id, int $action_sequence ): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Job', self::IDENTITY, $run_id, $action_sequence, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
@@ -924,7 +925,7 @@ final class RunTransitionsTest extends TestCase {
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Job', self::IDENTITY, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, $run_id, $state, $run_store ) ) {
 			return;
 		}
 

@@ -16,16 +16,6 @@ final readonly class RunState {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Persistable work-kind vocabulary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     list<'Job'|'ChunkedJob'>
-	 */
-	public const array KINDS = array( 'Job', 'ChunkedJob' );
-
-	/**
 	 * Sequence number of the newest scheduled lifecycle action, which is the only delivery allowed to act.
 	 *
 	 * @since   1.0.0
@@ -47,10 +37,10 @@ final readonly class RunState {
 	 *
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 * @phpstan-param list<string> $effects
-	 * @phpstan-param 'Job'|'ChunkedJob' $kind
+	 * @phpstan-param JobType $kind
 	 *
 	 * @param   RunStatus                     $status          Lifecycle state.
-	 * @param   string                        $kind            Admitted work contract type.
+	 * @param   JobType                       $kind            Admitted work contract type.
 	 * @param   bool                          $executing       Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
 	 * @param   string                        $args_hash       Stable single-flight identity derived from arguments or a job deduplication key.
@@ -63,12 +53,10 @@ final readonly class RunState {
 	 * @param   PendingAction|null            $pending         Durable successor delivery, or null when none exists.
 	 * @param   array|null                    $error           Durable terminal failure detail, or null for non-failed runs.
 	 * @param   array                         $effects         Completed terminal effect keys in execution order.
-	 *
-	 * @throws  \InvalidArgumentException When the work kind is not persistable.
 	 */
 	public function __construct(
 		public RunStatus $status,
-		public string $kind,
+		public JobType $kind,
 		public bool $executing,
 		public array $start_args,
 		public string $args_hash,
@@ -81,10 +69,6 @@ final readonly class RunState {
 		public ?array $error = null,
 		public array $effects = array(),
 	) {
-		if ( ! \in_array( $kind, self::KINDS, true ) ) {
-			throw new \InvalidArgumentException( 'Run kind must be Job or Chunked Job.' );
-		}
-
 		$this->action_sequence = $action_sequence;
 	}
 

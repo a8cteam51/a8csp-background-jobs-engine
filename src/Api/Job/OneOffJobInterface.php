@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -19,30 +18,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
  */
 interface OneOffJobInterface extends JobInterface {
 	// region METHODS
-
-	/**
-	 * Returns the 1-to-64-byte owner-local job name matching `[a-z0-9_-]+`.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	public function get_name(): string;
-
-	/**
-	 * Returns the declared ceiling in seconds for one handler invocation.
-	 *
-	 * The engine credits run liveness for this window immediately before invoking `handle()`.
-	 * Exceeding the ceiling makes the still-executing run reclaimable as crashed after its lock
-	 * staleness window elapses.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  int
-	 */
-	public function max_callback_runtime(): int;
 
 	/**
 	 * Handles one invocation of the job.
@@ -69,20 +44,6 @@ interface OneOffJobInterface extends JobInterface {
 	 * @return  void
 	 */
 	public function handle( array $args ): void;
-
-	/**
-	 * Returns the retry policy for failed invocations.
-	 *
-	 * The engine applies `a8csp_jobs_engine/retry_policy/{identity}` with the exact signature
-	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
-	 * The `{identity}` suffix is the complete `{owner}:{name}` job identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  RetryPolicy
-	 */
-	public function get_retry_policy(): RetryPolicy;
 
 	// endregion
 }

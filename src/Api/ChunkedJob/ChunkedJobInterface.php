@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -27,31 +26,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
  */
 interface ChunkedJobInterface extends JobInterface {
 	// region METHODS
-
-	/**
-	 * Returns the 1-to-64-byte owner-local chunked job name matching `[a-z0-9_-]+`.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	public function get_name(): string;
-
-	/**
-	 * Returns the declared ceiling in seconds for one queue generation or chunk invocation.
-	 *
-	 * The ceiling applies independently to one `generate_queue()` or `process_chunk()` call, not to
-	 * the whole chunked job run. The engine credits run liveness for this window immediately before either
-	 * callback; exceeding it makes the still-executing run reclaimable as crashed after its lock
-	 * staleness window elapses.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  int
-	 */
-	public function max_callback_runtime(): int;
 
 	/**
 	 * Generates one argument array for each initial chunk.
@@ -135,20 +109,6 @@ interface ChunkedJobInterface extends JobInterface {
 	 * @return  void
 	 */
 	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void;
-
-	/**
-	 * Returns the retry policy for failed chunks.
-	 *
-	 * The engine applies `a8csp_jobs_engine/retry_policy/{identity}` with the exact signature
-	 * `(RetryPolicy $policy): RetryPolicy`; a foreign return leaves this contract policy in effect.
-	 * The `{identity}` suffix is the complete `{owner}:{name}` chunked job identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  RetryPolicy
-	 */
-	public function get_retry_policy(): RetryPolicy;
 
 	// endregion
 }

@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
@@ -827,7 +828,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_pending_chunked_job_redelivery_ignores_a_current_job_with_the_same_identity(): void {
 		$chunk = array( 'page' => 1 );
-		$state = new RunState( status: RunStatus::Running, kind: 'ChunkedJob', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
 		$current_job = $this->work->job( self::IDENTITY );
@@ -863,7 +864,7 @@ final class RunReconciliationTest extends TestCase {
 		$name                = self::identity( 'reused-as-chunked-job' );
 		$current_chunked_job = new RecordingChunkedJob( 'reused-as-chunked-job' );
 		$this->work->register_chunked_job( $name, $current_chunked_job );
-		$state = new RunState( status: RunStatus::Running, kind: 'Job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::Job, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( $name, $state );
 		$this->put_lock( 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
 
@@ -1092,7 +1093,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_supersedes_a_stale_persisted_chunked_job_whose_lock_has_transferred(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'ChunkedJob', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->clock->timestamp = self::NOW + 901;
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
@@ -1323,7 +1324,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_routes_a_running_row_by_its_persisted_chunked_job_kind(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'ChunkedJob', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
 
@@ -1629,7 +1630,7 @@ final class RunReconciliationTest extends TestCase {
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			3,
-			'ChunkedJob'
+			JobType::ChunkedJob
 		);
 
 		$this->maintenance->handle( array() );
@@ -1688,7 +1689,7 @@ final class RunReconciliationTest extends TestCase {
 		$name        = self::identity( 'failed-without-detail' );
 		$chunked_job = new RecordingChunkedJob( 'failed-without-detail' );
 		$this->work->register_chunked_job( $name, $chunked_job );
-		$this->store_terminal_run( $name, 'failed', array(), null, 2, 'ChunkedJob' );
+		$this->store_terminal_run( $name, 'failed', array(), null, 2, JobType::ChunkedJob );
 
 		$this->maintenance->handle( array() );
 
@@ -1751,7 +1752,7 @@ final class RunReconciliationTest extends TestCase {
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			2,
-			'ChunkedJob'
+			JobType::ChunkedJob
 		);
 
 		$this->maintenance->handle( array() );
@@ -1783,7 +1784,7 @@ final class RunReconciliationTest extends TestCase {
 				'code'    => ApiErrorCode::ExecutionFailed->value,
 			),
 			2,
-			'ChunkedJob'
+			JobType::ChunkedJob
 		);
 		$run_store              = $this->stores->run_store( $name );
 		$rival_started          = false;
@@ -1799,7 +1800,7 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsArray( $snapshot );
 			$state = $snapshot['state'];
 			self::assertNotNull( $state );
-			self::assertTrue( $this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'ChunkedJob', $chunked_job ) );
+			self::assertTrue( $this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, JobType::ChunkedJob, $chunked_job ) );
 
 			throw new \RuntimeException( 'Original callback worker resumed after rival cleanup.' );
 		};
@@ -1813,7 +1814,7 @@ final class RunReconciliationTest extends TestCase {
 		$caught = null;
 
 		try {
-			$this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'ChunkedJob', $chunked_job );
+			$this->terminal_effects->replay_terminal_run( $name, self::RUN_ID, $state, $snapshot['raw'], $run_store, JobType::ChunkedJob, $chunked_job );
 		} catch ( \RuntimeException $throwable ) {
 			$caught = $throwable;
 		}
@@ -1845,7 +1846,7 @@ final class RunReconciliationTest extends TestCase {
 		$name        = self::identity( 'completed-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'completed-chunked-job' );
 		$this->work->register_chunked_job( $name, $chunked_job );
-		$this->store_terminal_run( $name, 'completed', kind: 'ChunkedJob' );
+		$this->store_terminal_run( $name, 'completed', kind: JobType::ChunkedJob );
 
 		$this->maintenance->handle( array() );
 
@@ -1899,7 +1900,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_routes_a_terminal_row_by_its_persisted_chunked_job_kind(): void {
-		$this->store_terminal_run( self::IDENTITY, 'completed', kind: 'ChunkedJob' );
+		$this->store_terminal_run( self::IDENTITY, 'completed', kind: JobType::ChunkedJob );
 
 		$this->maintenance->handle( array() );
 
@@ -1923,7 +1924,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_skips_an_unregistered_chunked_job_callback_and_finishes_the_row(): void {
 		$name = self::identity( 'deactivated-client' );
-		$this->store_terminal_run( $name, 'completed', kind: 'ChunkedJob' );
+		$this->store_terminal_run( $name, 'completed', kind: JobType::ChunkedJob );
 
 		$this->maintenance->handle( array() );
 
@@ -1964,7 +1965,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = $snapshot['state'];
 		self::assertNotNull( $state );
 
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, 'Job' ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, JobType::Job ) );
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 
 		$this->maintenance->handle( array() );
@@ -2110,18 +2111,18 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
-	 * @phpstan-param 'Job'|'ChunkedJob' $kind
+	 * @phpstan-param JobType $kind
 	 *
 	 * @param   string     $name            Stable job or chunked job name.
 	 * @param   string     $status          Terminal status value.
 	 * @param   array      $effects         Completed terminal effect keys.
 	 * @param   array|null $error           Persisted terminal failure detail.
 	 * @param   int        $failed_attempts Attempts consumed by a failed run.
-	 * @param   string     $kind            Persisted work contract type.
+	 * @param   JobType    $kind            Persisted work contract type.
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'Job' ): void {
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, JobType $kind = JobType::Job ): void {
 		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );

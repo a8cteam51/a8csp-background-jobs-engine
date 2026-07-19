@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
@@ -286,14 +287,14 @@ final readonly class Inspection {
 			}
 
 			$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
-			$kind      = 'Job' === $state->kind ? 'job' : 'chunked_job';
+			$kind      = $state->kind->machine_key();
 			$live[]    = array(
 				'run_id'       => $run_id,
 				'kind'         => $kind,
 				'status'       => 'running',
 				'executing'    => $state->executing,
 				'attempts'     => $state->failed_attempts,
-				'queue_depth'  => 'job' === $kind ? null : \count( $state->queue ),
+				'queue_depth'  => JobType::Job === $state->kind ? null : \count( $state->queue ),
 				'heartbeat_at' => $state->heartbeat_at,
 				'stale'        => self::heartbeat_is_stale( $state->heartbeat_at, $observed_at, $staleness ),
 			);

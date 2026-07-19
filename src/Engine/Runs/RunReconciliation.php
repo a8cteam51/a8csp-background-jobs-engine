@@ -167,7 +167,7 @@ final readonly class RunReconciliation {
 				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
 			$work_type   = $state->kind;
-			$chunked_job = 'ChunkedJob' === $work_type ? $this->work->chunked_job( $identity ) : null;
+			$chunked_job = JobType::ChunkedJob === $work_type ? $this->work->chunked_job( $identity ) : null;
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the displaced incumbent is still inside its callback; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
@@ -200,11 +200,11 @@ final readonly class RunReconciliation {
 	 * @param   string                   $expected_raw Exact observed state.
 	 * @param   MaintenanceFenceOutcome  $fence        Executing-run fence outcome.
 	 * @param   ChunkedJobInterface|null $chunked_job        Registered chunked job, or null when unavailable.
-	 * @param   'Job'|'ChunkedJob'       $work_type    Work contract type.
+	 * @param   JobType                  $work_type    Work contract type.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, ?ChunkedJobInterface $chunked_job, string $work_type ): AbstractResult {
+	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, ?ChunkedJobInterface $chunked_job, JobType $work_type ): AbstractResult {
 		if (
 			MaintenanceFenceOutcome::Owned === $fence
 			|| MaintenanceFenceOutcome::Indeterminate === $fence
@@ -237,11 +237,11 @@ final readonly class RunReconciliation {
 	 * @param   string                   $expected_raw Exact observed state.
 	 * @param   int                      $staleness    Lock-staleness window in seconds.
 	 * @param   ChunkedJobInterface|null $chunked_job        Registered chunked job, or null when unavailable.
-	 * @param   'Job'|'ChunkedJob'       $work_type    Work contract type.
+	 * @param   JobType                  $work_type    Work contract type.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, ?ChunkedJobInterface $chunked_job, string $work_type ): AbstractResult {
+	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, ?ChunkedJobInterface $chunked_job, JobType $work_type ): AbstractResult {
 		if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 			return new Success( null );
 		}
@@ -323,7 +323,7 @@ final readonly class RunReconciliation {
 		}
 
 		$work_type            = $state->kind;
-		$resolved_chunked_job = 'ChunkedJob' === $work_type ? $this->work->chunked_job( $identity ) : null;
+		$resolved_chunked_job = JobType::ChunkedJob === $work_type ? $this->work->chunked_job( $identity ) : null;
 
 		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $work_type, $resolved_chunked_job ) ) {
 			$this->logger->warning(
@@ -351,17 +351,17 @@ final readonly class RunReconciliation {
 	 * @param   RunStore                 $run_store    Name-bound run store.
 	 * @param   EngineError              $error        Crash-reclaim terminal failure detail.
 	 * @param   ChunkedJobInterface|null $chunked_job        Registered chunked job, or null when unavailable.
-	 * @param   'Job'|'ChunkedJob'       $work_type    Work contract type.
+	 * @param   JobType                  $work_type    Work contract type.
 	 * @param   string                   $expected_raw Exact observed state.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?ChunkedJobInterface $chunked_job, string $work_type, string $expected_raw ): AbstractResult {
+	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?ChunkedJobInterface $chunked_job, JobType $work_type, string $expected_raw ): AbstractResult {
 		$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
-		$failed_chunk = 'ChunkedJob' === $work_type && 'run' === $state->pending?->stage
+		$failed_chunk = JobType::ChunkedJob === $work_type && 'run' === $state->pending?->stage
 			? ( $state->queue[0] ?? null )
 			: null;
-		if ( 'ChunkedJob' === $work_type ) {
+		if ( JobType::ChunkedJob === $work_type ) {
 			$this->terminal_transitions->fail_chunked_job( $chunked_job, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
 			$this->terminal_transitions->fail_job( $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, null, $expected_raw );
@@ -376,16 +376,16 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id       Run identifier.
-	 * @param   RunState           $state        Running state observed by maintenance.
-	 * @param   RunStore           $run_store    Name-bound run store.
-	 * @param   'Job'|'ChunkedJob' $work_type    Work contract type.
-	 * @param   string             $expected_raw Exact observed state.
+	 * @param   string   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id       Run identifier.
+	 * @param   RunState $state        Running state observed by maintenance.
+	 * @param   RunStore $run_store    Name-bound run store.
+	 * @param   JobType  $work_type    Work contract type.
+	 * @param   string   $expected_raw Exact observed state.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $work_type, string $expected_raw ): AbstractResult {
+	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, JobType $work_type, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$this->terminal_transitions->supersede_run( $identity, $run_id, $latest_run_id, $state, $run_store, $work_type, $expected_raw );
 
@@ -400,16 +400,16 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id    Run identifier.
-	 * @param   RunState           $state     Stale non-executing running state.
-	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
+	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Stale non-executing running state.
+	 * @param   JobType  $work_type Work contract type.
 	 *
 	 * @throws  \LogicException When a schema-valid descriptor conflicts with its scheduling mode.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function redeliver_pending_action( string $identity, string $run_id, RunState $state, string $work_type ): AbstractResult {
+	private function redeliver_pending_action( string $identity, string $run_id, RunState $state, JobType $work_type ): AbstractResult {
 		$pending = $state->pending;
 		if ( null === $pending ) {
 			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
@@ -420,7 +420,7 @@ final readonly class RunReconciliation {
 			'start'    => 'a8csp_jobs_engine/start_chunked_job',
 			'continue' => 'a8csp_jobs_engine/continue_chunked_job',
 			'cleanup'  => 'a8csp_jobs_engine/cleanup_chunked_job',
-			'run'      => 'ChunkedJob' === $work_type ? 'a8csp_jobs_engine/run_chunk' : 'a8csp_jobs_engine/run_job',
+			'run'      => JobType::ChunkedJob === $work_type ? 'a8csp_jobs_engine/run_chunk' : 'a8csp_jobs_engine/run_job',
 		};
 		$group = $identity . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {

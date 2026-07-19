@@ -162,14 +162,14 @@ final readonly class ActionDeliveries {
 			? fn (): int => $this->execution_lease_at( $registered_chunked_job, $chunked_job_name, $run_id )
 			: null;
 		$run_store              = $this->stores->run_store( $chunked_job_name );
-		$state                  = $this->terminal_transitions->claim_delivery_ownership( 'ChunkedJob', $chunked_job_name, $run_id, $action_sequence, $run_store, $liveness_at );
+		$state                  = $this->terminal_transitions->claim_delivery_ownership( JobType::ChunkedJob, $chunked_job_name, $run_id, $action_sequence, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
 
 		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'start' );
 		if ( null === $chunked_job ) {
-			$this->fail_orphaned_run( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store );
+			$this->fail_orphaned_run( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store );
 
 			return;
 		}
@@ -213,7 +213,7 @@ final readonly class ActionDeliveries {
 		}
 
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -225,7 +225,7 @@ final readonly class ActionDeliveries {
 		try {
 			$this->terminal_effects->fire_started( $chunked_job_name, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
@@ -234,13 +234,13 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		$scheduled = $this->scheduler->enqueue_async( self::CONTINUE_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( JobType::ChunkedJob, $chunked_job_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 
 			return;
 		}
@@ -260,14 +260,14 @@ final readonly class ActionDeliveries {
 	 */
 	public function handle_continue_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
 		$run_store = $this->stores->run_store( $chunked_job_name );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'ChunkedJob', $chunked_job_name, $run_id, $action_sequence, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( JobType::ChunkedJob, $chunked_job_name, $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
 		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'continue' );
 		if ( null === $chunked_job ) {
-			$this->fail_orphaned_run( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store );
+			$this->fail_orphaned_run( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store );
 
 			return;
 		}
@@ -280,7 +280,7 @@ final readonly class ActionDeliveries {
 			$state     = $replacement;
 			$scheduled = $this->scheduler->enqueue_async( self::CLEANUP_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
 			if ( $scheduled->is_failure() ) {
-				$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'cleanup', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+				$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( JobType::ChunkedJob, $chunked_job_name, 'cleanup', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 			}
 
 			return;
@@ -294,7 +294,7 @@ final readonly class ActionDeliveries {
 		$state     = $replacement;
 		$scheduled = $this->scheduler->enqueue_async( self::RUN_CHUNK_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( JobType::ChunkedJob, $chunked_job_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
 		}
 	}
 
@@ -349,14 +349,14 @@ final readonly class ActionDeliveries {
 	 */
 	public function handle_cleanup_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
 		$run_store = $this->stores->run_store( $chunked_job_name );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'ChunkedJob', $chunked_job_name, $run_id, $action_sequence, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( JobType::ChunkedJob, $chunked_job_name, $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
 		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'cleanup' );
 		if ( null === $chunked_job ) {
-			$this->fail_orphaned_run( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store );
+			$this->fail_orphaned_run( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store );
 
 			return;
 		}
@@ -404,7 +404,7 @@ final readonly class ActionDeliveries {
 	 */
 	private function handle_run_action( string $identity, string $run_id, int $action_sequence ): void {
 		$liveness_at = function ( RunState $persisted_state ) use ( $identity, $run_id ): int {
-			$contract = 'Job' === $persisted_state->kind
+			$contract = JobType::Job === $persisted_state->kind
 				? $this->work->job( $identity )
 				: $this->work->chunked_job( $identity );
 
@@ -419,7 +419,7 @@ final readonly class ActionDeliveries {
 		}
 
 		$work_type = $state->kind;
-		if ( 'Job' === $work_type ) {
+		if ( JobType::Job === $work_type ) {
 			$job = $this->work->job( $identity );
 			if ( null !== $job ) {
 				$this->handle_job_run_action( $job, $identity, $run_id, $state, $run_store );
@@ -474,7 +474,7 @@ final readonly class ActionDeliveries {
 	 */
 	private function fail_chunked_job_start_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
@@ -508,7 +508,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Job', $job_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, $job_name, $run_id, $state, $run_store, null, $state->heartbeat_at ) ) {
 			return;
 		}
 
@@ -547,14 +547,14 @@ final readonly class ActionDeliveries {
 		}
 
 		$reset_at = $this->clock->now()->getTimestamp();
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
 
 		try {
 			$delay = $this->lock_windows->continue_delay( $chunked_job_name, $run_id );
 		} catch ( \Throwable $throwable ) {
-			if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
 
@@ -563,7 +563,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'ChunkedJob', $chunked_job_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 			return;
 		}
 
@@ -582,7 +582,7 @@ final readonly class ActionDeliveries {
 
 		$scheduled = $this->scheduler->schedule_single( self::CONTINUE_HOOK, $fire_at, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id, 10 );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( 'ChunkedJob', $chunked_job_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( JobType::ChunkedJob, $chunked_job_name, 'continue', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
 	}
 
@@ -687,16 +687,16 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
-	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id    Run identifier.
-	 * @param   RunState           $state     Fenced running state.
-	 * @param   RunStore           $run_store Active-run store.
+	 * @param   JobType  $work_type Work contract type.
+	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Fenced running state.
+	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function fail_orphaned_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type, $identity, $run_id, 'Job' === $work_type ? 'job' : 'chunked job' ) );
+	private function fail_orphaned_run( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type->value, $identity, $run_id, $work_type->label() ) );
 
 		$this->terminal_transitions->fail_unregistered_run( $work_type, $identity, $run_id, $state, $run_store, $error );
 	}

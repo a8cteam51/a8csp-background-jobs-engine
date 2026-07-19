@@ -186,7 +186,7 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $this->args_hash( $chunked_job_name, $start_args, 'ChunkedJob' );
+		$args_hash = $this->args_hash( $chunked_job_name, $start_args, JobType::ChunkedJob );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -212,7 +212,7 @@ final readonly class Dispatcher {
 		}
 
 		$run_store = $this->stores->run_store( $chunked_job_name );
-		$state     = $this->create_run_state_and_replace_if_held( 'ChunkedJob', $chunked_job_name, $run_id, $start_args, $args_hash, array(), $claim, $run_store, PendingAction::async( 'start', $priority ) );
+		$state     = $this->create_run_state_and_replace_if_held( JobType::ChunkedJob, $chunked_job_name, $run_id, $start_args, $args_hash, array(), $claim, $run_store, PendingAction::async( 'start', $priority ) );
 		if ( $state instanceof Failure ) {
 			return $state;
 		}
@@ -388,7 +388,7 @@ final readonly class Dispatcher {
 			return new Failure( new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending cleanup completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), ) );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run( null !== $chunked_job ? 'ChunkedJob' : 'Job', $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->unschedule_group( $identity . '|' . $run_id ) );
+		$cancelled = $this->terminal_transitions->cancel_run( null !== $chunked_job ? JobType::ChunkedJob : JobType::Job, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->unschedule_group( $identity . '|' . $run_id ) );
 		if ( $cancelled ) {
 			return new Success( $run_id );
 		}
@@ -549,7 +549,7 @@ final readonly class Dispatcher {
 		}
 
 		$run_store = $this->stores->run_store( $job_name );
-		$state     = $this->create_run_state_and_replace_if_held( 'Job', $job_name, $run_id, $args, $args_hash, array( $args ), $claim, $run_store, 0 === $delay ? PendingAction::async( 'run', $priority ) : PendingAction::single( 'run', $scheduled_at, $priority ) );
+		$state     = $this->create_run_state_and_replace_if_held( JobType::Job, $job_name, $run_id, $args, $args_hash, array( $args ), $claim, $run_store, 0 === $delay ? PendingAction::async( 'run', $priority ) : PendingAction::single( 'run', $scheduled_at, $priority ) );
 		if ( $state instanceof Failure ) {
 			return $state;
 		}
@@ -642,7 +642,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Job'|'ChunkedJob'            $work_type Work contract type.
+	 * @param   JobType                       $work_type Work contract type.
 	 * @param   string                        $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string                        $run_id    Replacement run identifier.
 	 * @param   array<array-key, mixed>       $args      Start arguments.
@@ -654,7 +654,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held( string $work_type, string $identity, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, PendingAction $pending ): RunState|Failure {
+	private function create_run_state_and_replace_if_held( JobType $work_type, string $identity, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, PendingAction $pending ): RunState|Failure {
 		$state = $run_store->create( $run_id, $work_type, $args, $args_hash, $queue, $pending );
 		if ( null === $state ) {
 			if ( LockClaimOutcome::Held !== $claim ) {
@@ -663,12 +663,12 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, 'Job' === $work_type ? 'job' : 'chunked job', $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $work_type->label(), $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'name'      => $identity,
 						'run_id'    => $run_id,
-						'work_type' => 'Job' === $work_type ? 'job' : 'chunked_job',
+						'work_type' => $work_type->machine_key(),
 					),
 				)
 			);
@@ -686,11 +686,11 @@ final readonly class Dispatcher {
 
 		return new Failure(
 			new EngineError(
-				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.', $work_type, $identity, 'Job' === $work_type ? 'dispatch' : 'start' ),
+				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.', $work_type->value, $identity, JobType::Job === $work_type ? 'dispatch' : 'start' ),
 				reason: EngineErrorReason::OverlapHeld,
 				context: array(
 					'name'      => $identity,
-					'work_type' => 'Job' === $work_type ? 'job' : 'chunked_job',
+					'work_type' => $work_type->machine_key(),
 				),
 			)
 		);
@@ -733,12 +733,12 @@ final readonly class Dispatcher {
 	 *
 	 * @param   string                  $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   array<array-key, mixed> $args      Start arguments.
-	 * @param   'Job'|'ChunkedJob'      $work_type Work contract type.
+	 * @param   JobType                 $work_type Work contract type.
 	 *
 	 * @return  string|Failure<EngineError>
 	 */
 	#[\NoDiscard( 'an argument-hash failure must be handled, not dropped' )]
-	private function args_hash( string $identity, array $args, string $work_type = 'Job' ): string|Failure {
+	private function args_hash( string $identity, array $args, JobType $work_type = JobType::Job ): string|Failure {
 		$exception_class = null;
 		try {
 			$hash = PortableArguments::hash( $args );
@@ -749,12 +749,12 @@ final readonly class Dispatcher {
 		if ( null === $hash ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $work_type, $identity ),
+					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $work_type->value, $identity ),
 					$exception_class,
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
 						'name'      => $identity,
-						'work_type' => 'Job' === $work_type ? 'job' : 'chunked_job',
+						'work_type' => $work_type->machine_key(),
 					),
 				)
 			);

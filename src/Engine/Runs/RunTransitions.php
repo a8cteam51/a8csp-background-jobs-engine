@@ -63,19 +63,19 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param (\Closure(RunState): int)|null $liveness_at
 	 *
-	 * @param   'Job'|'ChunkedJob'|null $expected_work_type Expected work contract type, or null to use the persisted kind.
-	 * @param   string                  $identity           Complete owner-qualified job or chunked job identity.
-	 * @param   string                  $run_id             Run identifier.
-	 * @param   int|null                $action_sequence         Received lifecycle action sequence.
-	 * @param   RunStore                $run_store          Active-run store.
-	 * @param   \Closure|null           $liveness_at        Lazy liveness timestamp, or null to use the current clock time.
+	 * @param   JobType|null  $expected_work_type Expected work contract type, or null to use the persisted kind.
+	 * @param   string        $identity           Complete owner-qualified job or chunked job identity.
+	 * @param   string        $run_id             Run identifier.
+	 * @param   int|null      $action_sequence         Received lifecycle action sequence.
+	 * @param   RunStore      $run_store          Active-run store.
+	 * @param   \Closure|null $liveness_at        Lazy liveness timestamp, or null to use the current clock time.
 	 *
 	 * @return  RunState|null
 	 */
-	public function claim_delivery_ownership( ?string $expected_work_type, string $identity, string $run_id, ?int $action_sequence, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
+	public function claim_delivery_ownership( ?JobType $expected_work_type, string $identity, string $run_id, ?int $action_sequence, RunStore $run_store, ?\Closure $liveness_at = null ): ?RunState {
 		$inspection   = $run_store->inspect( $run_id );
-		$work_label   = $expected_work_type ?? 'Background-work';
-		$context_name = null === $expected_work_type ? 'name' : ( 'Job' === $expected_work_type ? 'job' : 'chunked_job' ) . '_name';
+		$work_label   = null === $expected_work_type ? 'Background-work' : $expected_work_type->value;
+		$context_name = null === $expected_work_type ? 'name' : $expected_work_type->machine_key() . '_name';
 		if ( $inspection->is_failure() ) {
 			$this->logger->warning(
 				$work_label . ' run state could not be read; repair WordPress option reads and retry the delivery.',
@@ -116,15 +116,15 @@ final readonly class RunTransitions {
 		}
 
 		$work_type    = $state->kind;
-		$context_name = ( 'Job' === $work_type ? 'job' : 'chunked_job' ) . '_name';
+		$context_name = $work_type->machine_key() . '_name';
 		if ( null !== $expected_work_type && $expected_work_type !== $work_type ) {
 			$this->logger->warning(
 				'Lifecycle stage does not apply to the persisted run kind; the stale or malformed delivery was dropped.',
 				array(
 					'name'           => $identity,
 					'run_id'         => $run_id,
-					'persisted_kind' => $work_type,
-					'expected_kind'  => $expected_work_type,
+					'persisted_kind' => $work_type->value,
+					'expected_kind'  => $expected_work_type->value,
 				)
 			);
 
@@ -147,7 +147,7 @@ final readonly class RunTransitions {
 
 		if ( RunStatus::Running !== $state->status ) {
 			$this->logger->warning(
-				$work_type . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
+				$work_type->value . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
 				array(
 					$context_name => $identity,
 					'run_id'      => $run_id,
@@ -221,7 +221,7 @@ final readonly class RunTransitions {
 	public function complete_job( string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 
-		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, 'Job' );
+		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, JobType::Job );
 	}
 
 	/**
@@ -243,7 +243,7 @@ final readonly class RunTransitions {
 	public function complete_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$terminal_state = $state->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 
-		$this->claim_and_execute_terminal_transition( $chunked_job_name, $run_id, $state, $terminal_state, $run_store, 'ChunkedJob', $chunked_job );
+		$this->claim_and_execute_terminal_transition( $chunked_job_name, $run_id, $state, $terminal_state, $run_store, JobType::ChunkedJob, $chunked_job );
 	}
 
 	/**
@@ -259,17 +259,17 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
-	 * @param   'Job'|'ChunkedJob' $work_type             Work contract type.
-	 * @param   string             $identity              Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id                Run identifier.
-	 * @param   RunState           $state                 Running state from the exact inspected snapshot.
-	 * @param   RunStore           $run_store             Active-run store.
-	 * @param   string             $expected_raw          Exact pre-cancel snapshot.
-	 * @param   \Closure           $clear_pending_actions Winner-only scheduler-group clear.
+	 * @param   JobType  $work_type             Work contract type.
+	 * @param   string   $identity              Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id                Run identifier.
+	 * @param   RunState $state                 Running state from the exact inspected snapshot.
+	 * @param   RunStore $run_store             Active-run store.
+	 * @param   string   $expected_raw          Exact pre-cancel snapshot.
+	 * @param   \Closure $clear_pending_actions Winner-only scheduler-group clear.
 	 *
 	 * @return  bool Whether the cancellation transition was claimed.
 	 */
-	public function cancel_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
+	public function cancel_run( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
 		if ( null === $terminal_raw ) {
@@ -293,16 +293,16 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Job'|'ChunkedJob' $work_type Work contract type carried by the lifecycle delivery.
-	 * @param   string             $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id    Run identifier.
-	 * @param   RunState           $state     Running state.
-	 * @param   RunStore           $run_store Active-run store.
-	 * @param   EngineError        $error     Failure detail.
+	 * @param   JobType     $work_type Work contract type carried by the lifecycle delivery.
+	 * @param   string      $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string      $run_id    Run identifier.
+	 * @param   RunState    $state     Running state.
+	 * @param   RunStore    $run_store Active-run store.
+	 * @param   EngineError $error     Failure detail.
 	 *
 	 * @return  void
 	 */
-	public function fail_unregistered_run( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+	public function fail_unregistered_run( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, RunFailureStage::Execution, ApiErrorCode::UnknownWork, self::failed_chunk_for_state( $work_type, $state ) ) );
 
@@ -337,7 +337,7 @@ final readonly class RunTransitions {
 		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
-		$this->claim_and_execute_terminal_transition( $chunked_job_name, $run_id, $state, $terminal_state, $run_store, 'ChunkedJob', $chunked_job, $expected_raw );
+		$this->claim_and_execute_terminal_transition( $chunked_job_name, $run_id, $state, $terminal_state, $run_store, JobType::ChunkedJob, $chunked_job, $expected_raw );
 	}
 
 	/**
@@ -366,7 +366,7 @@ final readonly class RunTransitions {
 	public function fail_job( string $job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts_used )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
-		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, 'Job', null, $expected_raw );
+		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, JobType::Job, null, $expected_raw );
 	}
 
 	/**
@@ -382,17 +382,17 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Job'|'ChunkedJob' $work_type             Work contract type.
-	 * @param   string             $identity              Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id                Run identifier.
-	 * @param   RunState           $state                 Running state observed before the fence.
-	 * @param   RunStore           $run_store             Active-run store.
-	 * @param   int|null           $at                    Liveness timestamp, or null to use the current clock time.
-	 * @param   int|null           $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
+	 * @param   JobType  $work_type             Work contract type.
+	 * @param   string   $identity              Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id                Run identifier.
+	 * @param   RunState $state                 Running state observed before the fence.
+	 * @param   RunStore $run_store             Active-run store.
+	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time.
+	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	public function enforce_delivery_fence( string $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
+	public function enforce_delivery_fence( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
 		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
@@ -402,9 +402,9 @@ final readonly class RunTransitions {
 		}
 
 		if ( HeartbeatOutcome::Indeterminate === $outcome ) {
-			$context_name = ( 'Job' === $work_type ? 'job' : 'chunked_job' ) . '_name';
+			$context_name = $work_type->machine_key() . '_name';
 			$this->logger->debug(
-				$work_type . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
+				$work_type->value . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
 				array(
 					$context_name => $identity,
 					'run_id'      => $run_id,
@@ -426,25 +426,25 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $identity      Complete owner-qualified job or chunked job identity.
-	 * @param   string             $run_id        Run identifier.
-	 * @param   string|null        $latest_run_id Latest discoverable pointer value for the single-flight identity.
-	 * @param   RunState           $state         Running state.
-	 * @param   RunStore           $run_store     Active-run store.
-	 * @param   'Job'|'ChunkedJob' $work_type     Work contract type.
-	 * @param   string|null        $expected_raw  Exact maintenance snapshot, or null for a live transition.
+	 * @param   string      $identity      Complete owner-qualified job or chunked job identity.
+	 * @param   string      $run_id        Run identifier.
+	 * @param   string|null $latest_run_id Latest discoverable pointer value for the single-flight identity.
+	 * @param   RunState    $state         Running state.
+	 * @param   RunStore    $run_store     Active-run store.
+	 * @param   JobType     $work_type     Work contract type.
+	 * @param   string|null $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function supersede_run( string $identity, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, string $work_type, ?string $expected_raw = null ): void {
+	public function supersede_run( string $identity, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, JobType $work_type, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return;
 		}
-		$context_name = ( 'Job' === $work_type ? 'job' : 'chunked_job' ) . '_name';
+		$context_name = $work_type->machine_key() . '_name';
 		$this->logger->info(
-			'Superseded ' . ( 'Job' === $work_type ? 'job' : 'chunked job' ) . ' run after its ownership fence failed.',
+			'Superseded ' . $work_type->label() . ' run after its ownership fence failed.',
 			array(
 				$context_name   => $identity,
 				'run_id'        => $run_id,
@@ -466,13 +466,13 @@ final readonly class RunTransitions {
 	 * @param   RunState                 $expected     Complete running state observed by the terminalizing path.
 	 * @param   RunState                 $replacement  Terminal replacement state.
 	 * @param   RunStore                 $run_store    Active-run store.
-	 * @param   'Job'|'ChunkedJob'       $work_type    Work contract type.
+	 * @param   JobType                  $work_type    Work contract type.
 	 * @param   ChunkedJobInterface|null $chunked_job        Chunked Job callback target, or null for a job or unresolved chunked job.
 	 * @param   string|null              $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, string $work_type, ?ChunkedJobInterface $chunked_job = null, ?string $expected_raw = null ): bool {
+	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, JobType $work_type, ?ChunkedJobInterface $chunked_job = null, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return false;
@@ -548,13 +548,13 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Job'|'ChunkedJob' $work_type Work contract type.
-	 * @param   RunState           $state     Run state at terminalization.
+	 * @param   JobType  $work_type Work contract type.
+	 * @param   RunState $state     Run state at terminalization.
 	 *
 	 * @return  array<array-key, mixed>|null
 	 */
-	private static function failed_chunk_for_state( string $work_type, RunState $state ): ?array {
-		if ( 'ChunkedJob' !== $work_type || 'run' !== $state->pending?->stage ) {
+	private static function failed_chunk_for_state( JobType $work_type, RunState $state ): ?array {
+		if ( JobType::ChunkedJob !== $work_type || 'run' !== $state->pending?->stage ) {
 			return null;
 		}
 

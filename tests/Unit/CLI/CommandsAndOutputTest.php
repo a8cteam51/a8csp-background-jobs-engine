@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
@@ -947,7 +948,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  RunState
 	 */
 	private static function state( string $args_hash, int $heartbeat_at = self::NOW ): RunState {
-		return new RunState( status: RunStatus::Running, kind: 'Job', executing: false, start_args: array(), args_hash: $args_hash, queue: array( array() ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $heartbeat_at );
+		return new RunState( status: RunStatus::Running, kind: JobType::Job, executing: false, start_args: array(), args_hash: $args_hash, queue: array( array() ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $heartbeat_at );
 	}
 
 	/**
