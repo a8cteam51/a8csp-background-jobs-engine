@@ -165,6 +165,22 @@ final class ChunkContext implements ChunkContextInterface {
 	// region METHODS
 
 	/**
+	 * Returns the attempt-local queue for a normal-return commit.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array<array-key, mixed>>
+	 */
+	public function get_queue(): array {
+		return \array_merge( \array_reverse( $this->prepended ), $this->queue, $this->appended );
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
 	 * Severs caller-held PHP references before retaining an argument array.
 	 *
 	 * The preflight rejects values that PHP serialization normalizes, such as resources, before the
@@ -215,18 +231,6 @@ final class ChunkContext implements ChunkContextInterface {
 		}
 
 		return $snapshot;
-	}
-
-	/**
-	 * Returns the attempt-local queue for a normal-return commit.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<array<array-key, mixed>>
-	 */
-	public function get_queue(): array {
-		return \array_merge( \array_reverse( $this->prepended ), $this->queue, $this->appended );
 	}
 
 	/**

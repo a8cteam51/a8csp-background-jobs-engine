@@ -265,6 +265,10 @@ final readonly class LifecycleEffects {
 		return $finished;
 	}
 
+	// endregion
+
+	// region HELPERS
+
 	/**
 	 * Re-reads terminal progress before a worker continues after an effect did not land.
 	 *

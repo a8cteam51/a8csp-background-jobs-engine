@@ -405,22 +405,6 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Deletes one inspected lock only while its exact raw row is unchanged.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string $args_hash    Stable single-flight identity.
-	 * @param   string $expected_raw Exact inspected row value.
-	 *
-	 * @return  bool Whether the inspected row was deleted.
-	 */
-	private function delete_persisted_lock( string $identity, string $args_hash, string $expected_raw ): bool {
-		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
-	}
-
-	/**
 	 * Parses a canonical work identity and argument hash from one overlap-lock option name.
 	 *
 	 * @internal Engine maintenance only.
@@ -827,6 +811,22 @@ final readonly class OverlapGuard {
 	 */
 	private static function is_stale( array $lock, int $now, int $staleness_window ): bool {
 		return $now - $lock['heartbeat_at'] > $staleness_window;
+	}
+
+	/**
+	 * Deletes one inspected lock only while its exact raw row is unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash    Stable single-flight identity.
+	 * @param   string $expected_raw Exact inspected row value.
+	 *
+	 * @return  bool Whether the inspected row was deleted.
+	 */
+	private function delete_persisted_lock( string $identity, string $args_hash, string $expected_raw ): bool {
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
 	}
 
 	// endregion

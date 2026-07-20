@@ -101,6 +101,28 @@ final readonly class Schedule {
 
 	// region METHODS
 
+	// endregion
+
+	// region GETTERS
+
+	/**
+	 * Returns the stable SHA-256 definition identity.
+	 *
+	 * @internal Engine change-detection seam; the hash construction is not client contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string
+	 */
+	public function fingerprint(): string {
+		return $this->fingerprint;
+	}
+
+	// endregion
+
+	// region HELPERS
+
 	/**
 	 * Returns a portable argument snapshot without PHP reference containers.
 	 *
@@ -136,24 +158,6 @@ final readonly class Schedule {
 		}
 
 		return PortableArguments::without_references( $snapshot );
-	}
-
-	// endregion
-
-	// region GETTERS
-
-	/**
-	 * Returns the stable SHA-256 definition identity.
-	 *
-	 * @internal Engine change-detection seam; the hash construction is not client contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	public function fingerprint(): string {
-		return $this->fingerprint;
 	}
 
 	// endregion

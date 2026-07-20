@@ -113,6 +113,10 @@ final readonly class FailureLifecycle {
 		$this->handle_failure( JobType::ChunkedJob, $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable, RunFailureStage::QueueGeneration, 'start', ActionDeliveries::START_HOOK );
 	}
 
+	// endregion
+
+	// region HELPERS
+
 	/**
 	 * Applies the shared retry decision ladder after one work attempt fails.
 	 *

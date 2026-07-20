@@ -474,6 +474,10 @@ final readonly class RunTransitions {
 		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
 	}
 
+	// endregion
+
+	// region HELPERS
+
 	/**
 	 * Claims a terminal state and executes only the winning transition's effects.
 	 *

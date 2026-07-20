@@ -164,102 +164,6 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Creates and schedules one resolved chunked Job run under an explicit overlap policy.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   ChunkedJobInterface     $chunked_job        Resolved registered chunked Job.
-	 * @param   string                  $chunked_job_name   Complete owner-qualified chunked Job identity.
-	 * @param   array<array-key, mixed> $start_args         Arguments supplied when the run starts.
-	 * @param   int                     $priority           Advisory priority from 0 through 255.
-	 * @param   OverlapPolicy           $overlap            Effective overlap policy.
-	 * @param   string|null             $resolved_args_hash Pre-resolved overlap identity for retry, or null.
-	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
-	 */
-	private function start_resolved_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, array $start_args, int $priority, OverlapPolicy $overlap, ?string $resolved_args_hash = null ): AbstractResult {
-		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Chunked Job "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.', $chunked_job_name, $priority, self::MAX_PRIORITY ),
-					reason: EngineErrorReason::PayloadRejected,
-					context: array(
-						'name'     => $chunked_job_name,
-						'priority' => $priority,
-					),
-				)
-			);
-		}
-
-		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $chunked_job_name, $start_args, $chunked_job->overlap_key( $start_args ), JobType::ChunkedJob );
-		if ( $args_hash instanceof Failure ) {
-			return $args_hash;
-		}
-
-		$now    = $this->clock->now()->getTimestamp();
-		$run_id = RunIdentity::generate( $now, $this->randomizer );
-		if ( OverlapPolicy::Allow === $overlap ) {
-			// Allow gets a per-run lock identity so concurrent starts never contend; Held can then only mean run-id collision.
-			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
-		}
-		$latest_pointer = $this->stores->latest_run_pointer( $chunked_job_name );
-		$claim          = $this->overlap_guard->claim( $chunked_job_name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $chunked_job_name, $run_id ) );
-		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Reject === $overlap ) {
-			$owner = $this->overlap_guard->owner_run_id( $chunked_job_name, $args_hash );
-			if ( $owner->is_failure() ) {
-				return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.', $chunked_job_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $chunked_job_name ), ) );
-			}
-
-			$message = null === $owner->value
-				? \sprintf( 'Chunked Job "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.', $chunked_job_name )
-				: \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $chunked_job_name, $owner->value );
-			$context = null === $owner->value
-				? array( 'name' => $chunked_job_name )
-				: array( 'run_id' => $owner->value );
-
-			return new Failure( new EngineError( $message, reason: EngineErrorReason::OverlapHeld, context: $context, ) );
-		}
-		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
-			return new Failure( new EngineError( \sprintf( 'Chunked Job "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.', $chunked_job_name, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $chunked_job_name ), ) );
-		}
-
-		$run_store = $this->stores->run_store( $chunked_job_name );
-		$state     = $this->create_run_state_and_replace_if_held( JobType::ChunkedJob, $chunked_job_name, $run_id, $start_args, $args_hash, array(), $claim, $run_store, PendingAction::async( 'start', $priority ) );
-		if ( $state instanceof Failure ) {
-			return $state;
-		}
-
-		if ( ! $latest_pointer->record( $run_id, $args_hash ) ) {
-			$this->logger->warning(
-				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
-				array(
-					'chunked_job_name' => $chunked_job_name,
-					'run_id'           => $run_id,
-				)
-			);
-		}
-		$scheduled = $this->scheduler->enqueue_async( 'a8csp_jobs_engine/start_chunked_job', array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id, $priority );
-		if ( $scheduled->is_failure() ) {
-			$this->roll_back_admitted_run( $chunked_job_name, $args_hash, $run_id, $run_store );
-
-			return $scheduled;
-		}
-
-		if ( ! $this->stores->run_history( $chunked_job_name )->record_started( $run_id, $args_hash ) ) {
-			$this->logger->warning(
-				'Started run history could not be persisted; inspection data may be incomplete.',
-				array(
-					'chunked_job_name' => $chunked_job_name,
-					'run_id'           => $run_id,
-				)
-			);
-		}
-
-		return new Success( $run_id );
-	}
-
-	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
 	 * A retried run recomputes the registered Job's argument-aware overlap key but always rejects a
@@ -938,6 +842,102 @@ final readonly class Dispatcher {
 
 		// The dedup tag separates opaque keys from canonical JSON argument identities, whose encodings never start with "d".
 		return \hash( 'sha256', 'dedup:' . $overlap_key );
+	}
+
+	/**
+	 * Creates and schedules one resolved chunked Job run under an explicit overlap policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ChunkedJobInterface     $chunked_job        Resolved registered chunked Job.
+	 * @param   string                  $chunked_job_name   Complete owner-qualified chunked Job identity.
+	 * @param   array<array-key, mixed> $start_args         Arguments supplied when the run starts.
+	 * @param   int                     $priority           Advisory priority from 0 through 255.
+	 * @param   OverlapPolicy           $overlap            Effective overlap policy.
+	 * @param   string|null             $resolved_args_hash Pre-resolved overlap identity for retry, or null.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	private function start_resolved_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, array $start_args, int $priority, OverlapPolicy $overlap, ?string $resolved_args_hash = null ): AbstractResult {
+		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Chunked Job "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.', $chunked_job_name, $priority, self::MAX_PRIORITY ),
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'name'     => $chunked_job_name,
+						'priority' => $priority,
+					),
+				)
+			);
+		}
+
+		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $chunked_job_name, $start_args, $chunked_job->overlap_key( $start_args ), JobType::ChunkedJob );
+		if ( $args_hash instanceof Failure ) {
+			return $args_hash;
+		}
+
+		$now    = $this->clock->now()->getTimestamp();
+		$run_id = RunIdentity::generate( $now, $this->randomizer );
+		if ( OverlapPolicy::Allow === $overlap ) {
+			// Allow gets a per-run lock identity so concurrent starts never contend; Held can then only mean run-id collision.
+			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
+		}
+		$latest_pointer = $this->stores->latest_run_pointer( $chunked_job_name );
+		$claim          = $this->overlap_guard->claim( $chunked_job_name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $chunked_job_name, $run_id ) );
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Reject === $overlap ) {
+			$owner = $this->overlap_guard->owner_run_id( $chunked_job_name, $args_hash );
+			if ( $owner->is_failure() ) {
+				return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.', $chunked_job_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $chunked_job_name ), ) );
+			}
+
+			$message = null === $owner->value
+				? \sprintf( 'Chunked Job "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.', $chunked_job_name )
+				: \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $chunked_job_name, $owner->value );
+			$context = null === $owner->value
+				? array( 'name' => $chunked_job_name )
+				: array( 'run_id' => $owner->value );
+
+			return new Failure( new EngineError( $message, reason: EngineErrorReason::OverlapHeld, context: $context, ) );
+		}
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
+			return new Failure( new EngineError( \sprintf( 'Chunked Job "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.', $chunked_job_name, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $chunked_job_name ), ) );
+		}
+
+		$run_store = $this->stores->run_store( $chunked_job_name );
+		$state     = $this->create_run_state_and_replace_if_held( JobType::ChunkedJob, $chunked_job_name, $run_id, $start_args, $args_hash, array(), $claim, $run_store, PendingAction::async( 'start', $priority ) );
+		if ( $state instanceof Failure ) {
+			return $state;
+		}
+
+		if ( ! $latest_pointer->record( $run_id, $args_hash ) ) {
+			$this->logger->warning(
+				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
+				array(
+					'chunked_job_name' => $chunked_job_name,
+					'run_id'           => $run_id,
+				)
+			);
+		}
+		$scheduled = $this->scheduler->enqueue_async( 'a8csp_jobs_engine/start_chunked_job', array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id, $priority );
+		if ( $scheduled->is_failure() ) {
+			$this->roll_back_admitted_run( $chunked_job_name, $args_hash, $run_id, $run_store );
+
+			return $scheduled;
+		}
+
+		if ( ! $this->stores->run_history( $chunked_job_name )->record_started( $run_id, $args_hash ) ) {
+			$this->logger->warning(
+				'Started run history could not be persisted; inspection data may be incomplete.',
+				array(
+					'chunked_job_name' => $chunked_job_name,
+					'run_id'           => $run_id,
+				)
+			);
+		}
+
+		return new Success( $run_id );
 	}
 
 	// endregion

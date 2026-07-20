@@ -187,6 +187,10 @@ final readonly class RunReconciliation {
 		return $this->reconcile_terminal_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $terminal_grace );
 	}
 
+	// endregion
+
+	// region HELPERS
+
 	/**
 	 * Reconciles a running row whose callback owns the execution attempt.
 	 *

@@ -186,6 +186,101 @@ final readonly class OccurrenceDelivery {
 		}
 	}
 
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Persists one occurrence transition or logs the retryable registry failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $registration
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $owner            Stable client identifier.
+	 * @param   array  $registration     Complete registration timing state.
+	 *
+	 * @return  void
+	 */
+	private function persist_delivery_state( string $registration_key, string $owner, array $registration ): void {
+		$outcome = $this->registry->update_registration( $registration_key, $registration['fingerprint'], $registration );
+		if ( RegistrationUpdateOutcome::Updated === $outcome ) {
+			return;
+		}
+		if ( RegistrationUpdateOutcome::Pruned === $outcome ) {
+			$this->logger->debug(
+				'Schedule registration pruned concurrently; delivery state discarded.',
+				array(
+					'owner'            => $owner,
+					'registration_key' => $registration_key,
+				)
+			);
+
+			return;
+		}
+		if ( RegistrationUpdateOutcome::Superseded === $outcome ) {
+			$this->logger->debug(
+				'Schedule registration superseded concurrently; delivery state discarded.',
+				array(
+					'owner'            => $owner,
+					'registration_key' => $registration_key,
+				)
+			);
+
+			return;
+		}
+
+		$failure = new Failure( SchedulingError::registry_persist_failure( $owner ) );
+		$this->logger->error(
+			'Schedule occurrence state could not be persisted: {error}',
+			array(
+				'owner' => $owner,
+				'error' => $failure->error->message,
+			)
+		);
+	}
+
+	/**
+	 * Advances a due instant by whole intervals until it is strictly in the future.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $next_due Current due instant.
+	 * @param   int $interval Positive recurrence interval.
+	 * @param   int $now      Occurrence delivery timestamp.
+	 *
+	 * @return  int|null Future due instant, or null when positive Unix seconds overflow.
+	 */
+	private static function realigned_next_due( int $next_due, int $interval, int $now ): ?int {
+		if ( $next_due > $now ) {
+			return $next_due;
+		}
+
+		$steps = \intdiv( $now - $next_due, $interval ) + 1;
+		if ( $steps > \intdiv( \PHP_INT_MAX - $next_due, $interval ) ) {
+			return null;
+		}
+
+		return $next_due + $steps * $interval;
+	}
+
+	/**
+	 * Increments an operational counter without overflowing persisted integer state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $counter Current non-negative count.
+	 *
+	 * @return  int
+	 */
+	private static function increment_counter( int $counter ): int {
+		return \PHP_INT_MAX === $counter ? $counter : $counter + 1;
+	}
+
 	/**
 	 * Executes one leased occurrence decision against freshly read registration state.
 	 *
@@ -515,101 +610,6 @@ final readonly class OccurrenceDelivery {
 		}
 
 		return new Success( $dispatched->value );
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Persists one occurrence transition or logs the retryable registry failure.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $registration
-	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   string $owner            Stable client identifier.
-	 * @param   array  $registration     Complete registration timing state.
-	 *
-	 * @return  void
-	 */
-	private function persist_delivery_state( string $registration_key, string $owner, array $registration ): void {
-		$outcome = $this->registry->update_registration( $registration_key, $registration['fingerprint'], $registration );
-		if ( RegistrationUpdateOutcome::Updated === $outcome ) {
-			return;
-		}
-		if ( RegistrationUpdateOutcome::Pruned === $outcome ) {
-			$this->logger->debug(
-				'Schedule registration pruned concurrently; delivery state discarded.',
-				array(
-					'owner'            => $owner,
-					'registration_key' => $registration_key,
-				)
-			);
-
-			return;
-		}
-		if ( RegistrationUpdateOutcome::Superseded === $outcome ) {
-			$this->logger->debug(
-				'Schedule registration superseded concurrently; delivery state discarded.',
-				array(
-					'owner'            => $owner,
-					'registration_key' => $registration_key,
-				)
-			);
-
-			return;
-		}
-
-		$failure = new Failure( SchedulingError::registry_persist_failure( $owner ) );
-		$this->logger->error(
-			'Schedule occurrence state could not be persisted: {error}',
-			array(
-				'owner' => $owner,
-				'error' => $failure->error->message,
-			)
-		);
-	}
-
-	/**
-	 * Advances a due instant by whole intervals until it is strictly in the future.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $next_due Current due instant.
-	 * @param   int $interval Positive recurrence interval.
-	 * @param   int $now      Occurrence delivery timestamp.
-	 *
-	 * @return  int|null Future due instant, or null when positive Unix seconds overflow.
-	 */
-	private static function realigned_next_due( int $next_due, int $interval, int $now ): ?int {
-		if ( $next_due > $now ) {
-			return $next_due;
-		}
-
-		$steps = \intdiv( $now - $next_due, $interval ) + 1;
-		if ( $steps > \intdiv( \PHP_INT_MAX - $next_due, $interval ) ) {
-			return null;
-		}
-
-		return $next_due + $steps * $interval;
-	}
-
-	/**
-	 * Increments an operational counter without overflowing persisted integer state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $counter Current non-negative count.
-	 *
-	 * @return  int
-	 */
-	private static function increment_counter( int $counter ): int {
-		return \PHP_INT_MAX === $counter ? $counter : $counter + 1;
 	}
 
 	// endregion
