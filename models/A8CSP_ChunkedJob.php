@@ -31,6 +31,9 @@ abstract class A8CSP_ChunkedJob {
 	/**
 	 * Returns the default ceiling for one consumer callback invocation.
 	 *
+	 * An override that returns `<= 0` or throws is normalized to the 300-second default. Values above
+	 * six hours are capped at six hours.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -132,6 +135,9 @@ abstract class A8CSP_ChunkedJob {
 	 * The predecessor is captured when this run completes and remains stable across at-least-once
 	 * replays rather than following a live lookup.
 	 *
+	 * This callback fires only while the chunked job stays registered in the request delivering
+	 * terminal effects.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -152,6 +158,9 @@ abstract class A8CSP_ChunkedJob {
 	 * The $failure array carries run_id, attempts, stage (execution, queue_generation,
 	 * crash_reclaim, or scheduling), code (a stable engine error code such as execution_failed),
 	 * summary, and failed_chunk (array or null).
+	 *
+	 * This callback fires only while the chunked job stays registered in the request delivering
+	 * terminal effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

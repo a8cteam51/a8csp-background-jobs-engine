@@ -31,6 +31,9 @@ abstract class A8CSP_Job {
 	/**
 	 * Returns the default ceiling for one consumer callback invocation.
 	 *
+	 * An override that returns `<= 0` or throws is normalized to the 300-second default. Values above
+	 * six hours are capped at six hours.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -100,6 +103,16 @@ abstract class A8CSP_Job {
 	/**
 	 * Handles one invocation of the job.
 	 *
+	 * A run can dispatch lifecycle hooks for `started`, `completed`, `failed`, `cancelled`,
+	 * `superseded`, and `retry_scheduled`. Each event dispatches
+	 * `a8csp_jobs_engine/{event}/{identity}` first, followed by `a8csp_jobs_engine/{event}` with the
+	 * complete `{owner}:{name}` identity prepended to the payload.
+	 *
+	 * Admission dispatches `started`; successful terminalization dispatches `completed`; terminal
+	 * failure dispatches `failed`; and cancellation or supersession dispatches `cancelled` or
+	 * `superseded`, respectively. A failed attempt persisted for another automatic attempt dispatches
+	 * `retry_scheduled` before the retry action is scheduled.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -118,6 +131,9 @@ abstract class A8CSP_Job {
 	 *
 	 * The predecessor is captured when this run completes and remains stable across at-least-once
 	 * replays rather than following a live lookup.
+	 *
+	 * This callback fires only while the job stays registered in the request delivering terminal
+	 * effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -139,6 +155,9 @@ abstract class A8CSP_Job {
 	 * The $failure array carries run_id, attempts, stage (execution, queue_generation,
 	 * crash_reclaim, or scheduling), code (a stable engine error code such as execution_failed),
 	 * summary, and failed_chunk (array or null).
+	 *
+	 * This callback fires only while the job stays registered in the request delivering terminal
+	 * effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

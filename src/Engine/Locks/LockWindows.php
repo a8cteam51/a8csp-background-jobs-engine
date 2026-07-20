@@ -9,7 +9,8 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Resolves filterable timing policy for run locks and chunked job continuation.
+ * Resolves chunked job continuation delay and its twice-delay lock-staleness floor for one-off and
+ * chunked job runs.
  *
  * @internal
  *
@@ -20,7 +21,7 @@ final readonly class LockWindows {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Default delay between completed chunked job chunks.
+	 * Default inter-chunk delay whose doubled value floors every run's lock staleness.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -70,27 +71,29 @@ final readonly class LockWindows {
 	 * below twice this value, because a chunk legitimately sleeping its continuation delay must
 	 * never look abandoned. Once twice the delay exceeds the lock-staleness window, filtering
 	 * the delay up extends how long a crashed run waits for reclamation.
+	 * This floor applies to one-off jobs even though they do not sleep between chunks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $chunked_job_name Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id     Run identifier.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	public function continue_delay( string $chunked_job_name, string $run_id ): int {
+	public function continue_delay( string $identity, string $run_id ): int {
 		/**
-		 * Filters the delay between completed chunked job chunks.
+		 * Filters the inter-chunk delay; twice the resolved value floors every run's lock staleness,
+		 * including one-off jobs.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   int    $delay      Default inter-chunk delay in seconds.
-		 * @param   string $chunked_job_name Complete owner-qualified job or chunked job identity.
-		 * @param   string $run_id     Run identifier.
+		 * @param   int    $delay    Default continuation delay in seconds.
+		 * @param   string $identity Complete owner-qualified job or chunked job identity.
+		 * @param   string $run_id   Run identifier.
 		 */
-		$delay = \apply_filters( 'a8csp_jobs_engine/continue_delay', self::CONTINUE_DELAY, $chunked_job_name, $run_id );
+		$delay = \apply_filters( 'a8csp_jobs_engine/continue_delay', self::CONTINUE_DELAY, $identity, $run_id );
 		if ( \is_int( $delay ) && 0 <= $delay ) {
 			return $delay;
 		}
@@ -98,7 +101,7 @@ final readonly class LockWindows {
 		$this->logger->warning(
 			'Continue-delay filter returned an invalid value; return a non-negative integer to override the default delay.',
 			array(
-				'name'          => $chunked_job_name,
+				'name'          => $identity,
 				'run_id'        => $run_id,
 				'returned_type' => \get_debug_type( $delay ),
 				'default_delay' => self::CONTINUE_DELAY,

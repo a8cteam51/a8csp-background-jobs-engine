@@ -37,6 +37,11 @@ function a8csp_bgje_run_last_completed( string $owner, string $name ): string|nu
 /**
  * Starts a fresh run from one retained failed run's original arguments.
  *
+ * The engine retains up to 20 failed runs per owner-qualified identity and evicts the oldest entry
+ * when that limit is exceeded. A retry that successfully starts a fresh run consumes and removes
+ * its retained source entry, making normal retry one-shot. Retention is best-effort: a failed
+ * retention write is logged while failure callbacks, hooks, and history processing continue.
+ *
  * @since   1.0.0
  * @version 1.0.0
  *

@@ -39,6 +39,8 @@ function a8csp_bgje_plugin(): Plugin {
  * it stays dormant there until the next request. Use the calling plugin's lowercase slug as the
  * owner; owner exclusivity is a client convention, while the `a8csp-jobs-engine` prefix is enforced as
  * the engine's reserved namespace.
+ * Call the engine on the target blog; a storage operation after `switch_to_blog()` throws instead of
+ * writing through a client graph bound to another site.
  *
  * @since   1.0.0
  * @version 1.0.0

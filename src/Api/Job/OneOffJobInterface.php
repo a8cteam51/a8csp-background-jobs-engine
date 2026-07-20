@@ -23,16 +23,15 @@ interface OneOffJobInterface extends JobInterface {
 	/**
 	 * Handles one invocation of the job.
 	 *
-	 * Terminal failures dispatch `a8csp_jobs_engine/failed/{identity}` with the run identifier,
-	 * start arguments, and run failure, followed by `a8csp_jobs_engine/failed` with the job
-	 * identity prepended to the same payload. The `{identity}` suffix is the complete `{owner}:{name}`
-	 * job identity.
+	 * A run can dispatch lifecycle hooks for `started`, `completed`, `failed`, `cancelled`,
+	 * `superseded`, and `retry_scheduled`. Each event dispatches
+	 * `a8csp_jobs_engine/{event}/{identity}` first, followed by `a8csp_jobs_engine/{event}` with the
+	 * complete `{owner}:{name}` identity prepended to the payload.
 	 *
-	 * After persisting a retry disposition, the engine dispatches
-	 * `a8csp_jobs_engine/retry_scheduled/{identity}` with the exact signature `(string $run_id,
-	 * array<array-key, mixed> $start_args, int $attempt, int $delay): void`, followed by
-	 * `a8csp_jobs_engine/retry_scheduled` with the complete job identity prepended to the same
-	 * payload.
+	 * Admission dispatches `started`; successful terminalization dispatches `completed`; terminal
+	 * failure dispatches `failed`; and cancellation or supersession dispatches `cancelled` or
+	 * `superseded`, respectively. A failed attempt persisted for another automatic attempt dispatches
+	 * `retry_scheduled` before the retry action is scheduled.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
