@@ -53,6 +53,56 @@ final class ScheduleTest extends TestCase {
 	}
 
 	/**
+	 * Construction severs caller-held references before retaining and fingerprinting arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_snapshots_referenced_arguments_before_retaining_them(): void {
+		$site_id  = 7;
+		$args     = array(
+			'site_id' => &$site_id,
+			'mirror'  => &$site_id,
+		);
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', $args );
+
+		$site_id             = 8;
+		$retained            = $schedule->args;
+		$retained['site_id'] = 9;
+
+		$expected = array(
+			'site_id' => 7,
+			'mirror'  => 7,
+		);
+		self::assertSame( $expected, $schedule->args );
+		self::assertSame( ( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', $expected ) )->fingerprint(), $schedule->fingerprint() );
+	}
+
+	/**
+	 * Resource arguments remain non-portable across the snapshot boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_rejects_resources_before_snapshotting_arguments(): void {
+		$stream = \fopen( 'php://memory', 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- A resource payload is required to exercise the portability boundary.
+		self::assertIsResource( $stream );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Schedule "nightly" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.' );
+
+		try {
+			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'stream' => $stream ) );
+		} finally {
+			\fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The test-owned resource must be released.
+		}
+	}
+
+	/**
 	 * Names outside the stable grammar identify the spelling correction.
 	 *
 	 * @param   string $name Invalid schedule name.

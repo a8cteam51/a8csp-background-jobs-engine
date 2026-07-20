@@ -418,7 +418,7 @@ final readonly class Dispatcher {
 			return $this->cancel_executing( $run_id );
 		}
 
-		if ( null !== $chunked_job && array() === $state->queue && 1 < $state->action_sequence ) {
+		if ( null !== $chunked_job && array() === $state->queue && 1 < $state->action_sequence && 'start' !== $state->pending?->stage ) {
 			return new Failure( new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending cleanup completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), ) );
 		}
 

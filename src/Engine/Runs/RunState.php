@@ -45,8 +45,9 @@ final readonly class RunState {
 	 * @param   array<array-key, mixed>       $start_args                Arguments supplied when the run started.
 	 * @param   string                        $args_hash                 Stable single-flight identity derived from arguments or a Job overlap key.
 	 * @param   list<array<array-key, mixed>> $queue                     Persisted processing queue, oldest uncommitted chunk first.
-	 * @param   int                           $failed_attempts           Failed attempts consumed by the current chunked job chunk; for
-	 *                                                                   a job, failed handle() attempts in this run.
+	 * @param   int                           $failed_attempts           Failed attempts consumed by the current retry stage: queue
+	 *                                                                   generation or the current chunk for a chunked job, and handle()
+	 *                                                                   for a job.
 	 * @param   int                           $action_sequence      Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at                Creation timestamp.
 	 * @param   int                           $heartbeat_at              Latest liveness timestamp.
@@ -142,8 +143,8 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $failed_attempts Failed attempts consumed by the current chunked job chunk; for a job, failed handle()
-	 *                                attempts in this run.
+	 * @param   int $failed_attempts Failed attempts consumed by the current retry stage: queue generation or the current
+	 *                                chunk for a chunked job, and handle() for a job.
 	 *
 	 * @return  self
 	 */

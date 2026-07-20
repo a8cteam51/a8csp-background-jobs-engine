@@ -624,6 +624,7 @@ final class MaintenanceJobTest extends TestCase {
 		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $database ): void {

@@ -253,6 +253,57 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
+	 * A bounded sweep resumes after its durable cursor instead of retrying retained earlier intents.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale Exact option rows and scheduler calls are the only evidence that a bounded invocation persists and resumes its own cursor.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_resumes_after_its_durable_cursor(): void {
+		$intents = array();
+		for ( $index = 0; $index < 501; ++$index ) {
+			$registration_key      = 'owner-a:pending-' . \sprintf( '%03d', $index );
+			[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
+			$this->wpdb->put( $option_name, $raw );
+			$intents[ $option_name ] = $registration_key;
+		}
+		\ksort( $intents, \SORT_STRING );
+		$expected_option = \array_key_last( $intents );
+		self::assertIsString( $expected_option );
+		$expected_key = $intents[ $expected_option ];
+
+		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the first bounded page set pending.' ) );
+		$this->cleanup_intents->converge_pending_intents();
+
+		$first_unschedules = \array_values( \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertCount( 500, $first_unschedules );
+		self::assertCount( 501, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
+		self::assertCount( 502, $this->wpdb->rows );
+
+		unset( $this->backend->results['unschedule'] );
+		$this->backend->calls  = array();
+		$this->logger->records = array();
+		$resumed               = new CleanupIntents( $this->registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $this->clock, $this->logger );
+
+		$resumed->converge_pending_intents();
+
+		$second_unschedules = \array_values( \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertCount( 1, $second_unschedules );
+		$second_call = $second_unschedules[0] ?? null;
+		self::assertIsArray( $second_call );
+		$second_args = $second_call['args'] ?? null;
+		self::assertIsArray( $second_args );
+		self::assertSame( array( $expected_key ), $second_args['args'] ?? null );
+		self::assertArrayNotHasKey( $expected_option, $this->wpdb->rows );
+		self::assertCount( 500, $this->wpdb->rows );
+	}
+
+	/**
 	 * A failed authoritative intent-name scan skips the sweep without scheduler or row mutation.
 	 *
 	 * @return  void
@@ -277,7 +328,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $scan_failures );
-		self::assertCount( 1, $this->wpdb->recorded_queries );
+		self::assertCount( 2, $this->wpdb->recorded_queries );
 	}
 
 	/**
@@ -314,6 +365,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->wpdb->put( $option_name, $raw );
 		$throwable = new \RuntimeException( 'Intent convergence secret.' );
 		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			static function () use ( $throwable ): void {
@@ -341,6 +393,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( $this->intent_option_name(), $option_name );
 		$this->wpdb->put( $option_name, $raw );
 		$row_read_failures = 0;
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ) use ( &$row_read_failures ): void {

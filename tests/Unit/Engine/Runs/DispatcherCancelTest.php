@@ -147,6 +147,38 @@ final class DispatcherCancelTest extends TestCase {
 	}
 
 	/**
+	 * A throwing cancelled listener cannot overturn the committed cancellation result.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The public success cannot expose intermediate terminal-effect progress; the retained production row proves the failed hook remains eligible for maintenance replay.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_contains_a_throwing_cancelled_listener_and_retains_the_pending_hook_effect(): void {
+		$run_id    = $this->enqueue_job();
+		$throwable = new \RuntimeException( 'Cancelled listener exploded.' );
+		$this->put_job_state( RunStatus::Running, false, 0, 1, self::NOW, PendingAction::async( 'run', 10 ) );
+		$this->reset_backend_observations();
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/cancelled/' . self::JOB_IDENTITY => $throwable );
+
+		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $run_id, $result->value );
+		self::assertSame( 'cancelled', $this->decoded_job_state()['status'] ?? null );
+		self::assertSame( array( 'history' ), $this->decoded_job_state()['effects'] ?? null );
+		$records = \array_values( \array_filter( $this->rig->logger()->records, static fn ( array $candidate ): bool => ( $candidate['context']['exception'] ?? null ) === $throwable ) );
+		self::assertCount( 1, $records );
+		$record = $records[0];
+		self::assertSame( 'error', $record['level'] ?? null );
+		$this->assert_group_clear( self::JOB_IDENTITY . '|' . $run_id );
+	}
+
+	/**
 	 * Cancellation rejects a malformed run identifier at the engine boundary.
 	 *
 	 * @since   1.0.0

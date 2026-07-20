@@ -168,7 +168,7 @@ final readonly class ActionDeliveries {
 		try {
 			$queue = $this->materialize_queue( $chunked_job->generate_queue( $state->start_args, $context ) );
 		} catch ( \Throwable $throwable ) {
-			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
+			$this->failure_lifecycle->handle_chunked_job_start_failure( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable );
 
 			return;
 		}
@@ -208,7 +208,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$replacement = $state->with_queue( $queue )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
+		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;
 		}
@@ -463,6 +463,7 @@ final readonly class ActionDeliveries {
 
 			return;
 		}
+		$chunk_args = PortableArguments::without_references( $chunk_args );
 
 		$context = new ChunkContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
 		try {
@@ -668,6 +669,7 @@ final readonly class ActionDeliveries {
 			if ( ! PortableArguments::is_valid( $chunk_args ) ) {
 				return new EngineError( \sprintf( 'Chunked Job queue chunk at index %d must contain only null, scalar, or nested array values.', $index ), \UnexpectedValueException::class );
 			}
+			$chunk_args = PortableArguments::without_references( $chunk_args );
 			try {
 				$encoded_chunk = \wp_json_encode( $chunk_args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
 			} catch ( \JsonException ) {

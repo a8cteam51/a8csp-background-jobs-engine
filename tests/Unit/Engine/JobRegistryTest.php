@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -197,7 +198,7 @@ final class JobRegistryTest extends TestCase {
 		$work = new JobRegistry();
 		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
 
-		$this->expectException( \LogicException::class );
+		$this->expectException( DuplicateRegistrationException::class );
 		$this->expectExceptionMessageIs( 'Job name is already registered; register each job name exactly once.' );
 
 		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
@@ -215,7 +216,7 @@ final class JobRegistryTest extends TestCase {
 		$work = new JobRegistry();
 		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
 
-		$this->expectException( \LogicException::class );
+		$this->expectException( DuplicateRegistrationException::class );
 		$this->expectExceptionMessageIs( 'Chunked Job name is already registered; register each chunked job name exactly once.' );
 
 		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );

@@ -141,6 +141,85 @@ final class ChunkContextTest extends TestCase {
 	}
 
 	/**
+	 * Buffered mutations sever caller-held references before retaining validated chunks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_queue_mutations_snapshot_referenced_arguments_before_retaining_them(): void {
+		$chunked_job = new RecordingChunkedJob( 'referenced-mutations' );
+
+		$chunked_job->queue      = array( array( 'chunk' => 'trigger' ) );
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ): void {
+			if ( 'trigger' !== ( $chunk_args['chunk'] ?? null ) ) {
+				$chunk_args['value'] = 'copy-mutated';
+
+				return;
+			}
+
+			$value     = 'accepted';
+			$appended  = array(
+				'value'  => &$value,
+				'mirror' => &$value,
+			);
+			$prepended = array(
+				'value'  => &$value,
+				'mirror' => &$value,
+			);
+			$context->enqueue( $appended );
+			$context->prepend( $prepended );
+
+			$value = 'mutated';
+		};
+
+		$this->start_and_deliver_first_chunk( $chunked_job, array() );
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		$expected = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+		self::assertCount( 3, $chunked_job->process_calls );
+		self::assertSame( $expected, $chunked_job->process_calls[1]['chunk_args'] ?? null );
+		self::assertSame( $expected, $chunked_job->process_calls[2]['chunk_args'] ?? null );
+	}
+
+	/**
+	 * Construction severs caller-held references before retaining start arguments.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The production constructor is the only seam that can prove references are severed before the context retains start arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_constructor_snapshots_referenced_start_arguments_before_retaining_them(): void {
+		$site_id    = 7;
+		$start_args = array(
+			'site_id' => &$site_id,
+			'mirror'  => &$site_id,
+		);
+		$context    = new ChunkContext( 'run-id', $start_args, array() );
+
+		$site_id             = 8;
+		$retained            = $context->get_start_args();
+		$retained['site_id'] = 9;
+
+		self::assertSame(
+			array(
+				'site_id' => 7,
+				'mirror'  => 7,
+			),
+			$context->get_start_args()
+		);
+	}
+
+	/**
 	 * Appending non-portable arguments throws without changing the buffered queue.
 	 *
 	 * @return  void
@@ -162,6 +241,50 @@ final class ChunkContextTest extends TestCase {
 			'prepend-rejection',
 			static fn ( ChunkContextInterface $context ) => $context->prepend( array( 'private-payload' => new \stdClass() ) )
 		);
+	}
+
+	/**
+	 * Appending a resource rejects the original value instead of retaining its serialized integer form.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_rejects_a_resource_without_mutating_the_queue(): void {
+		$stream = \fopen( 'php://memory', 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- A resource payload is required to exercise the portability boundary.
+		self::assertIsResource( $stream );
+
+		try {
+			$this->assert_non_portable_mutation_is_atomic(
+				'enqueue-resource-rejection',
+				static fn ( ChunkContextInterface $context ) => $context->enqueue( array( 'private-payload' => $stream ) )
+			);
+		} finally {
+			\fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The test-owned resource must be released.
+		}
+	}
+
+	/**
+	 * Prepending a resource rejects the original value instead of retaining its serialized integer form.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_prepend_rejects_a_resource_without_mutating_the_queue(): void {
+		$stream = \fopen( 'php://memory', 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- A resource payload is required to exercise the portability boundary.
+		self::assertIsResource( $stream );
+
+		try {
+			$this->assert_non_portable_mutation_is_atomic(
+				'prepend-resource-rejection',
+				static fn ( ChunkContextInterface $context ) => $context->prepend( array( 'private-payload' => $stream ) )
+			);
+		} finally {
+			\fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The test-owned resource must be released.
+		}
 	}
 
 	// endregion.
@@ -200,27 +323,31 @@ final class ChunkContextTest extends TestCase {
 	 */
 	private function assert_non_portable_mutation_is_atomic( string $name, \Closure $mutate ): void {
 		$initial     = array( array( 'chunk' => 'existing' ) );
-		$observed    = null;
 		$caught      = null;
 		$chunked_job = new RecordingChunkedJob( $name );
 
 		$chunked_job->queue      = array( array( 'chunk' => 'trigger' ), ...$initial );
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $mutate, &$observed, &$caught ): void {
-			self::assertInstanceOf( ChunkContext::class, $context );
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $mutate, &$caught ): void {
+			if ( 'trigger' !== ( $chunk_args['chunk'] ?? null ) ) {
+				return;
+			}
+
 			try {
 				$mutate( $context );
 			} catch ( \InvalidArgumentException $exception ) {
 				$caught = $exception;
 			}
-
-			$observed = $context->get_queue();
 		};
 
 		$this->start_and_deliver_first_chunk( $chunked_job, array( 'site_id' => 7 ) );
+		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
+			$this->rig->run_due();
+		}
 
 		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
 		self::assertSame( 'Chunked Job chunk arguments must contain only null, scalar, or nested array values.', $caught->getMessage() );
-		self::assertSame( $initial, $observed );
+		self::assertCount( 2, $chunked_job->process_calls );
+		self::assertSame( $initial[0], $chunked_job->process_calls[1]['chunk_args'] ?? null );
 	}
 
 	// endregion.

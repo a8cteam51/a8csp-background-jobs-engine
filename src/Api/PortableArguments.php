@@ -58,5 +58,26 @@ final class PortableArguments {
 			: null;
 	}
 
+	/**
+	 * Rebuilds an argument tree by value so retained values share no PHP reference containers.
+	 *
+	 * @internal Engine-owned argument snapshots only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $values Values to rebuild.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	public static function without_references( array $values ): array {
+		$snapshot = array();
+		foreach ( $values as $key => $value ) {
+			$snapshot[ $key ] = \is_array( $value ) ? self::without_references( $value ) : $value;
+		}
+
+		return $snapshot;
+	}
+
 	// endregion
 }

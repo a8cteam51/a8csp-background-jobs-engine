@@ -244,6 +244,68 @@ final class WpdbLockSpy extends \wpdb {
 	}
 
 	/**
+	 * Selects modeled raw option rows by exact option name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param 'OBJECT'|'OBJECT_K'|'ARRAY_A'|'ARRAY_N' $output
+	 * @phpstan-return ($output is 'ARRAY_A' ? list<array{option_name: string, option_value: string}> : ($output is 'ARRAY_N' ? list<list{string, string}> : ($output is 'OBJECT_K' ? array<string, \stdClass> : list<\stdClass>)))
+	 *
+	 * @param   mixed $query  Prepared statement.
+	 * @param   mixed $output Output shape.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	#[\Override]
+	public function get_results( $query = null, $output = 'OBJECT' ): array {
+		if ( ! \is_string( $query ) ) {
+			throw new \InvalidArgumentException( 'WpdbLockSpy selects require a prepared query string.' );
+		}
+
+		$statement = $this->statement( $query );
+		if ( ! \str_starts_with( $statement['template'], 'SELECT `option_name`, `option_value` ' ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy get_results() accepts only option-row SELECT statements.' );
+		}
+
+		$this->last_error = '';
+		$this->run_before( 'select' );
+		$this->recorded_queries[] = $query;
+		if ( '' !== $this->last_error ) {
+			return array();
+		}
+
+		$rows = array();
+		foreach ( self::without_table( $statement['args'] ) as $key ) {
+			if ( ! \is_string( $key ) ) {
+				continue;
+			}
+
+			$raw = $this->raw_value( $key );
+			if ( null === $raw ) {
+				continue;
+			}
+
+			$row = array(
+				'option_name'  => $key,
+				'option_value' => $raw,
+			);
+			if ( 'OBJECT_K' === $output ) {
+				$rows[ $key ] = (object) $row;
+				continue;
+			}
+
+			$rows[] = match ( $output ) {
+				'ARRAY_A' => $row,
+				'ARRAY_N' => \array_values( $row ),
+				default   => (object) $row,
+			};
+		}
+
+		return $rows;
+	}
+
+	/**
 	 * Returns option names matching one prepared escaped-prefix scan.
 	 *
 	 * @param   mixed $query Prepared statement.

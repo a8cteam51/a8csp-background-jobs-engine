@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -412,6 +413,100 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertSame( 8_000, $rejected->error->context['maximum_json_length'] ?? null );
 		self::assertSame( array(), $this->preferred()->calls );
 		self::assertSame( array(), $this->fallback()->calls );
+	}
+
+	/**
+	 * Backend write throwables become redacted checked failures at every routing position.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The facade is the boundary that converts backend throwables before orchestration can compensate; exact verb and backend-position coverage cannot be isolated through a higher-level public workflow.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'enqueue_async'|'schedule_single'|'schedule_recurring' $verb             Backend write verb.
+	 * @param   'preferred'|'fallback'                                $backend_position Selected backend position.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'throwing_write_scenarios' )]
+	public function test_backend_write_throwables_become_redacted_checked_failures( string $verb, string $backend_position ): void {
+		$scheduler = new SchedulerFacade( $this->rig->backends() );
+		$secret    = 'raw-backend-detail-' . $verb . '-' . $backend_position;
+		$throwable = new \RuntimeException( $secret );
+		if ( 'fallback' === $backend_position ) {
+			$this->preferred()->ready = false;
+		}
+
+		$backend = 'preferred' === $backend_position ? $this->preferred() : $this->fallback();
+		$backend->before_next(
+			$verb,
+			static function () use ( $throwable ): void {
+				throw $throwable;
+			}
+		);
+
+		$result = match ( $verb ) {
+			'enqueue_async'     => $scheduler->enqueue_async( 'a8csp_jobs_engine/throwable_barrier', array( 'run-17' ), 'scheduler-tests:throwable-barrier' ),
+			'schedule_single'   => $scheduler->schedule_single( 'a8csp_jobs_engine/throwable_barrier', self::NOW + 300, array( 'run-17' ), 'scheduler-tests:throwable-barrier' ),
+			'schedule_recurring' => $scheduler->schedule_recurring( 'a8csp_jobs_engine/throwable_barrier', 300, array( 'run-17' ), self::NOW + 300, 'scheduler-tests:throwable-barrier' ),
+		};
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertSame( \sprintf( 'The scheduling backend could not accept the write because %s was thrown; repair the backend and retry.', \get_debug_type( $throwable ) ), $result->error->message );
+		self::assertStringNotContainsString( $secret, $result->error->message );
+		self::assertSame( array(), $result->error->context );
+
+		if ( 'preferred' === $backend_position ) {
+			self::assertSame( array( 'is_ready', $verb ), $this->verbs( $this->preferred() ) );
+			self::assertSame( array(), $this->fallback()->calls );
+		} else {
+			self::assertSame( array( 'is_ready' ), $this->verbs( $this->preferred() ) );
+			self::assertSame( array( 'is_ready', $verb ), $this->verbs( $this->fallback() ) );
+		}
+	}
+
+	// endregion.
+
+	// region PROVIDERS.
+
+	/**
+	 * Supplies every scheduling write at both facade routing positions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{verb: 'enqueue_async'|'schedule_single'|'schedule_recurring', backend_position: 'preferred'|'fallback'}>
+	 */
+	public static function throwing_write_scenarios(): array {
+		return array(
+			'preferred async enqueue'      => array(
+				'verb'             => 'enqueue_async',
+				'backend_position' => 'preferred',
+			),
+			'fallback async enqueue'       => array(
+				'verb'             => 'enqueue_async',
+				'backend_position' => 'fallback',
+			),
+			'preferred single schedule'    => array(
+				'verb'             => 'schedule_single',
+				'backend_position' => 'preferred',
+			),
+			'fallback single schedule'     => array(
+				'verb'             => 'schedule_single',
+				'backend_position' => 'fallback',
+			),
+			'preferred recurring schedule' => array(
+				'verb'             => 'schedule_recurring',
+				'backend_position' => 'preferred',
+			),
+			'fallback recurring schedule'  => array(
+				'verb'             => 'schedule_recurring',
+				'backend_position' => 'fallback',
+			),
+		);
 	}
 
 	// endregion.

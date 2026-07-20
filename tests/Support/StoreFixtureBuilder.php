@@ -393,6 +393,33 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
+	 * Returns the cursor row authored by one bounded production cleanup-intent sweep.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $created_at Intent timestamp.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function cleanup_intent_sweep_cursor( int $created_at ): array {
+		return $this->isolated(
+			function ( \wpdb $wpdb ) use ( $created_at ): array {
+				$rows      = new OptionRows( $wpdb );
+				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
+				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
+				for ( $index = 0; $index < 500; ++$index ) {
+					$intents->record_intent( $this->identity . '-' . \sprintf( '%03d', $index ) );
+				}
+
+				$intents->converge_pending_intents();
+
+				return $this->row( $wpdb, CleanupIntents::SWEEP_CURSOR_OPTION );
+			}
+		);
+	}
+
+	/**
 	 * Returns the cursor row authored by one incomplete production maintenance pass.
 	 *
 	 * @since   1.0.0

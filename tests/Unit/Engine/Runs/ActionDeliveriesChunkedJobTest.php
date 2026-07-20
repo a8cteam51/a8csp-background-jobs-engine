@@ -273,43 +273,135 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A queue generation throwable fails without exposing a started lifecycle.
+	 * A queue generation throwable retries the start stage and regenerates the queue.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_start_action_fails_terminally_when_queue_generation_throws(): void {
+	public function test_handle_start_action_retries_queue_generation_at_the_start_stage(): void {
+		$this->chunked_job->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->chunked_job->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
+		$this->chunked_job->queue              = array( array( 'chunk' => 'first' ) );
+		$chunked_job                           = $this->chunked_job;
+		$this->chunked_job->on_generate        = static function () use ( $chunked_job ): void {
+			if ( 1 < \count( $chunked_job->generate_calls ) ) {
+				$chunked_job->generate_throwable = null;
+			}
+		};
 		$this->start_chunked_job();
+		$this->rig->randomizer()->value = 7;
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
+		$start_calls = $this->calls_for_hook( ActionDeliveries::START_HOOK );
+		self::assertCount( 2, $start_calls );
+		self::assertSame( 'schedule_single', $start_calls[1]['verb'] );
+		self::assertSame( self::NOW + 7, $start_calls[1]['args']['timestamp'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 2 ), $start_calls[1]['args']['args'] ?? null );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( self::ARGS, self::ARGS ), $this->chunked_job->generate_calls );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
+
+		$this->chunked_job->process_throwable = new \RuntimeException( 'First chunk attempt exploded.' );
+		$this->rig->run_due();
+
+		$continue_calls = $this->calls_for_hook( ActionDeliveries::CONTINUE_HOOK );
+		self::assertCount( 2, $continue_calls );
+		self::assertSame( 'schedule_single', $continue_calls[1]['verb'] );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 4 ), $continue_calls[1]['args']['args'] ?? null );
+		self::assertCount( 2, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
 	}
 
 	/**
-	 * A lazy queue throwable discards every yielded chunk before failure.
+	 * A lazy queue throwable discards every yielded chunk before retrying queue generation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_start_action_fails_terminally_when_lazy_queue_iteration_throws(): void {
-		$this->chunked_job->generate_queue_factory = static function (): iterable {
-			yield array( 'chunk' => 'must-not-persist' );
+	public function test_handle_start_action_retries_when_lazy_queue_iteration_throws(): void {
+		$this->chunked_job->retry_policy           = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$generation                                = 0;
+		$this->chunked_job->generate_queue_factory = static function () use ( &$generation ): iterable {
+			++$generation;
+			if ( 1 < $generation ) {
+				yield array( 'chunk' => 'replacement' );
 
+				return;
+			}
+
+			yield array( 'chunk' => 'must-not-persist' );
 			throw new \RuntimeException( 'Lazy queue token secret.' );
 		};
+		$this->start_chunked_job();
+		$this->rig->randomizer()->value = 9;
+
+		$this->rig->run_due();
+
+		$start_calls = $this->calls_for_hook( ActionDeliveries::START_HOOK );
+		self::assertCount( 2, $start_calls );
+		self::assertSame( 'schedule_single', $start_calls[1]['verb'] );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 2 ), $start_calls[1]['args']['args'] ?? null );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
+
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		self::assertSame( 2, $generation );
+		self::assertSame( array( 'chunk' => 'replacement' ), $this->chunked_job->process_calls[0]['chunk_args'] ?? null );
+	}
+
+	/**
+	 * A chunked job remains cancellable while queue generation waits for its start-stage retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_start_stage_retry_backoff_remains_cancellable(): void {
+		$this->chunked_job->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->chunked_job->generate_throwable = new \RuntimeException( 'Queue generation exploded.' );
+		$this->start_chunked_job();
+		$this->rig->randomizer()->value = 7;
+		$this->rig->run_due();
+
+		$result = $this->client->runs()->cancel( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$this->rig->assert_cancelled();
+	}
+
+	/**
+	 * A non-retryable queue generation throwable terminalizes without scheduling another start.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_terminalizes_non_retryable_queue_generation(): void {
+		$this->chunked_job->generate_throwable = new NonRetryableException( 'Queue input is permanently invalid.' );
 		$this->start_chunked_job();
 
 		$this->rig->run_due();
 
 		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
-		self::assertStringNotContainsString( 'token secret', $failure->summary );
+		self::assertSame( 1, $failure->attempts );
+		$this->rig->assert_no_retry();
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
 	}
 
 	/**
@@ -375,6 +467,35 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		self::assertSame( $queue, $this->run_state()['queue'] ?? null );
 		self::assertSame( array(), $this->chunked_job->failed_calls );
+	}
+
+	/**
+	 * Generated chunks cannot retain aliases that let one callback mutate another persisted chunk.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_generated_queue_severs_references_shared_across_chunks(): void {
+		$value                         = 'retained';
+		$this->chunked_job->queue      = array(
+			array( 'value' => &$value ),
+			array( 'value' => &$value ),
+		);
+		$this->chunked_job->on_process = static function ( array $chunk_args ): void {
+			$chunk_args['value'] = 'callback-mutated';
+		};
+		$this->start_chunked_job();
+
+		$this->rig->run_due();
+		$value = 'caller-mutated';
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		self::assertCount( 2, $this->chunked_job->process_calls );
+		self::assertSame( array( 'value' => 'retained' ), $this->chunked_job->process_calls[0]['chunk_args'] ?? null );
+		self::assertSame( array( 'value' => 'retained' ), $this->chunked_job->process_calls[1]['chunk_args'] ?? null );
 	}
 
 	/**

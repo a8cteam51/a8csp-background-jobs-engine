@@ -460,6 +460,48 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * A scheduled start successor survives production serialization and hydration.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Start-stage single deliveries must remain recoverable from persisted run state; fixture-built bytes exercise the writer and guarded hydrator together.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_start_single_pending_action_round_trips_through_run_storage(): void {
+		$fire_at = self::NOW + 60;
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state( JobType::ChunkedJob )->with_pending( PendingAction::single( 'start', $fire_at, 10 ) ) );
+		$this->put_fixture( $fixture );
+
+		$stored = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertSame( 'ChunkedJob', $stored['kind'] ?? null );
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'single',
+				'fire_at'  => $fire_at,
+				'priority' => 10,
+			),
+			$stored['pending'] ?? null
+		);
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( JobType::ChunkedJob, $inspected->value['state']->kind );
+		self::assertInstanceOf( PendingAction::class, $inspected->value['state']->pending );
+		self::assertSame( 'start', $inspected->value['state']->pending->stage );
+		self::assertSame( 'single', $inspected->value['state']->pending->mode );
+		self::assertSame( $fire_at, $inspected->value['state']->pending->fire_at );
+		self::assertSame( 10, $inspected->value['state']->pending->priority );
+	}
+
+	/**
 	 * Pending descriptors accept only the canonical stage/mode/fire-time pairings and field set.
 	 *
 	 * @load-bearing security
@@ -502,12 +544,6 @@ final class RunStoreTest extends TestCase {
 				'fire_at'  => null,
 				'priority' => 10,
 				'extra'    => true,
-			),
-			array(
-				'stage'    => 'start',
-				'mode'     => 'single',
-				'fire_at'  => 2,
-				'priority' => 10,
 			),
 			array(
 				'stage'    => 'cleanup',
@@ -618,15 +654,19 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Returns the shared valid fixture state.
+	 * Returns the shared valid fixture state for one work kind.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   JobType $kind Admitted work contract type.
+	 *
 	 * @return  RunState
 	 */
-	private function state(): RunState {
-		return new RunState( status: RunStatus::Running, kind: JobType::Job, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+	private function state( JobType $kind = JobType::Job ): RunState {
+		$pending_stage = JobType::Job === $kind ? 'run' : 'start';
+
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
 	}
 
 	/**

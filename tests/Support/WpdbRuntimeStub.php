@@ -84,4 +84,19 @@ class WpdbRuntimeStub {
 	public function get_row( mixed $query = null, mixed $output = 'OBJECT', mixed $y = 0 ): array|\stdClass|null {
 		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
 	}
+
+	/**
+	 * Returns selected rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $query  Prepared query.
+	 * @param   mixed $output Output shape.
+	 *
+	 * @return  array<array-key, mixed>|object|null
+	 */
+	public function get_results( mixed $query = null, mixed $output = 'OBJECT' ): array|object|null {
+		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
+	}
 }

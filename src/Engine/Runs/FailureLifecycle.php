@@ -71,7 +71,7 @@ final readonly class FailureLifecycle {
 	 * @return  void
 	 */
 	public function handle_job_failure( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
-		$this->handle_failure( JobType::Job, $job, $job_name, $run_id, $state, $run_store, $throwable );
+		$this->handle_failure( JobType::Job, $job, $job_name, $run_id, $state, $run_store, $throwable, RunFailureStage::Execution, 'run', ActionDeliveries::RUN_JOB_HOOK );
 	}
 
 	/**
@@ -91,7 +91,26 @@ final readonly class FailureLifecycle {
 	 * @return  void
 	 */
 	public function handle_chunked_job_failure( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, array $chunk_args ): void {
-		$this->handle_failure( JobType::ChunkedJob, $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable, $chunk_args );
+		$this->handle_failure( JobType::ChunkedJob, $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable, RunFailureStage::Execution, 'continue', ActionDeliveries::CONTINUE_HOOK, $chunk_args );
+	}
+
+	/**
+	 * Applies the retry decision ladder after chunked job queue generation fails.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ChunkedJobInterface $chunked_job      Failed chunked job contract.
+	 * @param   string              $chunked_job_name Complete owner-qualified chunked job identity.
+	 * @param   string              $run_id           Run identifier.
+	 * @param   RunState            $state            Fenced running state.
+	 * @param   RunStore            $run_store        Active-run store.
+	 * @param   \Throwable          $throwable        Failed queue-generation attempt detail.
+	 *
+	 * @return  void
+	 */
+	public function handle_chunked_job_start_failure( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
+		$this->handle_failure( JobType::ChunkedJob, $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $throwable, RunFailureStage::QueueGeneration, 'start', ActionDeliveries::START_HOOK );
 	}
 
 	/**
@@ -100,18 +119,21 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType                      $work_type  Work contract type selected by the typed delivery path.
-	 * @param   JobInterface                 $contract   Failed work contract.
-	 * @param   string                       $identity   Complete owner-qualified work identity.
-	 * @param   string                       $run_id     Run identifier.
-	 * @param   RunState                     $state      Fenced running state.
-	 * @param   RunStore                     $run_store  Active-run store.
-	 * @param   \Throwable                   $throwable  Failed attempt detail.
-	 * @param   array<array-key, mixed>|null $chunk_args Chunked Job chunk arguments, or null for a job.
+	 * @param   JobType                      $work_type      Work contract type selected by the typed delivery path.
+	 * @param   JobInterface                 $contract       Failed work contract.
+	 * @param   string                       $identity       Complete owner-qualified work identity.
+	 * @param   string                       $run_id         Run identifier.
+	 * @param   RunState                     $state          Fenced running state.
+	 * @param   RunStore                     $run_store      Active-run store.
+	 * @param   \Throwable                   $throwable      Failed attempt detail.
+	 * @param   RunFailureStage              $terminal_stage Failure stage when the retry ladder terminalizes the attempt.
+	 * @param   string                       $retry_stage    Pending-action stage for another attempt.
+	 * @param   string                       $retry_hook     Scheduler hook for another attempt.
+	 * @param   array<array-key, mixed>|null $chunk_args     Chunked Job chunk arguments, or null for a job or start action.
 	 *
 	 * @return  void
 	 */
-	private function handle_failure( JobType $work_type, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
+	private function handle_failure( JobType $work_type, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, string $retry_hook, ?array $chunk_args = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -126,7 +148,7 @@ final readonly class FailureLifecycle {
 			? new EngineError( $throwable->getMessage(), \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
 		if ( $throwable instanceof NonRetryableExceptionInterface ) {
-			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -138,7 +160,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -148,12 +170,12 @@ final readonly class FailureLifecycle {
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ApiErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
 
-		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $error );
+		$retry_failure = $this->reschedule_retry( $work_type, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $error, $retry_stage, $retry_hook );
 		if ( null !== $retry_failure ) {
 			$retry_state = $retry_failure['state'];
 			if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
@@ -238,19 +260,21 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType     $work_type Work contract type.
-	 * @param   string      $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string      $run_id    Run identifier.
-	 * @param   RunState    $state     Exact persisted state before the retry transition.
-	 * @param   RunStore    $run_store Active-run store.
-	 * @param   RetryPolicy $policy    Resolved retry policy.
-	 * @param   int         $attempt   Consumed-attempt count.
-	 * @param   EngineError $error     Failed-attempt detail.
+	 * @param   JobType     $work_type   Work contract type.
+	 * @param   string      $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   string      $run_id      Run identifier.
+	 * @param   RunState    $state       Exact persisted state before the retry transition.
+	 * @param   RunStore    $run_store   Active-run store.
+	 * @param   RetryPolicy $policy      Resolved retry policy.
+	 * @param   int         $attempt     Consumed-attempt count.
+	 * @param   EngineError $error       Failed-attempt detail.
+	 * @param   string      $retry_stage Pending-action stage for another attempt.
+	 * @param   string      $retry_hook  Scheduler hook for another attempt.
 	 *
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ApiErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
-	private function reschedule_retry( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error ): ?array {
+	private function reschedule_retry( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage, string $retry_hook ): ?array {
 		try {
 			$delay = $this->randomizer->int( 0, $policy->delay_ceiling_for_attempt( $attempt ) );
 			$now   = $this->clock->now()->getTimestamp();
@@ -277,7 +301,6 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$retry_stage = JobType::ChunkedJob === $work_type ? 'continue' : 'run';
 			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( $retry_stage, $fire_at, 10 ) );
 		} catch ( \Throwable $throwable ) {
 			return array(
@@ -324,8 +347,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$retry_hook = JobType::ChunkedJob === $work_type ? 'a8csp_jobs_engine/continue_chunked_job' : 'a8csp_jobs_engine/run_job';
-			$scheduled  = $this->scheduler->schedule_single( $retry_hook, $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
+			$scheduled = $this->scheduler->schedule_single( $retry_hook, $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,

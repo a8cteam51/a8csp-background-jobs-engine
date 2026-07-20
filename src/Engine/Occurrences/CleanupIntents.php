@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
@@ -35,6 +36,36 @@ final readonly class CleanupIntents {
 	 * @var     string
 	 */
 	public const string OPTION_PREFIX = 'a8csp_bgje_cleanup_intent_';
+
+	/**
+	 * Maximum cleanup-intent option names inspected per maintenance invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int INTENT_SWEEP_BUDGET = 500;
+
+	/**
+	 * Durable cursor row for the cleanup-intent maintenance sweep.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	public const string SWEEP_CURSOR_OPTION = 'a8csp_bgje_cleanup_intents_sweep';
+
+	/**
+	 * Maximum option names returned by one cleanup-intent enumeration query.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int SWEEP_PAGE_SIZE = 100;
 
 	// endregion
 
@@ -111,6 +142,101 @@ final readonly class CleanupIntents {
 			return true;
 		}
 
+		return $this->converge_selected_intent( $registration_key, $expected_raw );
+	}
+
+	/**
+	 * Converges a bounded page of durable unknown-chain cleanup intents, resuming from a durable cursor on the next sweep.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function converge_pending_intents(): void {
+		try {
+			$selected_cursor = $this->option_rows->read( self::SWEEP_CURSOR_OPTION );
+			if ( $selected_cursor->is_failure() ) {
+				return;
+			}
+
+			$cursor_raw      = $selected_cursor->value;
+			$cursor          = $this->decode_sweep_cursor( $cursor_raw );
+			$malformed_count = 0;
+			$scanned         = 0;
+			// The budget is an exact multiple of SWEEP_PAGE_SIZE, so full pages stop with zero overshoot; a short page ends the sweep.
+			while ( $scanned < self::INTENT_SWEEP_BUDGET ) {
+				$page = $this->option_rows->option_names_after( self::OPTION_PREFIX, $cursor, self::SWEEP_PAGE_SIZE );
+				if ( $page->is_failure() ) {
+					return;
+				}
+
+				$intents = $this->intents_for_names( $page->value['names'] );
+				if ( $intents->is_failure() ) {
+					return;
+				}
+
+				$malformed_count += $intents->value['malformed_count'];
+				foreach ( $intents->value['entries'] as $intent ) {
+					try {
+						$this->converge_selected_intent( $intent['registration_key'], $intent['expected_raw'] );
+					} catch ( \Throwable $throwable ) {
+						$this->log_pending_intent(
+							'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
+							array(
+								'registration_key' => $intent['registration_key'],
+								'exception'        => $throwable,
+							)
+						);
+					}
+				}
+
+				$scanned += $page->value['scanned'];
+				$cursor   = $page->value['next_cursor'];
+				if ( null === $cursor ) {
+					break;
+				}
+			}
+
+			$this->log_malformed_intents( $malformed_count );
+			$this->persist_sweep_cursor( $cursor, $cursor_raw );
+		} catch ( \Throwable $throwable ) {
+			$this->log_pending_intent( 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.', array( 'exception' => $throwable ) );
+		}
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Reads one intent generation as exact persisted bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 *
+	 * @return  AbstractResult<string|null, EngineError>
+	 */
+	private function read_intent( string $registration_key ): AbstractResult {
+		return $this->option_rows->read( self::intent_option_name( $registration_key ) );
+	}
+
+	/**
+	 * Resolves one exact cleanup-intent generation against registry and scheduler state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $expected_raw     Exact selected intent value.
+	 *
+	 * @return  bool Whether the selected intent no longer needs convergence.
+	 */
+	private function converge_selected_intent( string $registration_key, string $expected_raw ): bool {
 		$registration = $this->registry->registration( $registration_key );
 		if ( $registration->is_failure() ) {
 			return false;
@@ -144,58 +270,6 @@ final readonly class CleanupIntents {
 	}
 
 	/**
-	 * Converges every well-formed durable unknown-chain cleanup intent.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function converge_pending_intents(): void {
-		try {
-			$registration_keys = $this->intent_keys();
-		} catch ( \Throwable $throwable ) {
-			$this->log_pending_intent( 'Unknown schedule cleanup intents could not be enumerated during maintenance; retry on the next sweep.', array( 'exception' => $throwable ) );
-
-			return;
-		}
-
-		foreach ( $registration_keys as $registration_key ) {
-			try {
-				$this->converge_unknown_chain( $registration_key );
-			} catch ( \Throwable $throwable ) {
-				$this->log_pending_intent(
-					'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
-					array(
-						'registration_key' => $registration_key,
-						'exception'        => $throwable,
-					)
-				);
-			}
-		}
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Reads one intent generation as exact persisted bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 *
-	 * @return  AbstractResult<string|null, EngineError>
-	 */
-	private function read_intent( string $registration_key ): AbstractResult {
-		return $this->option_rows->read( self::intent_option_name( $registration_key ) );
-	}
-
-	/**
 	 * Deletes the observed cleanup-intent generation or confirms the row is absent.
 	 *
 	 * @since   1.0.0
@@ -220,57 +294,111 @@ final readonly class CleanupIntents {
 	}
 
 	/**
-	 * Returns registration keys carried by well-formed cleanup-intent rows.
+	 * Decodes one durable cleanup-intent sweep cursor.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  list<string>
+	 * @param   string|null $cursor_raw Exact persisted cursor bytes, or null when absent.
+	 *
+	 * @return  string|null Exclusive option-name cursor, or null for the prefix start.
 	 */
-	private function intent_keys(): array {
-		$keys            = array();
-		$malformed_count = 0;
-		$names           = $this->option_rows->option_names( self::OPTION_PREFIX );
-		if ( $names->is_failure() ) {
-			return $keys;
+	private function decode_sweep_cursor( ?string $cursor_raw ): ?string {
+		if ( null === $cursor_raw ) {
+			return null;
 		}
 
-		foreach ( $names->value as $option_name ) {
-			$selected = $this->option_rows->read( $option_name );
-			if ( $selected->is_failure() ) {
-				continue;
-			}
+		$decoded = RawOptionDecoder::decode( $cursor_raw );
+		if ( ! \is_array( $decoded ) || 1 !== \count( $decoded ) || ! \is_string( $decoded['after_name'] ?? null ) ) {
+			return null;
+		}
 
-			$raw = $selected->value;
+		return $decoded['after_name'];
+	}
+
+	/**
+	 * Returns well-formed cleanup intents from one bounded option-name page.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<string> $option_names Exact cleanup-intent option names.
+	 *
+	 * @return  AbstractResult<array{entries: list<array{registration_key: string, expected_raw: string}>, malformed_count: int}, EngineError>
+	 */
+	private function intents_for_names( array $option_names ): AbstractResult {
+		$selected = $this->option_rows->read_many( $option_names );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
+
+		$entries         = array();
+		$malformed_count = 0;
+		foreach ( $option_names as $option_name ) {
+			$raw = $selected->value[ $option_name ] ?? null;
 			if ( null === $raw ) {
 				continue;
 			}
 
-			$value = RawOptionDecoder::decode( $raw );
+			$value            = RawOptionDecoder::decode( $raw );
+			$registration_key = \is_array( $value ) ? ( $value['key'] ?? null ) : null;
 			if (
 				! \is_array( $value )
 				|| 2 !== \count( $value )
-				|| ! \is_string( $value['key'] ?? null )
+				|| ! \is_string( $registration_key )
 				|| ! \is_int( $value['created_at'] ?? null )
-				|| self::intent_option_name( $value['key'] ) !== $option_name
+				|| self::intent_option_name( $registration_key ) !== $option_name
 			) {
 				++$malformed_count;
 				continue;
 			}
 
-			$keys[] = $value['key'];
-		}
-		if ( 0 < $malformed_count ) {
-			$this->log_pending_intent(
-				'Malformed unknown-schedule cleanup intent rows were skipped during maintenance; repair or remove them before the next sweep.',
-				array(
-					'count'         => $malformed_count,
-					'option_prefix' => self::OPTION_PREFIX,
-				)
+			$entries[] = array(
+				'registration_key' => $registration_key,
+				'expected_raw'     => $raw,
 			);
 		}
 
-		return $keys;
+		return new Success(
+			array(
+				'entries'         => $entries,
+				'malformed_count' => $malformed_count,
+			)
+		);
+	}
+
+	/**
+	 * Advances or clears the durable cleanup-intent sweep cursor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string|null $cursor     Exclusive cursor for the next sweep, or null when exhausted.
+	 * @param   string|null $cursor_raw Exact cursor generation selected before the sweep.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize cursor state to a string.
+	 *
+	 * @return  void
+	 */
+	private function persist_sweep_cursor( ?string $cursor, ?string $cursor_raw ): void {
+		if ( null === $cursor ) {
+			if ( null !== $cursor_raw ) {
+				$this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
+			}
+
+			return;
+		}
+
+		$replacement_raw = \maybe_serialize( array( 'after_name' => $cursor ) );
+		if ( ! \is_string( $replacement_raw ) ) {
+			throw new \LogicException( 'WordPress must serialize the cleanup-intent sweep cursor to a string.' );
+		}
+
+		if ( null === $cursor_raw ) {
+			$this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw );
+		} else {
+			$this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
+		}
 	}
 
 	/**
@@ -285,6 +413,30 @@ final readonly class CleanupIntents {
 	 */
 	private static function intent_option_name( string $registration_key ): string {
 		return self::OPTION_PREFIX . \hash( 'sha256', $registration_key );
+	}
+
+	/**
+	 * Emits one aggregate malformed-intent diagnostic for the bounded sweep.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $malformed_count Number of malformed rows skipped.
+	 *
+	 * @return  void
+	 */
+	private function log_malformed_intents( int $malformed_count ): void {
+		if ( 0 === $malformed_count ) {
+			return;
+		}
+
+		$this->log_pending_intent(
+			'Malformed unknown-schedule cleanup intent rows were skipped during maintenance; repair or remove them before the next sweep.',
+			array(
+				'count'         => $malformed_count,
+				'option_prefix' => self::OPTION_PREFIX,
+			)
+		);
 	}
 
 	/**

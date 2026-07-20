@@ -52,8 +52,8 @@ final class JobRegistry {
 	 * @param   string             $identity Complete owner-qualified identity.
 	 * @param   OneOffJobInterface $job     Job to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity and job name disagree, or a chunked job owns the identity.
-	 * @throws  \LogicException           When the job identity is already registered.
+	 * @throws  \InvalidArgumentException      When the identity and job name disagree, or a chunked job owns the identity.
+	 * @throws  DuplicateRegistrationException When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
@@ -71,8 +71,8 @@ final class JobRegistry {
 	 * @param   string              $identity Complete owner-qualified identity.
 	 * @param   ChunkedJobInterface $chunked_job    Chunked Job to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity and chunked job name disagree, or a job owns the identity.
-	 * @throws  \LogicException           When the chunked job identity is already registered.
+	 * @throws  \InvalidArgumentException      When the identity and chunked job name disagree, or a job owns the identity.
+	 * @throws  DuplicateRegistrationException When the chunked job identity is already registered.
 	 *
 	 * @return  void
 	 */
@@ -145,8 +145,8 @@ final class JobRegistry {
 	 * @param   string              $name     Declared local work name.
 	 * @param   'chunked_job'|'job' $kind     Incoming registration channel.
 	 *
-	 * @throws  \InvalidArgumentException When the identity is non-canonical or the other kind owns it.
-	 * @throws  \LogicException           When the same kind already owns the identity.
+	 * @throws  \InvalidArgumentException      When the identity is non-canonical or the other kind owns it.
+	 * @throws  DuplicateRegistrationException When the same kind already owns the identity.
 	 *
 	 * @return  void
 	 */
@@ -159,7 +159,7 @@ final class JobRegistry {
 
 		$existing = $this->kind( $identity );
 		if ( $kind === $existing ) {
-			throw new \LogicException( 'job' === $kind ? 'Job name is already registered; register each job name exactly once.' : 'Chunked Job name is already registered; register each chunked job name exactly once.' );
+			throw new DuplicateRegistrationException( 'job' === $kind ? 'Job name is already registered; register each job name exactly once.' : 'Chunked Job name is already registered; register each chunked job name exactly once.' );
 		}
 		if ( null !== $existing ) {
 			// Exception values are diagnostic data, not rendered output.

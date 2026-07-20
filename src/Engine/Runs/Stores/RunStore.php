@@ -29,7 +29,7 @@ use Psr\Clock\ClockInterface;
  *
  * @internal
  *
- * @phpstan-type StoredPendingAction = array{stage: 'start'|'run'|'continue'|'cleanup', mode: 'async', fire_at: null, priority: int}|array{stage: 'run'|'continue', mode: 'single', fire_at: int, priority: int}
+ * @phpstan-type StoredPendingAction = array{stage: 'start'|'run'|'continue'|'cleanup', mode: 'async', fire_at: null, priority: int}|array{stage: 'start'|'run'|'continue', mode: 'single', fire_at: int, priority: int}
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -576,12 +576,12 @@ final readonly class RunStore {
 			return false;
 		}
 
-		// The acceptance set is exactly PendingAction's six factory combinations: async pairs with every
-		// guard-permitted stage, while single pairs only with run and continue. PendingAction's factories
+		// The acceptance set is exactly PendingAction's seven factory combinations: async pairs with every
+		// guard-permitted stage, while single pairs only with start, run, and continue. PendingAction's factories
 		// are the only writers, so anything else is a corrupt row.
 		return 'async' === $value['mode']
 			? null === $value['fire_at']
-			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'run', 'continue' ), true );
+			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'start', 'run', 'continue' ), true );
 	}
 
 	/**

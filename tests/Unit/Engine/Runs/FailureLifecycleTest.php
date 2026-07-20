@@ -604,7 +604,7 @@ final class FailureLifecycleTest extends TestCase {
 	public function test_chunked_job_validation_exception_is_not_reclassified_on_the_job_path(): void {
 		$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
 
-		$this->assert_terminal_job_failure( new InvalidChunkException() );
+		$this->assert_terminal_job_failure( InvalidChunkException::nonPortable() );
 	}
 
 	/**
@@ -619,7 +619,7 @@ final class FailureLifecycleTest extends TestCase {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
 		$chunked_job->retry_policy      = new RetryPolicy( max_attempts: 1 );
-		$chunked_job->process_throwable = new InvalidChunkException( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.' );
+		$chunked_job->process_throwable = InvalidChunkException::chunkTooLarge( 8_193, 8_192 );
 		$this->client->chunked_jobs()->register( $chunked_job );
 		$result = $this->client->chunked_jobs()->start( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );

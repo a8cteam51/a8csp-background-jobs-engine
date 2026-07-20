@@ -575,6 +575,32 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A backend throwable is mapped and cannot strand the admitted row or overlap lock.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_contains_backend_throwable_and_rolls_back_admission(): void {
+		$this->rig->backend()->before_next(
+			'enqueue_async',
+			static function (): void {
+				throw new \RuntimeException( 'Scripted scheduler store failure.' );
+			}
+		);
+
+		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		$missing = $this->client->runs()->cancel( self::NAME, self::RUN_ID );
+		$this->assert_failure_code( $missing, ApiErrorCode::RunNotRetained );
+
+		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $retried );
+	}
+
+	/**
 	 * An incomplete scheduling rollback warns that maintenance may redeliver its retained row.
 	 *
 	 * @since   1.0.0

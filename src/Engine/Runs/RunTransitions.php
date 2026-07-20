@@ -285,7 +285,19 @@ final readonly class RunTransitions {
 		try {
 			$clear_pending_actions();
 		} finally {
-			$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
+			try {
+				$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $work_type );
+			} catch ( \Throwable $throwable ) {
+				// The committed Cancelled state retains every unmarked effect for maintenance replay.
+				$this->logger->error(
+					'Cancelled-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
+					array(
+						'name'      => $identity,
+						'run_id'    => $run_id,
+						'exception' => $throwable,
+					)
+				);
+			}
 		}
 
 		return true;

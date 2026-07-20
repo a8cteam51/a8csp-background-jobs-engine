@@ -402,7 +402,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 				continue;
 			}
 
-			$result = $write( $backend );
+			$result = $this->write_to_backend( $write, $backend );
 			if ( ! $result->is_failure() || SchedulingErrorReason::BackendNotReady !== $result->error->reason ) {
 				return $result;
 			}
@@ -410,7 +410,29 @@ final readonly class SchedulerFacade implements BackendInterface {
 			$last_not_ready = $result;
 		}
 
-		return null === $last_not_ready ? $write( $this->fallback_backend() ) : $last_not_ready;
+		return null === $last_not_ready ? $this->write_to_backend( $write, $this->fallback_backend() ) : $last_not_ready;
+	}
+
+	/**
+	 * Converts an unexpected backend write throwable into the checked scheduling contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param \Closure(BackendInterface): AbstractResult<true, SchedulingError> $write
+	 *
+	 * @param   \Closure         $write   Backend write.
+	 * @param   BackendInterface $backend Selected backend.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	private function write_to_backend( \Closure $write, BackendInterface $backend ): AbstractResult {
+		try {
+			return $write( $backend );
+		} catch ( \Throwable $throwable ) {
+			// Result failures let callers compensate state admitted before the scheduler boundary.
+			return new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, \sprintf( 'The scheduling backend could not accept the write because %s was thrown; repair the backend and retry.', \get_debug_type( $throwable ) ) ) );
+		}
 	}
 
 	/**

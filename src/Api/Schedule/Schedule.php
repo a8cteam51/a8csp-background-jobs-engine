@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -15,6 +16,16 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
  */
 final readonly class Schedule {
 	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Target job arguments.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<array-key, mixed>
+	 */
+	public array $args;
 
 	/**
 	 * Stable identity of every field that changes scheduled behavior.
@@ -49,12 +60,13 @@ final readonly class Schedule {
 		public string $name,
 		public Recurrence $recurrence,
 		public string $job,
-		public array $args = array(),
+		array $args = array(),
 		public CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce,
 		public int $priority = 10,
 	) {
 		JobIdentity::validate_name( $this->name );
 		JobIdentity::validate_name( $this->job );
+		$this->args = self::snapshot_arguments( $args, $this->name );
 		AdmissionValidator::assert_priority( $this->priority, \sprintf( 'Schedule "%s"', $this->name ) );
 		$payload_error = AdmissionValidator::assert_portable_args( $this->args, \sprintf( 'Schedule "%s"', $this->name ) );
 		if ( null !== $payload_error ) {
@@ -83,6 +95,47 @@ final readonly class Schedule {
 		}
 
 		$this->fingerprint = \hash( 'sha256', $encoded );
+	}
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Returns a portable argument snapshot without PHP reference containers.
+	 *
+	 * The preflight rejects values that PHP serialization normalizes, such as resources, before the
+	 * serialization round trip creates the retained representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $arguments Arguments to snapshot.
+	 * @param   string                  $name      Schedule name for diagnostic context.
+	 *
+	 * @throws  \InvalidArgumentException When the arguments cannot form a portable snapshot.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function snapshot_arguments( array $arguments, string $name ): array {
+		if ( ! PortableArguments::is_valid( $arguments ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Schedule "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $name ) );
+		}
+
+		try {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize, WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- The round trip detaches the snapshot from caller-owned containers before recursive rebuilding removes repeated aliases.
+			$snapshot = \unserialize( \serialize( $arguments ), array( 'allowed_classes' => false ) );
+		} catch ( \Throwable ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Schedule "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $name ) );
+		}
+		if ( ! \is_array( $snapshot ) || ! PortableArguments::is_valid( $snapshot ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Schedule "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $name ) );
+		}
+
+		return PortableArguments::without_references( $snapshot );
 	}
 
 	// endregion

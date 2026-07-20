@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure as InternalFai
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as InternalRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\overlap_policy;
@@ -176,7 +177,7 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 		$client->chunked_jobs()->register( $adapter );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
-	} catch ( \LogicException $exception ) {
+	} catch ( DuplicateRegistrationException $exception ) {
 		return new \WP_Error( 'already_registered', $exception->getMessage() );
 	}
 

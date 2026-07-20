@@ -7,11 +7,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -89,6 +91,8 @@ final class ResetCommandTest extends TestCase {
 	/**
 	 * An acknowledged reset removes production-created rows and pending engine actions.
 	 *
+	 * @fixture StoreFixtureBuilder
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -97,6 +101,9 @@ final class ResetCommandTest extends TestCase {
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
 		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-jobs-engine:maintenance' );
+		[ $cursor_option, $cursor_raw ] = StoreFixtureBuilder::for_identity( 'reset-tests:cleanup-cursor' )->cleanup_intent_sweep_cursor( 1_700_000_000 );
+		self::assertSame( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_option );
+		$this->rig->wpdb()->put( $cursor_option, $cursor_raw );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
 		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_JOB_HOOK ]  = 2;
 		$this->rig->backend()->pending_actions[ ActionDeliveries::CONTINUE_HOOK ] = 3;

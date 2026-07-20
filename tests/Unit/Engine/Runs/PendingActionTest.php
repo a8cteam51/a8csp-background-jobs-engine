@@ -43,7 +43,7 @@ final class PendingActionTest extends TestCase {
 	}
 
 	/**
-	 * Only run and continue support scheduled single delivery.
+	 * Retryable work stages support scheduled single delivery.
 	 *
 	 * @param   string $stage Supported lifecycle stage.
 	 *
@@ -98,6 +98,7 @@ final class PendingActionTest extends TestCase {
 	 * @return  iterable<string, array{string}>
 	 */
 	public static function single_stage_provider(): iterable {
+		yield 'start' => array( 'start' );
 		yield 'run' => array( 'run' );
 		yield 'continue' => array( 'continue' );
 	}
@@ -108,7 +109,6 @@ final class PendingActionTest extends TestCase {
 	 * @return  iterable<string, array{string}>
 	 */
 	public static function async_only_stage_provider(): iterable {
-		yield 'start' => array( 'start' );
 		yield 'cleanup' => array( 'cleanup' );
 		yield 'unknown' => array( 'unknown' );
 	}

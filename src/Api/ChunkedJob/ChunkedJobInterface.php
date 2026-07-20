@@ -34,8 +34,9 @@ interface ChunkedJobInterface extends JobInterface {
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
-	 * @throws  \Throwable When queue generation fails; the engine terminalizes the run as a
-	 *                     queue generation failure.
+	 * @throws  \Throwable When queue generation fails. The engine applies the retry policy and
+	 *                     re-enters queue generation while attempts remain; throwables implementing
+	 *                     NonRetryableExceptionInterface bypass remaining retry attempts.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */

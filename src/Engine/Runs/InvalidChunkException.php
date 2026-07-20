@@ -37,8 +37,54 @@ final class InvalidChunkException extends \InvalidArgumentException {
 	 *
 	 * @param   string $message Stable engine-authored validation detail.
 	 */
-	public function __construct( string $message = self::MESSAGE ) {
-		parent::__construct( '' === $message ? self::MESSAGE : $message );
+	private function __construct( string $message ) { // phpcs:ignore Generic.CodeAnalysis.UselessOverridingMethod.Found -- Private visibility restricts construction to engine-authored factories.
+		parent::__construct( $message );
+	}
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Creates the stable portable-payload validation failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  self
+	 */
+	public static function nonPortable(): self {
+		return new self( self::MESSAGE );
+	}
+
+	/**
+	 * Creates a stable chunk-size validation failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $actual Actual encoded JSON byte count.
+	 * @param   int $limit  Maximum encoded JSON byte count.
+	 *
+	 * @return  self
+	 */
+	public static function chunkTooLarge( int $actual, int $limit ): self {
+		return new self( \sprintf( 'Chunked Job chunk arguments contain %1$d JSON bytes; the limit is %2$d bytes.', $actual, $limit ) );
+	}
+
+	/**
+	 * Creates a stable queue-size validation failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $actual Actual persisted serialization byte count.
+	 * @param   int $limit  Maximum persisted serialization byte count.
+	 *
+	 * @return  self
+	 */
+	public static function queueTooLarge( int $actual, int $limit ): self {
+		return new self( \sprintf( 'Chunked Job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $actual, $limit ) );
 	}
 
 	// endregion
