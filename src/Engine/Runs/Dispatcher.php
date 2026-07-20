@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
@@ -16,6 +16,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
@@ -90,9 +92,7 @@ final readonly class Dispatcher {
 	/**
 	 * Creates and schedules one run for a registered job.
 	 *
-	 * A non-null deduplication key replaces the argument-derived single-flight identity. The key
-	 * refuses another admission only for the incumbent run's lifetime and is reusable after that
-	 * run reaches terminal cleanup; it is an admission-level mechanism, not a durable ledger.
+	 * The registered Job supplies its overlap policy and argument-aware collision identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -100,32 +100,21 @@ final readonly class Dispatcher {
 	 * @param   string                  $job_name Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args      Job arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $job_name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
-		$result = $this->dispatch_job( $job_name, $args, $delay, $dedup_key, $priority, OverlapPolicy::Skip );
-		if ( $result->is_failure() ) {
-			return $result;
-		}
-
-		$value = $result->value;
-
-		return $value instanceof SkippedJobDispatch
-			? new Failure( $value->error )
-			: new Success( $value );
+	public function enqueue( string $job_name, array $args = array(), int $delay = 0, int $priority = 10 ): AbstractResult {
+		return $this->imperative_job_result( $this->dispatch_job( $job_name, $args, $delay, $priority ) );
 	}
 
 	/**
-	 * Dispatches a job under the schedule overlap policy without expanding the client job API.
+	 * Dispatches a scheduled job under the registered Job's overlap invariant.
 	 *
-	 * Allow uses a per-run fencing identity, Skip returns a typed held outcome, and Replace transfers
+	 * Allow uses a per-run fencing identity, Reject returns a typed held outcome, and Replace transfers
 	 * the shared-identity lock through the same takeover helper as chunked job start. Job callbacks always
-	 * receive the original arguments. Manual retry of an Allow run intentionally re-enters the public
-	 * unsalted enqueue path because the failed store retains only those original arguments.
+	 * receive the original arguments.
 	 *
 	 * @internal Schedule execution only.
 	 *
@@ -134,23 +123,22 @@ final readonly class Dispatcher {
 	 *
 	 * @param   string                  $job_name   Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args        Job arguments.
-	 * @param   OverlapPolicy           $overlap     Schedule overlap policy.
 	 * @param   int                     $priority    Advisory priority from 0 through 255.
 	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a scheduled-job dispatch failure must be handled, not dropped' )]
-	public function dispatch_scheduled_job( string $job_name, array $args, OverlapPolicy $overlap, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
-		return $this->dispatch_job( $job_name, $args, 0, null, priority: $priority, overlap: $overlap, on_accepted: $on_accepted );
+	public function dispatch_scheduled_job( string $job_name, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
+		return $this->dispatch_job( $job_name, $args, 0, $priority, $on_accepted );
 	}
 
 	/**
 	 * Creates and schedules one run for a registered chunked job.
 	 *
-	 * Replace takes over a fresh matching incumbent's lock, and the incumbent stops at its next
-	 * fence. Reject refuses admission while that lock is held. A crash between takeover and
-	 * enqueueing converges through the staleness-reclaim model.
+	 * The registered Job's invariant decides whether a fresh matching incumbent is admitted,
+	 * rejected, or replaced. A crash between takeover and enqueueing converges through the
+	 * staleness-reclaim model.
 	 *
 	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
 	 * caller handles the returned failure by starting the chunked job again.
@@ -160,19 +148,37 @@ final readonly class Dispatcher {
 	 *
 	 * @param   string                  $chunked_job_name Complete owner-qualified chunked job identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
-	public function start_chunked_job( string $chunked_job_name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Replace, int $priority = 10 ): AbstractResult {
+	public function start_chunked_job( string $chunked_job_name, array $start_args = array(), int $priority = 10 ): AbstractResult {
 		$chunked_job = $this->work->chunked_job( $chunked_job_name );
 
 		if ( null === $chunked_job ) {
 			return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" is not registered; register it before starting it.', $chunked_job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $chunked_job_name ), ) );
 		}
 
+		return $this->start_resolved_chunked_job( $chunked_job, $chunked_job_name, $start_args, $priority, $chunked_job->overlap_policy() );
+	}
+
+	/**
+	 * Creates and schedules one resolved chunked Job run under an explicit overlap policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ChunkedJobInterface     $chunked_job        Resolved registered chunked Job.
+	 * @param   string                  $chunked_job_name   Complete owner-qualified chunked Job identity.
+	 * @param   array<array-key, mixed> $start_args         Arguments supplied when the run starts.
+	 * @param   int                     $priority           Advisory priority from 0 through 255.
+	 * @param   OverlapPolicy           $overlap            Effective overlap policy.
+	 * @param   string|null             $resolved_args_hash Pre-resolved overlap identity for retry, or null.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	private function start_resolved_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, array $start_args, int $priority, OverlapPolicy $overlap, ?string $resolved_args_hash = null ): AbstractResult {
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(
@@ -186,16 +192,20 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $this->args_hash( $chunked_job_name, $start_args, JobType::ChunkedJob );
+		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $chunked_job_name, $start_args, $chunked_job->overlap_key( $start_args ), JobType::ChunkedJob );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
 
-		$now            = $this->clock->now()->getTimestamp();
-		$run_id         = RunIdentity::generate( $now, $this->randomizer );
+		$now    = $this->clock->now()->getTimestamp();
+		$run_id = RunIdentity::generate( $now, $this->randomizer );
+		if ( OverlapPolicy::Allow === $overlap ) {
+			// Allow gets a per-run lock identity so concurrent starts never contend; Held can then only mean run-id collision.
+			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
+		}
 		$latest_pointer = $this->stores->latest_run_pointer( $chunked_job_name );
 		$claim          = $this->overlap_guard->claim( $chunked_job_name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $chunked_job_name, $run_id ) );
-		if ( LockClaimOutcome::Held === $claim && ExistingRunPolicy::Reject === $existing ) {
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Reject === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $chunked_job_name, $args_hash );
 			if ( $owner->is_failure() ) {
 				return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.', $chunked_job_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $chunked_job_name ), ) );
@@ -209,6 +219,9 @@ final readonly class Dispatcher {
 				: array( 'run_id' => $owner->value );
 
 			return new Failure( new EngineError( $message, reason: EngineErrorReason::OverlapHeld, context: $context, ) );
+		}
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
+			return new Failure( new EngineError( \sprintf( 'Chunked Job "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.', $chunked_job_name, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $chunked_job_name ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $chunked_job_name );
@@ -249,9 +262,8 @@ final readonly class Dispatcher {
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
-	 * A retried run does not re-acquire its original deduplication key or existing-run policy. Job
-	 * and Chunked Job retries are re-admitted under their argument identity and refuse a matching live run,
-	 * so a retry does not collapse against a concurrent enqueue carrying the failed run's key.
+	 * A retried run recomputes the registered Job's argument-aware overlap key but always rejects a
+	 * matching live run, regardless of the Job's declared overlap policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -304,9 +316,31 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$result = null !== $job
-			? $this->enqueue( $identity, $entry['start_args'] )
-			: $this->start_chunked_job( $identity, $entry['start_args'], ExistingRunPolicy::Reject );
+		$registered_job = $job ?? $chunked_job;
+		$work_type      = null !== $job ? JobType::Job : JobType::ChunkedJob;
+		$args_hash      = $this->overlap_args_hash( $identity, $entry['start_args'], $registered_job->overlap_key( $entry['start_args'] ), $work_type );
+		if ( $args_hash instanceof Failure ) {
+			return $args_hash;
+		}
+		if ( OverlapPolicy::Allow === $registered_job->overlap_policy() ) {
+			$incumbent = $this->matching_allow_incumbent( $identity, $args_hash );
+			if ( $incumbent instanceof Failure ) {
+				return $incumbent;
+			}
+			if ( null !== $incumbent ) {
+				$error = JobType::Job === $work_type
+					? EngineError::held_job( $identity, $incumbent )
+					: new EngineError( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before retrying the same arguments.', $identity, $incumbent ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $incumbent ), );
+
+				return new Failure( $error );
+			}
+		}
+
+		if ( null !== $job ) {
+			$result = $this->imperative_job_result( $this->dispatch_resolved_job( $job, $identity, $entry['start_args'], 0, 10, OverlapPolicy::Reject, resolved_args_hash: $args_hash ) );
+		} else {
+			$result = $this->start_resolved_chunked_job( $chunked_job, $identity, $entry['start_args'], 10, OverlapPolicy::Reject, $args_hash );
+		}
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
@@ -463,7 +497,7 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Creates and schedules one job run under a resolved overlap policy.
+	 * Resolves a registered Job and dispatches it under its overlap invariant.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -471,20 +505,63 @@ final readonly class Dispatcher {
 	 * @param   string                  $job_name   Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args        Job arguments.
 	 * @param   int                     $delay       Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key   Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority    Advisory priority from 0 through 255.
-	 * @param   OverlapPolicy           $overlap     Execution-overlap policy.
 	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_job( string $job_name, array $args, int $delay, ?string $dedup_key, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null ): AbstractResult {
+	private function dispatch_job( string $job_name, array $args, int $delay, int $priority, ?\Closure $on_accepted = null ): AbstractResult {
 		$job = $this->work->job( $job_name );
 
 		if ( null === $job ) {
 			return new Failure( new EngineError( \sprintf( 'Job "%s" is not registered; register it before enqueueing.', $job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $job_name ), ) );
 		}
 
+		return $this->dispatch_resolved_job( $job, $job_name, $args, $delay, $priority, $job->overlap_policy(), $on_accepted );
+	}
+
+	/**
+	 * Converts a Reject held-lock (skipped-dispatch) outcome into the imperative hard-failure contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError> $result
+	 *
+	 * @param   AbstractResult $result Raw Job dispatch result.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	private function imperative_job_result( AbstractResult $result ): AbstractResult {
+		if ( $result->is_failure() ) {
+			return $result;
+		}
+
+		$value = $result->value;
+
+		return $value instanceof SkippedJobDispatch
+			? new Failure( $value->error )
+			: new Success( $value );
+	}
+
+	/**
+	 * Creates and schedules one resolved Job run under an explicit overlap policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   OneOffJobInterface      $job                Resolved registered Job.
+	 * @param   string                  $job_name           Complete owner-qualified job identity.
+	 * @param   array<array-key, mixed> $args               Job arguments.
+	 * @param   int                     $delay              Scheduling delay in seconds.
+	 * @param   int                     $priority           Advisory priority from 0 through 255.
+	 * @param   OverlapPolicy           $overlap            Effective overlap policy.
+	 * @param   \Closure|null           $on_accepted        Internal callback after backend acceptance and before started hooks.
+	 * @param   string|null             $resolved_args_hash Pre-resolved overlap identity for retry, or null.
+	 *
+	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
+	 */
+	private function dispatch_resolved_job( OneOffJobInterface $job, string $job_name, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(
@@ -498,13 +575,9 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $this->args_hash( $job_name, $args );
+		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $job_name, $args, $job->overlap_key( $args ), JobType::Job );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
-		}
-		if ( null !== $dedup_key ) {
-			// The dedup tag separates opaque keys from canonical JSON argument identities, whose encodings never start with "d".
-			$args_hash = \hash( 'sha256', 'dedup:' . $dedup_key );
 		}
 
 		$now = $this->clock->now()->getTimestamp();
@@ -525,12 +598,12 @@ final readonly class Dispatcher {
 		$run_id = RunIdentity::generate( $now, $this->randomizer );
 		if ( OverlapPolicy::Allow === $overlap ) {
 			// Allow gets a per-run lock identity so concurrent occurrences never contend; Held can then only mean run-id collision.
-			$args_hash = \hash( 'sha256', $args_hash . '|' . $run_id );
+			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $job_name );
 		$claim          = $this->overlap_guard->claim( $job_name, $args_hash, $run_id, $this->lock_windows->lock_staleness( $job_name, $run_id ) );
-		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Skip === $overlap ) {
+		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Reject === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $job_name, $args_hash );
 			if ( $owner->is_failure() ) {
 				return new Failure( new EngineError( \sprintf( 'Job "%s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $job_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $job_name ), ) );
@@ -726,6 +799,80 @@ final readonly class Dispatcher {
 	}
 
 	/**
+	 * Returns the per-run overlap identity used by Allow admissions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $args_hash Unsalted argument-aware overlap identity.
+	 * @param   string $run_id    Admitted run identifier.
+	 *
+	 * @return  string
+	 */
+	private function salted_args_hash( string $args_hash, string $run_id ): string {
+		return \hash( 'sha256', $args_hash . '|' . $run_id );
+	}
+
+	/**
+	 * Returns a fresh matching Allow run that must block a Reject retry.
+	 *
+	 * Allow salts its persisted lock lane with the run identifier, so retry inspects active run rows
+	 * before claiming the unsalted Reject lane. Authoritative enumeration fails closed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Unsalted argument-aware overlap identity.
+	 *
+	 * @return  string|Failure<EngineError>|null Fresh incumbent run identifier, read failure, or null.
+	 */
+	private function matching_allow_incumbent( string $identity, string $args_hash ): string|Failure|null {
+		$run_ids = $this->stores->active_run_ids( $identity );
+		if ( null === $run_ids ) {
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" active runs could not be enumerated while enforcing retry overlap; repair database reads and retry.', $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ) );
+		}
+
+		$run_store = $this->stores->run_store( $identity );
+		foreach ( $run_ids as $run_id ) {
+			$inspected = $run_store->inspect( $run_id );
+			if ( $inspected->is_failure() ) {
+				return $inspected;
+			}
+
+			$snapshot = $inspected->value;
+			if ( null === $snapshot ) {
+				continue;
+			}
+
+			$state = $snapshot['state'];
+			if ( null === $state ) {
+				return new Failure(
+					new EngineError(
+						\sprintf( 'Run "%1$s" for background-work "%2$s" is invalid; repair its active-run row before retrying.', $run_id, $identity ),
+						reason: EngineErrorReason::StorageFailure,
+						context: array(
+							'name'   => $identity,
+							'run_id' => $run_id,
+						),
+					)
+				);
+			}
+
+			$salted_hash = $this->salted_args_hash( $args_hash, $run_id );
+			if (
+				RunStatus::Running === $state->status
+				&& $salted_hash === $state->args_hash
+				&& $this->overlap_guard->is_held( $identity, $salted_hash, $this->lock_windows->lock_staleness( $identity, $run_id ) )
+			) {
+				return $run_id;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Returns the SHA-256 identity of insertion-ordered JSON with preserved float fractions.
 	 *
 	 * @since   1.0.0
@@ -761,6 +908,36 @@ final readonly class Dispatcher {
 		}
 
 		return $hash;
+	}
+
+	/**
+	 * Returns the canonical argument hash or the tagged hash of an opaque overlap key.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $identity    Complete owner-qualified Job identity.
+	 * @param   array<array-key, mixed> $args        Start arguments.
+	 * @param   string|null             $overlap_key Opaque argument-aware collision identity.
+	 * @param   JobType                 $work_type   Work contract type.
+	 *
+	 * @return  string|Failure<EngineError>
+	 */
+	#[\NoDiscard( 'an overlap-identity failure must be handled, not dropped' )]
+	private function overlap_args_hash( string $identity, array $args, ?string $overlap_key, JobType $work_type ): string|Failure {
+		$args_hash = $this->args_hash( $identity, $args, $work_type );
+		if ( $args_hash instanceof Failure || null === $overlap_key ) {
+			return $args_hash;
+		}
+
+		if ( '' === $overlap_key || JobInterface::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
+			$label = JobType::Job === $work_type ? 'Job' : 'Chunked Job';
+
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $label, $identity, JobInterface::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'name' => $identity ), ) );
+		}
+
+		// The dedup tag separates opaque keys from canonical JSON argument identities, whose encodings never start with "d".
+		return \hash( 'sha256', 'dedup:' . $overlap_key );
 	}
 
 	// endregion

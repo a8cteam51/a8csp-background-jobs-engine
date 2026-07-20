@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -19,6 +20,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( AbstractChunkedJob::class )]
 #[UsesClass( RetryPolicy::class )]
 #[UsesClass( RunFailure::class )]
+#[UsesClass( OverlapPolicy::class )]
 final class AbstractChunkedJobTest extends TestCase {
 	// region LIFECYCLE.
 
@@ -41,12 +43,16 @@ final class AbstractChunkedJobTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * A chunked job inherits the shared five-minute ceiling for queue and chunk invocations.
+	 * A chunked job inherits the shared execution and overlap invariants.
 	 *
 	 * @return  void
 	 */
-	public function test_default_max_callback_runtime_is_five_minutes(): void {
-		self::assertSame( 300, self::chunked_job()->max_callback_runtime() );
+	public function test_default_execution_and_overlap_invariants_are_applied(): void {
+		$chunked_job = self::chunked_job();
+
+		self::assertSame( 300, $chunked_job->max_callback_runtime() );
+		self::assertSame( OverlapPolicy::Reject, $chunked_job->overlap_policy() );
+		self::assertNull( $chunked_job->overlap_key( array( 'site_id' => 7 ) ) );
 	}
 
 	/**

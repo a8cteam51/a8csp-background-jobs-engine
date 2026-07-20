@@ -2,9 +2,9 @@
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface as InternalContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface as InternalChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure as InternalFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
@@ -77,6 +77,20 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			#[\Override]
 			public function max_callback_runtime(): int {
 				return $this->job->max_callback_runtime();
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_policy(): OverlapPolicy {
+				return OverlapPolicy::Reject;
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_key( array $start_args ): ?string {
+				unset( $start_args );
+
+				return null;
 			}
 
 			/** {@inheritDoc} */
@@ -176,7 +190,6 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
  * @param   string                  $owner      Client plugin owner.
  * @param   string                  $name       Owner-local chunked job name.
  * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
- * @param   string                  $existing   Existing-run policy: reject or replace.
  * @param   int                     $priority   Advisory priority from 0 through 255.
  *
  * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
@@ -184,14 +197,9 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
  * @return  string|\WP_Error
  */
 #[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
-function a8csp_bgje_chunked_job_start( string $owner, string $name, array $start_args = array(), string $existing = 'reject', int $priority = 10 ): string|\WP_Error {
+function a8csp_bgje_chunked_job_start( string $owner, string $name, array $start_args = array(), int $priority = 10 ): string|\WP_Error {
 	try {
-		$policy = ExistingRunPolicy::tryFrom( $existing );
-		if ( null === $policy ) {
-			throw new \InvalidArgumentException( 'existing must be reject or replace' );
-		}
-
-		$result = \a8csp_bgje( $owner )->chunked_jobs()->start( $name, $start_args, $policy, $priority );
+		$result = \a8csp_bgje( $owner )->chunked_jobs()->start( $name, $start_args, $priority );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}

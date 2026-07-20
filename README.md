@@ -109,7 +109,7 @@ function my_plugin_boot_schedules(): void {
 	}
 
 	// The array is the COMPLETE set for this owner: a schedule you omit here
-	// is removed. 'overlap' and 'catch_up' default to 'skip' and 'run_once'.
+	// is removed. 'catch_up' defaults to 'run_once'.
 	$synced = a8csp_bgje_schedule_sync(
 		'my-plugin',
 		array(
@@ -117,7 +117,6 @@ function my_plugin_boot_schedules(): void {
 				'name'     => 'nightly-prune',
 				'every'    => DAY_IN_SECONDS,
 				'job'     => 'prune-transients',
-				'overlap'  => 'skip',      // 'allow' | 'skip' | 'replace'
 				'catch_up' => 'run_once',  // 'run_once' | 'skip'
 			),
 		)
@@ -168,12 +167,11 @@ function my_plugin_queue_digest( int $user_id ): void {
 		'my-plugin',
 		'email-digest',
 		array( 'user_id' => $user_id ),
-		delay_seconds: 0,                 // run as soon as a worker picks it up
-		dedup_key: "digest-{$user_id}"    // collapse duplicate enqueues while one is live
+		delay_seconds: 0 // run as soon as a worker picks it up
 	);
 	if ( is_wp_error( $run_id ) ) {
 		if ( 'overlap_held' === $run_id->get_error_code() ) {
-			return; // one is already queued or running for this key — fine.
+			return; // one is already queued or running for these arguments — fine.
 		}
 		error_log( $run_id->get_error_message() );
 		return;
@@ -183,7 +181,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 }
 ```
 
-A `null` `dedup_key` derives the single-flight identity from the arguments, so a second identical enqueue returns `overlap_held` while the first is live. Pass an explicit key to control that grouping. Keep arguments small — pass identifying keys, not bulk data (there is an 8,192-byte encoded-JSON ceiling).
+The bridge-backed Job uses its arguments as the overlap identity and rejects a second identical enqueue while the first is live. Keep arguments small — pass identifying keys, not bulk data (there is an 8,192-byte encoded-JSON ceiling).
 
 ### 3. A chunked job over a chunk queue
 
@@ -248,14 +246,11 @@ add_action( 'init', static function (): void {
 }, 2 );
 
 function my_plugin_start_recount(): void {
-	// existing defaults to 'reject': if a matching run is already going, this
-	// one is refused and the running one is left to finish. Pass 'replace' to
-	// supersede it instead.
+	// The bridge-backed Job rejects a matching live run.
 	$run_id = a8csp_bgje_chunked_job_start(
 		'my-plugin',
 		'recount-comments',
-		array( 'post_type' => 'post' ),
-		existing: 'reject'
+		array( 'post_type' => 'post' )
 	);
 	if ( is_wp_error( $run_id ) ) {
 		error_log( $run_id->get_error_message() );
@@ -337,9 +332,9 @@ The owner is always the first argument. Every fallible function is `#[\NoDiscard
 | Function | Returns |
 | --- | --- |
 | `a8csp_bgje_job_register( $owner, $name, callable $handler, array $options = [] )` | `true \| WP_Error` |
-| `a8csp_bgje_job_enqueue( $owner, $name, array $args = [], int $delay_seconds = 0, ?string $dedup_key = null, int $priority = 10 )` | run ID `string \| WP_Error` |
+| `a8csp_bgje_job_enqueue( $owner, $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | run ID `string \| WP_Error` |
 | `a8csp_bgje_chunked_job_register( $owner, ChunkedJobInterface $chunked_job )` | `true \| WP_Error` |
-| `a8csp_bgje_chunked_job_start( $owner, $name, array $start_args = [], string $existing = 'reject', int $priority = 10 )` | run ID `string \| WP_Error` |
+| `a8csp_bgje_chunked_job_start( $owner, $name, array $start_args = [], int $priority = 10 )` | run ID `string \| WP_Error` |
 | `a8csp_bgje_schedule_sync( $owner, array $schedules )` | `true \| WP_Error` |
 | `a8csp_bgje_schedule_dispatch( $owner, $name )` | run ID `string \| WP_Error` |
 | `a8csp_bgje_run_last_completed( $owner, $name )` | run ID `string \| null \| WP_Error` |
@@ -348,7 +343,7 @@ The owner is always the first argument. Every fallible function is `#[\NoDiscard
 | `a8csp_bgje_run_on_completed( $owner, $name, callable $listener )` | `void` |
 | `a8csp_bgje_run_on_failed( $owner, $name, callable $listener )` | `void` |
 
-`a8csp_bgje_job_register()` accepts `array $options` with `max_runtime` (seconds) and `retry` (a `RetryPolicy`). A schedule entry is `['name' => …, 'every' => seconds, 'job' => …, 'args' => [], 'overlap' => 'skip', 'catch_up' => 'run_once', 'priority' => 10]`; only `name`, `every`, and `job` are required, and `every` must be an integer number of seconds.
+`a8csp_bgje_job_register()` accepts `array $options` with `max_runtime` (seconds) and `retry` (a `RetryPolicy`). A schedule entry is `['name' => …, 'every' => seconds, 'job' => …, 'args' => [], 'catch_up' => 'run_once', 'priority' => 10]`; only `name`, `every`, and `job` are required, and `every` must be an integer number of seconds.
 
 ## The Client (the typed spine)
 
@@ -379,26 +374,16 @@ A minimal Job is a callable `fn ( array $args ): void`. Register it with `a8csp_
 
 ```php
 interface OneOffJobInterface extends JobInterface {
-	public function get_name(): string;
-
-	public function max_callback_runtime(): int;
-
 	public function handle( array $args ): void;
-
-	public function get_retry_policy(): RetryPolicy;
 }
 ```
 
-`JobInterface` owns the shared 300-second runtime default, which `AbstractJob` (and `CallableJob`) supplies; the engine caps the credited window at six hours. A handler that exceeds its window becomes eligible for crash reclamation, and a reclaimed run can overlap its replacement — so handlers must be idempotent. A normal return succeeds; a thrown exception fails the attempt; throw `NonRetryableException` to skip the remaining retries.
+`JobInterface` declares the stable name, callback runtime, retry policy, `overlap_policy()`, and argument-aware `overlap_key()`. `AbstractJob` (and `CallableJob`) defaults to `OverlapPolicy::Reject`, a canonical argument hash, and the shared 300-second runtime; the engine caps the credited window at six hours. A handler that exceeds its window becomes eligible for crash reclamation, and a reclaimed run can overlap its replacement — so handlers must be idempotent. A normal return succeeds; a thrown exception fails the attempt; throw `NonRetryableException` to skip the remaining retries.
 
 ### Chunked Job and chunked job context
 
 ```php
 interface ChunkedJobInterface extends JobInterface {
-	public function get_name(): string;
-
-	public function max_callback_runtime(): int;
-
 	public function generate_queue( array $start_args ): iterable;
 
 	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void;
@@ -406,8 +391,6 @@ interface ChunkedJobInterface extends JobInterface {
 	public function on_completed( string $run_id, array $start_args ): void;
 
 	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void;
-
-	public function get_retry_policy(): RetryPolicy;
 }
 
 interface ChunkContextInterface {
@@ -431,7 +414,6 @@ Schedules are declared as spec-arrays to `a8csp_bgje_schedule_sync()`; on the Cl
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 
@@ -440,14 +422,13 @@ $schedule = new Schedule(
 	recurrence: Recurrence::every( HOUR_IN_SECONDS ),
 	job: 'refresh-cache',
 	args: array(),
-	overlap: OverlapPolicy::Skip,
 	catch_up: CatchUpPolicy::RunOnce,
 	priority: 10,
 );
 $result = $client->schedules()->sync( array( $schedule ) );
 ```
 
-Use `Recurrence::every( $seconds )` for a fixed interval. On the procedural surface the same schedule is `['name' => 'hourly-refresh', 'every' => HOUR_IN_SECONDS, 'job' => 'refresh-cache']` with `overlap`/`catch_up` as the strings `'allow'|'skip'|'replace'` and `'run_once'|'skip'`.
+Use `Recurrence::every( $seconds )` for a fixed interval. On the procedural surface the same schedule is `['name' => 'hourly-refresh', 'every' => HOUR_IN_SECONDS, 'job' => 'refresh-cache']`; catch-up accepts `'run_once'|'skip'`. The target Job supplies overlap behavior for both imperative and scheduled runs.
 
 ## Migrating from Action Scheduler
 
@@ -463,7 +444,7 @@ Register a Job for each former action hook, then call the procedural functions f
 | `as_next_scheduled_action( … )` | No public next-due query. Treat the array you pass to a successful `sync()` as the source of truth. |
 | `as_has_scheduled_action( … )` | No public pending/running boolean query. |
 
-The key difference is ownership: Action Scheduler's `$group` defaults to `''`, leaving work ownerless and easy to clear by accident. The engine requires the owner up front and composes it into every identity. And where repeated `as_enqueue_async_action()` calls admit duplicates, `a8csp_bgje_job_enqueue()` is single-flight by default (see the deduplication key in scenario 2).
+The key difference is ownership: Action Scheduler's `$group` defaults to `''`, leaving work ownerless and easy to clear by accident. The engine requires the owner up front and composes it into every identity. And where repeated `as_enqueue_async_action()` calls admit duplicates, `a8csp_bgje_job_enqueue()` rejects matching live work by default.
 
 ## Idempotency invariant
 
@@ -471,14 +452,12 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Direct Job enqueue and Chunked Job start coordinate active runs through a scoped overlap identity: a Job's is its explicit deduplication key when provided, otherwise its arguments; a Chunked Job's is always its start arguments. Matching is scoped to the owner-qualified identity.
-
-Schedule overlap is configured independently. Catch-up determines what happens when a delivery is late beyond its grace window.
+Each Job declares one overlap policy for imperative and scheduled admission. Its `overlap_key()` can derive an opaque 1-to-64-byte collision identity from the start arguments; `null` uses the canonical argument hash. Matching is scoped to the owner-qualified identity. Failed-run retry always uses `reject`, regardless of the declared invariant. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |
 | `allow` | Dispatches one due or make-up run even while matching work runs. | Drops a beyond-grace occurrence; otherwise dispatches even while matching work runs. |
-| `skip` (default) | Attempts one due or make-up run, dropped while a fresh matching lock is held. | Drops a beyond-grace occurrence; otherwise dispatches only when no fresh matching lock is held. |
+| `reject` (default) | Attempts one due or make-up run, recorded as skipped while a fresh matching lock is held. | Drops a beyond-grace occurrence; otherwise dispatches only when no fresh matching lock is held. |
 | `replace` | Dispatches one due or make-up run; transfers a held matching lock to the new run. | Drops a beyond-grace occurrence; otherwise dispatches and transfers a held matching lock. |
 
 An occurrence is a misfire only when observed strictly after `next_due + grace`; grace defaults to one interval and is filterable. `run_once` attempts one make-up occurrence and realigns; `skip` drops it, realigns, and emits the misfire-skipped hooks.
@@ -562,8 +541,8 @@ $engine = new class() implements JobsEngineInterface {
 	public function register_job( string $identity, OneOffJobInterface $job ): void {}
 
 	/** @return AbstractResult<string, ApiError> */
-	public function enqueue( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ): AbstractResult {
-		$this->calls[] = array( $identity, $args, $delay, $dedup_key, $priority );
+	public function enqueue( string $identity, array $args, int $delay, int $priority ): AbstractResult {
+		$this->calls[] = array( $identity, $args, $delay, $priority );
 
 		return new Success( 'run-test' );
 	}

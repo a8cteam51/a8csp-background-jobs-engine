@@ -4,23 +4,25 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the retry policy inherited by job implementations.
+ * Pins the defaults inherited by job implementations.
  *
  */
 #[CoversClass( AbstractJob::class )]
 #[UsesClass( RetryPolicy::class )]
+#[UsesClass( OverlapPolicy::class )]
 final class AbstractJobTest extends TestCase {
 	/**
-	 * A job inherits the shared five-minute ceiling for one handler invocation.
+	 * A job inherits the shared execution and overlap invariants.
 	 *
 	 * @return  void
 	 */
-	public function test_default_max_callback_runtime_is_five_minutes(): void {
+	public function test_default_execution_and_overlap_invariants_are_applied(): void {
 		$job = new class() extends AbstractJob {
 
 			/** {@inheritDoc} */
@@ -39,6 +41,8 @@ final class AbstractJobTest extends TestCase {
 		};
 
 		self::assertSame( 300, $job->max_callback_runtime() );
+		self::assertSame( OverlapPolicy::Reject, $job->overlap_policy() );
+		self::assertNull( $job->overlap_key( array( 'site_id' => 7 ) ) );
 	}
 
 	/**

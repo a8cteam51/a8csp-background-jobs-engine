@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
@@ -103,7 +102,7 @@ final class EngineFacadeTest extends TestCase {
 		$job    = new RecordingJob( 'email-digest' );
 		$client->jobs()->register( $job );
 
-		$result = $client->jobs()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, dedup_key: 'site-7', priority: 5 );
+		$result = $client->jobs()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
@@ -125,7 +124,7 @@ final class EngineFacadeTest extends TestCase {
 		$chunked_job = new RecordingChunkedJob( 'catalog-sync' );
 		$client->chunked_jobs()->register( $chunked_job );
 
-		$result = $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 23 );
+		$result = $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();

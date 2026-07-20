@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
@@ -11,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
@@ -1421,10 +1421,11 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_cleanup_action_completes_when_on_completed_starts_replacement(): void {
+		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
 		$this->prepare_cleanup_delivery();
 		$replacement                     = null;
 		$this->chunked_job->on_completed = function () use ( &$replacement ): void {
-			$replacement = $this->client->chunked_jobs()->start( self::NAME, self::ARGS, ExistingRunPolicy::Replace );
+			$replacement = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		};
 
 		$this->rig->run_due();

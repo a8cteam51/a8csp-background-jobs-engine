@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
@@ -308,18 +307,19 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A pending chunked-job-start descriptor preserves the scheduler request derived from either policy.
+	 * A pending chunked-job-start descriptor preserves the scheduler request under every overlap policy.
 	 *
-	 * @param   string $existing_value Existing-run policy value used for admission.
+	 * @param   string $overlap_value Declared overlap policy value used for admission.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'chunked_job_start_redelivery_policies' )]
-	public function test_sweep_redelivers_a_stale_pending_chunked_job_start_for_both_existing_run_policies( string $existing_value ): void {
-		$name        = self::identity( 'redelivered-start-chunked-job' );
-		$chunked_job = new RecordingChunkedJob( 'redelivered-start-chunked-job' );
+	public function test_sweep_redelivers_a_stale_pending_chunked_job_start_for_every_overlap_policy( string $overlap_value ): void {
+		$name                        = self::identity( 'redelivered-start-chunked-job' );
+		$chunked_job                 = new RecordingChunkedJob( 'redelivered-start-chunked-job' );
+		$chunked_job->overlap_policy = OverlapPolicy::from( $overlap_value );
 		$this->work->register_chunked_job( $name, $chunked_job );
-		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS, existing: ExistingRunPolicy::from( $existing_value ), priority: 23 );
+		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame(
@@ -355,17 +355,20 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Supplies every existing-run policy that can schedule a chunked job start.
+	 * Supplies every overlap policy that can schedule a chunked job start.
 	 *
-	 * @return  array<string, array{existing_value: string}>
+	 * @return  array<string, array{overlap_value: string}>
 	 */
 	public static function chunked_job_start_redelivery_policies(): array {
 		return array(
+			'allow'   => array(
+				'overlap_value' => 'allow',
+			),
 			'reject'  => array(
-				'existing_value' => 'reject',
+				'overlap_value' => 'reject',
 			),
 			'replace' => array(
-				'existing_value' => 'replace',
+				'overlap_value' => 'replace',
 			),
 		);
 	}
@@ -376,7 +379,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_redelivers_a_stale_pending_job_action(): void {
-		$result = $this->dispatcher->dispatch_scheduled_job( self::IDENTITY, self::ARGS, OverlapPolicy::Skip, priority: 23 );
+		$result = $this->dispatcher->dispatch_scheduled_job( self::IDENTITY, self::ARGS, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;

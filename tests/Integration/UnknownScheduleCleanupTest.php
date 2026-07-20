@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
@@ -202,7 +201,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			'a8csp-jobs-engine',
 			array(
 				self::MAINTENANCE_KEY => array(
-					'schedule' => new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce ),
+					'schedule' => new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce ),
 					'job'      => self::MAINTENANCE_KEY,
 				),
 			)
@@ -250,7 +249,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$client = \a8csp_bgje( self::OWNER );
 		$job    = new RecordingJob( self::REDECLARED_JOB );
 		$client->jobs()->register( $job );
-		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
+		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
 		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );

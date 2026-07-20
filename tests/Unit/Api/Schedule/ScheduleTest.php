@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Schedule;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\AdmissionValidator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -19,7 +18,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Schedule::class )]
 #[UsesClass( Recurrence::class )]
 #[UsesClass( CatchUpPolicy::class )]
-#[UsesClass( OverlapPolicy::class )]
 #[UsesClass( AdmissionValidator::class )]
 final class ScheduleTest extends TestCase {
 
@@ -50,7 +48,6 @@ final class ScheduleTest extends TestCase {
 		self::assertSame( $recurrence, $schedule->recurrence );
 		self::assertSame( 'refresh-index', $schedule->job );
 		self::assertSame( array( 'site_id' => 7 ), $schedule->args );
-		self::assertSame( OverlapPolicy::Skip, $schedule->overlap );
 		self::assertSame( CatchUpPolicy::RunOnce, $schedule->catch_up );
 		self::assertSame( 10, $schedule->priority );
 	}
@@ -212,7 +209,6 @@ final class ScheduleTest extends TestCase {
 			new Schedule( 'nightly', Recurrence::every( 301 ), 'refresh-index', array( 'site_id' => 7 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index-2', array( 'site_id' => 7 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 8 ) ),
-			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), OverlapPolicy::Allow ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), catch_up: CatchUpPolicy::Skip ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), priority: 11 ),
 		);

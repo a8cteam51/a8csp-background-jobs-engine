@@ -390,7 +390,6 @@ final readonly class OccurrenceDelivery {
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_job(
 			$declaration['job'],
 			$schedule->args,
-			$schedule->overlap,
 			$schedule->priority,
 			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
 				try {
@@ -498,7 +497,6 @@ final readonly class OccurrenceDelivery {
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_job(
 			$declaration['job'],
 			$schedule->args,
-			$schedule->overlap,
 			$schedule->priority,
 			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
 				try {

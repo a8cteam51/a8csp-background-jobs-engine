@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobs;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
@@ -84,16 +83,17 @@ final class ClientTest extends TestCase {
 		$jobs    = new Jobs( 'consumer-plugin', $engine );
 
 		$jobs->register( $job );
-		$result = $jobs->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, dedup_key: 'site-7-sync', priority: 5 );
+		$result = $jobs->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, priority: 5 );
 
 		self::assertSame( $failure, $result );
 		self::assertSame(
 			array(
 				array( 'register_job', 'consumer-plugin:sync', $job ),
-				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, 'site-7-sync', 5 ),
+				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, 5 ),
 			),
 			$engine->calls
 		);
+		self::assertSame( array( 'name', 'args', 'delay', 'priority' ), self::parameter_names( Jobs::class, 'enqueue' ) );
 	}
 
 	/**
@@ -108,16 +108,17 @@ final class ClientTest extends TestCase {
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', $engine );
 
 		$chunked_jobs->register( $chunked_job );
-		$result = $chunked_jobs->start( 'sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 5 );
+		$result = $chunked_jobs->start( 'sync', array( 'site_id' => 7 ), priority: 5 );
 
 		self::assertSame( $success, $result );
 		self::assertSame(
 			array(
 				array( 'register_chunked_job', 'consumer-plugin:sync', $chunked_job ),
-				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), ExistingRunPolicy::Reject, 5 ),
+				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), 5 ),
 			),
 			$engine->calls
 		);
+		self::assertSame( array( 'name', 'start_args', 'priority' ), self::parameter_names( ChunkedJobs::class, 'start' ) );
 	}
 
 	/**
@@ -345,58 +346,6 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Job deduplication keys accept opaque bounded bytes and reject invalid lengths.
-	 *
-	 * @param   string $dedup_key Client deduplication key.
-	 * @param   bool   $accepted  Whether the key reaches the admission delegate.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'job_deduplication_keys' )]
-	public function test_jobs_validate_deduplication_keys( string $dedup_key, bool $accepted ): void {
-		$engine = new FakeJobsEngine( new Success( 'job-run' ) );
-		$jobs   = new Jobs( 'consumer-plugin', $engine );
-
-		if ( ! $accepted ) {
-			self::assert_invalid_argument( static fn () => $jobs->enqueue( 'sync', dedup_key: $dedup_key ), 'Job "sync" deduplication key must contain 1 to 64 bytes when provided.' );
-			self::assertSame( array(), $engine->calls );
-
-			return;
-		}
-
-		$result = $jobs->enqueue( 'sync', dedup_key: $dedup_key );
-
-		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array( array( 'enqueue', 'consumer-plugin:sync', array(), 0, $dedup_key, 10 ) ), $engine->calls );
-	}
-
-	/**
-	 * Supplies both accepted boundaries and the adjacent rejected lengths with opaque binary keys.
-	 *
-	 * @return  array<string, array{dedup_key: string, accepted: bool}>
-	 */
-	public static function job_deduplication_keys(): array {
-		return array(
-			'one byte'                   => array(
-				'dedup_key' => "\x00",
-				'accepted'  => true,
-			),
-			'empty'                      => array(
-				'dedup_key' => '',
-				'accepted'  => false,
-			),
-			'sixty-five bytes'           => array(
-				'dedup_key' => \str_repeat( 'a', 65 ),
-				'accepted'  => false,
-			),
-			'sixty-four arbitrary bytes' => array(
-				'dedup_key' => \str_repeat( "\x00\xFF", 32 ),
-				'accepted'  => true,
-			),
-		);
-	}
-
-	/**
 	 * Chunked Job commands reject deterministic violations before invoking the admission delegate.
 	 *
 	 * @param   array<array-key, mixed> $args     Chunked Job start arguments.
@@ -451,7 +400,7 @@ final class ClientTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_defaults_match_the_deleted_wrapper_contracts(): void {
+	public function test_dispatch_defaults_match_the_supported_operation_contracts(): void {
 		$jobs_engine         = new FakeJobsEngine( new Success( 'job-run' ) );
 		$chunked_jobs_engine = new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) );
 		$jobs                = new Jobs( 'consumer-plugin', $jobs_engine );
@@ -462,8 +411,8 @@ final class ClientTest extends TestCase {
 
 		self::assertSame(
 			array(
-				array( 'enqueue', 'consumer-plugin:sync', array(), 0, null, 10 ),
-				array( 'start', 'consumer-plugin:sync', array(), ExistingRunPolicy::Reject, 10 ),
+				array( 'enqueue', 'consumer-plugin:sync', array(), 0, 10 ),
+				array( 'start', 'consumer-plugin:sync', array(), 10 ),
 			),
 			\array_merge( $jobs_engine->calls, $chunked_jobs_engine->calls )
 		);

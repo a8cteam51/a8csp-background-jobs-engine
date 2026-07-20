@@ -100,7 +100,11 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_schedules_join_live_declarations_with_persisted_orphans_and_locks(): void {
 		$client = $this->rig->client( 'owner-a' );
-		$client->jobs()->register( new RecordingJob( 'refresh-index' ) );
+		$job    = new RecordingJob( 'refresh-index' );
+
+		$job->overlap_key_resolver = static fn ( array $args ): ?string => 'all' === ( $args['scope'] ?? null ) ? 'scope:all' : null;
+		$client->jobs()->register( $job );
+
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( $schedule ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
@@ -128,7 +132,7 @@ final class InspectionTest extends TestCase {
 			)
 		);
 		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
-		$this->put( $fixture->lock( $fixture->args_hash( $schedule->args ), 'run-lock', self::NOW, self::NOW ) );
+		$this->put( $fixture->lock( \hash( 'sha256', 'dedup:scope:all' ), 'run-lock', self::NOW, self::NOW ) );
 		$this->rig->backend()->scheduled = true;
 
 		$snapshot = $this->rig->inspection()->schedules();
@@ -160,7 +164,7 @@ final class InspectionTest extends TestCase {
 	public function test_schedule_locks_preserve_every_discriminated_honesty_state(): void {
 		$client        = $this->rig->client( 'owner' );
 		$schedules     = array(
-			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
+			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
 			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
 			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
@@ -168,7 +172,11 @@ final class InspectionTest extends TestCase {
 		$declarations  = array();
 		$registrations = array( 'owner:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
-			$client->jobs()->register( new RecordingJob( $schedule->job ) );
+			$job = new RecordingJob( $schedule->job );
+			if ( 'allow' === $name ) {
+				$job->overlap_policy = OverlapPolicy::Allow;
+			}
+			$client->jobs()->register( $job );
 			$declarations[ 'owner:' . $name ]  = array(
 				'schedule' => $schedule,
 				'job'      => 'owner:' . $schedule->job,

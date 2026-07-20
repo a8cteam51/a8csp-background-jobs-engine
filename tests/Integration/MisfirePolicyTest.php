@@ -22,7 +22,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\RegistrationUpdateOutcome;
@@ -135,7 +134,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine = $this->build_engine( $clock, $logger );
 		$job    = new RecordingJob( self::RUN_ONCE_JOB );
 		$this->register_deterministic_job( self::RUN_ONCE_JOB_IDENTITY, $job );
-		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_JOB, array( 'policy' => 'run-once' ), OverlapPolicy::Skip );
+		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_JOB, array( 'policy' => 'run-once' ) );
 		$this->assert_sync_success( $engine->schedules, self::RUN_ONCE_OWNER, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
@@ -174,7 +173,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$engine = $this->build_engine( $clock, $logger );
 		$job    = new RecordingJob( self::SKIP_JOB );
 		$this->register_deterministic_job( self::SKIP_JOB_IDENTITY, $job );
-		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_JOB, array( 'policy' => 'skip' ), OverlapPolicy::Skip, CatchUpPolicy::Skip );
+		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_JOB, array( 'policy' => 'skip' ), CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::SKIP_OWNER, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
@@ -323,7 +322,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
 		$this->deterministic_inspection = $inspection;

@@ -40,12 +40,11 @@ interface ChunkedJobsEngineInterface {
 	 *
 	 * @param   string                  $identity   Complete owner-qualified chunked job identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
-	public function start( string $identity, array $start_args, ExistingRunPolicy $existing, int $priority ): AbstractResult;
+	public function start( string $identity, array $start_args, int $priority ): AbstractResult;
 
 	// endregion
 }

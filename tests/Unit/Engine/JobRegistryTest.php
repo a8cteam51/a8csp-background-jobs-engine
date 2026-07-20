@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterfac
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -416,6 +417,18 @@ final class JobRegistryTest extends TestCase {
 			#[\Override]
 			public function max_callback_runtime(): int {
 				return self::DEFAULT_MAX_CALLBACK_RUNTIME;
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_policy(): OverlapPolicy {
+				return OverlapPolicy::Reject;
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_key( array $start_args ): ?string {
+				return null;
 			}
 
 			/**

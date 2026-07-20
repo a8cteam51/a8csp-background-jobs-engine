@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterfac
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 /**
  * Records chunked job lifecycle invocations with optional observation callbacks and failures.
@@ -92,6 +93,16 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
 
+	/** Configured overlap policy. */
+	public OverlapPolicy $overlap_policy = OverlapPolicy::Reject;
+
+	/**
+	 * Configured argument-aware overlap-key resolver.
+	 *
+	 * @var (\Closure(array<array-key, mixed>): ?string)|null
+	 */
+	public ?\Closure $overlap_key_resolver = null;
+
 	/** Declared ceiling for one queue generation or chunk invocation. */
 	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
 
@@ -116,6 +127,24 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	#[\Override]
 	public function max_callback_runtime(): int {
 		return $this->max_callback_runtime;
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function overlap_policy(): OverlapPolicy {
+		return $this->overlap_policy;
+	}
+
+	/**
+	 * Resolves the configured overlap key or uses the canonical argument identity.
+	 *
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 *
+	 * @return  string|null
+	 */
+	#[\Override]
+	public function overlap_key( array $start_args ): ?string {
+		return null === $this->overlap_key_resolver ? null : ( $this->overlap_key_resolver )( $start_args );
 	}
 
 	/**

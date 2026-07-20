@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
@@ -407,13 +407,14 @@ final class RunHistoryTest extends TestCase {
 	private function produce_terminal_outcome( string $status ): array {
 		$this->rig->randomizer()->value = 7;
 		if ( 'superseded' === $status ) {
-			$name     = self::NAME . '-chunked-job';
-			$identity = self::OWNER . ':' . $name;
-			$first    = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			$name                              = self::NAME . '-chunked-job';
+			$identity                          = self::OWNER . ':' . $name;
+			$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
+			$first                             = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $first );
 			self::assertIsString( $first->value );
 			$this->rig->randomizer()->value = 8;
-			$second                         = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ), ExistingRunPolicy::Replace );
+			$second                         = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 

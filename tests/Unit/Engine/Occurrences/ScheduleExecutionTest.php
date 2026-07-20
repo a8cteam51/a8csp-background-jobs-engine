@@ -414,8 +414,9 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_occurrence_state_cannot_overwrite_a_concurrently_synchronized_generation(): void {
-		$this->sync_schedule( self::schedule( overlap: OverlapPolicy::Allow ) );
-		$replacement     = self::schedule( interval: 600, overlap: OverlapPolicy::Allow );
+		$this->job->overlap_policy = OverlapPolicy::Allow;
+		$this->sync_schedule( self::schedule() );
+		$replacement     = self::schedule( interval: 600 );
 		$replacement_raw = null;
 		$this->rig->wpdb()->before_next(
 			'update',
@@ -469,7 +470,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A production-serialized incumbent lock generation causes a benign Skip outcome.
+	 * A production-serialized incumbent lock generation causes a benign skipped occurrence.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Fixture-built lock and latest-pointer rows prove the occurrence observes one coherent incumbent generation instead of a hand-authored approximation of private storage.
@@ -480,8 +481,8 @@ final class ScheduleExecutionTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_skip_policy_respects_a_fixture_built_lock_generation(): void {
-		$this->sync_schedule( self::schedule( overlap: OverlapPolicy::Skip ) );
+	public function test_reject_policy_respects_a_fixture_built_lock_generation(): void {
+		$this->sync_schedule( self::schedule() );
 		$args_hash = $this->fixtures->args_hash( self::ARGS );
 		$this->put_fixture( $this->fixtures->lock( $args_hash, 'run-incumbent', self::NOW, self::NOW ) );
 		$this->put_fixture(
@@ -518,7 +519,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_poisoned_lock_row_is_tolerated_without_constructing_classes(): void {
-		$this->sync_schedule( self::schedule( overlap: OverlapPolicy::Skip ) );
+		$this->sync_schedule( self::schedule() );
 		$args_hash = $this->fixtures->args_hash( self::ARGS );
 		$raw       = \maybe_serialize( new ScheduleExecutionWakeupProbe() );
 		self::assertIsString( $raw );
@@ -538,19 +539,18 @@ final class ScheduleExecutionTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns one schedule declaration for the requested policies.
+	 * Returns one schedule declaration for the requested timing policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   int           $interval Recurrence interval.
-	 * @param   OverlapPolicy $overlap  Overlap policy.
 	 * @param   CatchUpPolicy $catch_up Catch-up policy.
 	 *
 	 * @return  Schedule
 	 */
-	private static function schedule( int $interval = self::INTERVAL, OverlapPolicy $overlap = OverlapPolicy::Skip, CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce ): Schedule {
-		return new Schedule( self::NAME, Recurrence::every( $interval ), self::JOB, self::ARGS, $overlap, $catch_up, 23 );
+	private static function schedule( int $interval = self::INTERVAL, CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce ): Schedule {
+		return new Schedule( self::NAME, Recurrence::every( $interval ), self::JOB, self::ARGS, $catch_up, 23 );
 	}
 
 	/**

@@ -41,12 +41,11 @@ interface JobsEngineInterface {
 	 * @param   string                  $identity  Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args      Job arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
-	public function enqueue( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ): AbstractResult;
+	public function enqueue( string $identity, array $args, int $delay, int $priority ): AbstractResult;
 
 	// endregion
 }

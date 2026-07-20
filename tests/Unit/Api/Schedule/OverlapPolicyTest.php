@@ -31,6 +31,6 @@ final class OverlapPolicyTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_backing_values_are_an_exact_set(): void {
-		self::assertEqualsCanonicalizing( array( 'allow', 'skip', 'replace' ), \array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, OverlapPolicy::cases() ) );
+		self::assertEqualsCanonicalizing( array( 'allow', 'reject', 'replace' ), \array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, OverlapPolicy::cases() ) );
 	}
 }

@@ -204,7 +204,7 @@ final class Component extends AbstractComponent {
 			$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
 			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-			$inspection           = new Inspection( $schedules, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
+			$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 			$this->action_deliveries    = $action_deliveries;

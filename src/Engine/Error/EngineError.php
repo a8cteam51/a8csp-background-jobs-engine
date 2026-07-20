@@ -56,7 +56,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function held_job( string $job_name, string $running_run_id ): self {
-		return new self( \sprintf( 'Job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.', $job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+		return new self( \sprintf( 'Job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', $job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**

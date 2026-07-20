@@ -49,7 +49,6 @@ final class FakeJobsEngine implements JobsEngineInterface {
 	 * @param   string                  $identity  Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args      Job arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Client deduplication key.
 	 * @param   int                     $priority  Advisory priority.
 	 *
 	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
@@ -57,8 +56,8 @@ final class FakeJobsEngine implements JobsEngineInterface {
 	 * @return  AbstractResult
 	 */
 	#[\Override]
-	public function enqueue( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ): AbstractResult {
-		$this->calls[] = array( 'enqueue', $identity, $args, $delay, $dedup_key, $priority );
+	public function enqueue( string $identity, array $args, int $delay, int $priority ): AbstractResult {
+		$this->calls[] = array( 'enqueue', $identity, $args, $delay, $priority );
 
 		return $this->enqueue_result;
 	}

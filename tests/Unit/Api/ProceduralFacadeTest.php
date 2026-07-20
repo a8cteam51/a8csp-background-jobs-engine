@@ -8,7 +8,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -84,7 +83,7 @@ final class ProceduralFacadeTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Callable registration and enqueue preserve arguments, delay, deduplication, and priority.
+	 * Callable registration and enqueue preserve arguments, delay, and priority.
 	 *
 	 * @return  void
 	 */
@@ -102,14 +101,14 @@ final class ProceduralFacadeTest extends TestCase {
 
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler, $options ) );
 
-		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $args, 37, 'shared-flight', 23 );
+		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $args, 37, priority: 23 );
 		self::assertIsString( $run_id );
 		$schedule_call = $this->latest_backend_call( 'schedule_single' );
 		self::assertSame( self::NOW + 37, $schedule_call['args']['timestamp'] ?? null );
 		self::assertSame( 23, $schedule_call['args']['priority'] ?? null );
 
 		++$this->rig->clock()->timestamp;
-		$overlap = \a8csp_bgje_job_enqueue( self::OWNER, 'job', array( 'site_id' => 8 ), 0, 'shared-flight', 99 );
+		$overlap = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $args, priority: 99 );
 		$error   = self::assert_wp_error( $overlap, 'overlap_held' );
 		self::assertSame( array( 'run_id' => $run_id ), $error->get_error_data() );
 
@@ -368,11 +367,11 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Chunked Job starts default to rejection, accept replacement explicitly, and preserve priority.
+	 * Chunked Job starts use the registered job's default rejection policy and preserve priority.
 	 *
 	 * @return  void
 	 */
-	public function test_chunked_job_start_maps_existing_policy_and_priority(): void {
+	public function test_chunked_job_start_rejects_overlap_and_preserves_priority(): void {
 		$chunked_job = self::chunked_job( 'chunked_job' );
 		self::assertTrue( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ) );
 
@@ -385,15 +384,6 @@ final class ProceduralFacadeTest extends TestCase {
 		$overlap = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ) );
 		$error   = self::assert_wp_error( $overlap, 'overlap_held' );
 		self::assertSame( array( 'run_id' => $run_id ), $error->get_error_data() );
-
-		$invalid = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', existing: 'invalid' );
-		$error   = self::assert_wp_error( $invalid, 'invalid_argument' );
-		self::assertSame( 'existing must be reject or replace', $error->get_error_message() );
-
-		++$this->rig->clock()->timestamp;
-		$replacement = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ), 'replace' );
-		self::assertIsString( $replacement );
-		self::assertNotSame( $run_id, $replacement );
 	}
 
 	/**
@@ -415,7 +405,6 @@ final class ProceduralFacadeTest extends TestCase {
 			'every'    => 300,
 			'job'      => 'scheduled-job',
 			'args'     => $args,
-			'overlap'  => 'replace',
 			'catch_up' => 'skip',
 			'priority' => 41,
 		);
@@ -423,7 +412,7 @@ final class ProceduralFacadeTest extends TestCase {
 		$facade_snapshot = $this->rig->inspection()->schedules( self::OWNER );
 		$write_count     = $this->backend_call_count( 'schedule_recurring' );
 
-		$schedule      = new Schedule( 'recurring', Recurrence::every( 300 ), 'scheduled-job', $args, OverlapPolicy::Replace, CatchUpPolicy::Skip, 41 );
+		$schedule      = new Schedule( 'recurring', Recurrence::every( 300 ), 'scheduled-job', $args, CatchUpPolicy::Skip, 41 );
 		$client_result = $this->rig->client( self::OWNER )->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $client_result );
 		self::assertSame( $facade_snapshot, $this->rig->inspection()->schedules( self::OWNER ) );
@@ -500,28 +489,6 @@ final class ProceduralFacadeTest extends TestCase {
 					),
 				),
 				'message'   => 'args must be an array',
-			),
-			'non-string overlap'     => array(
-				'schedules' => array(
-					array(
-						'name'    => 'schedule',
-						'every'   => 300,
-						'job'     => 'job',
-						'overlap' => array(),
-					),
-				),
-				'message'   => 'overlap must be allow, skip, or replace',
-			),
-			'invalid overlap'        => array(
-				'schedules' => array(
-					array(
-						'name'    => 'schedule',
-						'every'   => 300,
-						'job'     => 'job',
-						'overlap' => 'invalid',
-					),
-				),
-				'message'   => 'overlap must be allow, skip, or replace',
 			),
 			'non-string catch up'    => array(
 				'schedules' => array(
@@ -789,9 +756,9 @@ final class ProceduralFacadeTest extends TestCase {
 		$signatures = array(
 			'a8csp_bgje_job_register'         => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
 			'a8csp_bgje_job_register_object'  => '(string $owner, A8CSP_Job $job): WP_Error|true',
-			'a8csp_bgje_job_enqueue'          => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, ?string $dedup_key = null, int $priority = 10): WP_Error|string',
+			'a8csp_bgje_job_enqueue'          => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): WP_Error|string',
 			'a8csp_bgje_chunked_job_register' => '(string $owner, A8CSP_ChunkedJob $job): WP_Error|true',
-			'a8csp_bgje_chunked_job_start'    => '(string $owner, string $name, array $start_args = array(), string $existing = \'reject\', int $priority = 10): WP_Error|string',
+			'a8csp_bgje_chunked_job_start'    => '(string $owner, string $name, array $start_args = array(), int $priority = 10): WP_Error|string',
 			'a8csp_bgje_schedule_sync'        => '(string $owner, array $schedules): WP_Error|true',
 			'a8csp_bgje_schedule_dispatch'    => '(string $owner, string $name): WP_Error|string',
 			'a8csp_bgje_run_last_completed'   => '(string $owner, string $name): WP_Error|string|null',

@@ -57,8 +57,7 @@ final readonly class ChunkedJobs {
 	/**
 	 * Creates and schedules one run for a registered chunked job.
 	 *
-	 * Reject is the default and refuses a fresh matching incumbent. Replace transfers its ownership
-	 * fence to the new run.
+	 * The registered Job supplies its overlap policy and argument-aware collision identity.
 	 *
 	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
 	 * caller handles the returned failure by starting the chunked job again.
@@ -68,7 +67,6 @@ final readonly class ChunkedJobs {
 	 *
 	 * @param   string                  $name       Owner-local chunked job name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   ExistingRunPolicy       $existing   Optional. Behavior when a fresh matching incumbent holds the lock. Default Reject.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity or priority is invalid, or arguments are not portable.
@@ -76,7 +74,7 @@ final readonly class ChunkedJobs {
 	 * @return  AbstractResult<string, ApiError>
 	 */
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
-	public function start( string $name, array $start_args = array(), ExistingRunPolicy $existing = ExistingRunPolicy::Reject, int $priority = 10 ): AbstractResult {
+	public function start( string $name, array $start_args = array(), int $priority = 10 ): AbstractResult {
 		$identity = JobIdentity::compose( $this->owner, $name );
 		AdmissionValidator::assert_priority( $priority, \sprintf( 'Chunked Job "%s"', $name ) );
 		$payload_error = AdmissionValidator::assert_portable_args( $start_args, \sprintf( 'Chunked Job "%s"', $name ) );
@@ -84,7 +82,7 @@ final readonly class ChunkedJobs {
 			return new Failure( $payload_error );
 		}
 
-		return $this->engine->start( $identity, $start_args, $existing, $priority );
+		return $this->engine->start( $identity, $start_args, $priority );
 	}
 
 	// endregion

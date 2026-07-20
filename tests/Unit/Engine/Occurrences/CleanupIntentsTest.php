@@ -17,7 +17,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
@@ -474,18 +473,14 @@ final class CleanupIntentsTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns one schedule declaration for the requested policies.
+	 * Returns one schedule declaration for the requested timing policy.
 	 *
-	 * @param   OverlapPolicy $overlap  Overlap policy.
 	 * @param   CatchUpPolicy $catch_up Catch-up policy.
 	 *
 	 * @return  Schedule
 	 */
-	private function schedule(
-		OverlapPolicy $overlap = OverlapPolicy::Skip,
-		CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce
-	): Schedule {
-		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::JOB, self::ARGS, $overlap, $catch_up, 23 );
+	private function schedule( CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce ): Schedule {
+		return new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::JOB, self::ARGS, $catch_up, 23 );
 	}
 
 	/**

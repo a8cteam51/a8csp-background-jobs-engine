@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
@@ -89,7 +88,7 @@ final readonly class MaintenanceSchedule {
 		try {
 			$owner                = JobIdentity::ENGINE_OWNER;
 			$schedule_identity    = JobIdentity::compose( $owner, MaintenanceJob::NAME, true );
-			$maintenance_schedule = new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
+			$maintenance_schedule = new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce );
 			$result               = $this->schedules->sync_owner(
 				$owner,
 				array(

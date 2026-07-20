@@ -17,20 +17,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
  * @version 1.0.0
  */
 final readonly class Jobs {
-	// region FIELDS AND CONSTANTS
-
-	/**
-	 * Longest client deduplication key accepted by the public command contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_DEDUP_KEY_BYTES = 64;
-
-	// endregion
-
 	// region MAGIC METHODS
 
 	/**
@@ -71,12 +57,7 @@ final readonly class Jobs {
 	/**
 	 * Creates and schedules one run for a registered job.
 	 *
-	 * A null deduplication key uses the job arguments as the single-flight identity. A non-null opaque
-	 * key of 1 through 64 bytes replaces that identity with its hash, so another enqueue with the same
-	 * key is refused while the incumbent is admitted or running even when its arguments differ. The
-	 * key is not a durable ledger entry and is reusable as soon as the incumbent reaches terminal
-	 * cleanup. A manual failed-run retry re-admits under the argument identity and does not carry
-	 * the key ({@see \A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs::retry_failed()}).
+	 * The registered Job supplies its overlap policy and argument-aware collision identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -84,15 +65,14 @@ final readonly class Jobs {
 	 * @param   string                  $name      Owner-local job name.
 	 * @param   array<array-key, mixed> $args      Job arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity, delay, deduplication key, or priority is invalid, or arguments are not portable.
+	 * @throws  \InvalidArgumentException When the owner/name identity, delay, or priority is invalid, or arguments are not portable.
 	 *
 	 * @return  AbstractResult<string, ApiError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $name, array $args = array(), int $delay = 0, ?string $dedup_key = null, int $priority = 10 ): AbstractResult {
+	public function enqueue( string $name, array $args = array(), int $delay = 0, int $priority = 10 ): AbstractResult {
 		$identity = JobIdentity::compose( $this->owner, $name );
 		AdmissionValidator::assert_priority( $priority, \sprintf( 'Job "%s"', $name ) );
 
@@ -101,17 +81,12 @@ final readonly class Jobs {
 			throw new \InvalidArgumentException( \sprintf( 'Job "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
-		if ( null !== $dedup_key && ( '' === $dedup_key || self::MAX_DEDUP_KEY_BYTES < \strlen( $dedup_key ) ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Job "%1$s" deduplication key must contain 1 to %2$d bytes when provided.', $name, self::MAX_DEDUP_KEY_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
-
 		$payload_error = AdmissionValidator::assert_portable_args( $args, \sprintf( 'Job "%s"', $name ) );
 		if ( null !== $payload_error ) {
 			return new Failure( $payload_error );
 		}
 
-		return $this->engine->enqueue( $identity, $args, $delay, $dedup_key, $priority );
+		return $this->engine->enqueue( $identity, $args, $delay, $priority );
 	}
 
 	// endregion

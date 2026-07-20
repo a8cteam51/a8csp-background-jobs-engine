@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
@@ -108,15 +109,15 @@ final class DispatcherTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * A null key dispatches the original arguments with the requested priority.
+	 * The default canonical argument identity dispatches the original arguments with the requested priority.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_with_null_dedup_key_dispatches_the_original_arguments(): void {
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS, dedup_key: null, priority: 23 );
+	public function test_enqueue_with_default_overlap_key_dispatches_the_original_arguments(): void {
+		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -140,35 +141,110 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dedup_key_cannot_collide_with_the_argument_identity_domain(): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): ?string => isset( $args['opaque'] ) ? '[]' : null;
+
 		$argument_identity = $this->client->jobs()->enqueue( self::NAME );
 		self::assertInstanceOf( Success::class, $argument_identity );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$dedup_identity = $this->client->jobs()->enqueue( self::NAME, dedup_key: '[]' );
+		$overlap_identity = $this->client->jobs()->enqueue( self::NAME, array( 'opaque' => true ) );
 
-		self::assertInstanceOf( Success::class, $dedup_identity );
-		self::assertNotSame( $argument_identity->value, $dedup_identity->value );
+		self::assertInstanceOf( Success::class, $overlap_identity );
+		self::assertNotSame( $argument_identity->value, $overlap_identity->value );
 		self::assertCount( 2, $this->run_delivery_calls() );
 	}
 
 	/**
-	 * Different opaque keys admit independent runs even when their arguments match.
+	 * Different argument-derived opaque keys admit independent runs.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_treats_different_dedup_keys_as_distinct_single_flight_identities(): void {
-		$first = $this->client->jobs()->enqueue( self::NAME, self::ARGS, dedup_key: 'site-7-full' );
+	public function test_enqueue_treats_different_overlap_keys_as_distinct_single_flight_identities(): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): ?string => \is_string( $args['overlap_key'] ?? null ) ? $args['overlap_key'] : null;
+		$first                           = $this->client->jobs()->enqueue( self::NAME, self::ARGS + array( 'overlap_key' => 'site-7-full' ) );
 		self::assertInstanceOf( Success::class, $first );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$second = $this->client->jobs()->enqueue( self::NAME, self::ARGS, dedup_key: 'site-8-full' );
+		$second = $this->client->jobs()->enqueue( self::NAME, self::ARGS + array( 'overlap_key' => 'site-8-full' ) );
 
 		self::assertInstanceOf( Success::class, $second );
 		self::assertNotSame( $first->value, $second->value );
 		self::assertCount( 2, $this->run_delivery_calls() );
+	}
+
+	/**
+	 * An Allow invariant admits matching imperative enqueues without a caller policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_honors_the_job_allow_invariant_without_a_caller_policy(): void {
+		$this->job->overlap_policy = OverlapPolicy::Allow;
+
+		$first = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $first );
+		$this->rig->clock()->timestamp = self::NOW + 1;
+		$second                        = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $second );
+		self::assertNotSame( $first->value, $second->value );
+		self::assertCount( 2, $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A Job overlap key accepts the 64-byte boundary at engine consumption.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_enqueue_accepts_a_64_byte_overlap_key(): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): string => \str_repeat( 'a', 64 );
+
+		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+	}
+
+	/**
+	 * A Job overlap key outside the 1-to-64-byte boundary produces a contained payload rejection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $overlap_key Invalid overlap key.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_overlap_keys' )]
+	public function test_enqueue_rejects_an_invalid_job_overlap_key( string $overlap_key ): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): string => $overlap_key;
+
+		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ApiErrorCode::PayloadRejected );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * Supplies overlap keys outside the closed byte-length boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{overlap_key: string}>
+	 */
+	public static function invalid_overlap_keys(): array {
+		return array(
+			'empty'    => array( 'overlap_key' => '' ),
+			'65 bytes' => array( 'overlap_key' => \str_repeat( 'a', 65 ) ),
+		);
 	}
 
 	/**
@@ -394,7 +470,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A failed delayed-state transition releases an explicit key for immediate reuse.
+	 * A failed delayed-state transition releases the resolved overlap key for immediate reuse.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The second run-state write fails after the lock heartbeat; reusing the opaque key proves both provisional generations were compensated.
@@ -404,35 +480,35 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_with_delay_releases_dedup_key_when_state_transition_fails(): void {
-		$dedup_key = 'delayed-site-digest';
+	public function test_enqueue_with_delay_releases_overlap_key_when_state_transition_fails(): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): string => 'delayed-site-digest';
 		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
 		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
 
-		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120, dedup_key: $dedup_key );
+		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
 		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$reused                        = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120, dedup_key: $dedup_key );
+		$reused                        = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
 		self::assertInstanceOf( Success::class, $reused );
 	}
 
 	/**
-	 * One opaque key supplies the single-flight identity across differing arguments.
+	 * One resolved opaque key supplies the single-flight identity across differing arguments.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_enqueue_uses_the_dedup_key_as_the_single_flight_identity(): void {
-		$dedup_key = "logical-account\0\xFF";
-		$first     = $this->client->jobs()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
+	public function test_enqueue_uses_the_overlap_key_as_the_single_flight_identity(): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): string => "logical-account\0\xFF";
+		$first                           = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$duplicate = $this->client->jobs()->enqueue( self::NAME, array( 'site_id' => 8 ), dedup_key: $dedup_key );
+		$duplicate = $this->client->jobs()->enqueue( self::NAME, array( 'site_id' => 8 ) );
 
 		$error = $this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
 		self::assertSame( $first->value, $error->context['run_id'] ?? null );
@@ -553,8 +629,10 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_rejects_non_portable_input_before_every_boundary(): void {
 		$before = $this->security_boundary_snapshot();
 
+		$this->job->overlap_key_resolver = static fn ( array $args ): string => 'non-portable-payload';
+
 		try {
-			(void) $this->client->jobs()->enqueue( self::NAME, array( 'private-payload' => new \stdClass() ), dedup_key: 'non-portable-payload' );
+			(void) $this->client->jobs()->enqueue( self::NAME, array( 'private-payload' => new \stdClass() ) );
 			self::fail( 'Non-portable payload must throw before dispatch.' );
 		} catch ( \InvalidArgumentException ) {
 			self::assertSame( $before, $this->security_boundary_snapshot() );
@@ -628,6 +706,48 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$consumed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
+	}
+
+	/**
+	 * Manual retry rejects a matching incumbent even when the Job normally permits admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $policy_value Declared overlap-policy value.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'retry_override_policies' )]
+	public function test_retry_failed_forces_reject_for_a_permissive_job( string $policy_value ): void {
+		$this->job->overlap_policy = OverlapPolicy::from( $policy_value );
+
+		$incumbent = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $incumbent );
+		$this->seed_failed_run( self::OTHER_RUN_ID, self::ARGS, 2 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+
+		$retry = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+
+		$error = $this->assert_failure_code( $retry, ApiErrorCode::OverlapHeld );
+		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
+		$still_retained = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+		$this->assert_failure_code( $still_retained, ApiErrorCode::OverlapHeld );
+	}
+
+	/**
+	 * Supplies policies a failed-run retry must override with Reject.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{policy_value: string}>
+	 */
+	public static function retry_override_policies(): array {
+		return array(
+			'allow'   => array( 'policy_value' => 'allow' ),
+			'replace' => array( 'policy_value' => 'replace' ),
+		);
 	}
 
 	/**

@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -26,6 +28,16 @@ interface JobInterface {
 	 */
 	public const int DEFAULT_MAX_CALLBACK_RUNTIME = 300;
 
+	/**
+	 * Longest opaque overlap key accepted from a registered Job.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	public const int MAX_OVERLAP_KEY_BYTES = 64;
+
 	// endregion
 
 	// region METHODS
@@ -49,6 +61,31 @@ interface JobInterface {
 	 * @return  int
 	 */
 	public function max_callback_runtime(): int;
+
+	/**
+	 * Returns the invariant policy applied when a matching run holds the overlap lock.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  OverlapPolicy
+	 */
+	public function overlap_policy(): OverlapPolicy;
+
+	/**
+	 * Returns an opaque argument-aware overlap identity, or null to use the canonical argument hash.
+	 *
+	 * A non-null key must contain 1 through 64 bytes. The engine hashes the opaque value before it
+	 * enters the overlap-lock namespace.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 *
+	 * @return  string|null
+	 */
+	public function overlap_key( array $start_args ): ?string;
 
 	/**
 	 * Returns the retry policy for failed invocations.

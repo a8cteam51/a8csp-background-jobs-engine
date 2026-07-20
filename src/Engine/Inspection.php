@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
@@ -85,6 +86,7 @@ final readonly class Inspection {
 	 * @version 1.0.0
 	 *
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
+	 * @param   JobRegistry      $work         Registered Job instances.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
 	 * @param   StoreFactory     $stores       Name-bound run stores.
@@ -94,6 +96,7 @@ final readonly class Inspection {
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
+		private JobRegistry $work,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
 		private StoreFactory $stores,
@@ -335,22 +338,36 @@ final readonly class Inspection {
 		}
 
 		$schedule = $declaration['schedule'];
-		if ( OverlapPolicy::Allow === $schedule->overlap ) {
+		$job      = $this->work->job( $declaration['job'] );
+		if ( null === $job ) {
+			return array( 'state' => 'invalid' );
+		}
+		if ( OverlapPolicy::Allow === $job->overlap_policy() ) {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
-		// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
-		// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
-		try {
-			$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		} catch ( \JsonException ) {
-			return array( 'state' => 'invalid' );
-		}
-		if ( ! \is_string( $encoded_args ) ) {
-			return array( 'state' => 'invalid' );
-		}
+		$overlap_key = $job->overlap_key( $schedule->args );
+		if ( null !== $overlap_key ) {
+			if ( '' === $overlap_key || JobInterface::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
+				return array( 'state' => 'invalid' );
+			}
 
-		$args_hash = \hash( 'sha256', $encoded_args );
+			// Both sites share one lock namespace, so this formula remains byte-identical to the Dispatcher overlap-key lane.
+			$args_hash = \hash( 'sha256', 'dedup:' . $overlap_key );
+		} else {
+			// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
+			// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
+			try {
+				$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+			} catch ( \JsonException ) {
+				return array( 'state' => 'invalid' );
+			}
+			if ( ! \is_string( $encoded_args ) ) {
+				return array( 'state' => 'invalid' );
+			}
+
+			$args_hash = \hash( 'sha256', $encoded_args );
+		}
 		$inspected = $this->guard->inspect_persisted_lock( $declaration['job'], $args_hash );
 		if ( $inspected->is_failure() ) {
 			return array( 'state' => 'read_failed' );

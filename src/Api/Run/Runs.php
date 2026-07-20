@@ -62,10 +62,8 @@ final readonly class Runs {
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
-	 * A retried run does not re-acquire its original deduplication key or existing-run policy. Job
-	 * and Chunked Job retries are re-admitted under their argument identity and both refuse admission while
-	 * a matching live run holds it; intentional Chunked Job takeover remains available through
-	 * `ChunkedJobs::start()` with `ExistingRunPolicy::Replace`.
+	 * The registered Job recomputes its argument-aware overlap key, while retry always rejects a
+	 * matching live run regardless of the Job's declared overlap policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

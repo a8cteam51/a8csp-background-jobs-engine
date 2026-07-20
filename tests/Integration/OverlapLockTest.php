@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
@@ -23,11 +22,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 	/** Client owner isolated to overlap integration coverage. */
 	private const string OWNER = 'integration-overlap-lock';
 
-	/** Chunked Job identity isolated to the held-lock Skip case. */
-	private const string SKIP_NAME = 'integration-overlap-skip';
+	/** Chunked Job identity isolated to the held-lock Reject case. */
+	private const string REJECT_NAME = 'integration-overlap-reject';
 
-	/** Owner-qualified identity isolated to the held-lock Skip case. */
-	private const string SKIP_IDENTITY = self::OWNER . ':' . self::SKIP_NAME;
+	/** Owner-qualified identity isolated to the held-lock Reject case. */
+	private const string REJECT_IDENTITY = self::OWNER . ':' . self::REJECT_NAME;
 
 	/** Chunked Job identity isolated to the stale crash reclaim case. */
 	private const string RECLAIM_NAME = 'integration-overlap-reclaim';
@@ -51,35 +50,35 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_reject_policy_refuses_a_fresh_held_lock(): void {
-		$start_args         = array( 'scope' => 'skip' );
-		$chunked_job        = new RecordingChunkedJob( self::SKIP_NAME );
+		$start_args         = array( 'scope' => 'reject' );
+		$chunked_job        = new RecordingChunkedJob( self::REJECT_NAME );
 		$chunked_job->queue = array(
 			array( 'chunk' => 'one' ),
 			array( 'chunk' => 'two' ),
 		);
 
 		$this->register_chunked_job( $chunked_job );
-		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SKIP_IDENTITY );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY );
 		$this->filter_continue_delay_to_zero();
 
-		$run_a     = $this->start_chunked_job( self::SKIP_NAME, $start_args, ExistingRunPolicy::Reject );
-		$group_a   = self::SKIP_IDENTITY . '|' . $run_a;
+		$run_a     = $this->start_chunked_job( self::REJECT_NAME, $start_args );
+		$group_a   = self::REJECT_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
-		$lock_name = 'a8csp_bgje_overlap_lock_' . self::SKIP_IDENTITY . '_' . $args_hash;
+		$lock_name = 'a8csp_bgje_overlap_lock_' . self::REJECT_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the rejecting incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the rejecting incumbent first chunk' );
-		$first_action_id = $this->assert_pending_chunk_action( self::SKIP_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
+		$first_action_id = $this->assert_pending_chunk_action( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
-		$result              = \a8csp_bgje( self::OWNER )->chunked_jobs()->start( self::SKIP_NAME, $start_args, existing: ExistingRunPolicy::Reject );
+		$result              = \a8csp_bgje( self::OWNER )->chunked_jobs()->start( self::REJECT_NAME, $start_args );
 
 		self::assertInstanceOf( Failure::class, $result, 'Reject must refuse a second start under the fresh lock' );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ApiErrorCode::OverlapHeld, $result->error->code );
 		self::assertSame( array( 'run_id' => $run_a ), $result->error->context );
-		self::assertSame( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', self::SKIP_IDENTITY, $run_a ), $result->error->message, 'The rejected held-lock failure must identify the incumbent run exactly' );
+		self::assertSame( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', self::REJECT_IDENTITY, $run_a ), $result->error->message, 'The rejected held-lock failure must identify the incumbent run exactly' );
 		self::assertSame( $action_count_before, (int) $store->query_actions( array(), 'count' ), 'A rejected start must not create an Action Scheduler row' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
@@ -89,7 +88,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 				'all'     => $run_a,
 				'by_hash' => array( $args_hash => $run_a ),
 			),
-			\get_option( 'a8csp_bgje_latest_run_' . self::SKIP_IDENTITY, null ),
+			\get_option( 'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY, null ),
 			'A rejected start must preserve the incumbent latest pointers'
 		);
 		self::assertSame(
@@ -103,14 +102,14 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgje_history_' . self::SKIP_IDENTITY, null ),
+			\get_option( 'a8csp_bgje_history_' . self::REJECT_IDENTITY, null ),
 			'A rejected start must not create a second history entry'
 		);
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent first chunk' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $first_action_id ), 'Action Scheduler must complete the incumbent first chunk action' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the incumbent second chunk' );
-		$second_action_id = $this->assert_pending_chunk_action( self::SKIP_IDENTITY, $run_a, $group_a, array( 'chunk' => 'two' ) );
+		$second_action_id = $this->assert_pending_chunk_action( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'two' ) );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent second chunk' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $second_action_id ), 'Action Scheduler must complete the incumbent second chunk action' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained incumbent queue' );
@@ -128,11 +127,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'The accepted incumbent must complete normally after the rejected start'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Incumbent completion must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::SKIP_IDENTITY . '_' . $run_a, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::REJECT_IDENTITY . '_' . $run_a, false ) );
 		self::assertSame(
 			array(
-				'a8csp_bgje_history_' . self::SKIP_IDENTITY,
-				'a8csp_bgje_latest_run_' . self::SKIP_IDENTITY,
+				'a8csp_bgje_history_' . self::REJECT_IDENTITY,
+				'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reject-policy completion must retain only history and latest pointer state'
@@ -191,7 +190,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a     = $this->start_chunked_job( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
+		$run_a     = $this->start_chunked_job( self::RECLAIM_NAME, $start_args );
 		$group_a   = self::RECLAIM_IDENTITY . '|' . $run_a;
 		$args_hash = self::args_hash( $start_args );
 		$lock_name = 'a8csp_bgje_overlap_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
@@ -205,7 +204,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$aged_lock['heartbeat_at'] = \time() - ( 15 * \MINUTE_IN_SECONDS ) - 1;
 		self::assertTrue( \update_option( $lock_name, $aged_lock, false ), 'The crash simulation must age the persisted heartbeat beyond the default stale window' );
 
-		$run_b   = $this->start_chunked_job( self::RECLAIM_NAME, $start_args, ExistingRunPolicy::Reject );
+		$run_b   = $this->start_chunked_job( self::RECLAIM_NAME, $start_args );
 		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
 		self::assertNotSame( $run_a, $run_b, 'Stale reclaim must allocate a fresh run identifier' );
 		self::assertCount( 1, $log_records );
@@ -347,12 +346,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 *
 	 * @param   string                  $name       Stable chunked job name.
 	 * @param   array<array-key, mixed> $start_args Chunked Job start arguments.
-	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching run exists.
 	 *
 	 * @return  string
 	 */
-	private function start_chunked_job( string $name, array $start_args, ExistingRunPolicy $existing = ExistingRunPolicy::Replace ): string {
-		$result = \a8csp_bgje( self::OWNER )->chunked_jobs()->start( $name, $start_args, existing: $existing );
+	private function start_chunked_job( string $name, array $start_args ): string {
+		$result = \a8csp_bgje( self::OWNER )->chunked_jobs()->start( $name, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The chunked job must start through the public API' );
 		self::assertIsString( $result->value );
 

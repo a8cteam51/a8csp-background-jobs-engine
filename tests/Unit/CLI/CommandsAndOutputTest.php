@@ -472,7 +472,7 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_schedule_lock_labels_are_discriminated(): void {
 		$client        = $this->rig->client( 'lock-tests' );
 		$schedules     = array(
-			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
+			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
 			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
 			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
@@ -480,7 +480,12 @@ final class CommandsAndOutputTest extends TestCase {
 		$declarations  = array();
 		$registrations = array( 'lock-tests:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
-			$client->jobs()->register( new RecordingJob( $schedule->job ) );
+			$job = new RecordingJob( $schedule->job );
+			if ( 'allow' === $name ) {
+				$job->overlap_policy = OverlapPolicy::Allow;
+			}
+
+			$client->jobs()->register( $job );
 			$declarations[ 'lock-tests:' . $name ]  = array(
 				'schedule' => $schedule,
 				'job'      => 'lock-tests:' . $schedule->job,

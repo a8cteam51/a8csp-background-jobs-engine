@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobsEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 
 /** Records calls made through the typed chunked-job-engine client-testing seam. */
@@ -49,7 +48,6 @@ final class FakeChunkedJobsEngine implements ChunkedJobsEngineInterface {
 	 *
 	 * @param   string                  $identity   Complete owner-qualified chunked job identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   ExistingRunPolicy       $existing   Existing-run behavior.
 	 * @param   int                     $priority   Advisory priority.
 	 *
 	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
@@ -57,8 +55,8 @@ final class FakeChunkedJobsEngine implements ChunkedJobsEngineInterface {
 	 * @return  AbstractResult
 	 */
 	#[\Override]
-	public function start( string $identity, array $start_args, ExistingRunPolicy $existing, int $priority ): AbstractResult {
-		$this->calls[] = array( 'start', $identity, $start_args, $existing, $priority );
+	public function start( string $identity, array $start_args, int $priority ): AbstractResult {
+		$this->calls[] = array( 'start', $identity, $start_args, $priority );
 
 		return $this->start_result;
 	}

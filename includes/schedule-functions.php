@@ -1,7 +1,6 @@
 <?php declare( strict_types=1 );
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 
@@ -49,15 +48,6 @@ function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_E
 				throw new \InvalidArgumentException( 'args must be an array' );
 			}
 
-			$overlap_value = $specification['overlap'] ?? 'skip';
-			if ( ! \is_string( $overlap_value ) ) {
-				throw new \InvalidArgumentException( 'overlap must be allow, skip, or replace' );
-			}
-			$overlap = OverlapPolicy::tryFrom( $overlap_value );
-			if ( null === $overlap ) {
-				throw new \InvalidArgumentException( 'overlap must be allow, skip, or replace' );
-			}
-
 			$catch_up_value = $specification['catch_up'] ?? 'run_once';
 			if ( ! \is_string( $catch_up_value ) ) {
 				throw new \InvalidArgumentException( 'catch_up must be run_once or skip' );
@@ -72,7 +62,7 @@ function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_E
 				throw new \InvalidArgumentException( 'priority must be an integer' );
 			}
 
-			$declarations[] = new Schedule( $name, Recurrence::every( $every ), $job, $args, $overlap, $catch_up, $priority );
+			$declarations[] = new Schedule( $name, Recurrence::every( $every ), $job, $args, $catch_up, $priority );
 		}
 
 		$result = \a8csp_bgje( $owner )->schedules()->sync( $declarations );

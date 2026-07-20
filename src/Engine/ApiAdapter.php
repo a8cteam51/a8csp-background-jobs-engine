@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobsEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\SchedulesEngineInterface;
@@ -98,15 +97,14 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @param   string                  $identity  Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args      Job arguments.
 	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   string|null             $dedup_key Client deduplication key whose hash replaces the argument hash.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	#[\Override]
-	public function enqueue( string $identity, array $args, int $delay, ?string $dedup_key, int $priority ): AbstractResult {
-		return ApiErrorMapper::map( $this->dispatcher->enqueue( $identity, $args, $delay, $dedup_key, $priority ) );
+	public function enqueue( string $identity, array $args, int $delay, int $priority ): AbstractResult {
+		return ApiErrorMapper::map( $this->dispatcher->enqueue( $identity, $args, $delay, $priority ) );
 	}
 
 	/**
@@ -117,15 +115,14 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 *
 	 * @param   string                  $identity   Complete owner-qualified chunked job identity.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   ExistingRunPolicy       $existing   Behavior when a fresh matching incumbent holds the lock.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
 	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 	#[\Override]
-	public function start( string $identity, array $start_args, ExistingRunPolicy $existing, int $priority ): AbstractResult {
-		return ApiErrorMapper::map( $this->dispatcher->start_chunked_job( $identity, $start_args, $existing, $priority ) );
+	public function start( string $identity, array $start_args, int $priority ): AbstractResult {
+		return ApiErrorMapper::map( $this->dispatcher->start_chunked_job( $identity, $start_args, $priority ) );
 	}
 
 	/**

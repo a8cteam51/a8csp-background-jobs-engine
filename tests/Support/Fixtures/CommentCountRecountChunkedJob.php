@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 /**
  * Demonstrates a chunked job that recounts comments one post per independently retried chunk.
@@ -88,6 +89,34 @@ final class CommentCountRecountChunkedJob implements ChunkedJobInterface {
 	#[\Override]
 	public function max_callback_runtime(): int {
 		return self::DEFAULT_MAX_CALLBACK_RUNTIME;
+	}
+
+	/**
+	 * Refuses a matching live comment-count recount.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  OverlapPolicy
+	 */
+	#[\Override]
+	public function overlap_policy(): OverlapPolicy {
+		return OverlapPolicy::Reject;
+	}
+
+	/**
+	 * Uses the canonical recount arguments as the overlap identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 *
+	 * @return  string|null
+	 */
+	#[\Override]
+	public function overlap_key( array $start_args ): ?string {
+		return null;
 	}
 
 	/**

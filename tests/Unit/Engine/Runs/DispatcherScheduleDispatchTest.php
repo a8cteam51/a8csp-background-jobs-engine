@@ -44,6 +44,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	private Client $client;
 	private EngineRig $rig;
 	private StoreFixtureBuilder $fixtures;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -60,9 +61,9 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->client->jobs()->register( new RecordingJob( self::NAME ) );
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->client   = $this->rig->client( self::OWNER );
+		$this->job      = new RecordingJob( self::NAME );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -83,7 +84,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	/**
 	 * Every policy dispatches idempotently against an open lock.
 	 *
-	 * @param   string $policy_value Schedule overlap-policy value.
+	 * @param   string $policy_value Job overlap-policy value.
 	 *
 	 * @return  void
 	 */
@@ -104,14 +105,14 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Supplies every schedule overlap policy.
+	 * Supplies every Job overlap policy.
 	 *
 	 * @return array<string, array{policy_value: string}>
 	 */
 	public static function open_lock_policies(): array {
 		return array(
 			'allow'   => array( 'policy_value' => 'allow' ),
-			'skip'    => array( 'policy_value' => 'skip' ),
+			'reject'  => array( 'policy_value' => 'reject' ),
 			'replace' => array( 'policy_value' => 'replace' ),
 		);
 	}
@@ -213,12 +214,12 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Skip returns a benign overlap failure and leaves the incumbent untouched.
+	 * Reject returns a typed overlap failure and leaves the incumbent untouched.
 	 *
 	 * @return  void
 	 */
-	public function test_skip_dispatch_returns_a_typed_held_outcome(): void {
-		$this->sync_schedule( OverlapPolicy::Skip );
+	public function test_reject_dispatch_returns_a_typed_held_outcome(): void {
+		$this->sync_schedule( OverlapPolicy::Reject );
 		$this->seed_held_lock();
 		$latest_pointer = 'a8csp_bgje_latest_run_' . self::IDENTITY;
 		unset( $this->rig->wpdb()->rows[ $latest_pointer ], $this->rig->wpdb()->autoload[ $latest_pointer ] );
@@ -235,7 +236,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Skip fails closed when contention cannot be tied to an authoritative owner.
+	 * Reject fails closed when contention cannot be tied to an authoritative owner.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The nested insert interception forces a failed overlap-lock claim after the provisional run row exists, a mid-claim database race the public schedule facade cannot stage.
@@ -245,8 +246,8 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_skip_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
-		$this->sync_schedule( OverlapPolicy::Skip );
+	public function test_reject_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
+		$this->sync_schedule( OverlapPolicy::Reject );
 		// Two insert interceptions are required because the overlap-lock claim follows the provisional run-row insert.
 		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
 
@@ -321,11 +322,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	/**
 	 * Synchronizes one declaration through the owner-bound schedule facade.
 	 *
-	 * @param   OverlapPolicy $policy   Overlap policy.
+	 * @param   OverlapPolicy $policy   Job overlap policy.
 	 * @param   int           $priority Delivery priority.
 	 */
 	private function sync_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
-		$result = $this->client->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, $policy, priority: $priority ) ) );
+		$this->job->overlap_policy = $policy;
+		$this->client->jobs()->register( $this->job );
+		$result = $this->client->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, priority: $priority ) ) );
 		self::assertInstanceOf( Success::class, $result );
 	}
 

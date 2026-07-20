@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -43,15 +43,16 @@ final class SupersededRunTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_replacement_supersedes_incumbent_before_stale_chunk_execution(): void {
-		$start_args         = array(
+		$start_args                  = array(
 			'site_id' => 73,
 			'mode'    => 'replace',
 		);
-		$chunked_job        = new RecordingChunkedJob( self::NAME );
-		$chunked_job->queue = array(
+		$chunked_job                 = new RecordingChunkedJob( self::NAME );
+		$chunked_job->queue          = array(
 			array( 'chunk' => 'one' ),
 			array( 'chunk' => 'two' ),
 		);
+		$chunked_job->overlap_policy = OverlapPolicy::Replace;
 
 		$client = \a8csp_bgje( self::OWNER );
 		$client->chunked_jobs()->register( $chunked_job );
@@ -127,7 +128,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array(), $chunked_job->process_calls, 'The incumbent continue action must not process its exposed chunk inline' );
 		$run_a_action_id = $this->assert_pending_chunk_action( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
-		$run_b_result = $client->chunked_jobs()->start( self::NAME, $start_args, ExistingRunPolicy::Replace );
+		$run_b_result = $client->chunked_jobs()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
 		self::assertIsString( $run_b_result->value );
 		$run_b      = $run_b_result->value;

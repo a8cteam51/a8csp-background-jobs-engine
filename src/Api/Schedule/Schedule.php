@@ -40,7 +40,6 @@ final readonly class Schedule {
 	 * @param   Recurrence              $recurrence Recurrence definition.
 	 * @param   string                  $job       Stable target job name.
 	 * @param   array<array-key, mixed> $args       Target job arguments.
-	 * @param   OverlapPolicy           $overlap    Overlapping-run policy.
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
@@ -51,7 +50,6 @@ final readonly class Schedule {
 		public Recurrence $recurrence,
 		public string $job,
 		public array $args = array(),
-		public OverlapPolicy $overlap = OverlapPolicy::Skip,
 		public CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce,
 		public int $priority = 10,
 	) {
@@ -71,7 +69,6 @@ final readonly class Schedule {
 					'recurrence' => $this->recurrence->fingerprint_value(),
 					'job'        => $this->job,
 					'args'       => $this->args,
-					'overlap'    => $this->overlap->value,
 					'catch_up'   => $this->catch_up->value,
 					'priority'   => $this->priority,
 				),

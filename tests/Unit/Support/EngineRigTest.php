@@ -6,8 +6,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ExistingRunPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
@@ -134,13 +134,15 @@ final class EngineRigTest extends TestCase {
 	public function test_superseded_helper_observes_real_chunked_job_replacement(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client = $rig->client( 'rig-tests' );
-			$client->chunked_jobs()->register( new RecordingChunkedJob( 'chunked_job' ) );
+			$client                      = $rig->client( 'rig-tests' );
+			$chunked_job                 = new RecordingChunkedJob( 'chunked_job' );
+			$chunked_job->overlap_policy = OverlapPolicy::Replace;
+			$client->chunked_jobs()->register( $chunked_job );
 			$first = $client->chunked_jobs()->start( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $first );
 			++$rig->clock()->timestamp;
 
-			$replacement = $client->chunked_jobs()->start( 'chunked_job', self::ARGS, ExistingRunPolicy::Replace );
+			$replacement = $client->chunked_jobs()->start( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $replacement );
 			$rig->run_due();
 			$rig->assert_superseded();

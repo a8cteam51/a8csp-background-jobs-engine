@@ -394,7 +394,7 @@ final class EngineRig {
 		$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );

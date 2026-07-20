@@ -43,7 +43,7 @@ final readonly class RunState {
 	 * @param   JobType                       $kind            Admitted work contract type.
 	 * @param   bool                          $executing       Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
-	 * @param   string                        $args_hash       Stable single-flight identity derived from arguments or a job deduplication key.
+	 * @param   string                        $args_hash       Stable single-flight identity derived from arguments or a Job overlap key.
 	 * @param   list<array<array-key, mixed>> $queue           Persisted processing queue, oldest uncommitted chunk first.
 	 * @param   int                           $failed_attempts Failed attempts consumed by the current chunked job chunk; for
 	 *                                                         a job, failed handle() attempts in this run.

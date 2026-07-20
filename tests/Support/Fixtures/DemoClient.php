@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 
 /**
@@ -105,7 +104,7 @@ final readonly class DemoClient {
 
 		$synced = $client->schedules()->sync(
 			array(
-				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingJob::NAME, array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 10 ),
+				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingJob::NAME, array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ), CatchUpPolicy::RunOnce, 10 ),
 			)
 		);
 		if ( $synced->is_failure() ) {

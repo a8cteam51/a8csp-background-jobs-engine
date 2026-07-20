@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -21,18 +22,23 @@ final class CallableJob extends AbstractJob {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(array<array-key, mixed>): mixed $handler
+	 * @phpstan-param \Closure(array<array-key, mixed>): mixed          $handler
+	 * @phpstan-param (\Closure(array<array-key, mixed>): ?string)|null $overlap_key
 	 *
-	 * @param   string           $name        Stable job name.
-	 * @param   \Closure         $handler     Job handler.
-	 * @param   int|null         $max_runtime Optional callback-runtime ceiling in seconds.
-	 * @param   RetryPolicy|null $retry       Optional retry policy.
+	 * @param   string             $name        Stable job name.
+	 * @param   \Closure           $handler     Job handler.
+	 * @param   int|null           $max_runtime Optional callback-runtime ceiling in seconds.
+	 * @param   RetryPolicy|null   $retry       Optional retry policy.
+	 * @param   OverlapPolicy|null $overlap     Optional overlap policy.
+	 * @param   \Closure|null      $overlap_key Optional argument-aware overlap-key resolver.
 	 */
 	public function __construct(
 		private string $name,
 		private \Closure $handler,
 		private ?int $max_runtime = null,
 		private ?RetryPolicy $retry = null,
+		private ?OverlapPolicy $overlap = null,
+		private ?\Closure $overlap_key = null,
 	) {}
 
 	// endregion
@@ -80,6 +86,34 @@ final class CallableJob extends AbstractJob {
 	#[\Override]
 	public function max_callback_runtime(): int {
 		return $this->max_runtime ?? parent::max_callback_runtime();
+	}
+
+	/**
+	 * Returns the configured overlap policy or the shared default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  OverlapPolicy
+	 */
+	#[\Override]
+	public function overlap_policy(): OverlapPolicy {
+		return $this->overlap ?? parent::overlap_policy();
+	}
+
+	/**
+	 * Resolves the configured overlap key or uses the canonical argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 *
+	 * @return  string|null
+	 */
+	#[\Override]
+	public function overlap_key( array $start_args ): ?string {
+		return null === $this->overlap_key ? parent::overlap_key( $start_args ) : ( $this->overlap_key )( $start_args );
 	}
 
 	/**

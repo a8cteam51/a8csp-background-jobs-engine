@@ -139,24 +139,25 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dedup_key_collapses_different_arguments_until_completion_then_allows_reuse(): void {
-		$dedup_key      = 'site-7-digest';
+	public function test_overlap_key_collapses_different_arguments_until_completion_then_allows_reuse(): void {
+		$this->job->overlap_key_resolver = static fn ( array $args ): string => 'site-7-digest';
+
 		$successor_args = array(
 			'site_id' => 8,
 			'mode'    => 'delta',
 		);
-		$first          = $this->client->jobs()->enqueue( self::NAME, self::ARGS, dedup_key: $dedup_key );
+		$first          = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$duplicate                     = $this->client->jobs()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$duplicate                     = $this->client->jobs()->enqueue( self::NAME, $successor_args );
 		$this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
-		$reused                        = $this->client->jobs()->enqueue( self::NAME, $successor_args, dedup_key: $dedup_key );
+		$reused                        = $this->client->jobs()->enqueue( self::NAME, $successor_args );
 		self::assertInstanceOf( Success::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );

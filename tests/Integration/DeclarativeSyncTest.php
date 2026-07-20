@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
@@ -178,8 +177,8 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 */
 	public function test_fingerprint_change_reschedules_the_occurrence(): void {
 		$this->expect_option( ScheduleRegistry::option_name( self::FINGERPRINT_OWNER ) );
-		$original    = new Schedule( 'fingerprint', Recurrence::every( 300 ), 'integration-declarative-fingerprint-job', array( 'mode' => 'original' ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 21 );
-		$replacement = new Schedule( 'fingerprint', Recurrence::every( 900 ), 'integration-declarative-fingerprint-job', array( 'mode' => 'replacement' ), OverlapPolicy::Replace, CatchUpPolicy::Skip, 22 );
+		$original    = new Schedule( 'fingerprint', Recurrence::every( 300 ), 'integration-declarative-fingerprint-job', array( 'mode' => 'original' ), CatchUpPolicy::RunOnce, 21 );
+		$replacement = new Schedule( 'fingerprint', Recurrence::every( 900 ), 'integration-declarative-fingerprint-job', array( 'mode' => 'replacement' ), CatchUpPolicy::Skip, 22 );
 		$this->assert_sync_succeeds( self::FINGERPRINT_OWNER, array( $original ) );
 		$before = $this->schedule_entry( $this->schedule_entries( self::FINGERPRINT_OWNER ), self::FINGERPRINT_OWNER . ':fingerprint' );
 		self::assertIsArray( $before );
@@ -210,7 +209,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_identical_redeclaration_is_an_exact_noop(): void {
 		$registry_option = ScheduleRegistry::option_name( self::NOOP_OWNER );
 		$this->expect_option( $registry_option );
-		$declaration = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-job', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
+		$declaration = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-job', array( 'scope' => 'stable' ), CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $declaration ) );
 		$registration_key  = self::NOOP_OWNER . ':noop';
 		$action_id         = $this->sole_pending_schedule_action_id( $registration_key );
@@ -219,7 +218,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertIsArray( $registry_snapshot );
 		$inspection_snapshot = $this->schedule_entries( self::NOOP_OWNER );
 
-		$identical = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-job', array( 'scope' => 'stable' ), OverlapPolicy::Allow, CatchUpPolicy::RunOnce, 42 );
+		$identical = new Schedule( 'noop', Recurrence::every( 420 ), 'integration-declarative-noop-job', array( 'scope' => 'stable' ), CatchUpPolicy::RunOnce, 42 );
 		$this->assert_sync_succeeds( self::NOOP_OWNER, array( $identical ) );
 
 		self::assertSame( $inspection_snapshot, $this->schedule_entries( self::NOOP_OWNER ) );
@@ -339,7 +338,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	public function test_orphan_detection_is_scoped_to_the_synced_owner(): void {
 		$this->expect_option( ScheduleRegistry::option_name( self::SCOPED_OWNER_B ) );
 		$schedule_a = new Schedule( 'scoped-a', Recurrence::every( 360 ), 'integration-declarative-scoped-job-a' );
-		$schedule_b = new Schedule( 'scoped-b', Recurrence::every( 720 ), 'integration-declarative-scoped-job-b', array( 'owner' => 'b' ), OverlapPolicy::Skip, CatchUpPolicy::Skip, 64 );
+		$schedule_b = new Schedule( 'scoped-b', Recurrence::every( 720 ), 'integration-declarative-scoped-job-b', array( 'owner' => 'b' ), CatchUpPolicy::Skip, 64 );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_A, array( $schedule_a ) );
 		$this->assert_sync_succeeds( self::SCOPED_OWNER_B, array( $schedule_b ) );
 		$owner_b_snapshot = $this->schedule_entries( self::SCOPED_OWNER_B );
