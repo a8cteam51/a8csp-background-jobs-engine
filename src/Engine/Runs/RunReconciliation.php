@@ -278,7 +278,7 @@ final readonly class RunReconciliation {
 				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $work_type, $expected_raw );
 			}
 
-			$scheduled = $this->redeliver_pending_action( $identity, $run_id, $state, $work_type );
+			$scheduled = $this->redeliver_pending_action( $identity, $run_id, $state );
 			if ( ! $scheduled->is_failure() ) {
 				return new Success( null );
 			}
@@ -358,7 +358,7 @@ final readonly class RunReconciliation {
 	 */
 	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?ChunkedJobInterface $chunked_job, JobType $work_type, string $expected_raw ): AbstractResult {
 		$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
-		$failed_chunk = JobType::ChunkedJob === $work_type && 'run' === $state->pending?->stage
+		$failed_chunk = JobType::ChunkedJob === $work_type && 'continue' === $state->pending?->stage
 			? ( $state->queue[0] ?? null )
 			: null;
 		if ( JobType::ChunkedJob === $work_type ) {
@@ -403,13 +403,12 @@ final readonly class RunReconciliation {
 	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Stale non-executing running state.
-	 * @param   JobType  $work_type Work contract type.
 	 *
 	 * @throws  \LogicException When a schema-valid descriptor conflicts with its scheduling mode.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function redeliver_pending_action( string $identity, string $run_id, RunState $state, JobType $work_type ): AbstractResult {
+	private function redeliver_pending_action( string $identity, string $run_id, RunState $state ): AbstractResult {
 		$pending = $state->pending;
 		if ( null === $pending ) {
 			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
@@ -420,7 +419,7 @@ final readonly class RunReconciliation {
 			'start'    => 'a8csp_jobs_engine/start_chunked_job',
 			'continue' => 'a8csp_jobs_engine/continue_chunked_job',
 			'cleanup'  => 'a8csp_jobs_engine/cleanup_chunked_job',
-			'run'      => JobType::ChunkedJob === $work_type ? 'a8csp_jobs_engine/run_chunk' : 'a8csp_jobs_engine/run_job',
+			'run'      => 'a8csp_jobs_engine/run_job',
 		};
 		$group = $identity . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {

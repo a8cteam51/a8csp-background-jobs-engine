@@ -169,7 +169,7 @@ final class ChunkContextTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Starts one chunked job and drives its start and first run actions through registered hooks.
+	 * Starts one chunked job and drives its start and first continuation actions through registered hooks.
 	 *
 	 * @param   RecordingChunkedJob          $chunked_job      Registered chunked job fake.
 	 * @param   array<array-key, mixed> $start_args Chunked Job start arguments.
@@ -182,7 +182,6 @@ final class ChunkContextTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
-		$this->rig->run_due();
 		$this->rig->run_due();
 		$this->rig->run_due();
 

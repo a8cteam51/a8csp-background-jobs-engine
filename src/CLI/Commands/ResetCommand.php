@@ -63,7 +63,6 @@ final readonly class ResetCommand {
 		ActionDeliveries::START_HOOK,
 		ActionDeliveries::CONTINUE_HOOK,
 		ActionDeliveries::RUN_JOB_HOOK,
-		ActionDeliveries::RUN_CHUNK_HOOK,
 		ActionDeliveries::CLEANUP_HOOK,
 		OccurrenceDelivery::SCHEDULE_HOOK,
 	);

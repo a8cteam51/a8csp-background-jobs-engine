@@ -59,7 +59,7 @@ final readonly class ActionDeliveries {
 	private const int MAX_QUEUE_BYTES = 1_048_576;
 
 	/**
-	 * Internal hook that resumes a chunked job after its inter-chunk delay.
+	 * Internal hook that processes one chunked job chunk and schedules the next continuation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -87,16 +87,6 @@ final readonly class ActionDeliveries {
 	 * @var     string
 	 */
 	public const string RUN_JOB_HOOK = 'a8csp_jobs_engine/run_job';
-
-	/**
-	 * Internal hook that executes one chunked job chunk.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	public const string RUN_CHUNK_HOOK = 'a8csp_jobs_engine/run_chunk';
 
 	/**
 	 * Internal hook that generates and starts a chunked job queue.
@@ -247,7 +237,7 @@ final readonly class ActionDeliveries {
 	}
 
 	/**
-	 * Schedules the current retained queue head for a chunked job run.
+	 * Processes the current retained queue head for a chunked job run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -259,13 +249,17 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	public function handle_continue_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
-		$run_store = $this->stores->run_store( $chunked_job_name );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( JobType::ChunkedJob, $chunked_job_name, $run_id, $action_sequence, $run_store );
+		$registered_chunked_job = $this->work->chunked_job( $chunked_job_name );
+		$liveness_at            = null !== $registered_chunked_job
+			? fn (): int => $this->execution_lease_at( $registered_chunked_job, $chunked_job_name, $run_id )
+			: null;
+		$run_store              = $this->stores->run_store( $chunked_job_name );
+		$state                  = $this->terminal_transitions->claim_delivery_ownership( JobType::ChunkedJob, $chunked_job_name, $run_id, $action_sequence, $run_store, $liveness_at );
 		if ( null === $state ) {
 			return;
 		}
 
-		$chunked_job = $this->chunked_job_for_action( $chunked_job_name, $run_id, 'continue' );
+		$chunked_job = $registered_chunked_job ?? $this->chunked_job_for_action( $chunked_job_name, $run_id, 'continue' );
 		if ( null === $chunked_job ) {
 			$this->fail_orphaned_run( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store );
 
@@ -286,20 +280,11 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$chunk_args  = $state->queue[0];
-		$replacement = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'run', 10 ) );
-		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
-			return;
-		}
-		$state     = $replacement;
-		$scheduled = $this->scheduler->enqueue_async( self::RUN_CHUNK_HOOK, array( $chunked_job_name, $run_id, $state->action_sequence ), $chunked_job_name . '|' . $run_id );
-		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::scheduling( JobType::ChunkedJob, $chunked_job_name, 'run', $scheduled->error ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ), $chunk_args );
-		}
+		$this->handle_chunked_job_continue_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store );
 	}
 
 	/**
-	 * Handles one scheduled job run action.
+	 * Claims and executes one scheduled job run delivery, failing the run when its job is unregistered.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -311,23 +296,30 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	public function handle_run_job_action( string $job_name, string $run_id, int $action_sequence ): void {
-		$this->handle_run_action( $job_name, $run_id, $action_sequence );
-	}
+		$registered_job = $this->work->job( $job_name );
+		$liveness_at    = null !== $registered_job
+			? fn (): int => $this->execution_lease_at( $registered_job, $job_name, $run_id )
+			: null;
+		$run_store      = $this->stores->run_store( $job_name );
+		$state          = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, $job_name, $run_id, $action_sequence, $run_store, $liveness_at );
+		if ( null === $state ) {
+			return;
+		}
 
-	/**
-	 * Handles one scheduled chunked-job-chunk run action.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
-	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_sequence Expected lifecycle action sequence.
-	 *
-	 * @return  void
-	 */
-	public function handle_run_chunk_action( string $chunked_job_name, string $run_id, int $action_sequence ): void {
-		$this->handle_run_action( $chunked_job_name, $run_id, $action_sequence );
+		if ( null !== $registered_job ) {
+			$this->handle_job_run_action( $registered_job, $job_name, $run_id, $state, $run_store );
+
+			return;
+		}
+
+		$this->logger->warning(
+			'Job run action references an unregistered job; register the job before dispatching its run action.',
+			array(
+				'job_name' => $job_name,
+				'run_id'   => $run_id,
+			)
+		);
+		$this->fail_orphaned_run( JobType::Job, $job_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -382,79 +374,12 @@ final readonly class ActionDeliveries {
 		\add_action( self::START_HOOK, array( $this, 'handle_start_action' ), 10, 3 );
 		\add_action( self::CONTINUE_HOOK, array( $this, 'handle_continue_action' ), 10, 3 );
 		\add_action( self::RUN_JOB_HOOK, array( $this, 'handle_run_job_action' ), 10, 3 );
-		\add_action( self::RUN_CHUNK_HOOK, array( $this, 'handle_run_chunk_action' ), 10, 3 );
 		\add_action( self::CLEANUP_HOOK, array( $this, 'handle_cleanup_action' ), 10, 3 );
 	}
 
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Dispatches one run delivery according to its persisted work kind.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity   Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_sequence Expected lifecycle action sequence.
-	 *
-	 * @return  void
-	 */
-	private function handle_run_action( string $identity, string $run_id, int $action_sequence ): void {
-		$liveness_at = function ( RunState $persisted_state ) use ( $identity, $run_id ): int {
-			$contract = JobType::Job === $persisted_state->kind
-				? $this->work->job( $identity )
-				: $this->work->chunked_job( $identity );
-
-			return null !== $contract
-				? $this->execution_lease_at( $contract, $identity, $run_id )
-				: $this->clock->now()->getTimestamp();
-		};
-		$run_store   = $this->stores->run_store( $identity );
-		$state       = $this->terminal_transitions->claim_delivery_ownership( null, $identity, $run_id, $action_sequence, $run_store, $liveness_at );
-		if ( null === $state ) {
-			return;
-		}
-
-		$work_type = $state->kind;
-		if ( JobType::Job === $work_type ) {
-			$job = $this->work->job( $identity );
-			if ( null !== $job ) {
-				$this->handle_job_run_action( $job, $identity, $run_id, $state, $run_store );
-
-				return;
-			}
-
-			$this->logger->warning(
-				'Job run action references an unregistered job; register the job before dispatching its run action.',
-				array(
-					'job_name' => $identity,
-					'run_id'   => $run_id,
-				)
-			);
-			$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
-
-			return;
-		}
-
-		$chunked_job = $this->work->chunked_job( $identity );
-		if ( null !== $chunked_job ) {
-			$this->handle_chunked_job_run_action( $chunked_job, $identity, $run_id, $state, $run_store );
-
-			return;
-		}
-
-		$this->logger->warning(
-			'Chunked Job run action references an unregistered chunked job; register the chunked job before dispatching its run action.',
-			array(
-				'chunked_job_name' => $identity,
-				'run_id'           => $run_id,
-			)
-		);
-		$this->fail_orphaned_run( $work_type, $identity, $run_id, $state, $run_store );
-	}
 
 	/**
 	 * Fails chunked job startup after preserving its post-callback liveness fence.
@@ -529,10 +454,10 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	private function handle_chunked_job_run_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store ): void {
+	private function handle_chunked_job_continue_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$chunk_args = $state->queue[0] ?? null;
 		if ( ! \is_array( $chunk_args ) ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached chunk execution without a queued chunk; schedule run only while the authoritative queue has a head.', $chunked_job_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', $chunked_job_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
 
 			return;
 		}

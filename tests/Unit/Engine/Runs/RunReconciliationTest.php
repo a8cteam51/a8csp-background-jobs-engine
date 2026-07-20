@@ -299,7 +299,6 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array(), $chunked_job->failed_calls );
 
 		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
-		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
 
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( $chunk, $chunked_job->process_calls[0]['chunk_args'] ?? null );
@@ -804,7 +803,6 @@ final class RunReconciliationTest extends TestCase {
 		$result = $this->dispatcher->start_chunked_job( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_start_action( $name, self::RUN_ID, 1 );
-		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
@@ -814,11 +812,11 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
 		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
-		self::assertSame( 'a8csp_jobs_engine/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( $name, self::RUN_ID, 3 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/continue_chunked_job', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 2 ), $this->backend->calls[0]['args']['args'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
-		$this->lifecycle_deliveries->handle_run_chunk_action( $name, self::RUN_ID, 3 );
+		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
+		$this->lifecycle_deliveries->handle_continue_action( $name, self::RUN_ID, 2 );
 
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array(), $chunked_job->failed_calls );
@@ -831,7 +829,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_pending_chunked_job_redelivery_ignores_a_current_job_with_the_same_identity(): void {
 		$chunk = array( 'page' => 1 );
-		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'continue', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
 		$current_job = $this->work->job( self::IDENTITY );
@@ -839,14 +837,23 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->maintenance->handle( array() );
 
-		self::assertSame( 'a8csp_jobs_engine/run_chunk', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/continue_chunked_job', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
 
-		$this->lifecycle_deliveries->handle_run_chunk_action( self::IDENTITY, self::RUN_ID, 1 );
+		$this->lifecycle_deliveries->handle_continue_action( self::IDENTITY, self::RUN_ID, 1 );
 
 		self::assertSame( array(), $current_job->calls );
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
-		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $this->options() );
+		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
+		self::assertIsArray( $failed );
+		$failed_entry = $failed[0] ?? null;
+		self::assertIsArray( $failed_entry );
+		$error = $failed_entry['error'] ?? null;
+		self::assertIsArray( $error );
+		self::assertSame( $chunk, $error['failed_chunk'] ?? null );
+		$failure = $this->fired_actions()[0]['args'][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( $chunk, $failure->failed_chunk );
 		$record = $this->log_record(
 			'warning',
 			array(
@@ -1096,7 +1103,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_supersedes_a_stale_persisted_chunked_job_whose_lock_has_transferred(): void {
-		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->clock->timestamp = self::NOW + 901;
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
@@ -1327,7 +1334,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_routes_a_running_row_by_its_persisted_chunked_job_kind(): void {
-		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'continue', 10 ) );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
 
@@ -1347,6 +1354,9 @@ final class RunReconciliationTest extends TestCase {
 		$error = $failed_entry['error'] ?? null;
 		self::assertIsArray( $error );
 		self::assertSame( self::ARGS, $error['failed_chunk'] ?? null );
+		$failure = $this->fired_actions()[0]['args'][2] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( self::ARGS, $failure->failed_chunk );
 		self::assertNotNull(
 			$this->log_record(
 				'warning',
@@ -1690,9 +1700,10 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_classifies_missing_persisted_failure_detail_as_storage_failure(): void {
 		$name        = self::identity( 'failed-without-detail' );
+		$chunk       = array( 'page' => 1 );
 		$chunked_job = new RecordingChunkedJob( 'failed-without-detail' );
 		$this->work->register_chunked_job( $name, $chunked_job );
-		$this->store_terminal_run( $name, 'failed', array(), null, 2, JobType::ChunkedJob );
+		$this->store_terminal_run( $name, 'failed', array(), null, 2, JobType::ChunkedJob, array( $chunk ), PendingAction::async( 'continue', 10 ) );
 
 		$this->maintenance->handle( array() );
 
@@ -1708,10 +1719,11 @@ final class RunReconciliationTest extends TestCase {
 					'start_args' => self::ARGS,
 					'attempts'   => 3,
 					'error'      => array(
-						'class'   => null,
-						'message' => $expected_summary,
-						'stage'   => RunFailureStage::CrashReclaim->value,
-						'code'    => ApiErrorCode::StorageFailure->value,
+						'class'        => null,
+						'message'      => $expected_summary,
+						'stage'        => RunFailureStage::CrashReclaim->value,
+						'code'         => ApiErrorCode::StorageFailure->value,
+						'failed_chunk' => $chunk,
 					),
 				),
 			),
@@ -1725,7 +1737,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
 		self::assertSame( ApiErrorCode::StorageFailure, $failure->code );
 		self::assertSame( $expected_summary, $failure->summary );
-		self::assertNull( $failure->failed_chunk );
+		self::assertSame( $chunk, $failure->failed_chunk );
 		$actions = $this->fired_actions();
 		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
 		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
@@ -2115,18 +2127,21 @@ final class RunReconciliationTest extends TestCase {
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 * @phpstan-param JobType $kind
+	 * @phpstan-param list<array<array-key, mixed>> $queue
 	 *
-	 * @param   string     $name            Stable job or chunked job name.
-	 * @param   string     $status          Terminal status value.
-	 * @param   array      $effects         Completed terminal effect keys.
-	 * @param   array|null $error           Persisted terminal failure detail.
-	 * @param   int        $failed_attempts Attempts consumed by a failed run.
-	 * @param   JobType    $kind            Persisted work contract type.
+	 * @param   string             $name            Stable job or chunked job name.
+	 * @param   string             $status          Terminal status value.
+	 * @param   array              $effects         Completed terminal effect keys.
+	 * @param   array|null         $error           Persisted terminal failure detail.
+	 * @param   int                $failed_attempts Attempts consumed by a failed run.
+	 * @param   JobType            $kind            Persisted work contract type.
+	 * @param   array              $queue           Persisted chunk queue.
+	 * @param   PendingAction|null $pending         Durable successor descriptor.
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, JobType $kind = JobType::Job ): void {
-		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array(), failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, error: $error, effects: $effects );
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, JobType $kind = JobType::Job, array $queue = array(), ?PendingAction $pending = null ): void {
+		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: $queue, failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: $pending, error: $error, effects: $effects );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
 

@@ -332,7 +332,6 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		\remove_all_actions( 'a8csp_jobs_engine/start_chunked_job' );
 		\remove_all_actions( 'a8csp_jobs_engine/continue_chunked_job' );
 		\remove_all_actions( 'a8csp_jobs_engine/run_job' );
-		\remove_all_actions( 'a8csp_jobs_engine/run_chunk' );
 		\remove_all_actions( 'a8csp_jobs_engine/cleanup_chunked_job' );
 		\remove_all_actions( 'a8csp_jobs_engine/schedule_due' );
 		$scheduler->register_hooks();

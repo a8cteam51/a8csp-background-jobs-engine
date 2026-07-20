@@ -232,7 +232,7 @@ final readonly class FailureLifecycle {
 	}
 
 	/**
-	 * Persists retry state, fires retry hooks, and schedules the same run action.
+	 * Persists retry state, fires retry hooks, and schedules the same work delivery.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -276,7 +276,8 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( 'run', $fire_at, 10 ) );
+			$retry_stage = JobType::ChunkedJob === $work_type ? 'continue' : 'run';
+			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( $retry_stage, $fire_at, 10 ) );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -322,7 +323,8 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$scheduled = $this->scheduler->schedule_single( JobType::ChunkedJob === $work_type ? 'a8csp_jobs_engine/run_chunk' : 'a8csp_jobs_engine/run_job', $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
+			$retry_hook = JobType::ChunkedJob === $work_type ? 'a8csp_jobs_engine/continue_chunked_job' : 'a8csp_jobs_engine/run_job';
+			$scheduled  = $this->scheduler->schedule_single( $retry_hook, $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,

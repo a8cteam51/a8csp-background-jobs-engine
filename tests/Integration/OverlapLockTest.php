@@ -67,8 +67,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$lock_name = 'a8csp_bgje_overlap_lock_' . self::REJECT_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the rejecting incumbent queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the rejecting incumbent first chunk' );
-		$first_action_id = $this->assert_pending_chunk_action( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
+		$first_action_id = $this->assert_pending_chunk_continuation( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
@@ -107,11 +106,10 @@ final class OverlapLockTest extends IntegrationTestCase {
 		);
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent first chunk' );
-		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $first_action_id ), 'Action Scheduler must complete the incumbent first chunk action' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the incumbent second chunk' );
-		$second_action_id = $this->assert_pending_chunk_action( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'two' ) );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $first_action_id ), 'Action Scheduler must complete the incumbent first continuation' );
+		$second_action_id = $this->assert_pending_chunk_continuation( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'two' ) );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent second chunk' );
-		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $second_action_id ), 'Action Scheduler must complete the incumbent second chunk action' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $second_action_id ), 'Action Scheduler must complete the incumbent second continuation' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained incumbent queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete incumbent cleanup' );
 
@@ -196,8 +194,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$lock_name = 'a8csp_bgje_overlap_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the crash-simulated incumbent queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the crash-simulated incumbent chunk' );
-		$run_a_action_id = $this->assert_pending_chunk_action( self::RECLAIM_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
+		$run_a_action_id = $this->assert_pending_chunk_continuation( self::RECLAIM_IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$aged_lock = \get_option( $lock_name, null );
 		self::assertIsArray( $aged_lock );
@@ -380,13 +377,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 	): void {
 		foreach ( $expected_chunks as $expected_chunk ) {
 			$process_call_count = \count( $chunked_job->process_calls );
-			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose one accepted chunk' );
-			self::assertCount( $process_call_count, $chunked_job->process_calls, 'An accepted continue action must not process its exposed chunk inline' );
-			$action_id = $this->assert_pending_chunk_action( $name, $run_id, $group, $expected_chunk );
-			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one accepted chunk' );
-			self::assertCount( $process_call_count + 1, $chunked_job->process_calls, 'An accepted run action must process one chunk' );
-			self::assertSame( $expected_chunk, $chunked_job->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'An accepted run action must process the chunk exposed by its continue action' );
-			self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $action_id ), 'Action Scheduler must complete the accepted chunk action' );
+			$action_id          = $this->assert_pending_chunk_continuation( $name, $run_id, $group, $expected_chunk );
+			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one accepted continuation' );
+			self::assertCount( $process_call_count + 1, $chunked_job->process_calls, 'An accepted continue action must process one chunk' );
+			self::assertSame( $expected_chunk, $chunked_job->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'An accepted continue action must process the authoritative queue head' );
+			self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $action_id ), 'Action Scheduler must complete the accepted continuation' );
 		}
 
 		$process_calls_before = $chunked_job->process_calls;

@@ -200,7 +200,7 @@ final class EngineComponentTest extends TestCase {
 
 		self::assertTrue( $reentered );
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
-		self::assertCount( 8, $this->action_registrations() );
+		self::assertCount( 7, $this->action_registrations() );
 		self::assertCount( 1, $this->filter_registrations() );
 	}
 

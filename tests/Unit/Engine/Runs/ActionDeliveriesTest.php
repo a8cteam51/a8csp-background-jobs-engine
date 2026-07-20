@@ -106,7 +106,7 @@ final class ActionDeliveriesTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The registered start, continue, run, and cleanup actions complete one real chunked job.
+	 * The registered start, continue, and cleanup actions complete one real chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -120,7 +120,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$result = $this->client->chunked_jobs()->start( $chunked_job->get_name(), self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
-		for ( $delivery = 0; $delivery < 5; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
@@ -404,29 +404,6 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->rig->run_due();
 
 		$this->assert_replacement_generation_is_retained();
-	}
-
-	/**
-	 * A fixed-token chunk hook delivered against a job run routes by the persisted kind and runs the job.
-	 *
-	 * @load-bearing security
-	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, without stranding the execution marker.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_chunk_hook_delivery_routes_a_job_run_by_its_persisted_kind(): void {
-		$this->enqueue_job();
-
-		\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID, 1 );
-		self::assertSame( array( self::ARGS ), $this->job->calls );
-		$this->rig->assert_completed();
-
-		$this->rig->run_due();
-
-		self::assertSame( array( self::ARGS ), $this->job->calls );
 	}
 
 	/**

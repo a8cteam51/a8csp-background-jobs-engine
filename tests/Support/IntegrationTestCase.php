@@ -246,7 +246,7 @@ abstract class IntegrationTestCase extends TestCase {
 	}
 
 	/**
-	 * Asserts and returns one pending chunked job chunk action.
+	 * Asserts and returns one pending chunked job continuation action.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -258,19 +258,19 @@ abstract class IntegrationTestCase extends TestCase {
 	 *
 	 * @return  string
 	 */
-	protected function assert_pending_chunk_action( string $name, string $run_id, string $group, array $expected_chunk ): string {
+	protected function assert_pending_chunk_continuation( string $name, string $run_id, string $group, array $expected_chunk ): string {
 		$run_state = \get_option( 'a8csp_bgje_run_' . $name . '_' . $run_id, null );
-		self::assertIsArray( $run_state, 'A pending chunk action must retain its authoritative run row' );
+		self::assertIsArray( $run_state, 'A pending chunked job continuation must retain its authoritative run row' );
 		$queue = $run_state['queue'] ?? null;
-		self::assertIsArray( $queue, 'A pending chunk action must retain its authoritative queue' );
+		self::assertIsArray( $queue, 'A pending chunked job continuation must retain its authoritative queue' );
 		self::assertSame( $expected_chunk, $queue[0] ?? null, 'The expected chunk must be the authoritative queue head' );
 		$action_sequence = $run_state['action_sequence'] ?? null;
-		self::assertIsInt( $action_sequence, 'A pending chunk action must retain its lifecycle sequence token' );
+		self::assertIsInt( $action_sequence, 'A pending chunked job continuation must retain its lifecycle sequence token' );
 
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/run_chunk',
+				'hook'     => 'a8csp_jobs_engine/continue_chunked_job',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -279,15 +279,15 @@ abstract class IntegrationTestCase extends TestCase {
 			)
 		);
 		self::assertIsArray( $action_ids );
-		self::assertCount( 1, $action_ids, 'Queue advancement must expose exactly one pending chunked job chunk action' );
+		self::assertCount( 1, $action_ids, 'Chunk processing must retain exactly one pending chunked job continuation' );
 		self::assertIsString( $action_ids[0] ?? null );
 		$action_id = $action_ids[0];
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/run_chunk', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/continue_chunked_job', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
-		self::assertSame( array( $name, $run_id, $action_sequence ), $action->get_args(), 'A chunk action must carry only its fenced delivery token' );
+		self::assertSame( array( $name, $run_id, $action_sequence ), $action->get_args(), 'A chunked job continuation must carry only its fenced delivery token' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
 
 		return $action_id;

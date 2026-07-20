@@ -124,9 +124,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array(), $chunked_job->process_calls, 'Queue generation must not process a chunk inline' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $start_a_id ), 'Action Scheduler must complete the incumbent start action' );
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must dequeue the incumbent first chunk' );
-		self::assertSame( array(), $chunked_job->process_calls, 'The incumbent continue action must not process its exposed chunk inline' );
-		$run_a_action_id = $this->assert_pending_chunk_action( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
+		$run_a_action_id = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$run_b_result = $client->chunked_jobs()->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
@@ -188,14 +186,12 @@ final class SupersededRunTest extends IntegrationTestCase {
 			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
 			$process_calls      = $chunked_job->process_calls;
 			$process_call_count = \count( $process_calls );
-			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must dequeue one replacement chunk' );
-			self::assertCount( $process_call_count, $chunked_job->process_calls, 'A replacement continue action must not process its exposed chunk inline' );
-			$run_b_action_ids[] = $this->assert_pending_chunk_action( self::IDENTITY, $run_b, $group_b, $expected_chunk );
-			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one replacement chunk action' );
+			$run_b_action_ids[] = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_b, $group_b, $expected_chunk );
+			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one replacement continuation' );
 			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
 			$process_calls = $chunked_job->process_calls;
-			self::assertCount( $process_call_count + 1, $process_calls, 'A replacement run action must process one chunk' );
-			self::assertSame( $expected_chunk, $process_calls[ $process_call_count ]['chunk_args'] ?? null, 'The replacement run action must process the chunk exposed by its continue action' );
+			self::assertCount( $process_call_count + 1, $process_calls, 'A replacement continue action must process one chunk' );
+			self::assertSame( $expected_chunk, $process_calls[ $process_call_count ]['chunk_args'] ?? null, 'The replacement continue action must process the authoritative queue head' );
 		}
 
 		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls_before */

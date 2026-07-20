@@ -61,7 +61,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param (\Closure(RunState): int)|null $liveness_at
+	 * @phpstan-param (\Closure(): int)|null $liveness_at
 	 *
 	 * @param   JobType|null  $expected_work_type Expected work contract type, or null to use the persisted kind.
 	 * @param   string        $identity           Complete owner-qualified job or chunked job identity.
@@ -174,7 +174,7 @@ final readonly class RunTransitions {
 			return null;
 		}
 
-		$at = null !== $liveness_at ? $liveness_at( $state ) : $this->clock->now()->getTimestamp();
+		$at = null !== $liveness_at ? $liveness_at() : $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
 		if ( $this->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
@@ -543,7 +543,7 @@ final readonly class RunTransitions {
 	}
 
 	/**
-	 * Returns the queued chunk associated with a chunked job run action.
+	 * Returns the queued chunk associated with a chunk-processing continuation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -554,7 +554,7 @@ final readonly class RunTransitions {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private static function failed_chunk_for_state( JobType $work_type, RunState $state ): ?array {
-		if ( JobType::ChunkedJob !== $work_type || 'run' !== $state->pending?->stage ) {
+		if ( JobType::ChunkedJob !== $work_type || 'continue' !== $state->pending?->stage ) {
 			return null;
 		}
 

@@ -35,7 +35,6 @@ final class HookNameLiteralsTest extends TestCase {
 		'start_chunked_job'    => 'a8csp_jobs_engine/start_chunked_job',
 		'continue_chunked_job' => 'a8csp_jobs_engine/continue_chunked_job',
 		'run_job'              => 'a8csp_jobs_engine/run_job',
-		'run_chunk'            => 'a8csp_jobs_engine/run_chunk',
 		'cleanup_chunked_job'  => 'a8csp_jobs_engine/cleanup_chunked_job',
 		'schedule_due'         => 'a8csp_jobs_engine/schedule_due',
 	);

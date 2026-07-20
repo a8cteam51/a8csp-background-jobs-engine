@@ -525,7 +525,7 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Returns the queued chunk associated with a chunked job run action.
+	 * Returns the queued chunk associated with a chunk-processing continuation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -536,7 +536,7 @@ final readonly class LifecycleEffects {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private static function failed_chunk_for_state( JobType $work_type, RunState $state ): ?array {
-		if ( JobType::ChunkedJob !== $work_type || 'run' !== $state->pending?->stage ) {
+		if ( JobType::ChunkedJob !== $work_type || 'continue' !== $state->pending?->stage ) {
 			return null;
 		}
 

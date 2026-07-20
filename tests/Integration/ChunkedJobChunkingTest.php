@@ -126,16 +126,14 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			$process_calls_before = $chunked_job->process_calls;
 			$process_call_count   = \count( $process_calls_before );
 
-			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one queue-advance action' );
-			self::assertSame( $process_calls_before, $chunked_job->process_calls, 'A CONTINUE action must leave the process ledger unchanged; dispatch the visible chunk through its RUN action' );
-			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one visible chunk action' );
-			self::assertCount( $process_call_count + 1, $chunked_job->process_calls, 'A RUN action must process exactly one chunked job chunk' );
-			self::assertSame( $expected_chunk, $chunked_job->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'A RUN action must process the chunk exposed by the preceding CONTINUE action' );
+			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one chunked job continuation' );
+			self::assertCount( $process_call_count + 1, $chunked_job->process_calls, 'A CONTINUE action must process exactly one chunked job chunk' );
+			self::assertSame( $expected_chunk, $chunked_job->process_calls[ $process_call_count ]['chunk_args'] ?? null, 'A CONTINUE action must process the authoritative queue head' );
 		}
 
 		$process_calls_before = $chunked_job->process_calls;
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue' );
-		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'A drained-queue CONTINUE action must leave the process ledger unchanged; dispatch chunks only through RUN actions' );
+		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'A drained-queue CONTINUE action must leave the process ledger unchanged' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute terminal chunked job cleanup' );
 		self::assertSame( \array_fill( 0, 6, array( 60, self::IDENTITY, $run_id ) ), $continue_delay_calls, 'The zero-delay filter must receive its default, chunked job name, and run ID for the lock and every chunk' );
 
@@ -222,9 +220,8 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		self::assertIsFloat( $persisted_chunk['value'] ?? null, 'The engine-owned run row must preserve 1.0 as a float' );
 		self::assertSame( 1.0, $persisted_chunk['value'] );
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the authoritative queue head' );
-		$this->assert_pending_chunk_action( self::FIDELITY_IDENTITY, $run_id, $group, $persisted_chunk );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the token-only chunk action' );
+		$this->assert_pending_chunk_continuation( self::FIDELITY_IDENTITY, $run_id, $group, $persisted_chunk );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the token-only continuation' );
 
 		self::assertCount( 1, $chunked_job->process_calls, 'The token-only delivery must process the authoritative chunk exactly once' );
 		$delivered_chunk = $chunked_job->process_calls[0]['chunk_args'] ?? null;

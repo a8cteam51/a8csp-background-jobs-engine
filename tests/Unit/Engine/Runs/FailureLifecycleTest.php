@@ -623,7 +623,7 @@ final class FailureLifecycleTest extends TestCase {
 		$result = $this->client->chunked_jobs()->start( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
-		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
 			$this->rig->run_due();
 		}
 

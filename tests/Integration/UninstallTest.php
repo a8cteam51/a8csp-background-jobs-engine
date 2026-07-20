@@ -54,7 +54,6 @@ final class UninstallTest extends IntegrationTestCase {
 		'a8csp_jobs_engine/start_chunked_job',
 		'a8csp_jobs_engine/continue_chunked_job',
 		'a8csp_jobs_engine/run_job',
-		'a8csp_jobs_engine/run_chunk',
 		'a8csp_jobs_engine/cleanup_chunked_job',
 		'a8csp_jobs_engine/schedule_due',
 	);

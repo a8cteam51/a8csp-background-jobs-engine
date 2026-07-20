@@ -71,8 +71,7 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		self::assertIsString( $chunked_job_result->value );
 		$chunked_job_run_id = $chunked_job_result->value;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must generate the census chunked job queue' );
-		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must dequeue the census chunked job chunk' );
-		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must process the census chunked job chunk' );
+		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must process the census chunked job chunk inline' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must observe the drained census chunked job queue' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete census chunked job cleanup' );
 

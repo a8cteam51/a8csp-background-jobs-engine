@@ -477,7 +477,7 @@ Detailed parameter contracts are documented inline at each fire site under `src/
 | Misfire skipped | `a8csp_jobs_engine/misfire_skipped/{identity}`: `($owner, $due_at, $observed_at)` · generic prepends `$identity` |
 | Log | `a8csp_jobs_engine/log`: `($level, $message, $context)` (no generic companion) |
 
-A `started` or `retry_scheduled` listener that throws terminally fails the admitted run with `execution_failed`; the run stays retained for retry. Do not hook the engine's internal delivery actions (`start_chunked_job`, `continue_chunked_job`, `run_job`, `run_chunk`, `cleanup_chunked_job`, `schedule_due`).
+A `started` or `retry_scheduled` listener that throws terminally fails the admitted run with `execution_failed`; the run stays retained for retry. Do not hook the engine's internal delivery actions (`start_chunked_job`, `continue_chunked_job`, `run_job`, `cleanup_chunked_job`, `schedule_due`).
 
 | Filter | Input and required return |
 | --- | --- |

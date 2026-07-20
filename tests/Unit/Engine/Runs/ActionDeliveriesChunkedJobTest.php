@@ -113,7 +113,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The registered start, continue, run, and cleanup actions complete one real chunked job.
+	 * The registered start, continue, and cleanup actions complete one real chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -124,7 +124,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->chunked_job->queue = array( array( 'chunk' => 'only' ) );
 		$this->start_chunked_job();
 
-		for ( $delivery = 0; $delivery < 5; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
@@ -192,8 +192,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 		\do_action( 'a8csp_jobs_engine/continue_chunked_job', self::IDENTITY, self::RUN_ID, 2 );
-		\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
-		\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
+		\do_action( 'a8csp_jobs_engine/continue_chunked_job', self::IDENTITY, self::RUN_ID, 2 );
 
 		self::assertCount( 1, $this->chunked_job->process_calls );
 		self::assertSame( $first, $this->chunked_job->process_calls[0]['chunk_args'] );
@@ -585,22 +584,97 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Continue retains the current head while scheduling its distinct run delivery.
+	 * Continue processes the current head and schedules the next continuation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_retains_one_chunk_and_schedules_run(): void {
+	public function test_handle_continue_action_processes_one_chunk_and_schedules_continue(): void {
 		$queue = array( array( 'chunk' => 'first' ), array( 'chunk' => 'second' ) );
 		$this->prepare_started_chunked_job( $queue );
 
 		$this->rig->run_due();
 
-		self::assertSame( $queue, $this->run_state()['queue'] ?? null );
-		self::assertSame( array(), $this->chunked_job->process_calls );
-		self::assertCount( 1, $this->calls_for_hook( 'a8csp_jobs_engine/run_chunk' ) );
+		self::assertSame( array( array( 'chunk' => 'second' ) ), $this->run_state()['queue'] ?? null );
+		self::assertSame( array( array( 'chunk' => 'first' ) ), \array_column( $this->chunked_job->process_calls, 'chunk_args' ) );
+		self::assertCount( 1, $this->calls_for_hook( 'a8csp_jobs_engine/continue_chunked_job' ) );
+	}
+
+	/**
+	 * A live continuation for an unregistered chunked job fails against its current queue head.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unregistered_chunked_job_continue_terminalizes_the_current_queue_head(): void {
+		$current = array( 'chunk' => 'current' );
+		$queue   = array( $current, array( 'chunk' => 'remaining' ) );
+		$this->rig->tear_down();
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->client   = $this->rig->client( self::OWNER );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$state          = new RunState( status: RunStatus::Running, kind: JobType::ChunkedJob, executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: $queue, failed_attempts: 0, action_sequence: 2, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->fixtures->history(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+		$this->put_fixture(
+			$this->fixtures->latest(
+				array(
+					array(
+						'run_id'    => self::RUN_ID,
+						'args_hash' => $this->args_hash(),
+					),
+				)
+			)
+		);
+
+		\do_action( ActionDeliveries::CONTINUE_HOOK, self::IDENTITY, self::RUN_ID, 2 );
+
+		$this->assert_failure( ApiErrorCode::UnknownWork, RunFailureStage::Execution, $current );
+	}
+
+	/**
+	 * A chunk exceeding the default heartbeat window retains its declared execution lease.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Re-entering the registered continuation after the default lock-staleness window proves the declared callback lease prevents mid-chunk reclaim and duplicate client work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_continue_action_credits_long_chunk_execution_before_client_work(): void {
+		$this->chunked_job->max_callback_runtime = 1_800;
+		$this->prepare_started_chunked_job( array( array( 'chunk' => 'current' ) ) );
+		$reentered                     = false;
+		$this->chunked_job->on_process = function () use ( &$reentered ): void {
+			if ( $reentered ) {
+				return;
+			}
+
+			$reentered                      = true;
+			$this->rig->clock()->timestamp += 901;
+			\do_action( 'a8csp_jobs_engine/continue_chunked_job', self::IDENTITY, self::RUN_ID, 2 );
+		};
+
+		$this->rig->run_due();
+
+		self::assertTrue( $reentered );
+		self::assertSame( array( array( 'chunk' => 'current' ) ), \array_column( $this->chunked_job->process_calls, 'chunk_args' ) );
 	}
 
 	/**
@@ -611,7 +685,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_delivers_a_persisted_float_chunk_with_token_only_backend_args(): void {
+	public function test_handle_continue_action_delivers_a_persisted_float_chunk_with_token_only_backend_args(): void {
 		$this->prepare_started_chunked_job( array( array( 'value' => 1.0 ) ) );
 		$queue = $this->run_state()['queue'] ?? null;
 		self::assertIsArray( $queue );
@@ -620,12 +694,11 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertIsFloat( $persisted_chunk['value'] ?? null );
 		self::assertSame( 1.0, $persisted_chunk['value'] );
 
-		$this->rig->run_due();
-
-		$run_call = $this->single_call_for_hook( 'a8csp_jobs_engine/run_chunk' );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, 3 ), $run_call['args']['args'] ?? null );
-
-		$this->rig->run_due();
+		$delivery = $this->rig->backend()->take_next_delivery();
+		self::assertNotNull( $delivery );
+		self::assertSame( 'a8csp_jobs_engine/continue_chunked_job', $delivery['hook'] );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 2 ), $delivery['args'] );
+		\do_action( $delivery['hook'], ...$delivery['args'] );
 
 		self::assertCount( 1, $this->chunked_job->process_calls );
 		$delivered_chunk = $this->chunked_job->process_calls[0]['chunk_args'] ?? null;
@@ -659,7 +732,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_commits_context_mutations_and_schedules_delayed_continue(): void {
+	public function test_handle_continue_action_commits_context_mutations_and_schedules_delayed_continue(): void {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
 		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', 75 );
@@ -692,7 +765,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	#[DataProvider( 'invalid_context_mutations' )]
-	public function test_handle_run_action_rejects_invalid_context_mutations_transactionally( string $mutation, mixed $invalid_value ): void {
+	public function test_handle_continue_action_rejects_invalid_context_mutations_transactionally( string $mutation, mixed $invalid_value ): void {
 		$current                         = array( 'chunk' => 'current' );
 		$this->chunked_job->retry_policy = new RetryPolicy( max_attempts: 1 );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
@@ -878,42 +951,43 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A fixed-token job hook delivered against a chunked job run routes by the persisted kind and processes the current chunk.
+	 * A fixed-token job hook cannot deliver a chunked job run.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove routing follows the authoritative persisted kind under the sequence fence, never the hook name, processing the run-row chunk exactly once.
+	 * @pin-rationale A cross-hook delivery carrying only the fixed token is injected through the registered action boundary to prove admission follows the authoritative persisted kind under the sequence fence before client work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_run_job_hook_delivery_routes_a_chunked_job_run_by_its_persisted_kind(): void {
+	public function test_run_job_hook_delivery_rejects_a_chunked_job_run_by_its_persisted_kind(): void {
 		$current = array( 'chunk' => 'current' );
-		$this->prepare_scheduled_chunk( array( $current ) );
-		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
+		$this->prepare_started_chunked_job( array( $current ) );
+		$before = $this->run_state();
 
-		\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 3 );
+		\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 2 );
+
+		self::assertSame( $before, $this->run_state() );
+		self::assertSame( array(), $this->chunked_job->process_calls );
+
+		$this->rig->run_due();
 		self::assertCount( 1, $this->chunked_job->process_calls );
 		self::assertSame( $current, $this->chunked_job->process_calls[0]['chunk_args'] );
-
-		\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
-
-		self::assertCount( 1, $this->chunked_job->process_calls );
 	}
 
 	/**
-	 * A chunk-hook payload without its sequence is rejected before admission.
+	 * A continuation payload without its sequence is rejected before admission.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale Direct registered-hook delivery proves the typed chunk boundary rejects an incomplete payload without mutating authoritative run state.
+	 * @pin-rationale Direct registered-hook delivery proves the typed continuation boundary rejects an incomplete payload without mutating authoritative run state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_run_chunk_handler_rejects_a_missing_sequence_before_admission(): void {
+	public function test_continue_handler_rejects_a_missing_sequence_before_admission(): void {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current ) );
 		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
@@ -921,7 +995,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$thrown = null;
 
 		try {
-			\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID );
+			\do_action( 'a8csp_jobs_engine/continue_chunked_job', self::IDENTITY, self::RUN_ID );
 		} catch ( \ArgumentCountError $error ) {
 			$thrown = $error;
 		}
@@ -929,59 +1003,6 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertInstanceOf( \ArgumentCountError::class, $thrown );
 		self::assertSame( $before, $this->run_state() );
 		self::assertSame( array(), $this->chunked_job->process_calls );
-	}
-
-	/**
-	 * A pending chunk delivery without an authoritative queue head fails instead of stranding the run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_run_chunk_handler_terminalizes_a_pending_run_without_a_queue_head(): void {
-		$state = new RunState(
-			status: RunStatus::Running,
-			kind: JobType::ChunkedJob,
-			executing: false,
-			start_args: self::ARGS,
-			args_hash: $this->args_hash(),
-			queue: array(),
-			failed_attempts: 0,
-			action_sequence: 3,
-			created_at: self::NOW,
-			heartbeat_at: self::NOW,
-			pending: PendingAction::async( 'run', 10 ),
-		);
-		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
-		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
-		$this->put_fixture(
-			$this->fixtures->latest(
-				array(
-					array(
-						'run_id'    => self::RUN_ID,
-						'args_hash' => $this->args_hash(),
-					),
-				)
-			)
-		);
-		$this->put_fixture(
-			$this->fixtures->history(
-				array(
-					array(
-						'run_id'    => self::RUN_ID,
-						'args_hash' => $this->args_hash(),
-					),
-				)
-			)
-		);
-
-		\do_action( 'a8csp_jobs_engine/run_chunk', self::IDENTITY, self::RUN_ID, 3 );
-
-		self::assertSame( array(), $this->chunked_job->process_calls );
-		$this->rig->assert_no_delivery( self::IDENTITY );
-		$this->assert_failure( ApiErrorCode::UnsupportedOperation, RunFailureStage::Execution, null );
-		self::assertNull( $this->run_state() );
 	}
 
 	/**
@@ -996,7 +1017,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	#[DataProvider( 'continue_delay_filter_values' )]
-	public function test_handle_run_action_resolves_continue_delay_filter_values( mixed $filtered_delay, int $expected_delay ): void {
+	public function test_handle_continue_action_resolves_continue_delay_filter_values( mixed $filtered_delay, int $expected_delay ): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', $filtered_delay );
 		$this->rig->clock()->timestamp = self::NOW + 120;
@@ -1043,7 +1064,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_after_chunk_work_loses_ownership(): void {
+	public function test_handle_continue_action_supersedes_after_chunk_work_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
 		$this->chunked_job->on_process = function ( array $chunk, ChunkContextInterface $context ): void {
 			$context->enqueue( array( 'chunk' => 'discarded' ) );
@@ -1068,7 +1089,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_when_throwing_chunk_loses_ownership(): void {
+	public function test_handle_continue_action_supersedes_when_throwing_chunk_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->chunked_job->process_throwable = new \RuntimeException( 'Chunk exploded.' );
 		$this->chunked_job->on_process        = function (): void {
@@ -1092,7 +1113,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_fails_terminally_when_continue_scheduling_fails(): void {
+	public function test_handle_continue_action_fails_terminally_when_continue_scheduling_fails(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
 		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkContextInterface $context ): void {
 			$context->prepend( array( 'chunk' => 'committed-front' ) );
@@ -1115,7 +1136,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_fails_terminally_when_continue_delay_filter_throws(): void {
+	public function test_handle_continue_action_fails_terminally_when_continue_delay_filter_throws(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ): void {
 			$context->enqueue( array( 'chunk' => 'committed' ) );
@@ -1145,7 +1166,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_when_continue_delay_filter_loses_ownership(): void {
+	public function test_handle_continue_action_supersedes_when_continue_delay_filter_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/continue_delay',
@@ -1174,7 +1195,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_supersedes_when_throwing_continue_delay_filter_loses_ownership(): void {
+	public function test_handle_continue_action_supersedes_when_throwing_continue_delay_filter_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/continue_delay',
@@ -1198,7 +1219,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_discards_context_mutations_and_reschedules_the_chunk(): void {
+	public function test_handle_continue_action_discards_context_mutations_and_reschedules_the_chunk(): void {
 		$current                         = array( 'chunk' => 'current' );
 		$this->chunked_job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
@@ -1223,9 +1244,18 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			$this->rig->randomizer()->calls
 		);
 		$this->rig->assert_retry_scheduled();
-		$retry_call = $this->single_call_for_hook( 'a8csp_jobs_engine/run_chunk' );
+		self::assertSame(
+			array(
+				'stage'    => 'continue',
+				'mode'     => 'single',
+				'fire_at'  => self::NOW + 11,
+				'priority' => 10,
+			),
+			$this->run_state()['pending'] ?? null
+		);
+		$retry_call = $this->single_call_for_hook( 'a8csp_jobs_engine/continue_chunked_job' );
 		self::assertSame( 'schedule_single', $retry_call['verb'] );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, 4 ), $retry_call['args']['args'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 3 ), $retry_call['args']['args'] ?? null );
 		self::assertSame( array(), $this->chunked_job->failed_calls );
 	}
 
@@ -1266,7 +1296,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_resets_retries_before_the_next_chunk(): void {
+	public function test_handle_continue_action_resets_retries_before_the_next_chunk(): void {
 		$chunk_a                              = array( 'chunk' => 'a' );
 		$chunk_b                              = array( 'chunk' => 'b' );
 		$this->chunked_job->retry_policy      = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
@@ -1281,7 +1311,6 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 				throw new \RuntimeException( 'Chunk B failed once.' );
 			}
 		};
-		$this->rig->run_due();
 		$this->rig->run_due();
 		$this->rig->run_due();
 
@@ -1301,7 +1330,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_terminalizes_a_chunk_retry_schedule_failure(): void {
+	public function test_handle_continue_action_terminalizes_a_chunk_retry_schedule_failure(): void {
 		$current                              = array( 'chunk' => 'current' );
 		$this->chunked_job->retry_policy      = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->chunked_job->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
@@ -1325,7 +1354,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_terminalizes_a_non_retryable_chunk_without_rescheduling(): void {
+	public function test_handle_continue_action_terminalizes_a_non_retryable_chunk_without_rescheduling(): void {
 		$current                              = array( 'chunk' => 'current' );
 		$this->chunked_job->process_throwable = new NonRetryableException( 'Chunk input is permanently invalid.' );
 		$this->prepare_scheduled_chunk( array( $current ) );
@@ -1483,24 +1512,25 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A failed run schedule retains the current head in terminal diagnostics.
+	 * A failed continuation schedule leaves no accepted delivery for the retained queue.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The rejected run write must leave no accepted delivery that could process the terminalized queue head later.
+	 * @pin-rationale The rejected continuation write must leave no accepted delivery that could process the retained next queue head later.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_fails_terminally_when_run_scheduling_fails(): void {
+	public function test_handle_continue_action_fails_terminally_without_accepting_a_successor(): void {
 		$current = array( 'chunk' => 'first' );
-		$this->prepare_started_chunked_job( array( $current ) );
-		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
+		$this->prepare_started_chunked_job( array( $current, array( 'chunk' => 'retained' ) ) );
+		$this->rig->backend()->results['schedule_single'] = $this->scheduling_failure_result();
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
+		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		self::assertSame( array( $current ), \array_column( $this->chunked_job->process_calls, 'chunk_args' ) );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -1559,7 +1589,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_quietly_supersedes_after_lock_ownership_moves(): void {
+	public function test_handle_continue_action_quietly_supersedes_before_chunk_work_after_lock_ownership_moves(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$this->install_foreign_generation( self::NOW );
 
@@ -1664,7 +1694,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Delivers start and continue for one queue, leaving its run action pending.
+	 * Delivers start for one queue, leaving its chunk-processing continuation pending.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1675,8 +1705,6 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	private function prepare_scheduled_chunk( array $queue ): void {
 		$this->prepare_started_chunked_job( $queue );
-		$this->rig->run_due();
-		$this->rig->backend()->calls = array();
 	}
 
 	/**

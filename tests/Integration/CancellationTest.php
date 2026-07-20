@@ -224,23 +224,23 @@ final class CancellationTest extends IntegrationTestCase {
 		$group  = self::CHUNKED_JOB_IDENTITY . '|' . $run_id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the chunked job queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must expose the first retained queue head' );
 
-		$pre_run_state = \get_option( 'a8csp_bgje_run_' . self::CHUNKED_JOB_IDENTITY . '_' . $run_id, null );
-		self::assertIsArray( $pre_run_state );
-		self::assertSame( array( $first_chunk, $next_chunk ), $pre_run_state['queue'] ?? null );
-		self::assertSame( 3, $pre_run_state['action_sequence'] ?? null );
-		self::assertFalse( $pre_run_state['executing'] ?? true, 'The queued RUN must retain a cancellable head' );
-		$this->assert_sole_pending_action( 'a8csp_jobs_engine/run_chunk', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
+		$pending_state = \get_option( 'a8csp_bgje_run_' . self::CHUNKED_JOB_IDENTITY . '_' . $run_id, null );
+		self::assertIsArray( $pending_state );
+		self::assertSame( array( $first_chunk, $next_chunk ), $pending_state['queue'] ?? null );
+		self::assertSame( 2, $pending_state['action_sequence'] ?? null );
+		self::assertFalse( $pending_state['executing'] ?? true, 'The queued continuation must retain a cancellable head' );
+		$first_action_id = $this->assert_pending_chunk_continuation( self::CHUNKED_JOB_IDENTITY, $run_id, $group, $first_chunk );
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk inline' );
+		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $first_action_id ), 'Action Scheduler must complete the first continuation' );
 
 		$run_state = \get_option( 'a8csp_bgje_run_' . self::CHUNKED_JOB_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
-		self::assertSame( 4, $run_state['action_sequence'] ?? null );
+		self::assertSame( 3, $run_state['action_sequence'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
-		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/continue_chunked_job', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 4 ) );
+		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/continue_chunked_job', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
 
 		$cancelled = $client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
 

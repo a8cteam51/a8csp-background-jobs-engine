@@ -283,8 +283,8 @@ final class DemoClientTest extends IntegrationTestCase {
 		self::assertIsString( $chunked_job->value );
 		$chunked_job_run_id = $chunked_job->value;
 
-		for ( $step = 1; 7 >= $step; ++$step ) {
-			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo chunked job action %d of 7.', $step ) );
+		for ( $step = 1; 5 >= $step; ++$step ) {
+			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo chunked job action %d of 5.', $step ) );
 		}
 
 		self::assertSame(
