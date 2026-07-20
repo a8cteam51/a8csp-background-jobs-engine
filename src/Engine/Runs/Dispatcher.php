@@ -166,8 +166,9 @@ final readonly class Dispatcher {
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
-	 * A retried run recomputes the registered Job's argument-aware overlap key but always rejects a
-	 * matching live run, regardless of the Job's declared overlap policy.
+	 * A retried run recomputes the registered Job's argument-aware overlap key. An Allow-policy job's
+	 * retry admits under its own per-run salted lane; a Reject- or Replace-policy job's retry forces
+	 * Reject, so it refuses a matching live run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -226,24 +227,13 @@ final readonly class Dispatcher {
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
-		if ( OverlapPolicy::Allow === $registered_job->overlap_policy() ) {
-			$incumbent = $this->matching_allow_incumbent( $identity, $args_hash );
-			if ( $incumbent instanceof Failure ) {
-				return $incumbent;
-			}
-			if ( null !== $incumbent ) {
-				$error = JobType::Job === $work_type
-					? EngineError::held_job( $identity, $incumbent )
-					: new EngineError( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before retrying the same arguments.', $identity, $incumbent ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $incumbent ), );
 
-				return new Failure( $error );
-			}
-		}
+		$retry_overlap = OverlapPolicy::Allow === $registered_job->overlap_policy() ? OverlapPolicy::Allow : OverlapPolicy::Reject;
 
 		if ( null !== $job ) {
-			$result = $this->imperative_job_result( $this->dispatch_resolved_job( $job, $identity, $entry['start_args'], 0, 10, OverlapPolicy::Reject, resolved_args_hash: $args_hash ) );
+			$result = $this->imperative_job_result( $this->dispatch_resolved_job( $job, $identity, $entry['start_args'], 0, 10, $retry_overlap, resolved_args_hash: $args_hash ) );
 		} else {
-			$result = $this->start_resolved_chunked_job( $chunked_job, $identity, $entry['start_args'], 10, OverlapPolicy::Reject, $args_hash );
+			$result = $this->start_resolved_chunked_job( $chunked_job, $identity, $entry['start_args'], 10, $retry_overlap, $args_hash );
 		}
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
@@ -715,65 +705,6 @@ final readonly class Dispatcher {
 	 */
 	private function salted_args_hash( string $args_hash, string $run_id ): string {
 		return \hash( 'sha256', $args_hash . '|' . $run_id );
-	}
-
-	/**
-	 * Returns a fresh matching Allow run that must block a Reject retry.
-	 *
-	 * Allow salts its persisted lock lane with the run identifier, so retry inspects active run rows
-	 * before claiming the unsalted Reject lane. Authoritative enumeration fails closed.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string $args_hash Unsalted argument-aware overlap identity.
-	 *
-	 * @return  string|Failure<EngineError>|null Fresh incumbent run identifier, read failure, or null.
-	 */
-	private function matching_allow_incumbent( string $identity, string $args_hash ): string|Failure|null {
-		$run_ids = $this->stores->active_run_ids( $identity );
-		if ( null === $run_ids ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" active runs could not be enumerated while enforcing retry overlap; repair database reads and retry.', $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ) );
-		}
-
-		$run_store = $this->stores->run_store( $identity );
-		foreach ( $run_ids as $run_id ) {
-			$inspected = $run_store->inspect( $run_id );
-			if ( $inspected->is_failure() ) {
-				return $inspected;
-			}
-
-			$snapshot = $inspected->value;
-			if ( null === $snapshot ) {
-				continue;
-			}
-
-			$state = $snapshot['state'];
-			if ( null === $state ) {
-				return new Failure(
-					new EngineError(
-						\sprintf( 'Run "%1$s" for background-work "%2$s" is invalid; repair its active-run row before retrying.', $run_id, $identity ),
-						reason: EngineErrorReason::StorageFailure,
-						context: array(
-							'name'   => $identity,
-							'run_id' => $run_id,
-						),
-					)
-				);
-			}
-
-			$salted_hash = $this->salted_args_hash( $args_hash, $run_id );
-			if (
-				RunStatus::Running === $state->status
-				&& $salted_hash === $state->args_hash
-				&& $this->overlap_guard->is_held( $identity, $salted_hash, $this->lock_windows->lock_staleness( $identity, $run_id ) )
-			) {
-				return $run_id;
-			}
-		}
-
-		return null;
 	}
 
 	/**

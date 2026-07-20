@@ -220,14 +220,14 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Manual retry rejects a live matching chunked job even when the Chunked Job permits admission.
+	 * Manual retry admits an Allow chunked job under a fresh per-run overlap lane.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_retry_failed_forces_reject_for_an_allow_chunked_job(): void {
+	public function test_retry_failed_admits_an_allow_chunked_job(): void {
 		$this->chunked_job->overlap_policy = OverlapPolicy::Allow;
 
 		$incumbent = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -237,10 +237,11 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$retry = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
+		$retried = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
 
-		$error = $this->assert_failure_code( $retry, ApiErrorCode::OverlapHeld );
-		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
+		self::assertInstanceOf( Success::class, $retried );
+		self::assertIsString( $retried->value );
+		self::assertNotSame( $incumbent->value, $retried->value );
 	}
 
 	/**

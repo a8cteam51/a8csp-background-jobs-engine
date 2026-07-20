@@ -735,18 +735,15 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Manual retry rejects a matching incumbent even when the Job normally permits admission.
+	 * Manual retry refuses a matching incumbent when the Job declares Replace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $policy_value Declared overlap-policy value.
-	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'retry_override_policies' )]
-	public function test_retry_failed_forces_reject_for_a_permissive_job( string $policy_value ): void {
-		$this->job->overlap_policy = OverlapPolicy::from( $policy_value );
+	public function test_retry_failed_forces_reject_for_a_replace_job(): void {
+		$this->job->overlap_policy = OverlapPolicy::Replace;
 
 		$incumbent = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
@@ -762,18 +759,25 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Supplies policies a failed-run retry must override with Reject.
+	 * Manual retry admits an Allow Job under a fresh per-run overlap lane.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return array<string, array{policy_value: string}>
+	 * @return  void
 	 */
-	public static function retry_override_policies(): array {
-		return array(
-			'allow'   => array( 'policy_value' => 'allow' ),
-			'replace' => array( 'policy_value' => 'replace' ),
-		);
+	public function test_retry_failed_admits_an_allow_job_under_its_own_policy(): void {
+		$this->job->overlap_policy = OverlapPolicy::Allow;
+
+		$incumbent = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $incumbent );
+		$this->seed_failed_run( self::OTHER_RUN_ID, self::ARGS, 2 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+
+		$retry = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+
+		self::assertInstanceOf( Success::class, $retry );
+		self::assertNotSame( $incumbent->value, $retry->value );
 	}
 
 	/**
