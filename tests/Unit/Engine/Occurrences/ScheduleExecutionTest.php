@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OwnerReplacement
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -67,6 +68,8 @@ final class ScheduleExecutionTest extends TestCase {
 		'mode'    => 'full',
 	);
 	private const int ANCHOR              = 50;
+	private const string CHUNKED_JOB      = 'refresh-index-chunked';
+	private const string CHUNKED_IDENTITY = self::OWNER . ':' . self::CHUNKED_JOB;
 	private const int INTERVAL            = 300;
 	private const string NAME             = 'nightly';
 	private const int NOW                 = 1_700_000_000;
@@ -76,6 +79,8 @@ final class ScheduleExecutionTest extends TestCase {
 	private const string JOB_IDENTITY     = self::OWNER . ':' . self::JOB;
 
 	private Client $client;
+	private RecordingChunkedJob $chunked_job;
+	private StoreFixtureBuilder $chunked_fixtures;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -109,11 +114,14 @@ final class ScheduleExecutionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->job    = new RecordingJob( self::JOB );
+		$this->rig         = EngineRig::set_up( self::NOW );
+		$this->client      = $this->rig->client( self::OWNER );
+		$this->job         = new RecordingJob( self::JOB );
+		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_JOB );
 		$this->client->jobs()->register( $this->job );
-		$this->fixtures = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
+		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$this->fixtures         = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
+		$this->chunked_fixtures = StoreFixtureBuilder::for_identity( self::CHUNKED_IDENTITY );
 		$this->reset_observations();
 	}
 
@@ -243,6 +251,48 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::ANCHOR, $next_due % self::INTERVAL );
 		self::assertCount( $expected_started, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
 		self::assertSame( $expected_misfire_skips, $registration['misfire_skips'] ?? null );
+	}
+
+	/**
+	 * An anchored recurring schedule admits and starts its chunked target without losing UTC phase.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_anchored_recurring_chunked_schedule_runs_end_to_end(): void {
+		$schedule = new Schedule( self::NAME, Recurrence::every_anchored( self::INTERVAL, self::ANCHOR ), self::CHUNKED_JOB, self::ARGS, CatchUpPolicy::RunOnce, 23 );
+		$this->sync_schedule( $schedule );
+
+		$first_due = $this->registration()['next_due'] ?? null;
+		self::assertIsInt( $first_due );
+		self::assertSame( self::ANCHOR, $first_due % self::INTERVAL );
+
+		$this->rig->clock()->timestamp = $first_due + 1;
+		$this->rig->run_due();
+
+		$registration = $this->registration();
+		$next_due     = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+		self::assertSame( $first_due + self::INTERVAL, $next_due );
+		self::assertSame( self::ANCHOR, $next_due % self::INTERVAL );
+		$start_calls = $this->calls( 'enqueue_async' );
+		self::assertCount( 1, $start_calls );
+		self::assertSame( 'a8csp_jobs_engine/start_chunked_job', $start_calls[0]['args']['hook'] ?? null );
+		$action_args = $start_calls[0]['args']['args'] ?? null;
+		self::assertIsArray( $action_args );
+		$run_id = $action_args[1] ?? null;
+		self::assertIsString( $run_id );
+		$live = $this->rig->inspection()->runs( self::CHUNKED_IDENTITY )['live'];
+		self::assertCount( 1, $live );
+		self::assertSame( $run_id, $live[0]['run_id'] ?? null );
+		self::assertSame( 'chunked_job', $live[0]['kind'] ?? null );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
+		self::assertSame( array( array( $run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
 	}
 
 	/**
@@ -560,6 +610,45 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
+		self::assertSame( 1, $this->registration()['overlap_skips'] ?? null );
+		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
+		self::assertSame( 'info', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+	}
+
+	/**
+	 * A chunked target under a fixture-built Reject lock records one benign skipped occurrence.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The public occurrence path must preserve its accepted cadence while translating the chunked target's authoritative held lock into overlap accounting instead of a hard dispatch failure.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_chunked_reject_target_records_a_soft_overlap_skip(): void {
+		$this->chunked_job->overlap_policy = OverlapPolicy::Reject;
+		$this->sync_schedule( new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::CHUNKED_JOB, self::ARGS, CatchUpPolicy::RunOnce, 23 ) );
+		$args_hash = $this->chunked_fixtures->args_hash( self::ARGS );
+		$this->put_fixture( $this->chunked_fixtures->lock( $args_hash, 'run-incumbent', self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->chunked_fixtures->latest(
+				array(
+					array(
+						'run_id'    => 'run-incumbent',
+						'args_hash' => $args_hash,
+					),
+				)
+			)
+		);
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
+		self::assertSame( array(), $this->chunked_job->generate_calls );
 		self::assertSame( 1, $this->registration()['overlap_skips'] ?? null );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 'info', $this->rig->logger()->records[0]['level'] ?? null );

@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -33,15 +34,19 @@ use PHPUnit\Framework\TestCase;
 final class DispatcherScheduleDispatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const array ARGS      = array( 'site_id' => 7 );
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
-	private const string NAME     = 'email-digest';
-	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
-	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
-	private const string SCHEDULE = 'email-digest-schedule';
+	private const array ARGS              = array( 'site_id' => 7 );
+	private const string CHUNKED_IDENTITY = self::OWNER . ':' . self::CHUNKED_NAME;
+	private const string CHUNKED_NAME     = 'email-digest-chunked';
+	private const string CHUNKED_SCHEDULE = 'email-digest-chunked-schedule';
+	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string NAME             = 'email-digest';
+	private const int NOW                 = 1_700_000_000;
+	private const string OWNER            = 'runs-tests';
+	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
+	private const string SCHEDULE         = 'email-digest-schedule';
 
 	private Client $client;
+	private RecordingChunkedJob $chunked_job;
 	private EngineRig $rig;
 	private StoreFixtureBuilder $fixtures;
 	private RecordingJob $job;
@@ -61,10 +66,11 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->client( self::OWNER );
-		$this->job      = new RecordingJob( self::NAME );
-		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rig         = EngineRig::set_up( self::NOW );
+		$this->client      = $this->rig->client( self::OWNER );
+		$this->job         = new RecordingJob( self::NAME );
+		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_NAME );
+		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
 	/** Releases request-local engine state after each scenario. */
@@ -102,6 +108,27 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertArrayNotHasKey( 'unique', $calls[0]['args'] );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 		$this->rig->backend()->assert_no_duplicate();
+	}
+
+	/**
+	 * A scheduled chunked target routes to the internal start action instead of unknown work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_now_routes_a_chunked_schedule_target_to_the_internal_start_action(): void {
+		$this->sync_chunked_schedule( OverlapPolicy::Allow, 23 );
+
+		$result = $this->client->schedules()->dispatch_now( self::CHUNKED_SCHEDULE );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$calls = $this->chunked_start_calls();
+		self::assertCount( 1, $calls );
+		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
+		$this->rig->backend()->assert_scheduled( self::CHUNKED_IDENTITY );
 	}
 
 	/**
@@ -145,6 +172,42 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			),
 			$this->rig->hooks()->sequence()
 		);
+	}
+
+	/**
+	 * Chunked schedule acceptance persists occurrence state before started run history.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The first schedule-registration update is entered by the acceptance callback, so the absent history row at that boundary pins lease release and cadence persistence before chunked started history.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_chunked_accepted_callback_runs_before_started_history(): void {
+		$this->sync_chunked_schedule( OverlapPolicy::Allow );
+		$observed = false;
+		$this->rig->wpdb()->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
+				$observed = true;
+				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $wpdb->rows );
+				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+			}
+		);
+
+		$result = $this->client->schedules()->dispatch_now( self::CHUNKED_SCHEDULE );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $observed );
+		self::assertArrayHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
+		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
 	}
 
 	/**
@@ -332,6 +395,24 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 	}
 
+	/**
+	 * Synchronizes one chunked-target declaration through the owner-bound schedule facade.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   OverlapPolicy $policy   Chunked Job overlap policy.
+	 * @param   int           $priority Delivery priority.
+	 *
+	 * @return  void
+	 */
+	private function sync_chunked_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
+		$this->chunked_job->overlap_policy = $policy;
+		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$result = $this->client->schedules()->sync( array( new Schedule( self::CHUNKED_SCHEDULE, Recurrence::every( 300 ), self::CHUNKED_NAME, self::ARGS, priority: $priority ) ) );
+		self::assertInstanceOf( Success::class, $result );
+	}
+
 	/** Stores one valid incumbent lock and latest pointer. */
 	private function seed_held_lock(): void {
 		$this->put_lock( $this->args_hash(), 'run-incumbent' );
@@ -400,6 +481,18 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 */
 	private function run_delivery_calls(): array {
 		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
+	}
+
+	/**
+	 * Returns backend calls that schedule chunked-job start delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
+	 */
+	private function chunked_start_calls(): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/start_chunked_job' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

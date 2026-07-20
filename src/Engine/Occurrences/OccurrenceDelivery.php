@@ -482,7 +482,7 @@ final readonly class OccurrenceDelivery {
 		$accepted_registration               = $registration;
 		$accepted_registration['next_due']   = $next_due;
 		$accepted_registration['last_fired'] = $now;
-		$dispatched                          = $this->dispatcher->dispatch_scheduled_job(
+		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
@@ -589,7 +589,7 @@ final readonly class OccurrenceDelivery {
 
 		$accepted_registration               = $registration;
 		$accepted_registration['last_fired'] = $this->clock->now()->getTimestamp();
-		$dispatched                          = $this->dispatcher->dispatch_scheduled_job(
+		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,

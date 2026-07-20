@@ -110,27 +110,33 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Dispatches a scheduled job under the registered Job's overlap invariant.
+	 * Dispatches a schedule's target — a one-off job or a chunked job — under the target's overlap invariant.
 	 *
-	 * Allow uses a per-run fencing identity, Reject returns a typed held outcome, and Replace transfers
-	 * the shared-identity lock through the same takeover helper as chunked job start. Job callbacks always
-	 * receive the original arguments.
+	 * A chunked target routes to the chunked-start path; a one-off or unregistered target routes to the job
+	 * path, which produces the unknown-work failure. Both paths thread the same acceptance callback and both
+	 * can return a skipped-dispatch outcome under a held Reject lock. Job callbacks always receive the
+	 * original arguments.
 	 *
 	 * @internal Schedule execution only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $job_name   Complete owner-qualified job identity.
-	 * @param   array<array-key, mixed> $args        Job arguments.
+	 * @param   string                  $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   array<array-key, mixed> $args        Target arguments.
 	 * @param   int                     $priority    Advisory priority from 0 through 255.
-	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started hooks.
+	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before started history.
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	#[\NoDiscard( 'a scheduled-job dispatch failure must be handled, not dropped' )]
-	public function dispatch_scheduled_job( string $job_name, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
-		return $this->dispatch_job( $job_name, $args, 0, $priority, $on_accepted );
+	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
+	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
+		$chunked_job = $this->work->chunked_job( $identity );
+		if ( null !== $chunked_job ) {
+			return $this->start_resolved_chunked_job( $chunked_job, $identity, $args, $priority, $chunked_job->overlap_policy(), on_accepted: $on_accepted );
+		}
+
+		return $this->dispatch_job( $identity, $args, 0, $priority, $on_accepted );
 	}
 
 	/**
@@ -160,7 +166,7 @@ final readonly class Dispatcher {
 			return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" is not registered; register it before starting it.', $chunked_job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $chunked_job_name ), ) );
 		}
 
-		return $this->start_resolved_chunked_job( $chunked_job, $chunked_job_name, $start_args, $priority, $chunked_job->overlap_policy() );
+		return $this->imperative_job_result( $this->start_resolved_chunked_job( $chunked_job, $chunked_job_name, $start_args, $priority, $chunked_job->overlap_policy() ) );
 	}
 
 	/**
@@ -233,7 +239,7 @@ final readonly class Dispatcher {
 		if ( null !== $job ) {
 			$result = $this->imperative_job_result( $this->dispatch_resolved_job( $job, $identity, $entry['start_args'], 0, 10, $retry_overlap, resolved_args_hash: $args_hash ) );
 		} else {
-			$result = $this->start_resolved_chunked_job( $chunked_job, $identity, $entry['start_args'], 10, $retry_overlap, $args_hash );
+			$result = $this->imperative_job_result( $this->start_resolved_chunked_job( $chunked_job, $identity, $entry['start_args'], 10, $retry_overlap, resolved_args_hash: $args_hash ) );
 		}
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
@@ -422,7 +428,7 @@ final readonly class Dispatcher {
 	 *
 	 * @phpstan-param AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError> $result
 	 *
-	 * @param   AbstractResult $result Raw Job dispatch result.
+	 * @param   AbstractResult $result Raw background-work dispatch result.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
@@ -776,7 +782,7 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Creates and schedules one resolved chunked Job run under an explicit overlap policy.
+	 * Creates and schedules one resolved chunked Job run, or reports a held-Reject skip, under an explicit overlap policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -786,11 +792,12 @@ final readonly class Dispatcher {
 	 * @param   array<array-key, mixed> $start_args         Arguments supplied when the run starts.
 	 * @param   int                     $priority           Advisory priority from 0 through 255.
 	 * @param   OverlapPolicy           $overlap            Effective overlap policy.
+	 * @param   \Closure|null           $on_accepted        Internal callback after backend acceptance and before started history.
 	 * @param   string|null             $resolved_args_hash Pre-resolved overlap identity for retry, or null.
 	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function start_resolved_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, array $start_args, int $priority, OverlapPolicy $overlap, ?string $resolved_args_hash = null ): AbstractResult {
+	private function start_resolved_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, array $start_args, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(
@@ -823,14 +830,12 @@ final readonly class Dispatcher {
 				return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" encountered a held lock whose current owner could not be read; repair database reads and retry the start.', $chunked_job_name ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $chunked_job_name ), ) );
 			}
 
-			$message = null === $owner->value
-				? \sprintf( 'Chunked Job "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.', $chunked_job_name )
-				: \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $chunked_job_name, $owner->value );
-			$context = null === $owner->value
-				? array( 'name' => $chunked_job_name )
-				: array( 'run_id' => $owner->value );
+			$running_run_id = $owner->value;
+			if ( null === $running_run_id ) {
+				return new Failure( new EngineError( \sprintf( 'Chunked Job "%s" is contended by an overlap lock that no longer names an owner; retry the start against the current lock state.', $chunked_job_name ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $chunked_job_name ), ) );
+			}
 
-			return new Failure( new EngineError( $message, reason: EngineErrorReason::OverlapHeld, context: $context, ) );
+			return new Success( new SkippedJobDispatch( $running_run_id, EngineError::held_chunked_job( $chunked_job_name, $running_run_id ) ) );
 		}
 		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
 			return new Failure( new EngineError( \sprintf( 'Chunked Job "%1$s" generated a duplicate per-run overlap identity for run "%2$s"; retry so the run receives a fresh identifier.', $chunked_job_name, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $chunked_job_name ), ) );
@@ -858,6 +863,7 @@ final readonly class Dispatcher {
 			return $scheduled;
 		}
 
+		$on_accepted?->__invoke();
 		if ( ! $this->stores->run_history( $chunked_job_name )->record_started( $run_id, $args_hash ) ) {
 			$this->logger->warning(
 				'Started run history could not be persisted; inspection data may be incomplete.',

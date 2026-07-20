@@ -381,7 +381,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_redelivers_a_stale_pending_job_action(): void {
-		$result = $this->dispatcher->dispatch_scheduled_job( self::IDENTITY, self::ARGS, priority: 23 );
+		$result = $this->dispatcher->dispatch_scheduled_target( self::IDENTITY, self::ARGS, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;

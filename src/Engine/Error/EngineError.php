@@ -60,6 +60,21 @@ final readonly class EngineError implements ErrorInterface {
 	}
 
 	/**
+	 * Returns the public held-lock chunked job failure without relying on message inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
+	 * @param   string $running_run_id   Discoverable incumbent run identifier.
+	 *
+	 * @return  self
+	 */
+	public static function held_chunked_job( string $chunked_job_name, string $running_run_id ): self {
+		return new self( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $chunked_job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+	}
+
+	/**
 	 * Converts a failed lifecycle schedule into terminal failure detail.
 	 *
 	 * @since   1.0.0
