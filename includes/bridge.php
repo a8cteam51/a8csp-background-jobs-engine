@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Bridge;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure as InternalFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -39,6 +40,24 @@ function retry_policy( array $retry ): InternalRetry {
 		multiplier: $retry['multiplier'] ?? $defaults->multiplier,
 		max_delay: $retry['max_delay'] ?? $defaults->max_delay,
 	);
+}
+
+/**
+ * Converts a consumer overlap declaration to the internal policy.
+ *
+ * @internal Adapter shim support.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $overlap Consumer overlap declaration.
+ *
+ * @throws  \InvalidArgumentException When the declaration is not recognized.
+ *
+ * @return  OverlapPolicy
+ */
+function overlap_policy( string $overlap ): OverlapPolicy {
+	return OverlapPolicy::tryFrom( $overlap ) ?? throw new \InvalidArgumentException( 'Overlap policy accepts only allow, reject, or replace.' );
 }
 
 /**

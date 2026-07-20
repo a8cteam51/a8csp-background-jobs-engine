@@ -83,20 +83,27 @@ final class ProceduralFacadeTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Callable registration and enqueue preserve arguments, delay, and priority.
+	 * Callable registration and enqueue preserve arguments, run identity, delay, and priority.
 	 *
 	 * @return  void
 	 */
 	public function test_job_registration_and_enqueue_round_trip_every_command_argument(): void {
-		/** @var list<array<array-key, mixed>> $calls */
+		/** @var list<array{args: array<array-key, mixed>, run_id: string}> $calls */
 		$calls   = array();
-		$args    = array( 'site_id' => 7 );
-		$handler = static function ( array $handler_args ) use ( &$calls ): void {
-			$calls[] = $handler_args;
+		$args    = array(
+			'site_id' => 7,
+			'scope'   => 'full',
+		);
+		$handler = static function ( array $handler_args, string $handler_run_id ) use ( &$calls ): void {
+			$calls[] = array(
+				'args'   => $handler_args,
+				'run_id' => $handler_run_id,
+			);
 		};
 		$options = array(
 			'max_runtime' => 42,
 			'retry'       => array( 'max_attempts' => 1 ),
+			'overlap_key' => static fn ( array $overlap_args ): ?string => \is_int( $overlap_args['site_id'] ?? null ) ? 'site-' . $overlap_args['site_id'] : null,
 		);
 
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler, $options ) );
@@ -108,12 +115,24 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( 23, $schedule_call['args']['priority'] ?? null );
 
 		++$this->rig->clock()->timestamp;
-		$overlap = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $args, priority: 99 );
-		$error   = self::assert_wp_error( $overlap, 'overlap_held' );
+		$overlap_args = array(
+			'site_id' => 7,
+			'scope'   => 'delta',
+		);
+		$overlap      = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $overlap_args, priority: 99 );
+		$error        = self::assert_wp_error( $overlap, 'overlap_held' );
 		self::assertSame( array( 'run_id' => $run_id ), $error->get_error_data() );
 
 		$this->rig->run_due();
-		self::assertSame( array( $args ), $calls );
+		self::assertSame(
+			array(
+				array(
+					'args'   => $args,
+					'run_id' => $run_id,
+				),
+			),
+			$calls
+		);
 	}
 
 	/**
@@ -122,7 +141,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_duplicate_registrations_return_already_registered_errors(): void {
-		$handler     = static function ( array $args ): void {};
+		$handler     = static function ( array $args, string $run_id ): void {};
 		$chunked_job = self::chunked_job( 'chunked_job' );
 
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ) );
@@ -132,7 +151,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Invalid callable-job option types and retry declarations stay inside the WordPress error boundary.
+	 * Invalid callable-job option types and policy declarations stay inside the WordPress error boundary.
 	 *
 	 * @param   array<array-key, mixed> $options Invalid registration options.
 	 * @param   string                  $message Exact corrective message.
@@ -141,9 +160,21 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_job_options' )]
 	public function test_job_registration_returns_invalid_argument_for_invalid_options( array $options, string $message ): void {
-		$error = self::assert_wp_error( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {}, $options ), 'invalid_argument' );
+		$error = self::assert_wp_error( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args, string $run_id ): void {}, $options ), 'invalid_argument' );
 
 		self::assertSame( $message, $error->get_error_message() );
+	}
+
+	/**
+	 * Callable registration accepts every recognized overlap declaration.
+	 *
+	 * @param   string $overlap Recognized overlap declaration.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'valid_overlap_declarations' )]
+	public function test_job_registration_accepts_valid_overlap_declarations( string $overlap ): void {
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args, string $run_id ): void {}, array( 'overlap' => $overlap ) ) );
 	}
 
 	/**
@@ -161,7 +192,7 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args, string $run_id ): void {}
 
 			/** {@inheritDoc} */
 			#[\Override]
@@ -178,7 +209,7 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, string $run_id ): iterable {
 				return array();
 			}
 
@@ -200,20 +231,123 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Object registration eagerly translates invalid overlap declarations for both job kinds.
+	 *
+	 * @return  void
+	 */
+	public function test_object_registrations_return_invalid_argument_for_invalid_overlap_declarations(): void {
+		$job         = new class() extends \A8CSP_Job {
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'invalid-overlap-job';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function handle( array $args, string $run_id ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_policy(): string {
+				return 'parallel';
+			}
+		};
+		$chunked_job = new class() extends \A8CSP_ChunkedJob {
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'invalid-overlap-chunked-job';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function generate_queue( array $start_args, string $run_id ): iterable {
+				return array();
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function process_chunk( array $chunk_args, \A8CSP_ChunkContext $context ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_policy(): string {
+				return 'parallel';
+			}
+		};
+
+		$job_error     = self::assert_wp_error( \a8csp_bgje_job_register_object( self::OWNER, $job ), 'invalid_argument' );
+		$chunked_error = self::assert_wp_error( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ), 'invalid_argument' );
+
+		self::assertSame( 'Overlap policy accepts only allow, reject, or replace.', $job_error->get_error_message() );
+		self::assertSame( 'Overlap policy accepts only allow, reject, or replace.', $chunked_error->get_error_message() );
+	}
+
+	/**
+	 * The object adapter honors overlap and passes arguments to the model's collision identity.
+	 *
+	 * @return  void
+	 */
+	public function test_job_object_registration_honors_overlap_and_forwards_overlap_key_arguments(): void {
+		$job = new class() extends \A8CSP_Job {
+			/** @var list<array<array-key, mixed>> */
+			public array $overlap_args = array();
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'overlap-job';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function handle( array $args, string $run_id ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_policy(): string {
+				return 'allow';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function overlap_key( array $start_args ): string {
+				$this->overlap_args[] = $start_args;
+
+				return 'tenant-7';
+			}
+		};
+
+		self::assertTrue( \a8csp_bgje_job_register_object( self::OWNER, $job ) );
+		$args     = array( 'tenant' => 7 );
+		$first_id = \a8csp_bgje_job_enqueue( self::OWNER, 'overlap-job', $args );
+		self::assertIsString( $first_id );
+
+		++$this->rig->clock()->timestamp;
+		$second_id = \a8csp_bgje_job_enqueue( self::OWNER, 'overlap-job', $args );
+
+		self::assertIsString( $second_id );
+		self::assertNotSame( $first_id, $second_id );
+		self::assertSame( array( $args, $args ), $job->overlap_args );
+	}
+
+	/**
 	 * Callable lifecycle options receive terminal payloads from the durable engine effect.
 	 *
 	 * @return  void
 	 */
 	public function test_callable_registration_wires_completed_and_failed_options(): void {
-		/** @var list<array{run_id: string, args: array<array-key, mixed>}> $completed */
+		/** @var list<array{run_id: string, args: array<array-key, mixed>, previous_completed_run_id: string|null}> $completed */
 		$completed = array();
 		/** @var list<array{run_id: string, args: array<array-key, mixed>, failure: array<string, mixed>}> $failed */
 		$failed  = array();
 		$options = array(
-			'on_completed' => static function ( string $run_id, array $args ) use ( &$completed ): void {
+			'on_completed' => static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$completed ): void {
 				$completed[] = array(
-					'run_id' => $run_id,
-					'args'   => $args,
+					'run_id'                    => $run_id,
+					'args'                      => $args,
+					'previous_completed_run_id' => $previous_completed_run_id,
 				);
 			},
 			'on_failed'    => static function ( string $run_id, array $args, array $failure ) use ( &$failed ): void {
@@ -225,7 +359,7 @@ final class ProceduralFacadeTest extends TestCase {
 			},
 		);
 
-		$handler = static function ( array $args ): void {
+		$handler = static function ( array $args, string $run_id ): void {
 			if ( true === ( $args['fail'] ?? false ) ) {
 				throw new NonRetryableException( 'Callable terminal failure.' );
 			}
@@ -238,8 +372,14 @@ final class ProceduralFacadeTest extends TestCase {
 		$this->rig->run_due();
 
 		++$this->rig->clock()->timestamp;
+		$next_completed_args = array( 'site_id' => 8 );
+		$next_completed_id   = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $next_completed_args );
+		self::assertIsString( $next_completed_id );
+		$this->rig->run_due();
+
+		++$this->rig->clock()->timestamp;
 		$failed_args = array(
-			'site_id' => 8,
+			'site_id' => 9,
 			'fail'    => true,
 		);
 		$failed_id   = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $failed_args );
@@ -249,8 +389,14 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id' => $completed_id,
-					'args'   => $completed_args,
+					'run_id'                    => $completed_id,
+					'args'                      => $completed_args,
+					'previous_completed_run_id' => null,
+				),
+				array(
+					'run_id'                    => $next_completed_id,
+					'args'                      => $next_completed_args,
+					'previous_completed_run_id' => $completed_id,
 				),
 			),
 			$completed
@@ -273,6 +419,9 @@ final class ProceduralFacadeTest extends TestCase {
 			public array $handle_arities = array();
 
 			/** @var list<array{run_id: string, args: array<array-key, mixed>}> */
+			public array $handles = array();
+
+			/** @var list<array{run_id: string, args: array<array-key, mixed>, previous_completed_run_id: string|null}> */
 			public array $completed = array();
 
 			/** @var list<int> */
@@ -289,8 +438,12 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args ): void {
+			public function handle( array $args, string $run_id ): void {
 				$this->handle_arities[] = \func_num_args();
+				$this->handles[]        = array(
+					'run_id' => $run_id,
+					'args'   => $args,
+				);
 				if ( true === ( $args['fail'] ?? false ) ) {
 					throw new NonRetryableException( 'Object terminal failure.' );
 				}
@@ -298,11 +451,12 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function on_completed( string $run_id, array $args ): void {
+			public function on_completed( string $run_id, array $args, ?string $previous_completed_run_id ): void {
 				$this->completed_arities[] = \func_num_args();
 				$this->completed[]         = array(
-					'run_id' => $run_id,
-					'args'   => $args,
+					'run_id'                    => $run_id,
+					'args'                      => $args,
+					'previous_completed_run_id' => $previous_completed_run_id,
 				);
 			}
 
@@ -336,14 +490,28 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id' => $completed_id,
-					'args'   => $completed_args,
+					'run_id'                    => $completed_id,
+					'args'                      => $completed_args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$job->completed
 		);
-		self::assertSame( array( 1, 1 ), $job->handle_arities );
-		self::assertSame( array( 2 ), $job->completed_arities );
+		self::assertSame( array( 2, 2 ), $job->handle_arities );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => $completed_id,
+					'args'   => $completed_args,
+				),
+				array(
+					'run_id' => $failed_id,
+					'args'   => $failed_args,
+				),
+			),
+			$job->handles
+		);
+		self::assertSame( array( 3 ), $job->completed_arities );
 		self::assertCount( 1, $job->failed );
 		self::assertSame( $failed_id, $job->failed[0]['run_id'] );
 		self::assertSame( $failed_args, $job->failed[0]['args'] );
@@ -352,7 +520,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Supplies invalid callable-job option types and retry declarations.
+	 * Supplies invalid callable-job option types and policy declarations.
 	 *
 	 * @return  array<string, array{options: array<array-key, mixed>, message: string}>
 	 */
@@ -365,6 +533,18 @@ final class ProceduralFacadeTest extends TestCase {
 			'retry type'       => array(
 				'options' => array( 'retry' => 'once' ),
 				'message' => 'retry must be an array or null',
+			),
+			'overlap type'     => array(
+				'options' => array( 'overlap' => array() ),
+				'message' => 'overlap must be a string or null',
+			),
+			'invalid overlap'  => array(
+				'options' => array( 'overlap' => 'parallel' ),
+				'message' => 'Overlap policy accepts only allow, reject, or replace.',
+			),
+			'overlap key type' => array(
+				'options' => array( 'overlap_key' => 'tenant-7' ),
+				'message' => 'overlap_key must be callable or null',
 			),
 			'completed type'   => array(
 				'options' => array( 'on_completed' => 'callback' ),
@@ -390,6 +570,19 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Supplies every recognized overlap declaration.
+	 *
+	 * @return  array<string, array{overlap: string}>
+	 */
+	public static function valid_overlap_declarations(): array {
+		return array(
+			'allow'   => array( 'overlap' => 'allow' ),
+			'reject'  => array( 'overlap' => 'reject' ),
+			'replace' => array( 'overlap' => 'replace' ),
+		);
+	}
+
+	/**
 	 * Chunked Job starts use the registered job's default rejection policy and preserve priority.
 	 *
 	 * @return  void
@@ -410,11 +603,11 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * The chunked-job adapter keeps internal run context and predecessor data inside the engine.
+	 * The chunked-job adapter forwards run identity and completion data to the public model.
 	 *
 	 * @return  void
 	 */
-	public function test_chunked_job_object_adapter_drops_internal_completion_arguments(): void {
+	public function test_chunked_job_object_adapter_forwards_run_and_completion_arguments(): void {
 		$chunked_job = new class() extends \A8CSP_ChunkedJob {
 			/** @var list<array<array-key, mixed>> */
 			public array $generate_args = array();
@@ -422,7 +615,10 @@ final class ProceduralFacadeTest extends TestCase {
 			/** @var list<int> */
 			public array $generate_arities = array();
 
-			/** @var list<array{run_id: string, args: array<array-key, mixed>}> */
+			/** @var list<string> */
+			public array $generate_run_ids = array();
+
+			/** @var list<array{run_id: string, args: array<array-key, mixed>, previous_completed_run_id: string|null}> */
 			public array $completed = array();
 
 			/** @var list<int> */
@@ -436,9 +632,10 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, string $run_id ): iterable {
 				$this->generate_arities[] = \func_num_args();
 				$this->generate_args[]    = $start_args;
+				$this->generate_run_ids[] = $run_id;
 
 				return array();
 			}
@@ -449,11 +646,12 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function on_completed( string $run_id, array $args ): void {
+			public function on_completed( string $run_id, array $args, ?string $previous_completed_run_id ): void {
 				$this->completed_arities[] = \func_num_args();
 				$this->completed[]         = array(
-					'run_id' => $run_id,
-					'args'   => $args,
+					'run_id'                    => $run_id,
+					'args'                      => $args,
+					'previous_completed_run_id' => $previous_completed_run_id,
 				);
 			}
 		};
@@ -467,14 +665,16 @@ final class ProceduralFacadeTest extends TestCase {
 			$this->rig->run_due();
 		}
 
-		self::assertSame( array( 1 ), $chunked_job->generate_arities );
+		self::assertSame( array( 2 ), $chunked_job->generate_arities );
 		self::assertSame( array( $args ), $chunked_job->generate_args );
-		self::assertSame( array( 2 ), $chunked_job->completed_arities );
+		self::assertSame( array( $run_id ), $chunked_job->generate_run_ids );
+		self::assertSame( array( 3 ), $chunked_job->completed_arities );
 		self::assertSame(
 			array(
 				array(
-					'run_id' => $run_id,
-					'args'   => $args,
+					'run_id'                    => $run_id,
+					'args'                      => $args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed
@@ -482,7 +682,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * A schedule specification is behaviorally identical to the corresponding Client value object.
+	 * An anchored schedule specification reduces to the corresponding Client value object.
 	 *
 	 * @return  void
 	 */
@@ -490,7 +690,7 @@ final class ProceduralFacadeTest extends TestCase {
 		/** @var list<array<array-key, mixed>> $calls */
 		$calls   = array();
 		$args    = array( 'scope' => 'all' );
-		$handler = static function ( array $handler_args ) use ( &$calls ): void {
+		$handler = static function ( array $handler_args, string $run_id ) use ( &$calls ): void {
 			$calls[] = $handler_args;
 		};
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'scheduled-job', $handler ) );
@@ -498,6 +698,7 @@ final class ProceduralFacadeTest extends TestCase {
 		$spec = array(
 			'name'     => 'recurring',
 			'every'    => 300,
+			'anchor'   => 650,
 			'job'      => 'scheduled-job',
 			'args'     => $args,
 			'catch_up' => 'skip',
@@ -507,7 +708,7 @@ final class ProceduralFacadeTest extends TestCase {
 		$facade_snapshot = $this->rig->inspection()->schedules( self::OWNER );
 		$write_count     = $this->backend_call_count( 'schedule_recurring' );
 
-		$schedule      = new Schedule( 'recurring', Recurrence::every( 300 ), 'scheduled-job', $args, CatchUpPolicy::Skip, 41 );
+		$schedule      = new Schedule( 'recurring', Recurrence::every_anchored( 300, 50 ), 'scheduled-job', $args, CatchUpPolicy::Skip, 41 );
 		$client_result = $this->rig->client( self::OWNER )->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $client_result );
 		self::assertSame( $facade_snapshot, $this->rig->inspection()->schedules( self::OWNER ) );
@@ -627,6 +828,28 @@ final class ProceduralFacadeTest extends TestCase {
 				),
 				'message'   => 'every must be an integer number of seconds',
 			),
+			'non-integer anchor'     => array(
+				'schedules' => array(
+					array(
+						'name'   => 'schedule',
+						'every'  => 300,
+						'anchor' => '50',
+						'job'    => 'job',
+					),
+				),
+				'message'   => 'anchor must be an integer number of seconds',
+			),
+			'negative anchor'        => array(
+				'schedules' => array(
+					array(
+						'name'   => 'schedule',
+						'every'  => 300,
+						'anchor' => -1,
+						'job'    => 'job',
+					),
+				),
+				'message'   => 'Recurrence anchor must be non-negative; pass a UTC phase offset of zero seconds or greater.',
+			),
 			'non-integer priority'   => array(
 				'schedules' => array(
 					array(
@@ -656,7 +879,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_last_completed_run_id_preserves_null_and_string_success_values(): void {
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {} ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args, string $run_id ): void {} ) );
 		self::assertNull( \a8csp_bgje_run_last_completed( self::OWNER, 'job' ) );
 
 		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job' );
@@ -672,7 +895,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_returns_a_new_run_and_maps_missing_history(): void {
-		$handler = static function ( array $args ): void {
+		$handler = static function ( array $args, string $run_id ): void {
 			throw new NonRetryableException( 'Permanent failure.' );
 		};
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ) );
@@ -694,7 +917,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_cancel_returns_the_run_id_and_maps_a_second_cancel(): void {
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {} ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args, string $run_id ): void {} ) );
 		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, 'job', delay_seconds: 60 );
 		self::assertIsString( $run_id );
 
@@ -708,7 +931,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_mutations_map_malformed_identifiers_to_invalid_argument_errors(): void {
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {} ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args, string $run_id ): void {} ) );
 
 		foreach (
 			array(
@@ -826,7 +1049,7 @@ final class ProceduralFacadeTest extends TestCase {
 		$owner = 'Invalid Owner';
 
 		return array(
-			'job register'         => array( 'call' => static fn (): mixed => \a8csp_bgje_job_register( $owner, 'job', static function ( array $args ): void {} ) ),
+			'job register'         => array( 'call' => static fn (): mixed => \a8csp_bgje_job_register( $owner, 'job', static function ( array $args, string $run_id ): void {} ) ),
 			'job object register'  => array( 'call' => static fn (): mixed => \a8csp_bgje_job_register_object( $owner, self::job( 'job' ) ) ),
 			'job enqueue'          => array( 'call' => static fn (): mixed => \a8csp_bgje_job_enqueue( $owner, 'job' ) ),
 			'chunked job register' => array( 'call' => static fn (): mixed => \a8csp_bgje_chunked_job_register( $owner, self::chunked_job( 'chunked_job' ) ) ),
@@ -903,7 +1126,7 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args, string $run_id ): void {}
 		};
 	}
 
@@ -933,7 +1156,7 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, string $run_id ): iterable {
 				return array();
 			}
 

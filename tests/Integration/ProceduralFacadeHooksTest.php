@@ -45,7 +45,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 
 		\a8csp_bgje_run_on_completed( self::OWNER, $name, $listener );
 		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/completed/' . $identity, $listener ) );
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args ): void {} ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args, string $handler_run_id ): void {} ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
 		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, $name, $args );
@@ -80,7 +80,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 			\a8csp_bgje_job_register(
 				self::OWNER,
 				$name,
-				static function ( array $handler_args ): void {
+				static function ( array $handler_args, string $handler_run_id ): void {
 					throw new NonRetryableException( 'Permanent failure.' );
 				}
 			)
@@ -117,15 +117,15 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$name     = 'option-completed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 9 );
-		/** @var list<array{string, array<array-key, mixed>}> $observed */
+		/** @var list<array{string, array<array-key, mixed>, string|null}> $observed */
 		$observed = array();
 		$options  = array(
-			'on_completed' => static function ( string $run_id, array $start_args ) use ( &$observed ): void {
-				$observed[] = array( $run_id, $start_args );
+			'on_completed' => static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$observed ): void {
+				$observed[] = array( $run_id, $start_args, $previous_completed_run_id );
 			},
 		);
 
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args ): void {}, $options ) );
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args, string $handler_run_id ): void {}, $options ) );
 		self::assertFalse( \has_action( 'a8csp_jobs_engine/completed/' . $identity ), 'Model callbacks must not be registered on the public lifecycle-hook bus' );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
@@ -133,7 +133,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertIsString( $run_id );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertSame( array( array( $run_id, $args ) ), $observed );
+		self::assertSame( array( array( $run_id, $args, null ) ), $observed );
 	}
 
 	/**
@@ -167,7 +167,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args ): void {
+			public function handle( array $args, string $run_id ): void {
 				throw new NonRetryableException( 'Permanent failure.' );
 			}
 

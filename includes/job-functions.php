@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as Inte
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
+use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\overlap_policy;
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
 
 \defined( 'ABSPATH' ) || exit;
@@ -18,7 +19,7 @@ use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
  * @since   1.0.0
  * @version 1.0.0
  *
- * @phpstan-param callable(array<array-key, mixed>): mixed $handler
+ * @phpstan-param callable(array<array-key, mixed>, string): mixed $handler
  * @phpstan-param array<array-key, mixed> $options
  *
  * @param   string   $owner   Client plugin owner.
@@ -26,8 +27,10 @@ use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
  * @param   callable $handler Job handler.
  * @param   array    $options Optional overrides, all validated at runtime: `max_runtime` (int),
  *                            `retry` (array of int max_attempts/base_delay/multiplier/max_delay),
- *                            `on_completed` (callable(string $run_id, array $args)), and `on_failed`
- *                            (callable(string $run_id, array $args, array $failure)).
+ *                            `overlap` (string allow/reject/replace), `overlap_key` (callable(array
+ *                            $args): ?string), `on_completed` (callable(string $run_id, array $args,
+ *                            ?string $previous_completed_run_id)), and `on_failed` (callable(string
+ *                            $run_id, array $args, array $failure)).
  *
  * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
  *
@@ -44,6 +47,17 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 		$retry = $options['retry'] ?? array();
 		if ( ! \is_array( $retry ) ) {
 			throw new \InvalidArgumentException( 'retry must be an array or null' );
+		}
+
+		$overlap = $options['overlap'] ?? 'reject';
+		if ( ! \is_string( $overlap ) ) {
+			throw new \InvalidArgumentException( 'overlap must be a string or null' );
+		}
+		overlap_policy( $overlap );
+
+		$overlap_key = $options['overlap_key'] ?? null;
+		if ( null !== $overlap_key && ! \is_callable( $overlap_key ) ) {
+			throw new \InvalidArgumentException( 'overlap_key must be callable or null' );
 		}
 
 		$on_completed = $options['on_completed'] ?? null;
@@ -64,6 +78,8 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 		\Closure::fromCallable( $handler ),
 		$max_runtime,
 		$retry,
+		$overlap,
+		null === $overlap_key ? null : \Closure::fromCallable( $overlap_key ),
 		null === $on_completed ? null : \Closure::fromCallable( $on_completed ),
 		null === $on_failed ? null : \Closure::fromCallable( $on_failed ),
 	) extends \A8CSP_Job {
@@ -72,12 +88,15 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 		/**
 		 * Constructor.
 		 *
+		 * @phpstan-param \Closure(array<array-key, mixed>, string): mixed $handler
 		 * @phpstan-param array<array-key, mixed> $retry
 		 *
 		 * @param   string        $name         Stable owner-local job name.
 		 * @param   \Closure      $handler      Job handler.
 		 * @param   int           $max_runtime  Callback-runtime ceiling.
 		 * @param   array         $retry        Retry declaration.
+		 * @param   string        $overlap      Overlap declaration.
+		 * @param   \Closure|null $overlap_key  Optional argument-aware overlap-key resolver.
 		 * @param   \Closure|null $on_completed Optional completion callback.
 		 * @param   \Closure|null $on_failed    Optional failure callback.
 		 */
@@ -86,6 +105,8 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 			private \Closure $handler,
 			private int $max_runtime,
 			private array $retry,
+			private string $overlap,
+			private ?\Closure $overlap_key,
 			private ?\Closure $on_completed,
 			private ?\Closure $on_failed,
 		) {}
@@ -102,15 +123,15 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 
 		/** {@inheritDoc} */
 		#[\Override]
-		public function handle( array $args ): void {
-			( $this->handler )( $args );
+		public function handle( array $args, string $run_id ): void {
+			( $this->handler )( $args, $run_id );
 		}
 
 		/** {@inheritDoc} */
 		#[\Override]
-		public function on_completed( string $run_id, array $args ): void {
+		public function on_completed( string $run_id, array $args, ?string $previous_completed_run_id ): void {
 			if ( null !== $this->on_completed ) {
-				( $this->on_completed )( $run_id, $args );
+				( $this->on_completed )( $run_id, $args, $previous_completed_run_id );
 			}
 		}
 
@@ -126,6 +147,27 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 		#[\Override]
 		public function max_callback_runtime(): int {
 			return $this->max_runtime;
+		}
+
+		/** {@inheritDoc} */
+		#[\Override]
+		public function overlap_policy(): string {
+			return $this->overlap;
+		}
+
+		/** {@inheritDoc} */
+		#[\Override]
+		public function overlap_key( array $start_args ): ?string {
+			if ( null === $this->overlap_key ) {
+				return null;
+			}
+
+			$key = ( $this->overlap_key )( $start_args );
+			if ( null !== $key && ! \is_string( $key ) ) {
+				throw new \TypeError( 'overlap_key must return a string or null' );
+			}
+
+			return $key;
 		}
 
 		/** {@inheritDoc} */
@@ -185,12 +227,13 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 			 *
 			 * @param   \A8CSP_Job $job Consumer-authored job.
 			 *
-			 * @throws  \InvalidArgumentException When the retry declaration is invalid.
+			 * @throws  \InvalidArgumentException When the retry or overlap declaration is invalid.
 			 */
 			public function __construct(
 				private readonly \A8CSP_Job $job,
 			) {
 				$this->get_retry_policy();
+				$this->overlap_policy();
 			}
 
 			// endregion
@@ -212,15 +255,13 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 			/** {@inheritDoc} */
 			#[\Override]
 			public function overlap_policy(): OverlapPolicy {
-				return OverlapPolicy::Reject;
+				return overlap_policy( $this->job->overlap_policy() );
 			}
 
 			/** {@inheritDoc} */
 			#[\Override]
 			public function overlap_key( array $start_args ): ?string {
-				unset( $start_args );
-
-				return null;
+				return $this->job->overlap_key( $start_args );
 			}
 
 			/** {@inheritDoc} */
@@ -242,9 +283,7 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 			 */
 			#[\Override]
 			public function handle( array $args, InternalRunContext $context ): void {
-				unset( $context );
-
-				$this->job->handle( $args );
+				$this->job->handle( $args, $context->get_run_id() );
 			}
 
 			/**
@@ -261,9 +300,7 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 			 */
 			#[\Override]
 			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
-				unset( $previous_completed_run_id );
-
-				$this->job->on_completed( $run_id, $start_args );
+				$this->job->on_completed( $run_id, $start_args, $previous_completed_run_id );
 			}
 
 			/**

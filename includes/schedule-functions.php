@@ -14,7 +14,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
  * @version 1.0.0
  *
  * @param   string                  $owner     Client plugin owner.
- * @param   array<array-key, mixed> $schedules Complete schedule specification set.
+ * @param   array<array-key, mixed> $schedules Complete schedule specification set. Each entry requires
+ *                                             `name` (string), `every` (int seconds), and `job`
+ *                                             (string), and accepts optional `args` (array),
+ *                                             `catch_up` (`run_once` or `skip`), `priority` (int), and
+ *                                             `anchor` (int seconds; aligns the recurrence to a fixed
+ *                                             UTC phase within the interval).
  *
  * @throws  \LogicException When called before the earliest safe hook or engine wiring fails.
  *
@@ -43,6 +48,11 @@ function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_E
 				throw new \InvalidArgumentException( 'every must be an integer number of seconds' );
 			}
 
+			$anchor = $specification['anchor'] ?? null;
+			if ( null !== $anchor && ! \is_int( $anchor ) ) {
+				throw new \InvalidArgumentException( 'anchor must be an integer number of seconds' );
+			}
+
 			$args = $specification['args'] ?? array();
 			if ( ! \is_array( $args ) ) {
 				throw new \InvalidArgumentException( 'args must be an array' );
@@ -62,7 +72,8 @@ function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_E
 				throw new \InvalidArgumentException( 'priority must be an integer' );
 			}
 
-			$declarations[] = new Schedule( $name, Recurrence::every( $every ), $job, $args, $catch_up, $priority );
+			$recurrence     = null === $anchor ? Recurrence::every( $every ) : Recurrence::every_anchored( $every, $anchor );
+			$declarations[] = new Schedule( $name, $recurrence, $job, $args, $catch_up, $priority );
 		}
 
 		$result = \a8csp_bgje( $owner )->schedules()->sync( $declarations );

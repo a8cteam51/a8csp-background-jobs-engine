@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as Inte
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
+use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\overlap_policy;
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
 
 \defined( 'ABSPATH' ) || exit;
@@ -56,12 +57,13 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			 *
 			 * @param   \A8CSP_ChunkedJob $job Consumer-authored chunked job.
 			 *
-			 * @throws  \InvalidArgumentException When the retry declaration is invalid.
+			 * @throws  \InvalidArgumentException When the retry or overlap declaration is invalid.
 			 */
 			public function __construct(
 				private readonly \A8CSP_ChunkedJob $job,
 			) {
 				$this->get_retry_policy();
+				$this->overlap_policy();
 			}
 
 			// endregion
@@ -83,15 +85,13 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			/** {@inheritDoc} */
 			#[\Override]
 			public function overlap_policy(): OverlapPolicy {
-				return OverlapPolicy::Reject;
+				return overlap_policy( $this->job->overlap_policy() );
 			}
 
 			/** {@inheritDoc} */
 			#[\Override]
 			public function overlap_key( array $start_args ): ?string {
-				unset( $start_args );
-
-				return null;
+				return $this->job->overlap_key( $start_args );
 			}
 
 			/** {@inheritDoc} */
@@ -113,9 +113,7 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			 */
 			#[\Override]
 			public function generate_queue( array $start_args, InternalRunContext $context ): iterable {
-				unset( $context );
-
-				return $this->job->generate_queue( $start_args );
+				return $this->job->generate_queue( $start_args, $context->get_run_id() );
 			}
 
 			/**
@@ -148,9 +146,7 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			 */
 			#[\Override]
 			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
-				unset( $previous_completed_run_id );
-
-				$this->job->on_completed( $run_id, $start_args );
+				$this->job->on_completed( $run_id, $start_args, $previous_completed_run_id );
 			}
 
 			/**

@@ -52,16 +52,20 @@ final class PublicFacadeTest extends TestCase {
 			'failed_chunk' => null,
 		);
 
-		$job->on_completed( 'run-job', $args );
+		$job->on_completed( 'run-job', $args, null );
 		$job->on_failed( 'run-job', $args, $failure );
-		$chunked_job->on_completed( 'run-chunked', $args );
+		$chunked_job->on_completed( 'run-chunked', $args, 'run-chunked-previous' );
 		$chunked_job->on_failed( 'run-chunked', $args, $failure );
 
 		self::assertSame( 300, \A8CSP_Job::DEFAULT_MAX_CALLBACK_RUNTIME );
 		self::assertSame( 300, $job->max_callback_runtime() );
+		self::assertSame( 'reject', $job->overlap_policy() );
+		self::assertNull( $job->overlap_key( $args ) );
 		self::assertSame( array(), $job->retry() );
 		self::assertSame( 300, \A8CSP_ChunkedJob::DEFAULT_MAX_CALLBACK_RUNTIME );
 		self::assertSame( 300, $chunked_job->max_callback_runtime() );
+		self::assertSame( 'reject', $chunked_job->overlap_policy() );
+		self::assertNull( $chunked_job->overlap_key( $args ) );
 		self::assertSame( array(), $chunked_job->retry() );
 	}
 
@@ -142,7 +146,7 @@ final class PublicFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args, string $run_id ): void {}
 		};
 	}
 
@@ -161,7 +165,7 @@ final class PublicFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, string $run_id ): iterable {
 				return array();
 			}
 

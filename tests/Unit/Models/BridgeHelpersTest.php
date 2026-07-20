@@ -6,12 +6,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
+use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\overlap_policy;
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
 
 /**
@@ -21,7 +23,9 @@ use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
  * @version 1.0.0
  */
 #[CoversFunction( 'A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array' )]
+#[CoversFunction( 'A8C\SpecialProjects\BackgroundJobsEngine\Bridge\overlap_policy' )]
 #[CoversFunction( 'A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy' )]
+#[UsesClass( OverlapPolicy::class )]
 #[UsesClass( RetryPolicy::class )]
 #[UsesClass( RunFailure::class )]
 final class BridgeHelpersTest extends TestCase {
@@ -96,6 +100,30 @@ final class BridgeHelpersTest extends TestCase {
 	}
 
 	/**
+	 * Every recognized consumer overlap declaration maps to the matching internal policy.
+	 *
+	 * @param   string $declaration Recognized overlap declaration.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'valid_overlap_declarations' )]
+	public function test_maps_valid_overlap_declarations( string $declaration ): void {
+		self::assertSame( $declaration, overlap_policy( $declaration )->value );
+	}
+
+	/**
+	 * An unrecognized consumer overlap declaration fails at the bridge boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_rejects_invalid_overlap_declaration(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageMatches( '/^Overlap policy accepts only allow, reject, or replace\.$/D' );
+
+		overlap_policy( 'parallel' );
+	}
+
+	/**
 	 * Every internal failure field maps to the exact public six-field shape.
 	 *
 	 * @param   array<array-key, mixed>|null $failed_chunk Failed chunk projected by the bridge.
@@ -163,6 +191,19 @@ final class BridgeHelpersTest extends TestCase {
 			array( 'max_attempts' => 0 ),
 			'Retry policy requires at least one attempt and a positive base delay.',
 		);
+	}
+
+	/**
+	 * Supplies every recognized consumer overlap declaration.
+	 *
+	 * @phpstan-return iterable<string, array{string}>
+	 *
+	 * @return  iterable
+	 */
+	public static function valid_overlap_declarations(): iterable {
+		yield 'allow' => array( 'allow' );
+		yield 'reject' => array( 'reject' );
+		yield 'replace' => array( 'replace' );
 	}
 
 	// endregion.
