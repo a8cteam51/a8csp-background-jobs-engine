@@ -4,8 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
@@ -32,8 +30,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversFunction( 'a8csp_bgje_run_last_completed' )]
 #[CoversFunction( 'a8csp_bgje_run_retry_failed' )]
 #[CoversFunction( 'a8csp_bgje_run_cancel' )]
-#[CoversFunction( 'a8csp_bgje_run_on_completed' )]
-#[CoversFunction( 'a8csp_bgje_run_on_failed' )]
 final class ProceduralFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -945,77 +941,6 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Completed listeners use the exact public hook contract.
-	 *
-	 * @return  void
-	 */
-	public function test_run_on_completed_registers_the_exact_public_hook(): void {
-		$listener = static function ( string $run_id, array $args, ?string $previous_completed_run_id ): void {};
-
-		\a8csp_bgje_run_on_completed( self::OWNER, 'job', $listener );
-
-		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
-		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
-		self::assertSame(
-			array(
-				'hook_name'     => 'a8csp_jobs_engine/completed/' . self::OWNER . ':job',
-				'callback'      => $listener,
-				'priority'      => 10,
-				'accepted_args' => 3,
-			),
-			\array_last( $registrations )
-		);
-	}
-
-	/**
-	 * Failed listeners use the exact public hook contract.
-	 *
-	 * @return  void
-	 */
-	public function test_run_on_failed_registers_the_exact_public_hook(): void {
-		/** @var list<array{run_id: string, args: array<array-key, mixed>, failure: array<string, mixed>}> $observed */
-		$observed = array();
-		$listener = static function ( string $run_id, array $args, array $failure ) use ( &$observed ): void {
-			$observed[] = array(
-				'run_id'  => $run_id,
-				'args'    => $args,
-				'failure' => $failure,
-			);
-		};
-
-		\a8csp_bgje_run_on_failed( self::OWNER, 'job', $listener );
-
-		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
-		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
-		$registration  = \array_last( $registrations );
-		self::assertIsArray( $registration );
-		self::assertSame(
-			array(
-				'hook_name'     => 'a8csp_jobs_engine/failed/' . self::OWNER . ':job',
-				'priority'      => 10,
-				'accepted_args' => 3,
-			),
-			\array_diff_key( $registration, array( 'callback' => true ) )
-		);
-		self::assertIsCallable( $registration['callback'] );
-		self::assertNotSame( $listener, $registration['callback'] );
-
-		$args    = array( 'site_id' => 9 );
-		$failure = self::run_failure( 'run-9', $args );
-		$registration['callback']( 'run-9', $args, $failure );
-		self::assertSame(
-			array(
-				array(
-					'run_id'  => 'run-9',
-					'args'    => $args,
-					'failure' => self::failure_array( $failure ),
-				),
-			),
-			$observed
-		);
-	}
-
-	/**
 	 * Every fallible function translates owner validation while every public signature stays pinned.
 	 *
 	 * @param   \Closure(): mixed $call Invalid-owner facade call.
@@ -1063,7 +988,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * All twelve global functions expose their exact positional contract and fallible attributes.
+	 * All ten global functions expose their exact positional contract and fallible attributes.
 	 *
 	 * @load-bearing operator-contract
 	 * @pin-rationale The AS-migrant positional/return contract and the #[\NoDiscard] coverage are SemVer surface that must not silently drift.
@@ -1082,8 +1007,6 @@ final class ProceduralFacadeTest extends TestCase {
 			'a8csp_bgje_run_last_completed'   => '(string $owner, string $name): WP_Error|string|null',
 			'a8csp_bgje_run_retry_failed'     => '(string $owner, string $name, string $run_id): WP_Error|string',
 			'a8csp_bgje_run_cancel'           => '(string $owner, string $name, string $run_id): WP_Error|string',
-			'a8csp_bgje_run_on_completed'     => '(string $owner, string $name, callable $listener): void',
-			'a8csp_bgje_run_on_failed'        => '(string $owner, string $name, callable $listener): void',
 		);
 
 		foreach ( $signatures as $function => $signature ) {
@@ -1164,44 +1087,6 @@ final class ProceduralFacadeTest extends TestCase {
 			#[\Override]
 			public function process_chunk( array $chunk_args, \A8CSP_ChunkContext $context ): void {}
 		};
-	}
-
-	/**
-	 * Returns an internal terminal failure as supplied by the frozen engine hook.
-	 *
-	 * @param   string                       $run_id       Run identifier.
-	 * @param   array<array-key, mixed>|null $failed_chunk Optional failed chunk arguments.
-	 *
-	 * @return  RunFailure
-	 */
-	private static function run_failure( string $run_id, ?array $failed_chunk = null ): RunFailure {
-		return new RunFailure(
-			identity: self::OWNER . ':job',
-			run_id: $run_id,
-			attempts: 2,
-			stage: RunFailureStage::Execution,
-			code: ApiErrorCode::ExecutionFailed,
-			summary: 'Background-work execution failed.',
-			failed_chunk: $failed_chunk,
-		);
-	}
-
-	/**
-	 * Returns the exact public representation of an engine terminal failure.
-	 *
-	 * @param   RunFailure $failure Internal terminal failure.
-	 *
-	 * @return  array{run_id: string, attempts: int, stage: string, code: string, summary: string, failed_chunk: array<array-key, mixed>|null}
-	 */
-	private static function failure_array( RunFailure $failure ): array {
-		return array(
-			'run_id'       => $failure->run_id,
-			'attempts'     => $failure->attempts,
-			'stage'        => $failure->stage->value,
-			'code'         => $failure->code->value,
-			'summary'      => $failure->summary,
-			'failed_chunk' => $failure->failed_chunk,
-		);
 	}
 
 	/**

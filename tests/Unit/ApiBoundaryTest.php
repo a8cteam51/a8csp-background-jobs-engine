@@ -28,8 +28,6 @@ final class ApiBoundaryTest extends TestCase {
 		'a8csp_bgje_run_last_completed',
 		'a8csp_bgje_run_retry_failed',
 		'a8csp_bgje_run_cancel',
-		'a8csp_bgje_run_on_completed',
-		'a8csp_bgje_run_on_failed',
 	);
 
 	private const array EXPECTED_API_TYPES = array(

@@ -302,26 +302,30 @@ wp background-jobs schedules remove my-plugin --yes
 
 ### 5. Handling failures
 
-Terminal outcomes fire hooks. The `run_on_failed` / `run_on_completed` helpers wire the correct per-identity hook for you (they work for both jobs and chunked jobs):
+Jobs and chunked jobs expose terminal outcomes through raw per-identity actions. Register listeners directly with `add_action()` on the `a8csp_jobs_engine/failed/{identity}` and `a8csp_jobs_engine/completed/{identity}` hooks. The `failed` hook passes a `RunFailure` object as its third argument, while the `completed` hook passes the predecessor run ID.
 
 ```php
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+
 add_action( 'init', static function (): void {
-	a8csp_bgje_run_on_failed(
-		'my-plugin',
-		'email-digest',
-		static function ( string $run_id, array $start_args, array $failure ): void {
-			// The array carries run_id, attempts, stage, code, summary, and failed_chunk.
+	add_action(
+		'a8csp_jobs_engine/failed/my-plugin:email-digest',
+		static function ( string $run_id, array $start_args, RunFailure $failure ): void {
+			// The RunFailure object carries identity, run_id, attempts, stage, code, summary, and failed_chunk.
 			// The summary is engine-authored and redacted, never raw exception text.
-			error_log( sprintf( 'Digest %s gave up [%s]: %s', $run_id, $failure['code'], $failure['summary'] ) );
-		}
+			error_log( sprintf( 'Digest %s gave up [%s]: %s', $run_id, $failure->code->value, $failure->summary ) );
+		},
+		10,
+		3
 	);
 
-	a8csp_bgje_run_on_completed(
-		'my-plugin',
-		'email-digest',
+	add_action(
+		'a8csp_jobs_engine/completed/my-plugin:email-digest',
 		static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
 			// Runs at-least-once across crash recovery — keep it idempotent.
-		}
+		},
+		10,
+		3
 	);
 }, 2 );
 ```
@@ -346,8 +350,6 @@ The owner is always the first argument. Every fallible function is `#[\NoDiscard
 | `a8csp_bgje_run_last_completed( $owner, $name )` | run ID `string \| null \| WP_Error` |
 | `a8csp_bgje_run_retry_failed( $owner, $name, $run_id )` | fresh run ID `string \| WP_Error` |
 | `a8csp_bgje_run_cancel( $owner, $name, $run_id )` | run ID `string \| WP_Error` |
-| `a8csp_bgje_run_on_completed( $owner, $name, callable $listener )` | `void` |
-| `a8csp_bgje_run_on_failed( $owner, $name, callable $listener )` | `void` |
 
 The callable registration handler receives `(array $args, string $run_id)`. Its `$options` accept `max_runtime` (int seconds); `retry` (an array of integer `max_attempts`, `base_delay`, `multiplier`, and `max_delay` values); `overlap` (`'allow'`, `'reject'`, or `'replace'`); `overlap_key` (`callable(array $args): ?string`); `on_completed` (`callable(string $run_id, array $args, ?string $previous_completed_run_id): void`); and `on_failed` (`callable(string $run_id, array $args, array $failure): void`). The function wraps these values in an anonymous `A8CSP_Job`.
 

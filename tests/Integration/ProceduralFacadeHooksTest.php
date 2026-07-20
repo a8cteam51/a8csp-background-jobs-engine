@@ -2,20 +2,20 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\CoversFunction;
 
 /**
- * Exercises the procedural lifecycle-listener seam against live WordPress hooks.
+ * Exercises terminal lifecycle-hook delivery and model terminal callbacks against live WordPress hooks.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgje_run_on_completed' )]
-#[CoversFunction( 'a8csp_bgje_run_on_failed' )]
 #[CoversFunction( 'a8csp_bgje_job_register' )]
 #[CoversFunction( 'a8csp_bgje_job_register_object' )]
+#[CoversFunction( 'a8csp_bgje_job_enqueue' )]
 final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -33,7 +33,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_run_on_completed_registers_and_fires_the_composed_hook(): void {
+	public function test_completed_hook_registers_and_fires_with_the_predecessor_payload(): void {
 		$name     = 'completed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 7 );
@@ -43,7 +43,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 			$observed[] = array( $run_id, $start_args, $previous_completed_run_id );
 		};
 
-		\a8csp_bgje_run_on_completed( self::OWNER, $name, $listener );
+		\add_action( 'a8csp_jobs_engine/completed/' . $identity, $listener, 10, 3 );
 		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/completed/' . $identity, $listener ) );
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args, string $handler_run_id ): void {} ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
@@ -63,18 +63,18 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_run_on_failed_registers_and_fires_the_composed_hook(): void {
+	public function test_failed_hook_registers_and_fires_with_the_run_failure_object(): void {
 		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$name     = 'failed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 8 );
-		/** @var list<array{string, array<array-key, mixed>, array<string, mixed>}> $observed */
+		/** @var list<array{string, array<array-key, mixed>, RunFailure}> $observed */
 		$observed = array();
-		$listener = static function ( string $run_id, array $start_args, array $failure ) use ( &$observed ): void {
+		$listener = static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$observed ): void {
 			$observed[] = array( $run_id, $start_args, $failure );
 		};
 
-		\a8csp_bgje_run_on_failed( self::OWNER, $name, $listener );
+		\add_action( 'a8csp_jobs_engine/failed/' . $identity, $listener, 10, 3 );
 		self::assertTrue( \has_action( 'a8csp_jobs_engine/failed/' . $identity ) );
 		self::assertTrue(
 			\a8csp_bgje_job_register(
@@ -95,17 +95,13 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertCount( 1, $observed );
 		self::assertSame( $run_id, $observed[0][0] );
 		self::assertSame( $args, $observed[0][1] );
-		self::assertSame(
-			array(
-				'run_id'       => $run_id,
-				'attempts'     => 1,
-				'stage'        => 'execution',
-				'code'         => 'execution_failed',
-				'summary'      => \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class ),
-				'failed_chunk' => null,
-			),
-			$observed[0][2]
-		);
+		self::assertInstanceOf( RunFailure::class, $observed[0][2] );
+		self::assertSame( $run_id, $observed[0][2]->run_id );
+		self::assertSame( 1, $observed[0][2]->attempts );
+		self::assertSame( 'execution', $observed[0][2]->stage->value );
+		self::assertSame( 'execution_failed', $observed[0][2]->code->value );
+		self::assertSame( \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class ), $observed[0][2]->summary );
+		self::assertNull( $observed[0][2]->failed_chunk );
 	}
 
 	/**
