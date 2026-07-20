@@ -16,8 +16,10 @@ final class ApiBoundaryTest extends TestCase {
 	private const string API_NAMESPACE           = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\';
 	private const string ROOT_NAMESPACE          = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\';
 	private const array PROCEDURAL_BUILTIN_TYPES = array( 'array', 'bool', 'callable', 'false', 'int', 'null', 'string', 'true', 'void' );
+	private const array PROCEDURAL_PUBLIC_TYPES  = array( 'A8CSP_ChunkContext', 'A8CSP_ChunkedJob', 'A8CSP_Job', 'WP_Error' );
 	private const array PROCEDURAL_FUNCTIONS     = array(
 		'a8csp_bgje_job_register',
+		'a8csp_bgje_job_register_object',
 		'a8csp_bgje_job_enqueue',
 		'a8csp_bgje_chunked_job_register',
 		'a8csp_bgje_chunked_job_start',
@@ -236,10 +238,11 @@ final class ApiBoundaryTest extends TestCase {
 				return;
 			}
 
-			if ( 'WP_Error' !== $name && \Closure::class !== $name && ! \str_starts_with( $name, self::API_NAMESPACE ) ) {
-				self::fail( $location . ' exposes unsupported procedural type ' . $name );
+			if ( \str_starts_with( $name, self::API_NAMESPACE ) ) {
+				self::fail( $location . ' exposes internal API type ' . $name );
 			}
-			self::assert_supported_type_name( $name, $location );
+
+			self::assertContains( $name, self::PROCEDURAL_PUBLIC_TYPES, $location . ' exposes unsupported procedural type ' . $name );
 
 			return;
 		}

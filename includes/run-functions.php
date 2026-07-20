@@ -2,6 +2,8 @@
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 
+use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -91,7 +93,8 @@ function a8csp_bgje_run_cancel( string $owner, string $name, string $run_id ): s
 }
 
 /**
- * Registers a listener for one owner-qualified completed lifecycle hook.
+ * Registers a listener for one owner-qualified completed lifecycle hook. The listener fires
+ * at-least-once — terminal delivery replays after a crash — so keep it idempotent, keyed on the run id.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -109,12 +112,13 @@ function a8csp_bgje_run_on_completed( string $owner, string $name, callable $lis
 }
 
 /**
- * Registers a listener for one owner-qualified failed lifecycle hook.
+ * Registers a listener for one owner-qualified failed lifecycle hook. The listener fires
+ * at-least-once — terminal delivery replays after a crash — so keep it idempotent, keyed on the run id.
  *
  * @since   1.0.0
  * @version 1.0.0
  *
- * @phpstan-param callable(string, array<array-key, mixed>, RunFailure): void $listener
+ * @phpstan-param callable(string, array<array-key, mixed>, array{run_id: string, attempts: int, stage: string, code: string, summary: string, failed_chunk: array<array-key, mixed>|null}): void $listener
  *
  * @param   string   $owner    Client plugin owner.
  * @param   string   $name     Owner-local job or chunked job name.
@@ -123,5 +127,14 @@ function a8csp_bgje_run_on_completed( string $owner, string $name, callable $lis
  * @return  void
  */
 function a8csp_bgje_run_on_failed( string $owner, string $name, callable $listener ): void {
-	\add_action( 'a8csp_jobs_engine/failed/' . $owner . ':' . $name, $listener, 10, 3 );
+	\add_action(
+		'a8csp_jobs_engine/failed/' . $owner . ':' . $name,
+		static function ( string $run_id, array $args, mixed $failure ) use ( $listener ): void {
+			if ( $failure instanceof RunFailure ) {
+				$listener( $run_id, $args, failure_to_array( $failure ) );
+			}
+		},
+		10,
+		3
+	);
 }

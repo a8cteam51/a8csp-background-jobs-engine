@@ -3,14 +3,15 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WPErrorStub;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversFunction( 'a8csp_bgje_job_register' )]
+#[CoversFunction( 'a8csp_bgje_job_register_object' )]
 #[CoversFunction( 'a8csp_bgje_job_enqueue' )]
 #[CoversFunction( 'a8csp_bgje_chunked_job_register' )]
 #[CoversFunction( 'a8csp_bgje_chunked_job_start' )]
@@ -90,13 +92,12 @@ final class ProceduralFacadeTest extends TestCase {
 		/** @var list<array<array-key, mixed>> $calls */
 		$calls   = array();
 		$args    = array( 'site_id' => 7 );
-		$retry   = new RetryPolicy( max_attempts: 1 );
 		$handler = static function ( array $handler_args ) use ( &$calls ): void {
 			$calls[] = $handler_args;
 		};
 		$options = array(
 			'max_runtime' => 42,
-			'retry'       => $retry,
+			'retry'       => array( 'max_attempts' => 1 ),
 		);
 
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler, $options ) );
@@ -123,7 +124,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	public function test_duplicate_registrations_return_already_registered_errors(): void {
 		$handler     = static function ( array $args ): void {};
-		$chunked_job = new RecordingChunkedJob( 'chunked_job' );
+		$chunked_job = self::chunked_job( 'chunked_job' );
 
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ) );
 		self::assert_wp_error( \a8csp_bgje_job_register( self::OWNER, 'job', $handler ), 'already_registered' );
@@ -132,12 +133,247 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Invalid callable-job option types and retry declarations stay inside the WordPress error boundary.
+	 *
+	 * @param   array<array-key, mixed> $options Invalid registration options.
+	 * @param   string                  $message Exact corrective message.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_job_options' )]
+	public function test_job_registration_returns_invalid_argument_for_invalid_options( array $options, string $message ): void {
+		$error = self::assert_wp_error( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {}, $options ), 'invalid_argument' );
+
+		self::assertSame( $message, $error->get_error_message() );
+	}
+
+	/**
+	 * Object registration translates invalid retry declarations for both job kinds.
+	 *
+	 * @return  void
+	 */
+	public function test_object_registrations_return_invalid_argument_for_invalid_retry_declarations(): void {
+		$job         = new class() extends \A8CSP_Job {
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'job';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function handle( array $args ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function retry(): array {
+				return array( 'base_delay' => 0 );
+			}
+		};
+		$chunked_job = new class() extends \A8CSP_ChunkedJob {
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'chunked-job';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function generate_queue( array $start_args ): iterable {
+				return array();
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function process_chunk( array $chunk_args, \A8CSP_ChunkContext $context ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function retry(): array {
+				return array( 'multiplier' => 0 );
+			}
+		};
+
+		$job_error     = self::assert_wp_error( \a8csp_bgje_job_register_object( self::OWNER, $job ), 'invalid_argument' );
+		$chunked_error = self::assert_wp_error( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ), 'invalid_argument' );
+		self::assertSame( 'Retry policy requires at least one attempt and a positive base delay.', $job_error->get_error_message() );
+		self::assertSame( 'Retry policy requires a multiplier of at least one.', $chunked_error->get_error_message() );
+	}
+
+	/**
+	 * Callable lifecycle options are wired to owner-qualified engine hooks with public payloads.
+	 *
+	 * @return  void
+	 */
+	public function test_callable_registration_wires_completed_and_failed_options(): void {
+		/** @var list<array{run_id: string, args: array<array-key, mixed>}> $completed */
+		$completed = array();
+		/** @var list<array{run_id: string, args: array<array-key, mixed>, failure: array<string, mixed>}> $failed */
+		$failed  = array();
+		$options = array(
+			'on_completed' => static function ( string $run_id, array $args ) use ( &$completed ): void {
+				$completed[] = array(
+					'run_id' => $run_id,
+					'args'   => $args,
+				);
+			},
+			'on_failed'    => static function ( string $run_id, array $args, array $failure ) use ( &$failed ): void {
+				$failed[] = array(
+					'run_id'  => $run_id,
+					'args'    => $args,
+					'failure' => $failure,
+				);
+			},
+		);
+
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {}, $options ) );
+
+		$args       = array( 'site_id' => 7 );
+		$failure    = self::run_failure( 'run-7', $args );
+		$completion = self::action_registration( 'a8csp_jobs_engine/completed/' . self::OWNER . ':job' );
+		$failed_run = self::action_registration( 'a8csp_jobs_engine/failed/' . self::OWNER . ':job' );
+		$completion['callback']( 'run-7', $args );
+		$failed_run['callback']( 'run-7', $args, $failure );
+
+		self::assertSame(
+			array(
+				array(
+					'run_id' => 'run-7',
+					'args'   => $args,
+				),
+			),
+			$completed
+		);
+		self::assertSame(
+			array(
+				array(
+					'run_id'  => 'run-7',
+					'args'    => $args,
+					'failure' => self::failure_array( $failure ),
+				),
+			),
+			$failed
+		);
+	}
+
+	/**
+	 * Consumer job subclasses register through the same adapter and lifecycle-hook bridge.
+	 *
+	 * @return  void
+	 */
+	public function test_job_object_registration_adapts_work_and_lifecycle_callbacks(): void {
+		$job = new class() extends \A8CSP_Job {
+			/** @var list<array{run_id: string, args: array<array-key, mixed>}> */
+			public array $completed = array();
+
+			/** @var list<array{run_id: string, args: array<array-key, mixed>, failure: array<string, mixed>}> */
+			public array $failed = array();
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'object-job';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function handle( array $args ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function on_completed( string $run_id, array $args ): void {
+				$this->completed[] = array(
+					'run_id' => $run_id,
+					'args'   => $args,
+				);
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function on_failed( string $run_id, array $args, array $failure ): void {
+				$this->failed[] = array(
+					'run_id'  => $run_id,
+					'args'    => $args,
+					'failure' => $failure,
+				);
+			}
+		};
+
+		self::assertTrue( \a8csp_bgje_job_register_object( self::OWNER, $job ) );
+
+		$args       = array( 'site_id' => 8 );
+		$failure    = self::run_failure( 'run-8', $args );
+		$completion = self::action_registration( 'a8csp_jobs_engine/completed/' . self::OWNER . ':object-job' );
+		$failed_run = self::action_registration( 'a8csp_jobs_engine/failed/' . self::OWNER . ':object-job' );
+		$completion['callback']( 'run-8', $args );
+		$failed_run['callback']( 'run-8', $args, $failure );
+
+		self::assertSame(
+			array(
+				array(
+					'run_id' => 'run-8',
+					'args'   => $args,
+				),
+			),
+			$job->completed
+		);
+		self::assertSame(
+			array(
+				array(
+					'run_id'  => 'run-8',
+					'args'    => $args,
+					'failure' => self::failure_array( $failure ),
+				),
+			),
+			$job->failed
+		);
+	}
+
+	/**
+	 * Supplies invalid callable-job option types and retry declarations.
+	 *
+	 * @return  array<string, array{options: array<array-key, mixed>, message: string}>
+	 */
+	public static function invalid_job_options(): array {
+		return array(
+			'max runtime type' => array(
+				'options' => array( 'max_runtime' => '300' ),
+				'message' => 'max_runtime must be an integer or null',
+			),
+			'retry type'       => array(
+				'options' => array( 'retry' => 'once' ),
+				'message' => 'retry must be an array or null',
+			),
+			'completed type'   => array(
+				'options' => array( 'on_completed' => 'callback' ),
+				'message' => 'on_completed must be callable or null',
+			),
+			'failed type'      => array(
+				'options' => array( 'on_failed' => 'callback' ),
+				'message' => 'on_failed must be callable or null',
+			),
+			'retry field type' => array(
+				'options' => array( 'retry' => array( 'max_attempts' => '3' ) ),
+				'message' => 'Retry declarations accept only integer max_attempts, base_delay, multiplier, and max_delay fields.',
+			),
+			'unknown retry'    => array(
+				'options' => array( 'retry' => array( 'jitter' => 1 ) ),
+				'message' => 'Retry declarations accept only integer max_attempts, base_delay, multiplier, and max_delay fields.',
+			),
+			'retry invariant'  => array(
+				'options' => array( 'retry' => array( 'max_attempts' => 0 ) ),
+				'message' => 'Retry policy requires at least one attempt and a positive base delay.',
+			),
+		);
+	}
+
+	/**
 	 * Chunked Job starts default to rejection, accept replacement explicitly, and preserve priority.
 	 *
 	 * @return  void
 	 */
 	public function test_chunked_job_start_maps_existing_policy_and_priority(): void {
-		$chunked_job = new RecordingChunkedJob( 'chunked_job' );
+		$chunked_job = self::chunked_job( 'chunked_job' );
 		self::assertTrue( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ) );
 
 		$run_id = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ), priority: 31 );
@@ -452,20 +688,45 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_on_failed_registers_the_exact_public_hook(): void {
-		$listener = static function ( string $run_id, array $args, mixed $failure ): void {};
+		/** @var list<array{run_id: string, args: array<array-key, mixed>, failure: array<string, mixed>}> $observed */
+		$observed = array();
+		$listener = static function ( string $run_id, array $args, array $failure ) use ( &$observed ): void {
+			$observed[] = array(
+				'run_id'  => $run_id,
+				'args'    => $args,
+				'failure' => $failure,
+			);
+		};
 
 		\a8csp_bgje_run_on_failed( self::OWNER, 'job', $listener );
 
 		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
 		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
+		$registration  = \array_last( $registrations );
+		self::assertIsArray( $registration );
 		self::assertSame(
 			array(
 				'hook_name'     => 'a8csp_jobs_engine/failed/' . self::OWNER . ':job',
-				'callback'      => $listener,
 				'priority'      => 10,
 				'accepted_args' => 3,
 			),
-			\array_last( $registrations )
+			\array_diff_key( $registration, array( 'callback' => true ) )
+		);
+		self::assertIsCallable( $registration['callback'] );
+		self::assertNotSame( $listener, $registration['callback'] );
+
+		$args    = array( 'site_id' => 9 );
+		$failure = self::run_failure( 'run-9', $args );
+		$registration['callback']( 'run-9', $args, $failure );
+		self::assertSame(
+			array(
+				array(
+					'run_id'  => 'run-9',
+					'args'    => $args,
+					'failure' => self::failure_array( $failure ),
+				),
+			),
+			$observed
 		);
 	}
 
@@ -504,8 +765,9 @@ final class ProceduralFacadeTest extends TestCase {
 
 		return array(
 			'job register'         => array( 'call' => static fn (): mixed => \a8csp_bgje_job_register( $owner, 'job', static function ( array $args ): void {} ) ),
+			'job object register'  => array( 'call' => static fn (): mixed => \a8csp_bgje_job_register_object( $owner, self::job( 'job' ) ) ),
 			'job enqueue'          => array( 'call' => static fn (): mixed => \a8csp_bgje_job_enqueue( $owner, 'job' ) ),
-			'chunked job register' => array( 'call' => static fn (): mixed => \a8csp_bgje_chunked_job_register( $owner, new RecordingChunkedJob( 'chunked_job' ) ) ),
+			'chunked job register' => array( 'call' => static fn (): mixed => \a8csp_bgje_chunked_job_register( $owner, self::chunked_job( 'chunked_job' ) ) ),
 			'chunked job start'    => array( 'call' => static fn (): mixed => \a8csp_bgje_chunked_job_start( $owner, 'chunked_job' ) ),
 			'schedule sync'        => array( 'call' => static fn (): mixed => \a8csp_bgje_schedule_sync( $owner, array() ) ),
 			'schedule dispatch'    => array( 'call' => static fn (): mixed => \a8csp_bgje_schedule_dispatch( $owner, 'schedule' ) ),
@@ -516,7 +778,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * All eleven global functions expose their exact positional contract and fallible attributes.
+	 * All twelve global functions expose their exact positional contract and fallible attributes.
 	 *
 	 * @load-bearing operator-contract
 	 * @pin-rationale The AS-migrant positional/return contract and the #[\NoDiscard] coverage are SemVer surface that must not silently drift.
@@ -526,8 +788,9 @@ final class ProceduralFacadeTest extends TestCase {
 	public function test_public_function_signatures_and_no_discard_contracts(): void {
 		$signatures = array(
 			'a8csp_bgje_job_register'         => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
+			'a8csp_bgje_job_register_object'  => '(string $owner, A8CSP_Job $job): WP_Error|true',
 			'a8csp_bgje_job_enqueue'          => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, ?string $dedup_key = null, int $priority = 10): WP_Error|string',
-			'a8csp_bgje_chunked_job_register' => '(string $owner, A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobInterface $chunked_job): WP_Error|true',
+			'a8csp_bgje_chunked_job_register' => '(string $owner, A8CSP_ChunkedJob $job): WP_Error|true',
 			'a8csp_bgje_chunked_job_start'    => '(string $owner, string $name, array $start_args = array(), string $existing = \'reject\', int $priority = 10): WP_Error|string',
 			'a8csp_bgje_schedule_sync'        => '(string $owner, array $schedules): WP_Error|true',
 			'a8csp_bgje_schedule_dispatch'    => '(string $owner, string $name): WP_Error|string',
@@ -543,7 +806,7 @@ final class ProceduralFacadeTest extends TestCase {
 			self::assertSame( $signature, self::reflection_signature( $reflection ) );
 		}
 
-		foreach ( \array_slice( \array_keys( $signatures ), 0, 9 ) as $function ) {
+		foreach ( \array_slice( \array_keys( $signatures ), 0, 10 ) as $function ) {
 			self::assertCount( 1, ( new \ReflectionFunction( $function ) )->getAttributes( \NoDiscard::class ) );
 		}
 	}
@@ -551,6 +814,129 @@ final class ProceduralFacadeTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns a minimal consumer-authored one-off job.
+	 *
+	 * @param   string $name Stable owner-local job name.
+	 *
+	 * @return  \A8CSP_Job
+	 */
+	private static function job( string $name ): \A8CSP_Job {
+		return new class( $name ) extends \A8CSP_Job {
+			/**
+			 * Constructor.
+			 *
+			 * @param   string $name Stable owner-local job name.
+			 */
+			public function __construct(
+				private readonly string $name,
+			) {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return $this->name;
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function handle( array $args ): void {}
+		};
+	}
+
+	/**
+	 * Returns a minimal consumer-authored chunked job.
+	 *
+	 * @param   string $name Stable owner-local chunked job name.
+	 *
+	 * @return  \A8CSP_ChunkedJob
+	 */
+	private static function chunked_job( string $name ): \A8CSP_ChunkedJob {
+		return new class( $name ) extends \A8CSP_ChunkedJob {
+			/**
+			 * Constructor.
+			 *
+			 * @param   string $name Stable owner-local chunked job name.
+			 */
+			public function __construct(
+				private readonly string $name,
+			) {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return $this->name;
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function generate_queue( array $start_args ): iterable {
+				return array();
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function process_chunk( array $chunk_args, \A8CSP_ChunkContext $context ): void {}
+		};
+	}
+
+	/**
+	 * Returns one recorded action registration by exact hook name.
+	 *
+	 * @param   string $hook_name Action hook name.
+	 *
+	 * @return  array{hook_name: string, callback: callable, priority: int, accepted_args: int}
+	 */
+	private static function action_registration( string $hook_name ): array {
+		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
+		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
+		foreach ( \array_reverse( $registrations ) as $registration ) {
+			if ( $hook_name === $registration['hook_name'] ) {
+				return $registration;
+			}
+		}
+
+		self::fail( 'Expected an action registration for ' . $hook_name . '.' );
+	}
+
+	/**
+	 * Returns an internal terminal failure as supplied by the frozen engine hook.
+	 *
+	 * @param   string                       $run_id       Run identifier.
+	 * @param   array<array-key, mixed>|null $failed_chunk Optional failed chunk arguments.
+	 *
+	 * @return  RunFailure
+	 */
+	private static function run_failure( string $run_id, ?array $failed_chunk = null ): RunFailure {
+		return new RunFailure(
+			identity: self::OWNER . ':job',
+			run_id: $run_id,
+			attempts: 2,
+			stage: RunFailureStage::Execution,
+			code: ApiErrorCode::ExecutionFailed,
+			summary: 'Background-work execution failed.',
+			failed_chunk: $failed_chunk,
+		);
+	}
+
+	/**
+	 * Returns the exact public representation of an engine terminal failure.
+	 *
+	 * @param   RunFailure $failure Internal terminal failure.
+	 *
+	 * @return  array{run_id: string, attempts: int, stage: string, code: string, summary: string, failed_chunk: array<array-key, mixed>|null}
+	 */
+	private static function failure_array( RunFailure $failure ): array {
+		return array(
+			'run_id'       => $failure->run_id,
+			'attempts'     => $failure->attempts,
+			'stage'        => $failure->stage->value,
+			'code'         => $failure->code->value,
+			'summary'      => $failure->summary,
+			'failed_chunk' => $failure->failed_chunk,
+		);
+	}
 
 	/**
 	 * Returns the latest scheduler call for one write verb.
