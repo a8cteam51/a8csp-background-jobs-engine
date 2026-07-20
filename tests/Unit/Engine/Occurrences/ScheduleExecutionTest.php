@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -65,6 +66,7 @@ final class ScheduleExecutionTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
+	private const int ANCHOR              = 50;
 	private const int INTERVAL            = 300;
 	private const string NAME             = 'nightly';
 	private const int NOW                 = 1_700_000_000;
@@ -208,6 +210,64 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertNull( $registration['last_fired'] ?? null );
 		self::assertSame( 1, $registration['misfire_skips'] ?? null );
+	}
+
+	/**
+	 * Anchored RunOnce and Skip catch-up retain their UTC phase.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $catch_up               Catch-up policy value.
+	 * @param   int    $expected_started       Expected started-hook count.
+	 * @param   int    $expected_misfire_skips Expected persisted skip count.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'anchored_catch_up_policies' )]
+	public function test_anchored_catch_up_preserves_the_utc_phase_grid( string $catch_up, int $expected_started, int $expected_misfire_skips ): void {
+		$schedule = new Schedule( self::NAME, Recurrence::every_anchored( self::INTERVAL, self::ANCHOR ), self::JOB, self::ARGS, CatchUpPolicy::from( $catch_up ), 23 );
+		$this->sync_schedule( $schedule );
+
+		$first_due = $this->registration()['next_due'] ?? null;
+		self::assertIsInt( $first_due );
+		self::assertSame( self::ANCHOR, $first_due % self::INTERVAL );
+
+		$this->rig->clock()->timestamp = $first_due + 3 * self::INTERVAL + 1;
+		$this->rig->run_due();
+
+		$registration = $this->registration();
+		$next_due     = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+		self::assertSame( $first_due + 4 * self::INTERVAL, $next_due );
+		self::assertSame( self::ANCHOR, $next_due % self::INTERVAL );
+		self::assertCount( $expected_started, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( $expected_misfire_skips, $registration['misfire_skips'] ?? null );
+	}
+
+	/**
+	 * Supplies both anchored catch-up paths.
+	 *
+	 * Scalar policy values keep provider discovery independent of the guarded production autoloader.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{catch_up: string, expected_started: int, expected_misfire_skips: int}>
+	 */
+	public static function anchored_catch_up_policies(): array {
+		return array(
+			'RunOnce make-up' => array(
+				'catch_up'               => 'run_once',
+				'expected_started'       => 1,
+				'expected_misfire_skips' => 0,
+			),
+			'Skip drop'       => array(
+				'catch_up'               => 'skip',
+				'expected_started'       => 0,
+				'expected_misfire_skips' => 1,
+			),
+		);
 	}
 
 	/**

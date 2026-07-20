@@ -280,7 +280,7 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$interval = $schedule->recurrence->interval();
+		$interval = $schedule->recurrence->interval;
 
 		/**
 		 * Filters the grace window for one schedule occurrence.

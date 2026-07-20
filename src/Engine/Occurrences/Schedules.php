@@ -151,7 +151,7 @@ final readonly class Schedules {
 		$next_due_by_identity = array();
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
-			$interval = $schedule->recurrence->interval();
+			$interval = $schedule->recurrence->interval;
 
 			$interval_by_identity[ $schedule_identity ] = $interval;
 			$current                                    = $existing[ $schedule_identity ] ?? null;
@@ -160,12 +160,12 @@ final readonly class Schedules {
 			}
 
 			$now      = $this->clock->now()->getTimestamp();
-			$next_due = $now > \PHP_INT_MAX - $interval ? null : $now + $interval;
+			$next_due = self::next_anchored_due( $now, $interval, $schedule->recurrence->anchor );
 			if ( null === $next_due || 1 > $next_due ) {
 				return new Failure(
 					new SchedulingError(
 						SchedulingErrorReason::InvalidTimeInput,
-						\sprintf( 'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every() value.', $schedule->name ),
+						\sprintf( 'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every()/every_anchored() interval.', $schedule->name ),
 						array(
 							'current_timestamp' => $now,
 							'interval'          => $interval,
@@ -284,6 +284,35 @@ final readonly class Schedules {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns the first strictly future instant on the recurrence's UTC phase grid.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int      $now      Current UTC Unix timestamp.
+	 * @param   int      $interval Positive recurrence interval.
+	 * @param   int|null $anchor   Canonical UTC phase offset, or null when unanchored.
+	 *
+	 * @return  int|null Future due instant, or null when positive Unix seconds overflow.
+	 */
+	private static function next_anchored_due( int $now, int $interval, ?int $anchor ): ?int {
+		if ( $now > \PHP_INT_MAX - $interval ) {
+			return null;
+		}
+		if ( null === $anchor ) {
+			return $now + $interval;
+		}
+
+		$phase     = $anchor % $interval;
+		$candidate = $now - ( $now % $interval ) + $phase;
+		while ( $candidate <= $now ) {
+			$candidate += $interval;
+		}
+
+		return $candidate;
+	}
 
 	/**
 	 * Returns the failed verified-clear result for a schedule replacement.

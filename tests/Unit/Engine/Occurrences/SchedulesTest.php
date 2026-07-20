@@ -189,6 +189,51 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * Anchored schedules seed at the first strictly future instant on their UTC phase grid.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_seeds_anchored_schedules_on_their_utc_phase_grid(): void {
+		$phase    = new Schedule( 'phase', Recurrence::every_anchored( 300, 50 ), 'refresh-index' );
+		$boundary = new Schedule( 'boundary', Recurrence::every_anchored( 300, 200 ), 'refresh-index' );
+		$zero     = new Schedule( 'zero', Recurrence::every_anchored( 300, 0 ), 'refresh-index' );
+		$future   = new Schedule( 'future', Recurrence::every_anchored( 300, 250 ), 'refresh-index' );
+
+		$result = $this->client_a->schedules()->sync( array( $phase, $boundary, $zero, $future ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		$entries = \array_column( $this->owner_entries( 'owner-a' ), null, 'name' );
+		self::assertSame( 1_700_000_150, $entries['owner-a:phase']['next_due'] ?? null );
+		self::assertSame( self::NOW + 300, $entries['owner-a:boundary']['next_due'] ?? null );
+		self::assertSame( 1_700_000_100, $entries['owner-a:zero']['next_due'] ?? null );
+		self::assertSame( self::NOW - ( self::NOW % 300 ) + 250, $entries['owner-a:future']['next_due'] ?? null );
+	}
+
+	/**
+	 * An anchored seed that exceeds positive Unix seconds fails before backend mutation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_rejects_an_overflowing_anchored_seed(): void {
+		$this->rig->clock()->timestamp = \PHP_INT_MAX - 5;
+		$anchor                        = 1;
+		$schedule                      = new Schedule( 'overflow', Recurrence::every_anchored( 10, $anchor ), 'refresh-index' );
+
+		$result = $this->client_a->schedules()->sync( array( $schedule ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ApiErrorCode::PayloadRejected, $result->error->code );
+		self::assertSame( array(), $this->write_calls() );
+	}
+
+	/**
 	 * One sync replaces a same-backend surplus and leaves the repaired chain untouched thereafter.
 	 *
 	 * @load-bearing concurrency

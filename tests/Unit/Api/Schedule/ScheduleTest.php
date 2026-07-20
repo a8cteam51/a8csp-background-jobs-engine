@@ -207,6 +207,7 @@ final class ScheduleTest extends TestCase {
 		$changed  = array(
 			new Schedule( 'nightly-2', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ) ),
 			new Schedule( 'nightly', Recurrence::every( 301 ), 'refresh-index', array( 'site_id' => 7 ) ),
+			new Schedule( 'nightly', Recurrence::every_anchored( 300, 1 ), 'refresh-index', array( 'site_id' => 7 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index-2', array( 'site_id' => 7 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 8 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), catch_up: CatchUpPolicy::Skip ),

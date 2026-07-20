@@ -167,7 +167,7 @@ final readonly class Inspection {
 			$entries[]   = array(
 				'owner'              => $registration_owner,
 				'name'               => $registration_key,
-				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval(),
+				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
 				'last_fired'         => $registration['last_fired'],
 				'misfire_skips'      => $registration['misfire_skips'],
