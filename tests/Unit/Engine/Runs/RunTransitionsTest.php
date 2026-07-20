@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
@@ -757,8 +758,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_job( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_job( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
@@ -918,7 +919,7 @@ final class RunTransitionsTest extends TestCase {
 		}
 
 		try {
-			$this->job->handle( $state->start_args );
+			$this->job->handle( $state->start_args, new RunContext( $run_id, $state->start_args ) );
 		} catch ( \Throwable $throwable ) {
 			$this->failure_lifecycle->handle_job_failure( $this->job, self::IDENTITY, $run_id, $state, $run_store, $throwable );
 
@@ -929,7 +930,7 @@ final class RunTransitionsTest extends TestCase {
 			return;
 		}
 
-		$this->terminal_transitions->complete_job( self::IDENTITY, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_job( $this->job, self::IDENTITY, $run_id, $state, $run_store );
 	}
 
 	/**

@@ -117,8 +117,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => $run_a,
-					'start_args' => $start_args,
+					'run_id'                    => $run_a,
+					'start_args'                => $start_args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls,
@@ -239,8 +240,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => $run_b,
-					'start_args' => $start_args,
+					'run_id'                    => $run_b,
+					'start_args'                => $start_args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls,

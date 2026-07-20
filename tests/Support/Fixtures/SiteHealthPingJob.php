@@ -2,9 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 /**
@@ -103,7 +105,8 @@ final class SiteHealthPingJob implements OneOffJobInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args Invocation arguments containing `transient`.
+	 * @param   array<array-key, mixed> $args    Invocation arguments containing `transient`.
+	 * @param   RunContextInterface     $context Controlled access to this run.
 	 *
 	 * @throws  NonRetryableException When `transient` is absent, invalid, or over WordPress's length limit.
 	 * @throws  \RuntimeException         When WordPress cannot persist the snapshot; retryable.
@@ -111,7 +114,7 @@ final class SiteHealthPingJob implements OneOffJobInterface {
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args ): void {
+	public function handle( array $args, RunContextInterface $context ): void {
 		$transient = $args['transient'] ?? null;
 		// WordPress caps transient names at 172 characters; a longer name is a permanent input
 		// defect, so it escapes the retry ladder instead of burning attempts.
@@ -129,6 +132,14 @@ final class SiteHealthPingJob implements OneOffJobInterface {
 			throw new \RuntimeException( \sprintf( 'WordPress could not persist the site-health snapshot in transient "%s".', $transient ) );
 		}
 	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {}
 
 	/**
 	 * Returns the bounded retry policy for transient persistence failures.

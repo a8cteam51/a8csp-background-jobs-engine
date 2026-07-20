@@ -82,27 +82,27 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		$completion_observations = array();
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $args ) use ( $chunked_job, &$completion_observations ): void {
+			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'            => 'named',
-					'payload'         => array( $run_id, $args ),
-					'completed_calls' => \count( $chunked_job->completed_calls ),
-				);
-			},
-			10,
-			2
-		);
-		\add_action(
-			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args ) use ( $chunked_job, &$completion_observations ): void {
-				$completion_observations[] = array(
-					'hook'            => 'generic',
-					'payload'         => array( $name, $run_id, $args ),
+					'payload'         => array( $run_id, $args, $previous_completed_run_id ),
 					'completed_calls' => \count( $chunked_job->completed_calls ),
 				);
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
+				$completion_observations[] = array(
+					'hook'            => 'generic',
+					'payload'         => array( $name, $run_id, $args, $previous_completed_run_id ),
+					'completed_calls' => \count( $chunked_job->completed_calls ),
+				);
+			},
+			10,
+			4
 		);
 
 		$result = $client->chunked_jobs()->start( self::NAME, $start_args );
@@ -146,8 +146,9 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => $run_id,
-					'start_args' => $start_args,
+					'run_id'                    => $run_id,
+					'start_args'                => $start_args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls,
@@ -157,12 +158,12 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			array(
 				array(
 					'hook'            => 'named',
-					'payload'         => array( $run_id, $start_args ),
+					'payload'         => array( $run_id, $start_args, null ),
 					'completed_calls' => 1,
 				),
 				array(
 					'hook'            => 'generic',
-					'payload'         => array( self::IDENTITY, $run_id, $start_args ),
+					'payload'         => array( self::IDENTITY, $run_id, $start_args, null ),
 					'completed_calls' => 1,
 				),
 			),
@@ -235,8 +236,9 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => $run_id,
-					'start_args' => array(),
+					'run_id'                    => $run_id,
+					'start_args'                => array(),
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls,

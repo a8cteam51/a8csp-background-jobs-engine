@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -14,7 +16,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface ChunkContextInterface {
+interface ChunkContextInterface extends RunContextInterface {
 	// region METHODS
 
 	/**
@@ -44,29 +46,6 @@ interface ChunkContextInterface {
 	 * @return  void
 	 */
 	public function prepend( array $chunk_args ): void;
-
-	/**
-	 * Returns the identifier the engine assigns when the run starts.
-	 *
-	 * The engine passes the same value as `$run_id` to `ChunkedJobInterface::on_completed()` or
-	 * `ChunkedJobInterface::on_failed()` when either callback is invoked.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	public function get_run_id(): string;
-
-	/**
-	 * Returns the arguments supplied when the run started.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<array-key, mixed>
-	 */
-	public function get_start_args(): array;
 
 	// endregion
 }

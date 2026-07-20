@@ -81,8 +81,9 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => $chunked_job_run_id,
-					'start_args' => $chunked_job_args,
+					'run_id'                    => $chunked_job_run_id,
+					'start_args'                => $chunked_job_args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls,

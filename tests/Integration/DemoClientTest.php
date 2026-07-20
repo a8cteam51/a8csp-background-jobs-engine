@@ -154,21 +154,21 @@ final class DemoClientTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::JOB_IDENTITY,
-			static function ( string $run_id, array $args ) use ( &$job_completed_named ): void {
-				$job_completed_named[] = array( $run_id, $args );
-			},
-			10,
-			2
-		);
-		\add_action(
-			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args ) use ( &$job_completed_generic ): void {
-				if ( self::JOB_IDENTITY === $name ) {
-					$job_completed_generic[] = array( $name, $run_id, $args );
-				}
+			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$job_completed_named ): void {
+				$job_completed_named[] = array( $run_id, $args, $previous_completed_run_id );
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$job_completed_generic ): void {
+				if ( self::JOB_IDENTITY === $name ) {
+					$job_completed_generic[] = array( $name, $run_id, $args, $previous_completed_run_id );
+				}
+			},
+			10,
+			4
 		);
 		\add_action(
 			CommentCountRecountChunkedJob::RECOUNTED_HOOK,
@@ -188,21 +188,21 @@ final class DemoClientTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
-			static function ( string $run_id, array $args ) use ( &$chunked_job_completed_named ): void {
-				$chunked_job_completed_named[] = array( $run_id, $args );
-			},
-			10,
-			2
-		);
-		\add_action(
-			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args ) use ( &$chunked_job_completed_global ): void {
-				if ( self::CHUNKED_JOB_IDENTITY === $name ) {
-					$chunked_job_completed_global[] = array( $name, $run_id, $args );
-				}
+			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$chunked_job_completed_named ): void {
+				$chunked_job_completed_named[] = array( $run_id, $args, $previous_completed_run_id );
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$chunked_job_completed_global ): void {
+				if ( self::CHUNKED_JOB_IDENTITY === $name ) {
+					$chunked_job_completed_global[] = array( $name, $run_id, $args, $previous_completed_run_id );
+				}
+			},
+			10,
+			4
 		);
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name ): int => self::CHUNKED_JOB_IDENTITY === $name ? 0 : $delay, 10, 2 );
 
@@ -240,8 +240,8 @@ final class DemoClientTest extends IntegrationTestCase {
 		self::assertSame( 1, $manual_actions_processed, 'The scheduler must execute the direct demo job' );
 		self::assertSame( $schedule_due_before_manual, \did_action( 'a8csp_jobs_engine/schedule_due' ), 'The direct job drive must not consume the recurring schedule occurrence' );
 		$this->assert_site_health_snapshot( self::MANUAL_SNAPSHOT_TRANSIENT );
-		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $job_completed_named );
-		self::assertSame( array( array( self::JOB_IDENTITY, $manual_run_id, $manual_args ) ), $job_completed_generic );
+		self::assertSame( array( array( $manual_run_id, $manual_args, null ) ), $job_completed_named );
+		self::assertSame( array( array( self::JOB_IDENTITY, $manual_run_id, $manual_args, null ) ), $job_completed_generic );
 
 		$this->make_demo_schedule_due();
 		$schedule_due_before = \did_action( 'a8csp_jobs_engine/schedule_due' );
@@ -259,10 +259,17 @@ final class DemoClientTest extends IntegrationTestCase {
 		$this->assert_site_health_snapshot( SiteHealthPingJob::SNAPSHOT_TRANSIENT );
 		self::assertSame(
 			array(
-				array( $manual_run_id, $manual_args ),
-				array( $scheduled_run_id, $scheduled_args ),
+				array( $manual_run_id, $manual_args, null ),
+				array( $scheduled_run_id, $scheduled_args, $manual_run_id ),
 			),
 			$job_completed_named
+		);
+		self::assertSame(
+			array(
+				array( self::JOB_IDENTITY, $manual_run_id, $manual_args, null ),
+				array( self::JOB_IDENTITY, $scheduled_run_id, $scheduled_args, $manual_run_id ),
+			),
+			$job_completed_generic
 		);
 
 		// Core already counted the comments at insertion; force stale zeros so only the demo
@@ -296,8 +303,8 @@ final class DemoClientTest extends IntegrationTestCase {
 			'Each queried post must run as its own chunk under the same chunked job run'
 		);
 		self::assertSame( array( array( $chunked_job_run_id, $chunked_job_args ) ), $chunked_job_succeeded );
-		self::assertSame( array( array( $chunked_job_run_id, $chunked_job_args ) ), $chunked_job_completed_named );
-		self::assertSame( array( array( self::CHUNKED_JOB_IDENTITY, $chunked_job_run_id, $chunked_job_args ) ), $chunked_job_completed_global );
+		self::assertSame( array( array( $chunked_job_run_id, $chunked_job_args, null ) ), $chunked_job_completed_named );
+		self::assertSame( array( array( self::CHUNKED_JOB_IDENTITY, $chunked_job_run_id, $chunked_job_args, null ) ), $chunked_job_completed_global );
 		self::assertSame( 1, (int) \get_comments_number( $first_post_id ) );
 		self::assertSame( 1, (int) \get_comments_number( $second_post_id ) );
 	}

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -80,7 +81,7 @@ final class AbstractChunkedJobTest extends TestCase {
 		$chunked_job = self::chunked_job();
 		$failure     = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: 'run-7', attempts: 3, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Background-work execution failed.', failed_chunk: array( 'post_id' => 42 ), );
 
-		$chunked_job->on_completed( 'run-7', array( 'post_type' => 'post' ) );
+		$chunked_job->on_completed( 'run-7', array( 'post_type' => 'post' ), null );
 		$chunked_job->on_failed( 'run-7', array( 'post_type' => 'post' ), $failure );
 
 		self::addToAssertionCount( 1 );
@@ -108,11 +109,12 @@ final class AbstractChunkedJobTest extends TestCase {
 			 * {@inheritDoc}
 			 *
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+			 * @param   RunContextInterface     $context    Controlled access to this run.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 

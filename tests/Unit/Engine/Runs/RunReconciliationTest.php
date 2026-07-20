@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
@@ -82,6 +83,7 @@ final class RunReconciliationTest extends TestCase {
 
 	private FixedClock $clock;
 	private JobRegistry $work;
+	private RecordingJob $job;
 	private RecordingBackend $backend;
 	private Dispatcher $dispatcher;
 	private ActionDeliveries $lifecycle_deliveries;
@@ -143,7 +145,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->work   = new JobRegistry();
 		$this->logger = new RecordingLogger();
 		$this->wpdb   = new WpdbLockSpy();
-		$this->work->register_job( self::IDENTITY, new RecordingJob( self::NAME ) );
+		$this->job    = new RecordingJob( self::NAME );
+		$this->work->register_job( self::IDENTITY, $this->job );
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
@@ -184,7 +187,7 @@ final class RunReconciliationTest extends TestCase {
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
 		$this->wpdb->put( $option_name, $raw );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
 	}
@@ -199,7 +202,7 @@ final class RunReconciliationTest extends TestCase {
 		$lock_name   = OverlapGuard::OPTION_PREFIX . $orphan_name . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -216,7 +219,7 @@ final class RunReconciliationTest extends TestCase {
 		$lock_name = OverlapGuard::OPTION_PREFIX . self::identity( 'orphan-job' ) . '_' . \str_repeat( 'a', 64 );
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayHasKey( $lock_name, $this->wpdb->rows );
 		self::assertSame( array(), $this->logger->records );
@@ -237,7 +240,7 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_options']  = $options;
 		$this->clock->timestamp              = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_crashed_run_terminalized();
@@ -253,7 +256,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$this->assert_crashed_run_terminalized();
 	}
@@ -275,7 +278,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame(
 			array(
@@ -333,7 +336,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame(
 			array(
@@ -383,7 +386,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame(
 			array(
@@ -414,7 +417,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertCount( 1, $this->backend->calls );
 		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
@@ -451,7 +454,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertCount( 1, $this->backend->calls );
@@ -479,7 +482,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( array(), $this->backend->calls );
 		$credited_lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
@@ -489,7 +492,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::NOW + 1_200, $credited_lock['heartbeat_at'] ?? null );
 
 		$this->clock->timestamp = self::NOW + 2_101;
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame(
 			array(
@@ -545,7 +548,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
 		$this->backend->calls = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame(
 			array(
@@ -608,7 +611,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertCount( 1, $this->backend->calls );
 		$rejected_call = $this->backend->calls[0];
@@ -633,7 +636,7 @@ final class RunReconciliationTest extends TestCase {
 
 		unset( $this->backend->results['enqueue_async'] );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $rejected_call, $this->backend->calls[1] );
@@ -661,7 +664,7 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$this->backend->calls = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertCount( 1, $this->backend->calls );
@@ -674,7 +677,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $lock );
 		self::assertSame( $replacement_run_id, $lock['run_id'] ?? null );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertCount( 1, $this->backend->calls );
@@ -713,7 +716,7 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$this->backend->calls = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
@@ -726,7 +729,7 @@ final class RunReconciliationTest extends TestCase {
 
 		unset( $this->backend->results['enqueue_async'] );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertCount( 2, $this->backend->calls );
@@ -755,7 +758,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
 		$this->backend->calls = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( array(), $this->backend->calls );
 		$this->assert_crashed_run_terminalized();
@@ -782,7 +785,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 900;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( $state_before, $this->run_state( self::IDENTITY ) );
@@ -806,8 +809,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
+		$this->run_maintenance();
 
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
@@ -835,7 +838,7 @@ final class RunReconciliationTest extends TestCase {
 		$current_job = $this->work->job( self::IDENTITY );
 		self::assertInstanceOf( RecordingJob::class, $current_job );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( 'a8csp_jobs_engine/continue_chunked_job', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
@@ -878,7 +881,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->store_running_state( $name, $state );
 		$this->put_lock( 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( 'a8csp_jobs_engine/run_job', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
@@ -933,7 +936,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->logger->records = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayHasKey( $run_name, $options );
@@ -984,7 +987,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->logger->records = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayHasKey( $run_name, $options );
@@ -1004,7 +1007,7 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_filter_values'] = array();
 		$this->clock->timestamp                   = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 	}
@@ -1025,7 +1028,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
@@ -1055,7 +1058,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
@@ -1087,7 +1090,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( $lock_raw, $this->wpdb->rows[ $lock_name ] ?? null );
 		self::assertCount( 1, $this->logger->records );
@@ -1109,7 +1112,7 @@ final class RunReconciliationTest extends TestCase {
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, $this->clock->timestamp );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
@@ -1160,7 +1163,7 @@ final class RunReconciliationTest extends TestCase {
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
@@ -1196,7 +1199,7 @@ final class RunReconciliationTest extends TestCase {
 		$replacement_run_id = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
@@ -1225,14 +1228,14 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->clock->timestamp = self::NOW + 901;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame( array(), $this->fired_actions() );
 
 		$this->clock->timestamp = self::NOW + 2_001;
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
@@ -1268,7 +1271,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		$state   = $options[ $this->run_option_name() ] ?? null;
@@ -1300,7 +1303,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertCount( 1, $chunked_job->failed_calls );
 		self::assertSame( self::RUN_ID, $chunked_job->failed_calls[0]['run_id'] ?? null );
@@ -1345,7 +1348,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_options'] = $options;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
@@ -1390,7 +1393,7 @@ final class RunReconciliationTest extends TestCase {
 		$throwable                              = new \RuntimeException( 'Chunked Job on_failed callback exploded.' );
 		$throwing_chunked_job->failed_throwable = $throwable;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertCount( 1, $throwing_chunked_job->failed_calls );
@@ -1429,7 +1432,7 @@ final class RunReconciliationTest extends TestCase {
 		$lock_name    = OverlapGuard::OPTION_PREFIX . $corrupt_name . '_' . \str_repeat( 'b', 64 );
 		$this->wpdb->put( $lock_name, 'not-serialized' );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -1462,7 +1465,7 @@ final class RunReconciliationTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( $throwing_raw, $this->wpdb->rows[ $throwing_key ] ?? null );
 		self::assertArrayNotHasKey( $healthy_key, $this->wpdb->rows );
@@ -1494,7 +1497,7 @@ final class RunReconciliationTest extends TestCase {
 		$lock_name                          = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $run_name, $this->options() );
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
@@ -1512,7 +1515,7 @@ final class RunReconciliationTest extends TestCase {
 		$mismatched_lock = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $mismatched_hash;
 		$this->put_lock( $mismatched_lock, self::RUN_ID, self::NOW - 901 );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $mismatched_lock, $this->wpdb->rows );
 		self::assertArrayHasKey( $this->lock_option_name(), $this->wpdb->rows );
@@ -1530,7 +1533,7 @@ final class RunReconciliationTest extends TestCase {
 		$options[ $run_name ]               = 'corrupt-run';
 		$GLOBALS['a8csp_bgje_test_options'] = $options;
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $run_name, $this->options() );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -1547,7 +1550,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->set_run_failed_attempts( $this->run_option_name(), \PHP_INT_MAX );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $failed );
@@ -1571,7 +1574,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->set_run_failed_attempts( $run_name, \PHP_INT_MAX );
 		unset( $this->wpdb->rows[ 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH ] );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$failed = $this->options()[ 'a8csp_bgje_failed_runs_' . $name ] ?? null;
 		self::assertIsArray( $failed );
@@ -1593,7 +1596,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->wpdb->before_next(
 			'update',
 			function (): void {
-				$this->maintenance->handle( array() );
+				$this->run_maintenance();
 			}
 		);
 
@@ -1646,7 +1649,7 @@ final class RunReconciliationTest extends TestCase {
 			JobType::ChunkedJob
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
@@ -1705,7 +1708,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->work->register_chunked_job( $name, $chunked_job );
 		$this->store_terminal_run( $name, 'failed', array(), null, 2, JobType::ChunkedJob, array( $chunk ), PendingAction::async( 'continue', 10 ) );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		$failed  = $options[ 'a8csp_bgje_failed_runs_' . $name ] ?? null;
@@ -1770,7 +1773,7 @@ final class RunReconciliationTest extends TestCase {
 			JobType::ChunkedJob
 		);
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertSame( $failed_raw, $this->wpdb->rows[ $failed_option ] ?? null );
 		self::assertSame( array(), $chunked_job->failed_calls );
@@ -1778,6 +1781,99 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
 		$this->assert_history_status( $options, 'failed', $name );
+	}
+
+	/**
+	 * One-off failed callbacks replay only when their durable marker is absent.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_only_unmarked_failed_job_callbacks(): void {
+		$error = array(
+			'class'   => \RuntimeException::class,
+			'message' => 'Persisted job failure.',
+			'stage'   => RunFailureStage::Execution->value,
+			'code'    => ApiErrorCode::ExecutionFailed->value,
+		);
+		$this->store_terminal_run( self::IDENTITY, 'failed', error: $error, failed_attempts: 2 );
+
+		$marked_name = self::identity( 'marked-failed-job' );
+		$marked_job  = new RecordingJob( 'marked-failed-job' );
+		$this->work->register_job( $marked_name, $marked_job );
+		$failure = new RunFailure( identity: $marked_name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted job failure.', failed_chunk: null );
+		self::assertTrue( $this->stores->failed_run_store( $marked_name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
+		$this->store_terminal_run( $marked_name, 'failed', array( 'retention', 'callbacks', 'hooks' ), $error, 2 );
+
+		$this->run_maintenance();
+
+		self::assertCount( 1, $this->job->failed_calls );
+		self::assertSame( self::RUN_ID, $this->job->failed_calls[0]['run_id'] );
+		self::assertSame( array(), $marked_job->failed_calls );
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertArrayNotHasKey( $this->run_option_name( $marked_name ), $options );
+		$this->assert_history_status( $options, 'failed' );
+		$this->assert_history_status( $options, 'failed', $marked_name );
+	}
+
+	/**
+	 * A throwing one-off failed callback stays unmarked and replays without repeating later effects.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_retries_a_throwing_failed_job_callback(): void {
+		$error   = array(
+			'class'   => \RuntimeException::class,
+			'message' => 'Persisted job failure.',
+			'stage'   => RunFailureStage::Execution->value,
+			'code'    => ApiErrorCode::ExecutionFailed->value,
+		);
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted job failure.', failed_chunk: null );
+		self::assertTrue( $this->stores->failed_run_store( self::IDENTITY )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
+		$this->store_terminal_run( self::IDENTITY, 'failed', array( 'retention' ), $error, 2 );
+		$this->job->failed_throwable = new \RuntimeException( 'One-off on_failed callback exploded.' );
+
+		$this->run_maintenance();
+
+		$state = $this->options()[ $this->run_option_name() ] ?? null;
+		self::assertIsArray( $state );
+		self::assertSame( array( 'retention', 'hooks', 'history' ), $state['effects'] ?? null );
+		self::assertCount( 1, $this->job->failed_calls );
+		self::assertCount( 2, $this->fired_actions() );
+
+		$this->job->failed_throwable              = null;
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
+		$this->run_maintenance();
+
+		self::assertCount( 2, $this->job->failed_calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
+	}
+
+	/**
+	 * A throwing one-off completed callback is marked best-effort and never replayed.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_marks_a_throwing_completed_job_callback(): void {
+		$this->store_terminal_run( self::IDENTITY, 'completed' );
+		$this->job->completed_throwable = new \RuntimeException( 'One-off on_completed callback exploded.' );
+		$this->wpdb->script_result( 'delete', false );
+
+		$this->run_maintenance();
+
+		$state = $this->options()[ $this->run_option_name() ] ?? null;
+		self::assertIsArray( $state );
+		self::assertSame( array( 'callbacks', 'hooks', 'history' ), $state['effects'] ?? null );
+		self::assertCount( 1, $this->job->completed_calls );
+
+		$this->job->completed_throwable           = null;
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
+		$this->run_maintenance();
+
+		self::assertCount( 1, $this->job->completed_calls );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 	}
 
 	/**
@@ -1863,15 +1959,16 @@ final class RunReconciliationTest extends TestCase {
 		$this->work->register_chunked_job( $name, $chunked_job );
 		$this->store_terminal_run( $name, 'completed', kind: JobType::ChunkedJob );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => self::RUN_ID,
-					'start_args' => self::ARGS,
+					'run_id'                    => self::RUN_ID,
+					'start_args'                => self::ARGS,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls
@@ -1887,17 +1984,27 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A completed job left after its terminal claim replays hooks and history before deletion.
+	 * A completed job left after its terminal claim replays its callback, hooks, and history.
 	 *
 	 * @return  void
 	 */
 	public function test_sweep_replays_all_effects_for_an_old_completed_job(): void {
-		$this->store_terminal_run( self::IDENTITY, 'completed' );
+		$this->store_terminal_run( self::IDENTITY, 'completed', previous_completed_run_id: 'previous-completed-run' );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertSame(
+			array(
+				array(
+					'run_id'                    => self::RUN_ID,
+					'start_args'                => self::ARGS,
+					'previous_completed_run_id' => 'previous-completed-run',
+				),
+			),
+			$this->job->completed_calls
+		);
 		$this->assert_history_status( $options, 'completed' );
 		self::assertSame(
 			array(
@@ -1917,7 +2024,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_routes_a_terminal_row_by_its_persisted_chunked_job_kind(): void {
 		$this->store_terminal_run( self::IDENTITY, 'completed', kind: JobType::ChunkedJob );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertNotNull(
@@ -1941,7 +2048,7 @@ final class RunReconciliationTest extends TestCase {
 		$name = self::identity( 'deactivated-client' );
 		$this->store_terminal_run( $name, 'completed', kind: JobType::ChunkedJob );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
@@ -1966,6 +2073,39 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * A deactivated one-off client cannot leave its callback effect permanently unfinished.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_skips_an_unregistered_job_callback_and_finishes_the_row(): void {
+		$name = self::identity( 'deactivated-job-client' );
+		$this->store_terminal_run( $name, 'completed' );
+
+		$this->run_maintenance();
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$this->assert_history_status( $options, 'completed', $name );
+		self::assertSame(
+			array(
+				'a8csp_jobs_engine/completed/' . $name,
+				'a8csp_jobs_engine/completed',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'job_name' => $name,
+					'run_id'   => self::RUN_ID,
+					'status'   => 'completed',
+				)
+			)
+		);
+	}
+
+	/**
 	 * Terminal cleanup leaves rows whose required effects have not been marked.
 	 *
 	 * @return  void
@@ -1983,7 +2123,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store, JobType::Job ) );
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
@@ -2012,12 +2152,13 @@ final class RunReconciliationTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_options']                = $options;
 		$this->wpdb->script_result( 'delete', false );
 
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
-		self::assertSame( array( 'hooks', 'history' ), $state['effects'] ?? null );
+		self::assertSame( array( 'callbacks', 'hooks', 'history' ), $state['effects'] ?? null );
+		self::assertCount( 1, $this->job->completed_calls );
 		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
@@ -2039,7 +2180,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
-		$this->maintenance->handle( array() );
+		$this->run_maintenance();
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
@@ -2048,6 +2189,7 @@ final class RunReconciliationTest extends TestCase {
 		$terminal = $history['terminal'] ?? null;
 		self::assertIsArray( $terminal );
 		self::assertCount( 2, $terminal );
+		self::assertCount( 1, $this->job->completed_calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -2056,6 +2198,15 @@ final class RunReconciliationTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Runs one maintenance sweep with a real internal invocation context.
+	 *
+	 * @return  void
+	 */
+	private function run_maintenance(): void {
+		$this->maintenance->handle( array(), new RunContext( 'maintenance-test-run', array() ) );
+	}
 
 	/**
 	 * Returns one owner-qualified test work identity.
@@ -2129,19 +2280,20 @@ final class RunReconciliationTest extends TestCase {
 	 * @phpstan-param JobType $kind
 	 * @phpstan-param list<array<array-key, mixed>> $queue
 	 *
-	 * @param   string             $name            Stable job or chunked job name.
-	 * @param   string             $status          Terminal status value.
-	 * @param   array              $effects         Completed terminal effect keys.
-	 * @param   array|null         $error           Persisted terminal failure detail.
-	 * @param   int                $failed_attempts Attempts consumed by a failed run.
-	 * @param   JobType            $kind            Persisted work contract type.
-	 * @param   array              $queue           Persisted chunk queue.
-	 * @param   PendingAction|null $pending         Durable successor descriptor.
+	 * @param   string             $name                      Stable job or chunked job name.
+	 * @param   string             $status                    Terminal status value.
+	 * @param   array              $effects                   Completed terminal effect keys.
+	 * @param   array|null         $error                     Persisted terminal failure detail.
+	 * @param   int                $failed_attempts           Attempts consumed by a failed run.
+	 * @param   JobType            $kind                      Persisted work contract type.
+	 * @param   array              $queue                     Persisted chunk queue.
+	 * @param   PendingAction|null $pending                   Durable successor descriptor.
+	 * @param   string|null        $previous_completed_run_id Frozen previous completed run identifier.
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, JobType $kind = JobType::Job, array $queue = array(), ?PendingAction $pending = null ): void {
-		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: $queue, failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: $pending, error: $error, effects: $effects );
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, JobType $kind = JobType::Job, array $queue = array(), ?PendingAction $pending = null, ?string $previous_completed_run_id = null ): void {
+		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: $queue, failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
 

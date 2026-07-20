@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLeaseO
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
@@ -421,7 +422,7 @@ final readonly class StoreFixtureBuilder {
 				$reconciliation = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, new JobRegistry(), $backend );
 				$intents        = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
 
-				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array() );
+				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( 'fixture-maintenance-run', array() ) );
 				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
 				if ( 1 !== \count( $added ) ) {
 					throw new \LogicException( 'Production MaintenanceJob did not emit exactly one isolated cursor row.' );
@@ -768,6 +769,7 @@ final readonly class StoreFixtureBuilder {
 			&& $left->heartbeat_at === $right->heartbeat_at
 			&& ( $left->pending === $right->pending || ( null !== $left->pending && null !== $right->pending && $left->pending->stage === $right->pending->stage && $left->pending->mode === $right->pending->mode && $left->pending->fire_at === $right->pending->fire_at && $left->pending->priority === $right->pending->priority ) )
 			&& $left->error === $right->error
+			&& $left->previous_completed_run_id === $right->previous_completed_run_id
 			&& $left->effects === $right->effects;
 	}
 

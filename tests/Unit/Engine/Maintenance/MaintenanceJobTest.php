@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
@@ -44,6 +45,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( RunContext::class )]
 #[UsesClass( RunReconciliation::class )]
 #[UsesClass( RunHistory::class )]
 #[UsesClass( RunTransitions::class )]
@@ -64,6 +66,7 @@ final class MaintenanceJobTest extends TestCase {
 	private string $cursor_raw;
 	private RecordingLogger $logger;
 	private MaintenanceJob $maintenance;
+	private RunContext $run_context;
 	private WpdbLockSpy $wpdb;
 
 	// endregion.
@@ -136,6 +139,7 @@ final class MaintenanceJobTest extends TestCase {
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $backend );
 		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $this->logger );
 		$this->maintenance    = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
+		$this->run_context    = new RunContext( self::RUN_ID, array() );
 	}
 
 	// endregion.
@@ -162,7 +166,7 @@ final class MaintenanceJobTest extends TestCase {
 		}
 		$this->put_corrupt_registration_names( 501 );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertCount( 1, $this->names_under( OverlapGuard::OPTION_PREFIX ) );
 		self::assertCount( 1, $this->names_under( ScheduleRegistry::OPTION_PREFIX ) );
@@ -187,12 +191,12 @@ final class MaintenanceJobTest extends TestCase {
 		$remaining = RunStore::OPTION_PREFIX . 'sweep-tests:remaining_' . self::RUN_ID;
 		$this->wpdb->put( $remaining, 'schema-invalid-run' );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayHasKey( $remaining, $this->wpdb->rows );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $remaining, $this->wpdb->rows );
 		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
@@ -215,7 +219,7 @@ final class MaintenanceJobTest extends TestCase {
 		$lock_name = self::lock_name( 0 );
 		$this->wpdb->put( $lock_name, $this->stale_lock_raw() );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
@@ -230,7 +234,7 @@ final class MaintenanceJobTest extends TestCase {
 		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
@@ -261,7 +265,7 @@ final class MaintenanceJobTest extends TestCase {
 		$incomplete = StoreFixtureBuilder::schedule_registration_without_undeclared_markers( $complete );
 		$this->wpdb->put( $incomplete[0], $incomplete[1] );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $incomplete[0], $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
@@ -298,7 +302,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( $replacement, $this->wpdb->rows[ $option_name ] ?? null );
 		self::assertSame( array(), $this->logger->records );
@@ -317,7 +321,7 @@ final class MaintenanceJobTest extends TestCase {
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 		$this->wpdb->script_result( 'delete', false );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( 'poison-registry-row', $this->wpdb->rows[ $option_name ] ?? null );
 		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
@@ -328,7 +332,7 @@ final class MaintenanceJobTest extends TestCase {
 		self::assertSame( 'delete_failed', $this->logger->records[0]['context']['outcome'] ?? null );
 
 		$this->logger->records = array();
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $option_name, $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
@@ -352,7 +356,7 @@ final class MaintenanceJobTest extends TestCase {
 		$later = RunStore::OPTION_PREFIX . 'sweep-tests:later_' . self::RUN_ID;
 		$this->wpdb->put( $later, 'schema-invalid-run' );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayHasKey( $later, $this->wpdb->rows );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
@@ -385,7 +389,7 @@ final class MaintenanceJobTest extends TestCase {
 		$this->wpdb->put( $history_name, $history_raw );
 		$this->wpdb->put( $later, 'schema-invalid-run' );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $later, $this->wpdb->rows );
 		self::assertSame( $history_raw, $this->wpdb->rows[ $history_name ] ?? null );
@@ -408,7 +412,7 @@ final class MaintenanceJobTest extends TestCase {
 		$remaining = RunStore::OPTION_PREFIX . 'sweep-tests:remaining_' . self::RUN_ID;
 		$this->wpdb->put( $remaining, 'schema-invalid-run' );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $remaining, $this->wpdb->rows );
 		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
@@ -430,7 +434,7 @@ final class MaintenanceJobTest extends TestCase {
 		$this->put_case_colliding_run_names( 50 );
 		$this->put_hostile_run_names( 551 );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( self::hostile_run_name( 449 ), $this->cursor_state()['runs'] );
 		self::assertArrayHasKey( self::hostile_run_name( 550 ), $this->wpdb->rows );
@@ -453,7 +457,7 @@ final class MaintenanceJobTest extends TestCase {
 		$this->wpdb->put( $this->cursor_option, 'schema-invalid-cursor' );
 		$this->wpdb->put( $lock_name, $this->stale_lock_raw() );
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows );
@@ -478,7 +482,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -510,7 +514,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( $cursor_raw, $this->wpdb->rows[ $this->cursor_option ] ?? null );
 		self::assertCount( 1, $this->logger->records );
@@ -548,7 +552,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( $cursor_raw, $this->wpdb->rows[ $this->cursor_option ] ?? null );
 		self::assertCount( 1, $this->logger->records );
@@ -577,7 +581,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -602,7 +606,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -627,7 +631,7 @@ final class MaintenanceJobTest extends TestCase {
 			}
 		);
 
-		$this->maintenance->handle( array() );
+		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( 'poison-registry-row', $this->wpdb->rows[ $option_name ] ?? null );
 		self::assertCount( 1, $this->logger->records );

@@ -164,8 +164,9 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
+		$context = new RunContext( $run_id, $state->start_args );
 		try {
-			$queue = $this->materialize_queue( $chunked_job->generate_queue( $state->start_args ) );
+			$queue = $this->materialize_queue( $chunked_job->generate_queue( $state->start_args, $context ) );
 		} catch ( \Throwable $throwable ) {
 			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
 
@@ -425,8 +426,9 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	private function handle_job_run_action( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
+		$context = new RunContext( $run_id, $state->start_args );
 		try {
-			$job->handle( $state->start_args );
+			$job->handle( $state->start_args, $context );
 		} catch ( \Throwable $throwable ) {
 			$this->failure_lifecycle->handle_job_failure( $job, $job_name, $run_id, $state, $run_store, $throwable );
 
@@ -437,7 +439,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$this->terminal_transitions->complete_job( $job_name, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_job( $job, $job_name, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -545,13 +547,13 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OneOffJobInterface|ChunkedJobInterface $contract Registered work contract.
-	 * @param   string                                 $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string                                 $run_id   Run identifier.
+	 * @param   JobInterface $contract Registered work contract.
+	 * @param   string       $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string       $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	private function execution_lease_at( OneOffJobInterface|ChunkedJobInterface $contract, string $identity, string $run_id ): int {
+	private function execution_lease_at( JobInterface $contract, string $identity, string $run_id ): int {
 		try {
 			$declared = $contract->max_callback_runtime();
 		} catch ( \Throwable $throwable ) {

@@ -64,9 +64,9 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$named_superseded = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $generic_superseded */
 		$generic_superseded = array();
-		/** @var list<array{string, array<array-key, mixed>}> $named_completed */
+		/** @var list<array{string, array<array-key, mixed>, string|null}> $named_completed */
 		$named_completed = array();
-		/** @var list<array{string, string, array<array-key, mixed>}> $generic_completed */
+		/** @var list<array{string, string, array<array-key, mixed>, string|null}> $generic_completed */
 		$generic_completed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
@@ -89,19 +89,19 @@ final class SupersededRunTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $args ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $args );
-			},
-			10,
-			2
-		);
-		\add_action(
-			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $args );
+			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( $run_id, $args, $previous_completed_run_id );
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, $run_id, $args, $previous_completed_run_id );
+			},
+			10,
+			4
 		);
 		\add_action(
 			'a8csp_jobs_engine/log',
@@ -213,16 +213,17 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'     => $run_b,
-					'start_args' => $start_args,
+					'run_id'                    => $run_b,
+					'start_args'                => $start_args,
+					'previous_completed_run_id' => null,
 				),
 			),
 			$chunked_job->completed_calls,
 			'Only the replacement chunked job must receive on_completed()'
 		);
 		self::assertSame( array(), $chunked_job->failed_calls, 'Supersession must not invoke the chunked job on_failed() callback' );
-		self::assertSame( array( array( $run_b, $start_args ) ), $named_completed, 'The identity-specific completed hook must receive only the replacement payload' );
-		self::assertSame( array( array( self::IDENTITY, $run_b, $start_args ) ), $generic_completed, 'The generic completed hook must prepend the chunked job name to the replacement payload' );
+		self::assertSame( array( array( $run_b, $start_args, null ) ), $named_completed, 'The identity-specific completed hook must receive only the replacement payload' );
+		self::assertSame( array( array( self::IDENTITY, $run_b, $start_args, null ) ), $generic_completed, 'The generic completed hook must prepend the chunked job name to the replacement payload' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The replacement lifecycle must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The replacement lifecycle must not repeat the generic superseded hook' );
 		self::assertSame( $supersession_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );

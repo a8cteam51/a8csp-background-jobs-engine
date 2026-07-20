@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Job;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\CallableJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -42,21 +43,25 @@ final class CallableJobTest extends TestCase {
 	 */
 	public function test_minimal_callable_job_uses_inherited_defaults_and_invokes_the_handler(): void {
 		/** @var list<array<array-key, mixed>> $calls */
-		$calls = array();
-		$job   = new CallableJob(
+		$calls            = array();
+		$observed_context = null;
+		$job              = new CallableJob(
 			'refresh-index',
-			static function ( array $args ) use ( &$calls ): void {
-				$calls[] = $args;
+			static function ( array $args, RunContextInterface $context ) use ( &$calls, &$observed_context ): void {
+				$calls[]          = $args;
+				$observed_context = $context;
 			}
 		);
-		$args  = array( 'site_id' => 7 );
-		$retry = $job->get_retry_policy();
+		$args             = array( 'site_id' => 7 );
+		$context          = self::createStub( RunContextInterface::class );
+		$retry            = $job->get_retry_policy();
 
-		$job->handle( $args );
+		$job->handle( $args, $context );
 
 		self::assertInstanceOf( AbstractJob::class, $job );
 		self::assertSame( 'refresh-index', $job->get_name() );
 		self::assertSame( array( $args ), $calls );
+		self::assertSame( $context, $observed_context );
 		self::assertSame( 300, $job->max_callback_runtime() );
 		self::assertSame( OverlapPolicy::Reject, $job->overlap_policy() );
 		self::assertNull( $job->overlap_key( $args ) );
@@ -74,7 +79,7 @@ final class CallableJobTest extends TestCase {
 	public function test_explicit_invariants_are_returned_unchanged(): void {
 		$retry       = new RetryPolicy( max_attempts: 1, base_delay: 5, multiplier: 1, max_delay: 5 );
 		$overlap_key = static fn ( array $args ): ?string => \is_string( $args['tenant'] ?? null ) ? $args['tenant'] : null;
-		$job         = new CallableJob( 'refresh-index', static function ( array $args ): void {}, 42, $retry, OverlapPolicy::Allow, $overlap_key );
+		$job         = new CallableJob( 'refresh-index', static function ( array $args, RunContextInterface $context ): void {}, 42, $retry, OverlapPolicy::Allow, $overlap_key );
 
 		self::assertSame( 42, $job->max_callback_runtime() );
 		self::assertSame( $retry, $job->get_retry_policy() );

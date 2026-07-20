@@ -39,20 +39,21 @@ final readonly class RunState {
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param JobType $kind
 	 *
-	 * @param   RunStatus                     $status          Lifecycle state.
-	 * @param   JobType                       $kind            Admitted work contract type.
-	 * @param   bool                          $executing       Whether one lifecycle action is executing.
-	 * @param   array<array-key, mixed>       $start_args      Arguments supplied when the run started.
-	 * @param   string                        $args_hash       Stable single-flight identity derived from arguments or a Job overlap key.
-	 * @param   list<array<array-key, mixed>> $queue           Persisted processing queue, oldest uncommitted chunk first.
-	 * @param   int                           $failed_attempts Failed attempts consumed by the current chunked job chunk; for
-	 *                                                         a job, failed handle() attempts in this run.
+	 * @param   RunStatus                     $status                    Lifecycle state.
+	 * @param   JobType                       $kind                      Admitted work contract type.
+	 * @param   bool                          $executing                 Whether one lifecycle action is executing.
+	 * @param   array<array-key, mixed>       $start_args                Arguments supplied when the run started.
+	 * @param   string                        $args_hash                 Stable single-flight identity derived from arguments or a Job overlap key.
+	 * @param   list<array<array-key, mixed>> $queue                     Persisted processing queue, oldest uncommitted chunk first.
+	 * @param   int                           $failed_attempts           Failed attempts consumed by the current chunked job chunk; for
+	 *                                                                   a job, failed handle() attempts in this run.
 	 * @param   int                           $action_sequence      Newest scheduled lifecycle action sequence.
-	 * @param   int                           $created_at      Creation timestamp.
-	 * @param   int                           $heartbeat_at    Latest liveness timestamp.
-	 * @param   PendingAction|null            $pending         Durable successor delivery, or null when none exists.
-	 * @param   array|null                    $error           Durable terminal failure detail, or null for non-failed runs.
-	 * @param   array                         $effects         Completed terminal effect keys in execution order.
+	 * @param   int                           $created_at                Creation timestamp.
+	 * @param   int                           $heartbeat_at              Latest liveness timestamp.
+	 * @param   PendingAction|null            $pending                   Durable successor delivery, or null when none exists.
+	 * @param   array|null                    $error                     Durable terminal failure detail, or null for non-failed runs.
+	 * @param   string|null                   $previous_completed_run_id Previous completed run identifier frozen for completion delivery, or null.
+	 * @param   array                         $effects                   Completed terminal effect keys in execution order.
 	 */
 	public function __construct(
 		public RunStatus $status,
@@ -67,6 +68,7 @@ final readonly class RunState {
 		public int $heartbeat_at,
 		public ?PendingAction $pending = null,
 		public ?array $error = null,
+		public ?string $previous_completed_run_id = null,
 		public array $effects = array(),
 	) {
 		$this->action_sequence = $action_sequence;
@@ -103,7 +105,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_status( RunStatus $status ): self {
-		return new self( status: $status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -117,7 +119,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_executing( bool $executing ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -131,7 +133,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_queue( array $queue ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -146,7 +148,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_failed_attempts( int $failed_attempts ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -160,7 +162,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_action_sequence( int $action_sequence ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -174,7 +176,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_pending( ?PendingAction $pending ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -190,7 +192,21 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_error( ?array $error ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
+	}
+
+	/**
+	 * Returns a copy with the predecessor frozen for completed-run delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string|null $previous_completed_run_id Previous completed run identifier for this identity, or null.
+	 *
+	 * @return  self
+	 */
+	public function with_previous_completed_run_id( ?string $previous_completed_run_id ): self {
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $previous_completed_run_id, effects: $this->effects, );
 	}
 
 	/**
@@ -206,7 +222,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_effects( array $effects ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, effects: $effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $this->heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $effects, );
 	}
 
 	/**
@@ -220,7 +236,7 @@ final readonly class RunState {
 	 * @return  self
 	 */
 	public function with_heartbeat_at( int $heartbeat_at ): self {
-		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $heartbeat_at, pending: $this->pending, error: $this->error, effects: $this->effects, );
+		return new self( status: $this->status, kind: $this->kind, executing: $this->executing, start_args: $this->start_args, args_hash: $this->args_hash, queue: $this->queue, failed_attempts: $this->failed_attempts, action_sequence: $this->action_sequence, created_at: $this->created_at, heartbeat_at: $heartbeat_at, pending: $this->pending, error: $this->error, previous_completed_run_id: $this->previous_completed_run_id, effects: $this->effects, );
 	}
 
 	// endregion

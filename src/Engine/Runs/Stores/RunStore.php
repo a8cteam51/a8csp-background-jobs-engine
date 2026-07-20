@@ -394,6 +394,7 @@ final readonly class RunStore {
 	 *     heartbeat_at: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
+	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * }
 	 */
@@ -420,6 +421,9 @@ final readonly class RunStore {
 		}
 		if ( null !== $state->error ) {
 			$option['error'] = $state->error;
+		}
+		if ( null !== $state->previous_completed_run_id ) {
+			$option['previous_completed_run_id'] = $state->previous_completed_run_id;
 		}
 		if ( array() !== $state->effects ) {
 			$option['effects'] = $state->effects;
@@ -468,10 +472,12 @@ final readonly class RunStore {
 		if ( null === $status ) {
 			return null;
 		}
-		$error   = $value['error'] ?? null;
-		$effects = $value['effects'] ?? array();
+		$error                     = $value['error'] ?? null;
+		$previous_completed_run_id = $value['previous_completed_run_id'] ?? null;
+		$effects                   = $value['effects'] ?? array();
 		if (
 			( RunStatus::Failed !== $status && null !== $error )
+			|| ( RunStatus::Completed !== $status && null !== $previous_completed_run_id )
 			|| ( RunStatus::Running === $status && array() !== $effects )
 		) {
 			return null;
@@ -484,7 +490,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: JobType::from( $value['kind'] ), executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
+		return new RunState( status: $status, kind: JobType::from( $value['kind'] ), executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
 	}
 
 	/**
@@ -508,6 +514,7 @@ final readonly class RunStore {
 	 *     heartbeat_at: int,
 	 *     pending?: StoredPendingAction,
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
+	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * } $value
 	 *
@@ -533,6 +540,7 @@ final readonly class RunStore {
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )
 			|| ( \array_key_exists( 'error', $value ) && ! self::is_stored_error( $value['error'] ) )
+			|| ( \array_key_exists( 'previous_completed_run_id', $value ) && ! \is_string( $value['previous_completed_run_id'] ) )
 			|| ( \array_key_exists( 'effects', $value ) && ! self::is_stored_effects( $value['effects'] ) )
 		) {
 			return false;

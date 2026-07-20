@@ -1,9 +1,10 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface as InternalContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface as InternalChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface as InternalChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure as InternalFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as InternalRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
@@ -106,11 +107,14 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+			 * @param   InternalRunContext      $context    Internal run context.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, InternalRunContext $context ): iterable {
+				unset( $context );
+
 				return $this->job->generate_queue( $start_args );
 			}
 
@@ -121,12 +125,12 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-			 * @param   InternalContext         $context    Internal chunk context.
+			 * @param   InternalChunkContext    $context    Internal chunk context.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function process_chunk( array $chunk_args, InternalContext $context ): void {
+			public function process_chunk( array $chunk_args, InternalChunkContext $context ): void {
 				$this->job->process_chunk( $chunk_args, new \A8CSP_ChunkContext( $context ) );
 			}
 
@@ -136,13 +140,16 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   string                  $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   string                  $run_id                    Run identifier.
+			 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+			 * @param   string|null             $previous_completed_run_id Previous completed run identifier retained inside the engine.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function on_completed( string $run_id, array $start_args ): void {
+			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
+				unset( $previous_completed_run_id );
+
 				$this->job->on_completed( $run_id, $start_args );
 			}
 

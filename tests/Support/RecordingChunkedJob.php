@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterfac
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 /**
@@ -27,6 +28,13 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	public array $generate_calls = array();
 
 	/**
+	 * Queue-generation contexts in call order.
+	 *
+	 * @var list<RunContextInterface>
+	 */
+	public array $generate_contexts = array();
+
+	/**
 	 * Chunk-processing arguments and contexts in call order.
 	 *
 	 * @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}>
@@ -36,7 +44,7 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	/**
 	 * Completed-run callback payloads in call order.
 	 *
-	 * @var list<array{run_id: string, start_args: array<array-key, mixed>}>
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, previous_completed_run_id: string|null}>
 	 */
 	public array $completed_calls = array();
 
@@ -65,7 +73,7 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	/**
 	 * Observation run after recording completed-run handling and before an optional failure.
 	 *
-	 * @var (\Closure(string, array<array-key, mixed>): void)|null
+	 * @var (\Closure(string, array<array-key, mixed>, string|null): void)|null
 	 */
 	public ?\Closure $on_completed = null;
 
@@ -151,12 +159,14 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	 * Records queue generation before applying scripted behavior.
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
 	#[\Override]
-	public function generate_queue( array $start_args ): iterable {
-		$this->generate_calls[] = $start_args;
+	public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
+		$this->generate_calls[]    = $start_args;
+		$this->generate_contexts[] = $context;
 		$this->record_lifecycle_event( 'generate' );
 
 		if ( null !== $this->on_generate ) {
@@ -201,21 +211,23 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	/**
 	 * Records one completed-run callback.
 	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_completed( string $run_id, array $start_args ): void {
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
 		$this->completed_calls[] = array(
-			'run_id'     => $run_id,
-			'start_args' => $start_args,
+			'run_id'                    => $run_id,
+			'start_args'                => $start_args,
+			'previous_completed_run_id' => $previous_completed_run_id,
 		);
 		$this->record_lifecycle_event( 'completed' );
 
 		if ( null !== $this->on_completed ) {
-			( $this->on_completed )( $run_id, $start_args );
+			( $this->on_completed )( $run_id, $start_args, $previous_completed_run_id );
 		}
 
 		if ( null !== $this->completed_throwable ) {

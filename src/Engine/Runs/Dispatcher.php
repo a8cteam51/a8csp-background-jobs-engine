@@ -701,7 +701,7 @@ final readonly class Dispatcher {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_job( $job_name, $run_id, $state, $run_store, $error, 1, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_job( $job, $job_name, $run_id, $state, $run_store, $error, 1, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
 
 			return new Failure( $error );
 		}

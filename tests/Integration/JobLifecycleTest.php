@@ -64,19 +64,19 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$generic_completed = array();
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::SUCCESS_IDENTITY,
-			static function ( string $run_id, array $start_args ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $start_args );
-			},
-			10,
-			2
-		);
-		\add_action(
-			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $start_args ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $start_args );
+			static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( $run_id, $start_args, $previous_completed_run_id );
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, $run_id, $start_args, $previous_completed_run_id );
+			},
+			10,
+			4
 		);
 
 		$result = $client->jobs()->enqueue( self::SUCCESS_NAME, $args );
@@ -94,8 +94,19 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		self::assertCount( 1, $named_completed, 'The runner drive must fire the identity-specific completed hook exactly once' );
 		self::assertCount( 1, $generic_completed, 'The runner drive must fire the generic completed hook exactly once' );
 		self::assertSame( array( $args ), $job->calls, 'The job must receive its original argument array exactly once' );
-		self::assertSame( array( array( $run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive run ID and start arguments' );
-		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same payload' );
+		self::assertSame( array( array( $run_id, $args, null ) ), $named_completed, 'The identity-specific completed hook must receive run ID, start arguments, and the previous completion' );
+		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args, null ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same payload' );
+		self::assertSame(
+			array(
+				array(
+					'run_id'                    => $run_id,
+					'start_args'                => $args,
+					'previous_completed_run_id' => null,
+				),
+			),
+			$job->completed_calls,
+			'The one-off job callback must fire exactly once through the terminal lifecycle effect'
+		);
 		$last_completed = $client->runs()->last_completed_run_id( self::SUCCESS_NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );

@@ -5,10 +5,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;
@@ -211,17 +214,19 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $job_name Complete owner-qualified job identity.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Running state.
-	 * @param   RunStore $run_store Active-run store.
+	 * @param   OneOffJobInterface $job       Completed job.
+	 * @param   string             $job_name  Complete owner-qualified job identity.
+	 * @param   string             $run_id    Run identifier.
+	 * @param   RunState           $state     Running state.
+	 * @param   RunStore           $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	public function complete_job( string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+	public function complete_job( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
+		$previous_completed_run_id = $this->last_completed_run_id( $job_name );
+		$terminal_state            = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( $previous_completed_run_id );
 
-		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, JobType::Job );
+		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, JobType::Job, $job );
 	}
 
 	/**
@@ -241,7 +246,8 @@ final readonly class RunTransitions {
 	 * @return  void
 	 */
 	public function complete_chunked_job( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store ): void {
-		$terminal_state = $state->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$previous_completed_run_id = $this->last_completed_run_id( $chunked_job_name );
+		$terminal_state            = $state->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( $previous_completed_run_id );
 
 		$this->claim_and_execute_terminal_transition( $chunked_job_name, $run_id, $state, $terminal_state, $run_store, JobType::ChunkedJob, $chunked_job );
 	}
@@ -319,21 +325,21 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   ChunkedJobInterface|null $chunked_job        Failed chunked job, or null when its implementation is unavailable.
-	 * @param   string                   $chunked_job_name   Complete owner-qualified chunked job identity.
-	 * @param   string                   $run_id       Run identifier.
-	 * @param   RunState                 $state        Running state.
-	 * @param   RunStore                 $run_store    Active-run store.
-	 * @param   EngineError              $error        Failure detail.
-	 * @param   RunFailureStage          $stage        Terminalization stage.
-	 * @param   ApiErrorCode             $code         Machine-readable cause classification.
-	 * @param   array|null               $failed_chunk Chunked Job chunk arguments for the failing chunk, or null.
-	 * @param   int|null                 $attempts     Attempts consumed before failure, or null to derive the count.
-	 * @param   string|null              $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @param   JobInterface|null $chunked_job      Failed chunked job, or null when its implementation is unavailable.
+	 * @param   string            $chunked_job_name Complete owner-qualified chunked job identity.
+	 * @param   string            $run_id           Run identifier.
+	 * @param   RunState          $state            Running state.
+	 * @param   RunStore          $run_store        Active-run store.
+	 * @param   EngineError       $error            Failure detail.
+	 * @param   RunFailureStage   $stage            Terminalization stage.
+	 * @param   ApiErrorCode      $code             Machine-readable cause classification.
+	 * @param   array|null        $failed_chunk     Chunked Job chunk arguments for the failing chunk, or null.
+	 * @param   int|null          $attempts         Attempts consumed before failure, or null to derive the count.
+	 * @param   string|null       $expected_raw     Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_chunked_job( ?ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
+	public function fail_chunked_job( ?JobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?int $attempts = null, ?string $expected_raw = null ): void {
 		$attempts       = $attempts ?? RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
@@ -350,23 +356,24 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
 	 *
-	 * @param   string          $job_name     Complete owner-qualified job identity.
-	 * @param   string          $run_id        Run identifier.
-	 * @param   RunState        $state         Running state.
-	 * @param   RunStore        $run_store     Active-run store.
-	 * @param   EngineError     $error         Job failure detail.
-	 * @param   int             $attempts_used Attempts consumed by the invocation.
-	 * @param   RunFailureStage $stage         Terminalization stage.
-	 * @param   ApiErrorCode    $code          Machine-readable cause classification.
-	 * @param   array|null      $failed_chunk  Chunked Job chunk arguments for the failing chunk, or null for a job.
-	 * @param   string|null     $expected_raw  Exact maintenance snapshot, or null for a live transition.
+	 * @param   JobInterface|null $job           Failed job, or null when its implementation is unavailable.
+	 * @param   string            $job_name      Complete owner-qualified job identity.
+	 * @param   string            $run_id        Run identifier.
+	 * @param   RunState          $state         Running state.
+	 * @param   RunStore          $run_store     Active-run store.
+	 * @param   EngineError       $error         Job failure detail.
+	 * @param   int               $attempts_used Attempts consumed by the invocation.
+	 * @param   RunFailureStage   $stage         Terminalization stage.
+	 * @param   ApiErrorCode      $code          Machine-readable cause classification.
+	 * @param   array|null        $failed_chunk  Chunked Job chunk arguments for the failing chunk, or null for a job.
+	 * @param   string|null       $expected_raw  Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_job( string $job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
+	public function fail_job( ?JobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts_used )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
 
-		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, JobType::Job, null, $expected_raw );
+		$this->claim_and_execute_terminal_transition( $job_name, $run_id, $state, $terminal_state, $run_store, JobType::Job, $job, $expected_raw );
 	}
 
 	/**
@@ -461,18 +468,18 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                   $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string                   $run_id       Run identifier.
-	 * @param   RunState                 $expected     Complete running state observed by the terminalizing path.
-	 * @param   RunState                 $replacement  Terminal replacement state.
-	 * @param   RunStore                 $run_store    Active-run store.
-	 * @param   JobType                  $work_type    Work contract type.
-	 * @param   ChunkedJobInterface|null $chunked_job        Chunked Job callback target, or null for a job or unresolved chunked job.
-	 * @param   string|null              $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @param   string            $identity        Complete owner-qualified job or chunked job identity.
+	 * @param   string            $run_id          Run identifier.
+	 * @param   RunState          $expected        Complete running state observed by the terminalizing path.
+	 * @param   RunState          $replacement     Terminal replacement state.
+	 * @param   RunStore          $run_store       Active-run store.
+	 * @param   JobType           $work_type       Work contract type.
+	 * @param   JobInterface|null $callback_target Resolved callback target, or null when unavailable.
+	 * @param   string|null       $expected_raw    Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, JobType $work_type, ?ChunkedJobInterface $chunked_job = null, ?string $expected_raw = null ): bool {
+	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, JobType $work_type, ?JobInterface $callback_target = null, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return false;
@@ -490,7 +497,7 @@ final readonly class RunTransitions {
 			);
 		}
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $work_type, $chunked_job );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $work_type, $callback_target );
 
 		return true;
 	}
@@ -513,6 +520,30 @@ final readonly class RunTransitions {
 		return null === $expected_raw
 			? $run_store->replace_if_state_matches( $run_id, $expected, $replacement )
 			: $run_store->replace_if_raw_matches( $run_id, $expected_raw, $replacement );
+	}
+
+	/**
+	 * Returns the newest completed run from identity-global terminal recording order.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 *
+	 * @return  string|null
+	 */
+	private function last_completed_run_id( string $identity ): ?string {
+		$entries = $this->stores->run_history( $identity )->terminal_entries();
+		if ( null === $entries ) {
+			$this->logger->warning(
+				'Previous completed run could not be read while freezing completion callback state.',
+				array( 'name' => $identity )
+			);
+
+			return null;
+		}
+
+		return RunHistory::newest_completed_run_id( $entries );
 	}
 
 	/**

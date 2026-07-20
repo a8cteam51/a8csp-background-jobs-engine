@@ -161,6 +161,22 @@ final readonly class RunHistory {
 		return null === $history ? null : $history['terminal'];
 	}
 
+	/**
+	 * Returns the newest completed run identifier in terminal recording order.
+	 *
+	 * @internal Read-only engine derivation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}> $entries Terminal entries, oldest first.
+	 *
+	 * @return  string|null
+	 */
+	public static function newest_completed_run_id( array $entries ): ?string {
+		return \array_find( \array_reverse( $entries ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] )['run_id'] ?? null;
+	}
+
 	// endregion
 
 	// region HELPERS

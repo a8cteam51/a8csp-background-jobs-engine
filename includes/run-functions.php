@@ -99,7 +99,7 @@ function a8csp_bgje_run_cancel( string $owner, string $name, string $run_id ): s
  * @since   1.0.0
  * @version 1.0.0
  *
- * @phpstan-param callable(string, array<array-key, mixed>): void $listener
+ * @phpstan-param callable(string, array<array-key, mixed>, string|null): void $listener
  *
  * @param   string   $owner    Client plugin owner.
  * @param   string   $name     Owner-local job or chunked job name.
@@ -108,7 +108,7 @@ function a8csp_bgje_run_cancel( string $owner, string $name, string $run_id ): s
  * @return  void
  */
 function a8csp_bgje_run_on_completed( string $owner, string $name, callable $listener ): void {
-	\add_action( 'a8csp_jobs_engine/completed/' . $owner . ':' . $name, $listener, 10, 2 );
+	\add_action( 'a8csp_jobs_engine/completed/' . $owner . ':' . $name, $listener, 10, 3 );
 }
 
 /**

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -34,10 +35,11 @@ final class AbstractJobTest extends TestCase {
 			/**
 			 * {@inheritDoc}
 			 *
-			 * @param   array<array-key, mixed> $args Invocation arguments.
+			 * @param   array<array-key, mixed> $args    Invocation arguments.
+			 * @param   RunContextInterface     $context Controlled access to this run.
 			 */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args, RunContextInterface $context ): void {}
 		};
 
 		self::assertSame( 300, $job->max_callback_runtime() );
@@ -79,10 +81,11 @@ final class AbstractJobTest extends TestCase {
 			/**
 			 * {@inheritDoc}
 			 *
-			 * @param   array<array-key, mixed> $args Invocation arguments.
+			 * @param   array<array-key, mixed> $args    Invocation arguments.
+			 * @param   RunContextInterface     $context Controlled access to this run.
 			 */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args, RunContextInterface $context ): void {}
 
 		};
 		$expected = new RetryPolicy();

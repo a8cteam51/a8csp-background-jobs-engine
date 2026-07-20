@@ -59,6 +59,7 @@ final class ApiBoundaryTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Result\\Failure',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Result\\Success',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\RetryPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Run\\RunContextInterface',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Run\\Runs',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Run\\RunsEngineInterface',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\CatchUpPolicy',
@@ -99,7 +100,7 @@ final class ApiBoundaryTest extends TestCase {
 	public function test_api_declarations_do_not_reference_internal_namespaces(): void {
 		$types = self::declared_api_types();
 		self::assertNotEmpty( $types );
-		self::assertCount( 34, $types );
+		self::assertCount( 35, $types );
 		self::assertSame( self::EXPECTED_API_TYPES, $types );
 
 		foreach ( $types as $type ) {

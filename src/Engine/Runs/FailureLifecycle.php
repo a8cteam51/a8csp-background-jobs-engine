@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
@@ -99,18 +100,18 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType                                $work_type  Work contract type selected by the typed delivery path.
-	 * @param   OneOffJobInterface|ChunkedJobInterface $contract   Failed work contract.
-	 * @param   string                                 $identity   Complete owner-qualified work identity.
-	 * @param   string                                 $run_id     Run identifier.
-	 * @param   RunState                               $state      Fenced running state.
-	 * @param   RunStore                               $run_store  Active-run store.
-	 * @param   \Throwable                             $throwable  Failed attempt detail.
-	 * @param   array<array-key, mixed>|null           $chunk_args Chunked Job chunk arguments, or null for a job.
+	 * @param   JobType                      $work_type  Work contract type selected by the typed delivery path.
+	 * @param   JobInterface                 $contract   Failed work contract.
+	 * @param   string                       $identity   Complete owner-qualified work identity.
+	 * @param   string                       $run_id     Run identifier.
+	 * @param   RunState                     $state      Fenced running state.
+	 * @param   RunStore                     $run_store  Active-run store.
+	 * @param   \Throwable                   $throwable  Failed attempt detail.
+	 * @param   array<array-key, mixed>|null $chunk_args Chunked Job chunk arguments, or null for a job.
 	 *
 	 * @return  void
 	 */
-	private function handle_failure( JobType $work_type, OneOffJobInterface|ChunkedJobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
+	private function handle_failure( JobType $work_type, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, ?array $chunk_args = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $work_type, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -169,28 +170,28 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType                                $work_type     Work contract type selected by the typed delivery path.
-	 * @param   OneOffJobInterface|ChunkedJobInterface $contract      Failed work contract.
-	 * @param   string                                 $identity      Complete owner-qualified work identity.
-	 * @param   string                                 $run_id        Run identifier.
-	 * @param   RunState                               $state         Fenced running state.
-	 * @param   RunStore                               $run_store     Active-run store.
-	 * @param   EngineError                            $error         Terminal failure detail.
-	 * @param   int                                    $attempts_used Attempts consumed by the invocation.
-	 * @param   RunFailureStage                        $stage         Terminalization stage.
-	 * @param   ApiErrorCode                           $code          Machine-readable cause classification.
-	 * @param   array<array-key, mixed>|null           $chunk_args    Chunked Job chunk arguments, or null for a job.
+	 * @param   JobType                      $work_type     Work contract type selected by the typed delivery path.
+	 * @param   JobInterface                 $contract      Failed work contract.
+	 * @param   string                       $identity      Complete owner-qualified work identity.
+	 * @param   string                       $run_id        Run identifier.
+	 * @param   RunState                     $state         Fenced running state.
+	 * @param   RunStore                     $run_store     Active-run store.
+	 * @param   EngineError                  $error         Terminal failure detail.
+	 * @param   int                          $attempts_used Attempts consumed by the invocation.
+	 * @param   RunFailureStage              $stage         Terminalization stage.
+	 * @param   ApiErrorCode                 $code          Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null $chunk_args    Chunked Job chunk arguments, or null for a job.
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( JobType $work_type, OneOffJobInterface|ChunkedJobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
-		if ( JobType::ChunkedJob === $work_type && $contract instanceof ChunkedJobInterface ) {
+	private function fail_terminally( JobType $work_type, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
+		if ( JobType::ChunkedJob === $work_type ) {
 			$this->terminal_transitions->fail_chunked_job( $contract, $identity, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
 
 			return;
 		}
 
-		$this->terminal_transitions->fail_job( $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
+		$this->terminal_transitions->fail_job( $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
 	}
 
 	/**

@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -212,10 +214,10 @@ final class ApiTest extends TestCase {
 		$observed  = array();
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_jobs_engine/completed/consumer-plugin:sync'] = static function () use ( $client, &$observed ): void {
+		$callbacks['a8csp_jobs_engine/completed/consumer-plugin:sync'] = static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( $client, &$observed ): void {
 			$result = $client->runs()->last_completed_run_id( 'sync' );
 			self::assertInstanceOf( Success::class, $result );
-			$observed[] = $result->value;
+			$observed[] = array( $previous_completed_run_id, $result->value );
 		};
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
@@ -223,10 +225,81 @@ final class ApiTest extends TestCase {
 		$first  = $this->enqueue_and_run( $client, array( 'sequence' => 1 ) );
 		$second = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
 
-		self::assertSame( array( null, $first ), $observed );
+		self::assertSame( array( array( null, null ), array( $first, $first ) ), $observed );
 		$result = $client->runs()->last_completed_run_id( 'sync' );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $second, $result->value );
+	}
+
+	/**
+	 * Callback replay retains the predecessor frozen before a later same-identity completion.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Five scripted marker-CAS losses leave a production terminal row for real maintenance replay; no public result exposes the callback marker or frozen terminal snapshot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_callback_replay_uses_the_frozen_previous_completion(): void {
+		$identity = 'consumer-plugin:sync';
+		$client   = $this->rig->client( 'consumer-plugin' );
+		$job      = new RecordingJob( 'sync' );
+		$client->jobs()->register( $job );
+		$seed_run_id = $this->enqueue_and_run( $client, array( 'sequence' => 'seed' ) );
+
+		++$this->rig->clock()->timestamp;
+		$target = $client->jobs()->enqueue( 'sync', array( 'sequence' => 'target' ) );
+		self::assertInstanceOf( Success::class, $target );
+		self::assertIsString( $target->value );
+		$target_run_id        = $target->value;
+		$intervening_run_id   = null;
+		$target_callback_runs = 0;
+		$job->on_completed    = function ( string $run_id ) use ( $client, $target_run_id, &$intervening_run_id, &$target_callback_runs ): void {
+			if ( $target_run_id !== $run_id || 1 !== ++$target_callback_runs ) {
+				return;
+			}
+
+			++$this->rig->clock()->timestamp;
+			$intervening = $client->jobs()->enqueue( 'sync', array( 'sequence' => 'intervening' ) );
+			self::assertInstanceOf( Success::class, $intervening );
+			self::assertIsString( $intervening->value );
+			$intervening_run_id = $intervening->value;
+			$this->rig->run_due();
+
+			for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
+				$this->rig->wpdb()->before_next(
+					'update',
+					static function ( WpdbLockSpy $database ): void {
+						$database->script_result( 'update', false );
+					}
+				);
+			}
+		};
+
+		$this->rig->run_due();
+
+		$run_store = new RunStore( $identity, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
+		$terminal  = $run_store->get( $target_run_id );
+		self::assertNotNull( $terminal );
+		self::assertSame( $seed_run_id, $terminal->previous_completed_run_id );
+		self::assertSame( array(), $terminal->effects );
+		$latest_before_replay = $client->runs()->last_completed_run_id( 'sync' );
+		self::assertInstanceOf( Success::class, $latest_before_replay );
+		self::assertSame( $intervening_run_id, $latest_before_replay->value );
+		$this->rig->clock()->timestamp = $terminal->heartbeat_at + 3_601;
+
+		$this->rig->run_maintenance();
+
+		self::assertIsString( $intervening_run_id );
+		$target_callbacks = \array_values( \array_filter( $job->completed_calls, static fn ( array $call ): bool => $target_run_id === $call['run_id'] ) );
+		self::assertCount( 2, $target_callbacks );
+		self::assertSame( array( $seed_run_id, $seed_run_id ), \array_column( $target_callbacks, 'previous_completed_run_id' ) );
+		$intervening_callbacks = \array_values( \array_filter( $job->completed_calls, static fn ( array $call ): bool => $intervening_run_id === $call['run_id'] ) );
+		self::assertCount( 1, $intervening_callbacks );
+		self::assertSame( $seed_run_id, $intervening_callbacks[0]['previous_completed_run_id'] );
+		self::assertNull( $run_store->get( $target_run_id ) );
 	}
 
 	/**

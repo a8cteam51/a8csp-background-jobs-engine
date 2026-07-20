@@ -135,6 +135,59 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * Consecutive completions deliver the identity-global predecessor to callbacks and hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_callback_and_hooks_receive_the_previous_chunked_job_completion(): void {
+		$this->chunked_job->queue = array();
+		$first_args               = array( 'sequence' => 'first' );
+		$first                    = $this->client->chunked_jobs()->start( self::NAME, $first_args );
+		self::assertInstanceOf( Success::class, $first );
+		self::assertIsString( $first->value );
+
+		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		++$this->rig->clock()->timestamp;
+		$second_args = array( 'sequence' => 'second' );
+		$second      = $this->client->chunked_jobs()->start( self::NAME, $second_args );
+		self::assertInstanceOf( Success::class, $second );
+		self::assertIsString( $second->value );
+
+		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame(
+			array(
+				array(
+					'run_id'                    => $first->value,
+					'start_args'                => $first_args,
+					'previous_completed_run_id' => null,
+				),
+				array(
+					'run_id'                    => $second->value,
+					'start_args'                => $second_args,
+					'previous_completed_run_id' => $first->value,
+				),
+			),
+			$this->chunked_job->completed_calls
+		);
+		self::assertSame(
+			array(
+				array( $first->value, $first_args, null ),
+				array( $second->value, $second_args, $first->value ),
+			),
+			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY )
+		);
+	}
+
+	/**
 	 * Queue generation and the documented filter payload determine the retained real queue.
 	 *
 	 * @since   1.0.0
@@ -1435,6 +1488,10 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		self::assertCount( 1, $this->chunked_job->completed_calls );
 		self::assertSame( array(), $this->chunked_job->failed_calls );
+		$log_context = $this->rig->logger()->records[0]['context'] ?? null;
+		self::assertIsArray( $log_context );
+		self::assertSame( self::IDENTITY, $log_context['chunked_job_name'] ?? null );
+		self::assertArrayNotHasKey( 'name', $log_context );
 		$this->rig->assert_completed();
 	}
 

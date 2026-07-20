@@ -2,8 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 /**
@@ -17,8 +19,35 @@ final class RecordingJob implements OneOffJobInterface {
 	 */
 	public array $calls = array();
 
+	/**
+	 * Handler contexts in call order.
+	 *
+	 * @var list<RunContextInterface>
+	 */
+	public array $contexts = array();
+
+	/**
+	 * Completed-run callback payloads in call order.
+	 *
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, previous_completed_run_id: string|null}>
+	 */
+	public array $completed_calls = array();
+
+	/**
+	 * Failed-run callback payloads in call order.
+	 *
+	 * @var list<array{run_id: string, start_args: array<array-key, mixed>, error: RunFailure}>
+	 */
+	public array $failed_calls = array();
+
 	/** Throwable raised after the invocation is recorded. */
 	public ?\Throwable $throwable = null;
+
+	/** Throwable raised after completed-run handling is recorded. */
+	public ?\Throwable $completed_throwable = null;
+
+	/** Throwable raised after failed-run handling is recorded. */
+	public ?\Throwable $failed_throwable = null;
 
 	/**
 	 * Observation run after recording and before an optional failure.
@@ -26,6 +55,12 @@ final class RecordingJob implements OneOffJobInterface {
 	 * @var (\Closure(array<array-key, mixed>): void)|null
 	 */
 	public ?\Closure $on_handle = null;
+
+	/** @var (\Closure(string, array<array-key, mixed>, string|null): void)|null */
+	public ?\Closure $on_completed = null;
+
+	/** @var (\Closure(string, array<array-key, mixed>, RunFailure): void)|null */
+	public ?\Closure $on_failed = null;
 
 	/** Configured retry policy. */
 	public RetryPolicy $retry_policy;
@@ -94,13 +129,15 @@ final class RecordingJob implements OneOffJobInterface {
 	/**
 	 * Records one job invocation before applying scripted behavior.
 	 *
-	 * @param   array<array-key, mixed> $args Invocation arguments.
+	 * @param   array<array-key, mixed> $args    Invocation arguments.
+	 * @param   RunContextInterface     $context Controlled access to this run.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args ): void {
-		$this->calls[] = $args;
+	public function handle( array $args, RunContextInterface $context ): void {
+		$this->calls[]    = $args;
+		$this->contexts[] = $context;
 
 		$lifecycle_events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
 		if ( \is_array( $lifecycle_events ) ) {
@@ -119,6 +156,58 @@ final class RecordingJob implements OneOffJobInterface {
 
 		if ( null !== $this->throwable ) {
 			throw $this->throwable;
+		}
+	}
+
+	/**
+	 * Records one completed-run callback.
+	 *
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
+		$this->completed_calls[] = array(
+			'run_id'                    => $run_id,
+			'start_args'                => $start_args,
+			'previous_completed_run_id' => $previous_completed_run_id,
+		);
+
+		if ( null !== $this->on_completed ) {
+			( $this->on_completed )( $run_id, $start_args, $previous_completed_run_id );
+		}
+
+		if ( null !== $this->completed_throwable ) {
+			throw $this->completed_throwable;
+		}
+	}
+
+	/**
+	 * Records one failed-run callback.
+	 *
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+		$this->failed_calls[] = array(
+			'run_id'     => $run_id,
+			'start_args' => $start_args,
+			'error'      => $failure,
+		);
+
+		if ( null !== $this->on_failed ) {
+			( $this->on_failed )( $run_id, $start_args, $failure );
+		}
+
+		if ( null !== $this->failed_throwable ) {
+			throw $this->failed_throwable;
 		}
 	}
 

@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -156,13 +157,16 @@ final class LifecycleEffectsTest extends TestCase {
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job );
+		$job      = new RecordingJob( self::NAME );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job, $job );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Failed, $remaining->status );
-		self::assertSame( array( 'hooks', 'history' ), $remaining->effects );
+		self::assertSame( array( 'callbacks', 'hooks', 'history' ), $remaining->effects );
+		self::assertCount( 1, $job->failed_calls );
+		self::assertSame( self::RUN_ID, $job->failed_calls[0]['run_id'] );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame(
@@ -187,26 +191,38 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ): void {
 				$terminal = $this->option( $this->run_option_name() );
 				self::assertIsArray( $terminal );
 				self::assertSame( 'completed', $terminal['status'] ?? null );
-				self::assertSame( array( 'hooks' ), $terminal['effects'] ?? null );
+				self::assertSame( array( 'callbacks', 'hooks' ), $terminal['effects'] ?? null );
 				$wpdb->script_result( 'update', false );
 			}
 		);
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job );
+		$job      = new RecordingJob( self::NAME );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job, $job );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Completed, $remaining->status );
-		self::assertSame( array( 'hooks' ), $remaining->effects );
+		self::assertSame( array( 'callbacks', 'hooks' ), $remaining->effects );
+		self::assertSame(
+			array(
+				array(
+					'run_id'                    => self::RUN_ID,
+					'start_args'                => self::ARGS,
+					'previous_completed_run_id' => null,
+				),
+			),
+			$job->completed_calls
+		);
 		self::assertNull( $this->lock() );
 		self::assertSame(
 			array(
@@ -235,7 +251,11 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
-		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
+		$callbacks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'callbacks' );
+		self::assertNotNull( $callbacks );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $callbacks['state'], $callbacks['raw'], $run_store, JobType::Job ) );
+
+		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $callbacks['state'], $callbacks['raw'], 'hooks' );
 		self::assertNotNull( $hooks );
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store, JobType::Job ) );
 
@@ -278,7 +298,7 @@ final class LifecycleEffectsTest extends TestCase {
 			'failed job'             => array(
 				'status'    => 'failed',
 				'work_type' => JobType::Job,
-				'effects'   => array( 'retention', 'hooks', 'history' ),
+				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			),
 			'completed chunked job'  => array(
 				'status'    => 'completed',
@@ -288,7 +308,7 @@ final class LifecycleEffectsTest extends TestCase {
 			'completed job'          => array(
 				'status'    => 'completed',
 				'work_type' => JobType::Job,
-				'effects'   => array( 'hooks', 'history' ),
+				'effects'   => array( 'callbacks', 'hooks', 'history' ),
 			),
 			'cancelled chunked job'  => array(
 				'status'    => 'cancelled',

@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
@@ -246,13 +247,13 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_uses_the_registered_job_kind_for_a_dual_interface_contract(): void {
-		$name                   = 'dual-kind-job';
-		$identity               = self::OWNER . ':' . $name;
-		$chunked_job_failures   = 0;
-		$on_chunked_job_failure = static function () use ( &$chunked_job_failures ): void {
-			++$chunked_job_failures;
+		$name                = 'dual-kind-job';
+		$identity            = self::OWNER . ':' . $name;
+		$terminal_failures   = 0;
+		$on_terminal_failure = static function () use ( &$terminal_failures ): void {
+			++$terminal_failures;
 		};
-		$this->client->jobs()->register( $this->dual_kind_job( $name, $on_chunked_job_failure ) );
+		$this->client->jobs()->register( $this->dual_kind_job( $name, $on_terminal_failure ) );
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->jobs()->enqueue( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
@@ -268,7 +269,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( 0, $chunked_job_failures );
+		self::assertSame( 1, $terminal_failures );
 		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
 	}
 
@@ -682,22 +683,22 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name             Job name.
-	 * @param   \Closure $on_chunked_job_failure Records an invalid chunked job terminal callback.
+	 * @param   string   $name                Job name.
+	 * @param   \Closure $on_terminal_failure Records the terminal callback.
 	 *
 	 * @return  OneOffJobInterface
 	 */
-	private function dual_kind_job( string $name, \Closure $on_chunked_job_failure ): OneOffJobInterface {
-		return new class( $name, $on_chunked_job_failure ) implements OneOffJobInterface, ChunkedJobInterface {
+	private function dual_kind_job( string $name, \Closure $on_terminal_failure ): OneOffJobInterface {
+		return new class( $name, $on_terminal_failure ) implements OneOffJobInterface, ChunkedJobInterface {
 			/**
 			 * Constructor.
 			 *
-			 * @param   string   $name             Job name.
-			 * @param   \Closure $on_chunked_job_failure Records an invalid chunked job terminal callback.
+			 * @param   string   $name                Job name.
+			 * @param   \Closure $on_terminal_failure Records the terminal callback.
 			 */
 			public function __construct(
 				private readonly string $name,
-				private readonly \Closure $on_chunked_job_failure,
+				private readonly \Closure $on_terminal_failure,
 			) {}
 
 			/** {@inheritDoc} */
@@ -727,12 +728,13 @@ final class FailureLifecycleTest extends TestCase {
 			/**
 			 * Fails every attempt with a retryable throwable.
 			 *
-			 * @param   array<array-key, mixed> $args Job arguments.
+			 * @param   array<array-key, mixed> $args    Job arguments.
+			 * @param   RunContextInterface     $context Controlled access to this run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function handle( array $args ): void {
+			public function handle( array $args, RunContextInterface $context ): void {
 				throw new \RuntimeException( 'Database unavailable.' );
 			}
 
@@ -746,11 +748,12 @@ final class FailureLifecycleTest extends TestCase {
 			 * Returns an empty queue.
 			 *
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+			 * @param   RunContextInterface     $context    Controlled access to this run.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 
@@ -768,16 +771,17 @@ final class FailureLifecycleTest extends TestCase {
 			/**
 			 * Observes nothing.
 			 *
-			 * @param   string                  $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   string                  $run_id                    Run identifier.
+			 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+			 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function on_completed( string $run_id, array $start_args ): void {}
+			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
 
 			/**
-			 * Records the invalid chunked job terminal callback.
+			 * Records the terminal callback.
 			 *
 			 * @param   string                  $run_id     Run identifier.
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
@@ -787,7 +791,7 @@ final class FailureLifecycleTest extends TestCase {
 			 */
 			#[\Override]
 			public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
-				( $this->on_chunked_job_failure )();
+				( $this->on_terminal_failure )();
 			}
 		};
 	}

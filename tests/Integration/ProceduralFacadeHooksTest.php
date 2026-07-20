@@ -37,10 +37,10 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$name     = 'completed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 7 );
-		/** @var list<array{string, array<array-key, mixed>}> $observed */
+		/** @var list<array{string, array<array-key, mixed>, string|null}> $observed */
 		$observed = array();
-		$listener = static function ( string $run_id, array $start_args ) use ( &$observed ): void {
-			$observed[] = array( $run_id, $start_args );
+		$listener = static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$observed ): void {
+			$observed[] = array( $run_id, $start_args, $previous_completed_run_id );
 		};
 
 		\a8csp_bgje_run_on_completed( self::OWNER, $name, $listener );
@@ -52,7 +52,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertIsString( $run_id );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertSame( array( array( $run_id, $args ) ), $observed );
+		self::assertSame( array( array( $run_id, $args, null ) ), $observed );
 	}
 
 	/**
@@ -109,11 +109,11 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Callable-job completion options fire through the one-off hook adapter.
+	 * Callable-job completion options fire through the durable terminal callback.
 	 *
 	 * @return  void
 	 */
-	public function test_callable_job_completion_option_fires_through_the_engine_hook(): void {
+	public function test_callable_job_completion_option_fires_through_the_engine_callback(): void {
 		$name     = 'option-completed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 9 );
@@ -126,7 +126,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		);
 
 		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args ): void {}, $options ) );
-		self::assertTrue( \has_action( 'a8csp_jobs_engine/completed/' . $identity ) );
+		self::assertFalse( \has_action( 'a8csp_jobs_engine/completed/' . $identity ), 'Model callbacks must not be registered on the public lifecycle-hook bus' );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
 		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, $name, $args );
@@ -137,11 +137,11 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Consumer job object failures fire through the one-off hook adapter with public failure data.
+	 * Consumer job object failures fire through the durable terminal callback with public failure data.
 	 *
 	 * @return  void
 	 */
-	public function test_job_object_failure_callback_fires_through_the_engine_hook(): void {
+	public function test_job_object_failure_callback_fires_through_the_engine_callback(): void {
 		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$name     = 'object-failed-job';
 		$identity = self::OWNER . ':' . $name;
@@ -179,7 +179,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		};
 
 		self::assertTrue( \a8csp_bgje_job_register_object( self::OWNER, $job ) );
-		self::assertTrue( \has_action( 'a8csp_jobs_engine/failed/' . $identity ) );
+		self::assertFalse( \has_action( 'a8csp_jobs_engine/failed/' . $identity ), 'Model callbacks must not be registered on the public lifecycle-hook bus' );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . $identity );
 

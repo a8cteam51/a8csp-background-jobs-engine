@@ -65,7 +65,7 @@ final class EngineRigTest extends TestCase {
 			self::assertSame( array( self::ARGS ), $job->calls );
 			$rig->assert_completed();
 			$rig->assert_no_retry();
-			self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS ), $rig->hooks()->fired( 'a8csp_jobs_engine/completed' )[0] ?? null );
+			self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, null ), $rig->hooks()->fired( 'a8csp_jobs_engine/completed' )[0] ?? null );
 		} finally {
 			$rig->tear_down();
 		}

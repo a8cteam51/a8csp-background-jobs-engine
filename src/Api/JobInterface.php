@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 \defined( 'ABSPATH' ) || exit;
@@ -11,6 +12,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
  *
  * A stable name identifies the job, its retry policy governs failed invocations, and its
  * callback-runtime ceiling bounds one client callback invocation.
+ *
+ * Terminal callbacks are delivered at least once across crash recovery under Action Scheduler and
+ * best-effort under the WP-Cron fallback. A process can stop after a callback returns but before its
+ * completion marker persists, so implementations use the run identifier to converge replays. A
+ * throwing `on_failed()` remains pending for a later terminal-maintenance attempt. `on_completed()`
+ * is best-effort: a thrown callback is logged, and the run still completes. Cancelled and superseded
+ * runs end without either callback; those outcomes surface through engine hooks.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -100,6 +108,42 @@ interface JobInterface {
 	 * @return  RetryPolicy
 	 */
 	public function get_retry_policy(): RetryPolicy;
+
+	/**
+	 * Handles a completed run.
+	 *
+	 * The predecessor is the most recent prior completion known in retained terminal history when
+	 * this run completes; its captured value remains identical across at-least-once replays rather
+	 * than following a live lookup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
+	 *
+	 * @throws  \Throwable When `on_completed()` handling fails; the engine logs the throwable and the run still completes.
+	 *
+	 * @return  void
+	 */
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void;
+
+	/**
+	 * Handles a failed run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
+	 *
+	 * @throws  \Throwable When `on_failed()` handling fails; the callback effect remains pending for at-least-once replay by terminal maintenance.
+	 *
+	 * @return  void
+	 */
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void;
 
 	// endregion
 }

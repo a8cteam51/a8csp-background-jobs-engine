@@ -126,7 +126,7 @@ final readonly class Inspection {
 			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
 		}
 
-		return new Success( \array_find( \array_reverse( $entries ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] )['run_id'] ?? null );
+		return new Success( RunHistory::newest_completed_run_id( $entries ) );
 	}
 
 	/**

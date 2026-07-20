@@ -200,7 +200,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Callable lifecycle options are wired to owner-qualified engine hooks with public payloads.
+	 * Callable lifecycle options receive terminal payloads from the durable engine effect.
 	 *
 	 * @return  void
 	 */
@@ -225,45 +225,58 @@ final class ProceduralFacadeTest extends TestCase {
 			},
 		);
 
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', static function ( array $args ): void {}, $options ) );
+		$handler = static function ( array $args ): void {
+			if ( true === ( $args['fail'] ?? false ) ) {
+				throw new NonRetryableException( 'Callable terminal failure.' );
+			}
+		};
+		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, 'job', $handler, $options ) );
 
-		$args       = array( 'site_id' => 7 );
-		$failure    = self::run_failure( 'run-7', $args );
-		$completion = self::action_registration( 'a8csp_jobs_engine/completed/' . self::OWNER . ':job' );
-		$failed_run = self::action_registration( 'a8csp_jobs_engine/failed/' . self::OWNER . ':job' );
-		$completion['callback']( 'run-7', $args );
-		$failed_run['callback']( 'run-7', $args, $failure );
+		$completed_args = array( 'site_id' => 7 );
+		$completed_id   = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $completed_args );
+		self::assertIsString( $completed_id );
+		$this->rig->run_due();
+
+		++$this->rig->clock()->timestamp;
+		$failed_args = array(
+			'site_id' => 8,
+			'fail'    => true,
+		);
+		$failed_id   = \a8csp_bgje_job_enqueue( self::OWNER, 'job', $failed_args );
+		self::assertIsString( $failed_id );
+		$this->rig->run_due();
 
 		self::assertSame(
 			array(
 				array(
-					'run_id' => 'run-7',
-					'args'   => $args,
+					'run_id' => $completed_id,
+					'args'   => $completed_args,
 				),
 			),
 			$completed
 		);
-		self::assertSame(
-			array(
-				array(
-					'run_id'  => 'run-7',
-					'args'    => $args,
-					'failure' => self::failure_array( $failure ),
-				),
-			),
-			$failed
-		);
+		self::assertCount( 1, $failed );
+		self::assertSame( $failed_id, $failed[0]['run_id'] );
+		self::assertSame( $failed_args, $failed[0]['args'] );
+		self::assertSame( $failed_id, $failed[0]['failure']['run_id'] ?? null );
+		self::assertSame( ApiErrorCode::ExecutionFailed->value, $failed[0]['failure']['code'] ?? null );
 	}
 
 	/**
-	 * Consumer job subclasses register through the same adapter and lifecycle-hook bridge.
+	 * Consumer job subclasses receive lifecycle callbacks through the internal adapter.
 	 *
 	 * @return  void
 	 */
 	public function test_job_object_registration_adapts_work_and_lifecycle_callbacks(): void {
 		$job = new class() extends \A8CSP_Job {
+			/** @var list<int> */
+			public array $handle_arities = array();
+
 			/** @var list<array{run_id: string, args: array<array-key, mixed>}> */
 			public array $completed = array();
+
+			/** @var list<int> */
+			public array $completed_arities = array();
 
 			/** @var list<array{run_id: string, args: array<array-key, mixed>, failure: array<string, mixed>}> */
 			public array $failed = array();
@@ -276,12 +289,18 @@ final class ProceduralFacadeTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args ): void {
+				$this->handle_arities[] = \func_num_args();
+				if ( true === ( $args['fail'] ?? false ) ) {
+					throw new NonRetryableException( 'Object terminal failure.' );
+				}
+			}
 
 			/** {@inheritDoc} */
 			#[\Override]
 			public function on_completed( string $run_id, array $args ): void {
-				$this->completed[] = array(
+				$this->completed_arities[] = \func_num_args();
+				$this->completed[]         = array(
 					'run_id' => $run_id,
 					'args'   => $args,
 				);
@@ -300,32 +319,36 @@ final class ProceduralFacadeTest extends TestCase {
 
 		self::assertTrue( \a8csp_bgje_job_register_object( self::OWNER, $job ) );
 
-		$args       = array( 'site_id' => 8 );
-		$failure    = self::run_failure( 'run-8', $args );
-		$completion = self::action_registration( 'a8csp_jobs_engine/completed/' . self::OWNER . ':object-job' );
-		$failed_run = self::action_registration( 'a8csp_jobs_engine/failed/' . self::OWNER . ':object-job' );
-		$completion['callback']( 'run-8', $args );
-		$failed_run['callback']( 'run-8', $args, $failure );
+		$completed_args = array( 'site_id' => 8 );
+		$completed_id   = \a8csp_bgje_job_enqueue( self::OWNER, 'object-job', $completed_args );
+		self::assertIsString( $completed_id );
+		$this->rig->run_due();
+
+		++$this->rig->clock()->timestamp;
+		$failed_args = array(
+			'site_id' => 9,
+			'fail'    => true,
+		);
+		$failed_id   = \a8csp_bgje_job_enqueue( self::OWNER, 'object-job', $failed_args );
+		self::assertIsString( $failed_id );
+		$this->rig->run_due();
 
 		self::assertSame(
 			array(
 				array(
-					'run_id' => 'run-8',
-					'args'   => $args,
+					'run_id' => $completed_id,
+					'args'   => $completed_args,
 				),
 			),
 			$job->completed
 		);
-		self::assertSame(
-			array(
-				array(
-					'run_id'  => 'run-8',
-					'args'    => $args,
-					'failure' => self::failure_array( $failure ),
-				),
-			),
-			$job->failed
-		);
+		self::assertSame( array( 1, 1 ), $job->handle_arities );
+		self::assertSame( array( 2 ), $job->completed_arities );
+		self::assertCount( 1, $job->failed );
+		self::assertSame( $failed_id, $job->failed[0]['run_id'] );
+		self::assertSame( $failed_args, $job->failed[0]['args'] );
+		self::assertSame( $failed_id, $job->failed[0]['failure']['run_id'] ?? null );
+		self::assertSame( ApiErrorCode::ExecutionFailed->value, $job->failed[0]['failure']['code'] ?? null );
 	}
 
 	/**
@@ -384,6 +407,78 @@ final class ProceduralFacadeTest extends TestCase {
 		$overlap = \a8csp_bgje_chunked_job_start( self::OWNER, 'chunked_job', array( 'scope' => 'all' ) );
 		$error   = self::assert_wp_error( $overlap, 'overlap_held' );
 		self::assertSame( array( 'run_id' => $run_id ), $error->get_error_data() );
+	}
+
+	/**
+	 * The chunked-job adapter keeps internal run context and predecessor data inside the engine.
+	 *
+	 * @return  void
+	 */
+	public function test_chunked_job_object_adapter_drops_internal_completion_arguments(): void {
+		$chunked_job = new class() extends \A8CSP_ChunkedJob {
+			/** @var list<array<array-key, mixed>> */
+			public array $generate_args = array();
+
+			/** @var list<int> */
+			public array $generate_arities = array();
+
+			/** @var list<array{run_id: string, args: array<array-key, mixed>}> */
+			public array $completed = array();
+
+			/** @var list<int> */
+			public array $completed_arities = array();
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function get_name(): string {
+				return 'adapter-arity';
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function generate_queue( array $start_args ): iterable {
+				$this->generate_arities[] = \func_num_args();
+				$this->generate_args[]    = $start_args;
+
+				return array();
+			}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function process_chunk( array $chunk_args, \A8CSP_ChunkContext $context ): void {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function on_completed( string $run_id, array $args ): void {
+				$this->completed_arities[] = \func_num_args();
+				$this->completed[]         = array(
+					'run_id' => $run_id,
+					'args'   => $args,
+				);
+			}
+		};
+
+		self::assertTrue( \a8csp_bgje_chunked_job_register( self::OWNER, $chunked_job ) );
+		$args   = array( 'scope' => 'public-adapter' );
+		$run_id = \a8csp_bgje_chunked_job_start( self::OWNER, 'adapter-arity', $args );
+		self::assertIsString( $run_id );
+
+		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( 1 ), $chunked_job->generate_arities );
+		self::assertSame( array( $args ), $chunked_job->generate_args );
+		self::assertSame( array( 2 ), $chunked_job->completed_arities );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => $run_id,
+					'args'   => $args,
+				),
+			),
+			$chunked_job->completed
+		);
 	}
 
 	/**
@@ -632,7 +727,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_on_completed_registers_the_exact_public_hook(): void {
-		$listener = static function ( string $run_id, array $args ): void {};
+		$listener = static function ( string $run_id, array $args, ?string $previous_completed_run_id ): void {};
 
 		\a8csp_bgje_run_on_completed( self::OWNER, 'job', $listener );
 
@@ -643,7 +738,7 @@ final class ProceduralFacadeTest extends TestCase {
 				'hook_name'     => 'a8csp_jobs_engine/completed/' . self::OWNER . ':job',
 				'callback'      => $listener,
 				'priority'      => 10,
-				'accepted_args' => 2,
+				'accepted_args' => 3,
 			),
 			\array_last( $registrations )
 		);
@@ -846,25 +941,6 @@ final class ProceduralFacadeTest extends TestCase {
 			#[\Override]
 			public function process_chunk( array $chunk_args, \A8CSP_ChunkContext $context ): void {}
 		};
-	}
-
-	/**
-	 * Returns one recorded action registration by exact hook name.
-	 *
-	 * @param   string $hook_name Action hook name.
-	 *
-	 * @return  array{hook_name: string, callback: callable, priority: int, accepted_args: int}
-	 */
-	private static function action_registration( string $hook_name ): array {
-		/** @var list<array{hook_name: string, callback: callable, priority: int, accepted_args: int}> $registrations */
-		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'];
-		foreach ( \array_reverse( $registrations ) as $registration ) {
-			if ( $hook_name === $registration['hook_name'] ) {
-				return $registration;
-			}
-		}
-
-		self::fail( 'Expected an action registration for ' . $hook_name . '.' );
 	}
 
 	/**

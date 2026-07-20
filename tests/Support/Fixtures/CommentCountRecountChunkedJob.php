@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 /**
@@ -126,13 +127,14 @@ final class CommentCountRecountChunkedJob implements ChunkedJobInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  NonRetryableException When `post_type` is absent or not a registered post type.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
 	#[\Override]
-	public function generate_queue( array $start_args ): iterable {
+	public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 		$post_type = $start_args['post_type'] ?? null;
 		// A typo'd post type would drain an empty queue and report success; failing loudly on an
 		// unregistered key is a permanent input defect, so it escapes the retry ladder.
@@ -219,13 +221,14 @@ final class CommentCountRecountChunkedJob implements ChunkedJobInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_completed( string $run_id, array $start_args ): void {
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
 		/**
 		 * Fires after every comment-count chunk succeeds.
 		 *

@@ -62,13 +62,14 @@ abstract class AbstractChunkedJob implements ChunkedJobInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function on_completed( string $run_id, array $start_args ): void {}
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
 
 	/**
 	 * {@inheritDoc}

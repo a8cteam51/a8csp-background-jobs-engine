@@ -393,6 +393,33 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * A completed run round-trips its frozen predecessor through production serialization.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The predecessor must survive the raw terminal row because callback replay occurs after the completion claim that freezes it.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_state_round_trips_its_previous_completed_run_id(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( 'previous-run-id' );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+		$this->put_fixture( $fixture );
+
+		$stored = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertSame( 'previous-run-id', $stored['previous_completed_run_id'] ?? null );
+		$inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( 'previous-run-id', $inspected->value['state']->previous_completed_run_id );
+	}
+
+	/**
 	 * Corrupt object-bearing rows remain raw evidence without constructing their classes.
 	 *
 	 * @load-bearing security
@@ -510,6 +537,12 @@ final class RunStoreTest extends TestCase {
 	public function test_noncanonical_terminal_metadata_never_hydrates(): void {
 		$invalid = array(
 			array( 'error' => null ),
+			array( 'previous_completed_run_id' => null ),
+			array( 'previous_completed_run_id' => 42 ),
+			array(
+				'status'                    => 'failed',
+				'previous_completed_run_id' => 'previous-run-id',
+			),
 			array( 'error' => array( 'message' => 'Failure.' ) ),
 			array(
 				'error' => array(

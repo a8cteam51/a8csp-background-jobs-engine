@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 \defined( 'ABSPATH' ) || exit;
@@ -22,7 +23,7 @@ final class CallableJob extends AbstractJob {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(array<array-key, mixed>): mixed          $handler
+	 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
 	 * @phpstan-param (\Closure(array<array-key, mixed>): ?string)|null $overlap_key
 	 *
 	 * @param   string             $name        Stable job name.
@@ -64,15 +65,16 @@ final class CallableJob extends AbstractJob {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args Invocation arguments.
+	 * @param   array<array-key, mixed> $args    Invocation arguments.
+	 * @param   RunContextInterface     $context Controlled access to this run.
 	 *
 	 * @throws  \Throwable When the configured handler fails.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args ): void {
-		( $this->handler )( $args );
+	public function handle( array $args, RunContextInterface $context ): void {
+		( $this->handler )( $args, $context );
 	}
 
 	/**

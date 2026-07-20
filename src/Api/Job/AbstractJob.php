@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Job;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
@@ -52,6 +53,40 @@ abstract class AbstractJob implements OneOffJobInterface {
 	public function overlap_key( array $start_args ): ?string {
 		return null;
 	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * Subclasses override this optional notification to observe a completed run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * Subclasses override this optional notification to observe a failed run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {}
 
 	/**
 	 * {@inheritDoc}

@@ -125,6 +125,9 @@ final class ActionDeliveriesTest extends TestCase {
 		}
 
 		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
+		self::assertCount( 1, $chunked_job->generate_contexts );
+		self::assertSame( $result->value, $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
 		self::assertCount( 1, $chunked_job->completed_calls );
@@ -177,19 +180,53 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->job->calls );
+		self::assertCount( 1, $this->job->contexts );
+		self::assertSame( $run_id, $this->job->contexts[0]->get_run_id() );
+		self::assertSame( self::ARGS, $this->job->contexts[0]->get_start_args() );
 		self::assertSame(
 			array(
-				array( $run_id, self::ARGS ),
+				array(
+					'run_id'                    => $run_id,
+					'start_args'                => self::ARGS,
+					'previous_completed_run_id' => null,
+				),
+			),
+			$this->job->completed_calls
+		);
+		self::assertSame(
+			array(
+				array( $run_id, self::ARGS, null ),
 			),
 			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY )
 		);
 		self::assertSame(
 			array(
-				array( self::IDENTITY, $run_id, self::ARGS ),
+				array( self::IDENTITY, $run_id, self::ARGS, null ),
 			),
 			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' )
 		);
 		$this->rig->assert_completed();
+	}
+
+	/**
+	 * A terminal one-off failure invokes the registered job callback once through the engine effect.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_failure_invokes_the_one_off_job_callback_once(): void {
+		$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
+		$this->job->throwable    = new \RuntimeException( 'Terminal job failure.' );
+		$run_id                  = $this->enqueue_job();
+
+		$this->rig->run_due();
+
+		self::assertCount( 1, $this->job->failed_calls );
+		self::assertSame( $run_id, $this->job->failed_calls[0]['run_id'] );
+		self::assertSame( self::ARGS, $this->job->failed_calls[0]['start_args'] );
+		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
 	}
 
 	/**

@@ -25,6 +25,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
@@ -45,6 +46,8 @@ final class EngineRig {
 
 	/** @var non-empty-list<RecordingBackend> */
 	private array $backends;
+
+	private MaintenanceJob $maintenance_job;
 
 	/**
 	 * Retains deterministic boundaries used by one production graph.
@@ -361,6 +364,18 @@ final class EngineRig {
 		$this->backend->assert_not_scheduled( $identity );
 	}
 
+	/**
+	 * Runs the production maintenance contract against the active graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function run_maintenance(): void {
+		$this->maintenance_job->handle( array(), new RunContext( 'rig-maintenance-run', array() ) );
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -391,7 +406,9 @@ final class EngineRig {
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
-		$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger ) );
+
+		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
+		$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $this->maintenance_job );
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );

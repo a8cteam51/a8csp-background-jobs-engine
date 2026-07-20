@@ -86,9 +86,9 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$named_failed = array();
 		/** @var list<array{string, string, array<array-key, mixed>, RunFailure}> $generic_failed */
 		$generic_failed = array();
-		/** @var list<array{string, array<array-key, mixed>}> $named_completed */
+		/** @var list<array{string, array<array-key, mixed>, string|null}> $named_completed */
 		$named_completed = array();
-		/** @var list<array{string, string, array<array-key, mixed>}> $generic_completed */
+		/** @var list<array{string, string, array<array-key, mixed>, string|null}> $generic_completed */
 		$generic_completed = array();
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
@@ -124,19 +124,19 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $start_args );
-			},
-			10,
-			2
-		);
-		\add_action(
-			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $start_args ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $start_args );
+			static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( $run_id, $start_args, $previous_completed_run_id );
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, $run_id, $start_args, $previous_completed_run_id );
+			},
+			10,
+			4
 		);
 
 		$result = $client->jobs()->enqueue( self::NAME, $args );
@@ -276,8 +276,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the manually retried job' );
 
 		self::assertSame( array( $args, $args, $args ), $job->calls, 'The manually retried job must succeed on its third fixture invocation' );
-		self::assertSame( array( array( $successful_run_id, $args ) ), $named_completed, 'The identity-specific completed hook must receive the fresh run ID and original arguments' );
-		self::assertSame( array( array( self::IDENTITY, $successful_run_id, $args ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same fresh-run payload' );
+		self::assertSame( array( array( $successful_run_id, $args, null ) ), $named_completed, 'The identity-specific completed hook must receive the fresh run ID, original arguments, and no prior completion' );
+		self::assertSame( array( array( self::IDENTITY, $successful_run_id, $args, null ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same fresh-run payload' );
 		self::assertSame( array( array( $failed_run_id, $args, 1, $delay ) ), $named_retry_scheduled, 'The successful manual retry must not repeat the identity-specific retry-scheduled hook' );
 		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retry_scheduled, 'The successful manual retry must not repeat the generic retry-scheduled hook' );
 		self::assertSame( $recorded_named_failed, $named_failed, 'The successful manual retry must not repeat the identity-specific failed hook' );

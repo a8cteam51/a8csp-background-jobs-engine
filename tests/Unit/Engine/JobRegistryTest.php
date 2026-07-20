@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterfac
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
@@ -437,12 +438,13 @@ final class JobRegistryTest extends TestCase {
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   array<array-key, mixed> $args Unused job arguments.
+			 * @param   array<array-key, mixed> $args    Unused job arguments.
+			 * @param   RunContextInterface     $context Unused run context.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function handle( array $args ): void {}
+			public function handle( array $args, RunContextInterface $context ): void {}
 
 			/**
 			 * Returns an empty queue for the registry-only contract.
@@ -451,11 +453,12 @@ final class JobRegistryTest extends TestCase {
 			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $start_args Unused start arguments.
+			 * @param   RunContextInterface     $context    Unused run context.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 
@@ -479,13 +482,14 @@ final class JobRegistryTest extends TestCase {
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   string                  $run_id     Unused run identifier.
-			 * @param   array<array-key, mixed> $start_args Unused start arguments.
+			 * @param   string                  $run_id                    Unused run identifier.
+			 * @param   array<array-key, mixed> $start_args                Unused start arguments.
+			 * @param   string|null             $previous_completed_run_id Unused previous completed run identifier.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function on_completed( string $run_id, array $start_args ): void {}
+			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
 
 			/**
 			 * Accepts an unused failed chunked job outcome.

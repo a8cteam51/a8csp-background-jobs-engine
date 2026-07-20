@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -11,15 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
 /**
  * Contract for background work split into independently processed chunks.
  *
- * Queue generation defines the initial chunks, and processing handles one chunk. The engine invokes
- * `on_completed()` after every chunk succeeds or `on_failed()` after the run fails. Terminal callbacks
- * are at-least-once across crash recovery, replayed durably under Action Scheduler and best-effort
- * under the WP-Cron fallback, because a process can stop after the callback returns but
- * before its completion marker persists; implementations use the run identifier to converge replays.
- * A throwing `on_failed()` remains pending for a later maintenance attempt.
- *
- * A cancelled or superseded run ends without either callback; those outcomes surface through engine
- * hooks.
+ * Queue generation defines the initial chunks, and processing handles one chunk.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -40,13 +32,14 @@ interface ChunkedJobInterface extends JobInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  \Throwable When queue generation fails; the engine terminalizes the run as a
 	 *                     queue generation failure.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
-	public function generate_queue( array $start_args ): iterable;
+	public function generate_queue( array $start_args, RunContextInterface $context ): iterable;
 
 	/**
 	 * Processes one queued chunk.
@@ -76,39 +69,6 @@ interface ChunkedJobInterface extends JobInterface {
 	 * @return  void
 	 */
 	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void;
-
-	/**
-	 * Handles a run after every chunk succeeds.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 *
-	 * @throws  \Throwable When `on_completed()` handling fails; the engine logs the throwable and the run
-	 *                     still completes — every chunk has already succeeded.
-	 *
-	 * @return  void
-	 */
-	public function on_completed( string $run_id, array $start_args ): void;
-
-	/**
-	 * Handles a failed run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   RunFailure              $failure    Persisted terminal-failure value.
-	 *
-	 * @throws  \Throwable When `on_failed()` handling fails; the callback effect remains pending for
-	 *                     at-least-once replay by terminal maintenance.
-	 *
-	 * @return  void
-	 */
-	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void;
 
 	// endregion
 }

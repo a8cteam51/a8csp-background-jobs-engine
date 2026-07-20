@@ -3,6 +3,7 @@
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface as InternalJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as InternalRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
@@ -234,13 +235,52 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   array<array-key, mixed> $args Invocation arguments.
+			 * @param   array<array-key, mixed> $args    Invocation arguments.
+			 * @param   InternalRunContext      $context Internal run context.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function handle( array $args ): void {
+			public function handle( array $args, InternalRunContext $context ): void {
+				unset( $context );
+
 				$this->job->handle( $args );
+			}
+
+			/**
+			 * Forwards a completed run to the consumer-authored job.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $run_id                    Run identifier.
+			 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+			 * @param   string|null             $previous_completed_run_id Previous completed run identifier retained inside the engine.
+			 *
+			 * @return  void
+			 */
+			#[\Override]
+			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
+				unset( $previous_completed_run_id );
+
+				$this->job->on_completed( $run_id, $start_args );
+			}
+
+			/**
+			 * Converts and forwards a failed run to the consumer-authored job.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   RunFailure              $failure    Internal terminal failure.
+			 *
+			 * @return  void
+			 */
+			#[\Override]
+			public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+				$this->job->on_failed( $run_id, $start_args, failure_to_array( $failure ) );
 			}
 
 			// endregion
@@ -256,26 +296,6 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 	} catch ( \LogicException $exception ) {
 		return new \WP_Error( 'already_registered', $exception->getMessage() );
 	}
-
-	$identity = $owner . ':' . $adapter->get_name();
-	\add_action(
-		'a8csp_jobs_engine/completed/' . $identity,
-		static function ( string $run_id, array $args ) use ( $job ): void {
-			$job->on_completed( $run_id, $args );
-		},
-		10,
-		2
-	);
-	\add_action(
-		'a8csp_jobs_engine/failed/' . $identity,
-		static function ( string $run_id, array $args, mixed $failure ) use ( $job ): void {
-			if ( $failure instanceof RunFailure ) {
-				$job->on_failed( $run_id, $args, failure_to_array( $failure ) );
-			}
-		},
-		10,
-		3
-	);
 
 	return true;
 }
