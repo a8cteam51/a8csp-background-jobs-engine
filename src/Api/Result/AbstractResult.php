@@ -13,6 +13,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
  * narrowed variant's public payload. Expected failures remain data in a result; unexpected
  * infrastructure failures and programmer errors remain exceptions.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  *

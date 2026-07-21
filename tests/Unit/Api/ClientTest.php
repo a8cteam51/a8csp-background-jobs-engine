@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs;
@@ -77,7 +77,7 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_jobs_register_and_enqueue_owner_qualified_work(): void {
-		$failure = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
+		$failure = new Failure( new ApiError( ErrorCode::BackendRejected, 'Scripted failure.' ) );
 		$job     = new RecordingJob( 'sync' );
 		$engine  = new FakeJobsEngine( $failure );
 		$jobs    = new Jobs( 'consumer-plugin', $engine );
@@ -148,11 +148,11 @@ final class ClientTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $job_result );
 		self::assertInstanceOf( ApiError::class, $job_result->error );
-		self::assertSame( ApiErrorCode::PayloadRejected, $job_result->error->code );
+		self::assertSame( ErrorCode::PayloadRejected, $job_result->error->code );
 		self::assertSame( 'Job "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $job_result->error->message );
 		self::assertInstanceOf( Failure::class, $chunked_job_result );
 		self::assertInstanceOf( ApiError::class, $chunked_job_result->error );
-		self::assertSame( ApiErrorCode::PayloadRejected, $chunked_job_result->error->code );
+		self::assertSame( ErrorCode::PayloadRejected, $chunked_job_result->error->code );
 		self::assertSame( 'Chunked Job "sync" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $chunked_job_result->error->message );
 		self::assertSame( array(), $job_engine->calls );
 		self::assertSame( array(), $chunked_job_engine->calls );
@@ -268,7 +268,7 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_result_methods_preserve_the_delegated_failure_instance(): void {
-		$failure      = new Failure( new ApiError( ApiErrorCode::BackendRejected, 'Scripted failure.' ) );
+		$failure      = new Failure( new ApiError( ErrorCode::BackendRejected, 'Scripted failure.' ) );
 		$run_id       = '00000000001700000000-0000000000000000042';
 		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( $failure ) );
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( $failure ) );

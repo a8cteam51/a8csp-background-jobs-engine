@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;

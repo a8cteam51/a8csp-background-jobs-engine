@@ -1,18 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Run;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Gives one work invocation controlled access to its own run.
  *
- * @internal
- *
  * @since   1.0.0
  * @version 1.0.0
  */
-interface RunContextInterface {
+interface RunContext {
 	// region METHODS
 
 	/**

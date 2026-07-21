@@ -4,8 +4,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;

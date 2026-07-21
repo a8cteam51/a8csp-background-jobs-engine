@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
@@ -440,12 +440,12 @@ final class JobRegistryTest extends TestCase {
 			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $args    Unused job arguments.
-			 * @param   RunContextInterface     $context Unused run context.
+			 * @param   RunContext     $context Unused run context.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function handle( array $args, RunContextInterface $context ): void {}
+			public function handle( array $args, RunContext $context ): void {}
 
 			/**
 			 * Returns an empty queue for the registry-only contract.
@@ -454,12 +454,12 @@ final class JobRegistryTest extends TestCase {
 			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $start_args Unused start arguments.
-			 * @param   RunContextInterface     $context    Unused run context.
+			 * @param   RunContext     $context    Unused run context.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
+			public function generate_queue( array $start_args, RunContext $context ): iterable {
 				return array();
 			}
 
@@ -470,12 +470,12 @@ final class JobRegistryTest extends TestCase {
 			 * @version 1.0.0
 			 *
 			 * @param   array<array-key, mixed> $chunk_args Unused chunk arguments.
-			 * @param   ChunkContextInterface   $context    Unused chunked job context.
+			 * @param   ChunkContext   $context    Unused chunked job context.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
 
 			/**
 			 * Accepts an unused chunked job completion.

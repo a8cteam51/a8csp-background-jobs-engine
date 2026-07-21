@@ -2,15 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
@@ -151,8 +151,8 @@ final readonly class FailureLifecycle {
 		$error         = JobType::ChunkedJob === $work_type && $throwable instanceof InvalidChunkException
 			? new EngineError( $throwable->getMessage(), \InvalidArgumentException::class )
 			: EngineError::from_throwable( $throwable );
-		if ( $throwable instanceof NonRetryableExceptionInterface ) {
-			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ApiErrorCode::ExecutionFailed, $chunk_args );
+		if ( $throwable instanceof NonRetryableException ) {
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -164,7 +164,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $work_type, $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -174,7 +174,7 @@ final readonly class FailureLifecycle {
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ApiErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $work_type, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $chunk_args );
 
 			return;
 		}
@@ -205,12 +205,12 @@ final readonly class FailureLifecycle {
 	 * @param   EngineError                  $error         Terminal failure detail.
 	 * @param   int                          $attempts_used Attempts consumed by the invocation.
 	 * @param   RunFailureStage              $stage         Terminalization stage.
-	 * @param   ApiErrorCode                 $code          Machine-readable cause classification.
+	 * @param   ErrorCode                    $code          Machine-readable cause classification.
 	 * @param   array<array-key, mixed>|null $chunk_args    Chunked Job chunk arguments, or null for a job.
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( JobType $work_type, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ApiErrorCode $code, ?array $chunk_args ): void {
+	private function fail_terminally( JobType $work_type, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $chunk_args ): void {
 		if ( JobType::ChunkedJob === $work_type ) {
 			$this->terminal_transitions->fail_chunked_job( $contract, $identity, $run_id, $state, $run_store, $error, $stage, $code, $chunk_args, $attempts_used );
 
@@ -275,7 +275,7 @@ final readonly class FailureLifecycle {
 	 * @param   string      $retry_stage Pending-action stage for another attempt.
 	 * @param   string      $retry_hook  Scheduler hook for another attempt.
 	 *
-	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ApiErrorCode}|null Exact failed state and
+	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
 	private function reschedule_retry( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage, string $retry_hook ): ?array {
@@ -287,7 +287,7 @@ final readonly class FailureLifecycle {
 					'state' => $state,
 					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $work_type->value, $identity ) ),
 					'stage' => RunFailureStage::Scheduling,
-					'code'  => ApiErrorCode::BackendRejected,
+					'code'  => ErrorCode::BackendRejected,
 				);
 			}
 		} catch ( \Throwable $throwable ) {
@@ -295,7 +295,7 @@ final readonly class FailureLifecycle {
 				'state' => $state,
 				'error' => EngineError::retry_preparation( $work_type, $identity, $throwable ),
 				'stage' => RunFailureStage::Scheduling,
-				'code'  => ApiErrorCode::EngineUnavailable,
+				'code'  => ErrorCode::EngineUnavailable,
 			);
 		}
 
@@ -311,7 +311,7 @@ final readonly class FailureLifecycle {
 				'state' => $state,
 				'error' => EngineError::retry_state( $work_type, $identity, $throwable ),
 				'stage' => RunFailureStage::Scheduling,
-				'code'  => ApiErrorCode::EngineUnavailable,
+				'code'  => ErrorCode::EngineUnavailable,
 			);
 		}
 
@@ -342,7 +342,7 @@ final readonly class FailureLifecycle {
 				'state' => $state,
 				'error' => EngineError::retry_preparation( $work_type, $identity, $throwable ),
 				'stage' => RunFailureStage::Execution,
-				'code'  => ApiErrorCode::ExecutionFailed,
+				'code'  => ErrorCode::ExecutionFailed,
 			);
 		}
 
@@ -379,7 +379,7 @@ final readonly class FailureLifecycle {
 				'state' => $state,
 				'error' => EngineError::retry_preparation( $work_type, $identity, $throwable ),
 				'stage' => RunFailureStage::Scheduling,
-				'code'  => ApiErrorCode::BackendUnavailable,
+				'code'  => ErrorCode::BackendUnavailable,
 			);
 		}
 	}

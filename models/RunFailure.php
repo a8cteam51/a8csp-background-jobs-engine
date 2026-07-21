@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -13,7 +13,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class RunFailure implements ErrorInterface {
+final readonly class RunFailure {
 	// region MAGIC METHODS
 
 	/**
@@ -26,7 +26,7 @@ final readonly class RunFailure implements ErrorInterface {
 	 * @param   string                       $run_id       Run identifier.
 	 * @param   int                          $attempts     Attempts consumed before terminal failure.
 	 * @param   RunFailureStage              $stage        Terminalization stage.
-	 * @param   ApiErrorCode                 $code         Machine-readable cause classification.
+	 * @param   ErrorCode                    $code         Machine-readable cause classification.
 	 * @param   string                       $summary      Engine-authored redacted failure summary.
 	 * @param   array<array-key, mixed>|null $failed_chunk Chunked Job chunk arguments for the failing chunk, or null for a job or non-chunk failure.
 	 */
@@ -35,7 +35,7 @@ final readonly class RunFailure implements ErrorInterface {
 		public string $run_id,
 		public int $attempts,
 		public RunFailureStage $stage,
-		public ApiErrorCode $code,
+		public ErrorCode $code,
 		public string $summary,
 		public ?array $failed_chunk,
 	) {}

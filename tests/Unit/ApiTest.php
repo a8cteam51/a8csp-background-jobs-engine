@@ -4,11 +4,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -171,9 +171,9 @@ final class ApiTest extends TestCase {
 	public function test_concept_facades_map_internal_failures_to_public_codes(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
 
-		self::assert_api_failure( $client->jobs()->enqueue( 'missing-job' ), ApiErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $client->chunked_jobs()->start( 'missing-chunked-job' ), ApiErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $client->schedules()->dispatch_now( 'missing-schedule' ), ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
+		self::assert_api_failure( $client->jobs()->enqueue( 'missing-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->chunked_jobs()->start( 'missing-chunked-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->schedules()->dispatch_now( 'missing-schedule' ), ErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 
 	/**
@@ -325,7 +325,7 @@ final class ApiTest extends TestCase {
 
 		$result = $client->runs()->retry_failed( 'sync', '00000000001700000000-0000000000000000042' );
 
-		self::assert_api_failure( $result, ApiErrorCode::StorageFailure, array( 'option_name' ) );
+		self::assert_api_failure( $result, ErrorCode::StorageFailure, array( 'option_name' ) );
 		if ( ! $result instanceof Failure || ! $result->error instanceof ApiError ) {
 			throw new \LogicException( 'The storage failure did not retain its public API error.' );
 		}
@@ -382,7 +382,7 @@ final class ApiTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   AbstractResult $result       Public API result.
-	 * @param   ApiErrorCode   $code         Expected stable error code.
+	 * @param   ErrorCode   $code         Expected stable error code.
 	 * @param   array          $context_keys Expected public context keys.
 	 *
 	 * @return  void
@@ -390,7 +390,7 @@ final class ApiTest extends TestCase {
 	 * @phpstan-param AbstractResult<mixed, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface> $result
 	 * @phpstan-param list<string> $context_keys
 	 */
-	private static function assert_api_failure( AbstractResult $result, ApiErrorCode $code, array $context_keys ): void {
+	private static function assert_api_failure( AbstractResult $result, ErrorCode $code, array $context_keys ): void {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( $code, $result->error->code );

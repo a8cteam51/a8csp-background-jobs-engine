@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
@@ -601,7 +601,7 @@ final readonly class Dispatcher {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_job( $job, $job_name, $run_id, $state, $run_store, $error, 1, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_job( $job, $job_name, $run_id, $state, $run_store, $error, 1, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
 
 			return new Failure( $error );
 		}

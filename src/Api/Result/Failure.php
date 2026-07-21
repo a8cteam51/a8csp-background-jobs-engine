@@ -13,6 +13,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
  * additional type check. Exceptions remain reserved for unexpected infrastructure failures and
  * programmer errors rather than expected domain outcomes.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  *

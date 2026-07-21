@@ -5,10 +5,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
@@ -253,7 +253,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $collision );
 		$error = $this->api_error( $collision );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertStringContainsString( 'duplicate per-run overlap identity', $error->message );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
@@ -271,7 +271,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::StorageFailure, $error->code );
+		self::assertSame( ErrorCode::StorageFailure, $error->code );
 		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
@@ -291,7 +291,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertSame( 'run-incumbent', $error->context['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
@@ -318,7 +318,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertStringContainsString( 'could not confirm the owner', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
@@ -373,7 +373,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::BackendRejected, $error->code );
+		self::assertSame( ErrorCode::BackendRejected, $error->code );
 		self::assertNull( $this->lock_owner( $this->args_hash() ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}

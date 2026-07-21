@@ -3,9 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
@@ -170,7 +170,7 @@ final class RunStoreTest extends TestCase {
 		self::assertGreaterThanOrEqual( self::NOW, $retrying['heartbeat_at'] );
 		$this->rig->run_due();
 		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
-		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
 	/**
@@ -604,7 +604,7 @@ final class RunStoreTest extends TestCase {
 					'class'   => null,
 					'message' => 'Failure.',
 					'stage'   => 'unknown',
-					'code'    => ApiErrorCode::ExecutionFailed->value,
+					'code'    => ErrorCode::ExecutionFailed->value,
 				),
 			),
 			array( 'effects' => array() ),

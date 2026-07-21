@@ -18,6 +18,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
  * {@see \InvalidArgumentException}. A valid command refused by current registration, lock, backend,
  * storage, or run state returns `Failure<ApiError>`.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
@@ -228,7 +228,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::PayloadRejected );
+		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
@@ -280,8 +280,8 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::ExecutionFailed );
-		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
+		$this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 		self::assertSame(
 			array(
 				'a8csp_jobs_engine/started/' . self::IDENTITY,
@@ -329,7 +329,7 @@ final class DispatcherTest extends TestCase {
 			return;
 		}
 
-		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
@@ -359,7 +359,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
@@ -435,7 +435,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 
 		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
@@ -462,7 +462,7 @@ final class DispatcherTest extends TestCase {
 		);
 
 		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
@@ -486,7 +486,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
 
 		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
@@ -510,7 +510,7 @@ final class DispatcherTest extends TestCase {
 
 		$duplicate = $this->client->jobs()->enqueue( self::NAME, array( 'site_id' => 8 ) );
 
-		$error = $this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertSame( $first->value, $error->context['run_id'] ?? null );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
@@ -528,7 +528,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->jobs()->enqueue( self::UNKNOWN_NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ApiErrorCode::UnknownWork );
+		$error = $this->assert_failure_code( $result, ErrorCode::UnknownWork );
 		self::assertSame( self::UNKNOWN_IDENTITY, $error->context['name'] ?? null );
 		self::assertSame( $before, $this->public_effects_snapshot() );
 	}
@@ -567,7 +567,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
 
 		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
-		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 
 		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
@@ -592,9 +592,9 @@ final class DispatcherTest extends TestCase {
 
 		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
 		$missing = $this->client->runs()->cancel( self::NAME, self::RUN_ID );
-		$this->assert_failure_code( $missing, ApiErrorCode::RunNotRetained );
+		$this->assert_failure_code( $missing, ErrorCode::RunNotRetained );
 
 		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $retried );
@@ -617,7 +617,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		$record = $this->scheduling_rollback_warning();
 		self::assertSame( 'warning', $record['level'] ?? null );
 		self::assertSame( self::IDENTITY, $record['context']['name'] ?? null );
@@ -678,7 +678,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 10 );
 
-		$this->assert_failure_code( $result, ApiErrorCode::PayloadRejected );
+		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
@@ -731,7 +731,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$consumed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
-		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
+		$this->assert_failure_code( $consumed, ErrorCode::RunNotRetained );
 	}
 
 	/**
@@ -752,10 +752,10 @@ final class DispatcherTest extends TestCase {
 
 		$retry = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
 
-		$error = $this->assert_failure_code( $retry, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $retry, ErrorCode::OverlapHeld );
 		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
 		$still_retained = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
-		$this->assert_failure_code( $still_retained, ApiErrorCode::OverlapHeld );
+		$this->assert_failure_code( $still_retained, ErrorCode::OverlapHeld );
 	}
 
 	/**
@@ -859,7 +859,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 
-		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
@@ -876,7 +876,7 @@ final class DispatcherTest extends TestCase {
 		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 
 		$missing = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
-		$error   = $this->assert_failure_code( $missing, ApiErrorCode::RunNotRetained );
+		$error   = $this->assert_failure_code( $missing, ErrorCode::RunNotRetained );
 		self::assertSame( self::OTHER_RUN_ID, $error->context['run_id'] ?? null );
 
 		$retained = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
@@ -896,7 +896,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
 
 		$failed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
-		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
@@ -1051,7 +1051,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: $attempts, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: $attempts, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
 		$this->reset_observations();
 	}
@@ -1079,7 +1079,7 @@ final class DispatcherTest extends TestCase {
 				'class'   => null,
 				'message' => 'Database unavailable.',
 				'stage'   => RunFailureStage::Execution->value,
-				'code'    => ApiErrorCode::ExecutionFailed->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
 			),
 		);
 	}
@@ -1268,11 +1268,11 @@ final class DispatcherTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   mixed        $result Facade result.
-	 * @param   ApiErrorCode $code   Expected public code.
+	 * @param   ErrorCode $code   Expected public code.
 	 *
 	 * @return  ApiError
 	 */
-	private function assert_failure_code( mixed $result, ApiErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
 		self::assertInstanceOf( ApiError::class, $error );

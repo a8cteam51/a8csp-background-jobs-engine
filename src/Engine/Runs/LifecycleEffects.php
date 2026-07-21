@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
@@ -509,7 +509,7 @@ final readonly class LifecycleEffects {
 			// Terminal transitions encode enum-backed values, and store reads reject unknown values before replay.
 			return array(
 				'error'   => $error,
-				'failure' => new RunFailure( identity: $identity, run_id: $run_id, attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ApiErrorCode::from( $state->error['code'] ), summary: $error->message, failed_chunk: $state->error['failed_chunk'] ?? null, ),
+				'failure' => new RunFailure( identity: $identity, run_id: $run_id, attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, failed_chunk: $state->error['failed_chunk'] ?? null, ),
 			);
 		}
 
@@ -525,7 +525,7 @@ final readonly class LifecycleEffects {
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: $run_id, attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::CrashReclaim, code: ApiErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
+			'failure' => new RunFailure( identity: $identity, run_id: $run_id, attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::CrashReclaim, code: ErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
 		);
 	}
 

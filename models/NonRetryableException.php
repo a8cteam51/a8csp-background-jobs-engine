@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -10,4 +10,4 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
  * @since   1.0.0
  * @version 1.0.0
  */
-class NonRetryableException extends \RuntimeException implements NonRetryableExceptionInterface {}
+class NonRetryableException extends \RuntimeException {}

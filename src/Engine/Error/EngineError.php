@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 
@@ -99,19 +99,19 @@ final readonly class EngineError implements ErrorInterface {
 	 *
 	 * @param   SchedulingError $error Scheduling failure.
 	 *
-	 * @return  ApiErrorCode
+	 * @return  ErrorCode
 	 */
-	public static function api_code_for_scheduling( SchedulingError $error ): ApiErrorCode {
+	public static function api_code_for_scheduling( SchedulingError $error ): ErrorCode {
 		if ( SchedulingErrorReason::BackendNotReady === $error->reason ) {
-			return ApiErrorCode::BackendUnavailable;
+			return ErrorCode::BackendUnavailable;
 		}
 
 		// Registry persistence failures classify as storage regardless of which path surfaces them.
 		if ( SchedulingErrorReason::StorageFailure === $error->reason ) {
-			return ApiErrorCode::StorageFailure;
+			return ErrorCode::StorageFailure;
 		}
 
-		return ApiErrorCode::BackendRejected;
+		return ErrorCode::BackendRejected;
 	}
 
 	/**

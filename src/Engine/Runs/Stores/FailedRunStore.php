@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
@@ -566,7 +566,7 @@ final readonly class FailedRunStore {
 			|| ! \is_string( $error['stage'] ?? null )
 			|| null === RunFailureStage::tryFrom( $error['stage'] )
 			|| ! \is_string( $error['code'] ?? null )
-			|| null === ApiErrorCode::tryFrom( $error['code'] )
+			|| null === ErrorCode::tryFrom( $error['code'] )
 		) {
 			return null;
 		}

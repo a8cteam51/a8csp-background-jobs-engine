@@ -1,15 +1,15 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\ChunkedJob;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\AbstractChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -17,16 +17,21 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the defaults inherited by chunked job implementations.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
-#[CoversClass( AbstractChunkedJob::class )]
+#[CoversClass( ChunkedJob::class )]
 #[UsesClass( RetryPolicy::class )]
 #[UsesClass( RunFailure::class )]
 #[UsesClass( OverlapPolicy::class )]
-final class AbstractChunkedJobTest extends TestCase {
+final class ChunkedJobTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
 	 * Loads WordPress constants before the default retry policy is first instantiated.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -36,7 +41,7 @@ final class AbstractChunkedJobTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 
-		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
+		require_once __DIR__ . '/wp-time-constant-stubs.php';
 	}
 
 	// endregion.
@@ -45,6 +50,9 @@ final class AbstractChunkedJobTest extends TestCase {
 
 	/**
 	 * A chunked job inherits the shared execution and overlap invariants.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -58,6 +66,9 @@ final class AbstractChunkedJobTest extends TestCase {
 
 	/**
 	 * A chunked job that supplies only its identity and work methods receives a fresh default policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -75,11 +86,14 @@ final class AbstractChunkedJobTest extends TestCase {
 	/**
 	 * Terminal notifications are optional for subclasses.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_terminal_callbacks_are_no_ops(): void {
 		$chunked_job = self::chunked_job();
-		$failure     = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: 'run-7', attempts: 3, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Background-work execution failed.', failed_chunk: array( 'post_id' => 42 ), );
+		$failure     = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: 'run-7', attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed.', failed_chunk: array( 'post_id' => 42 ), );
 
 		$chunked_job->on_completed( 'run-7', array( 'post_type' => 'post' ), null );
 		$chunked_job->on_failed( 'run-7', array( 'post_type' => 'post' ), $failure );
@@ -94,12 +108,22 @@ final class AbstractChunkedJobTest extends TestCase {
 	/**
 	 * Returns a concrete chunked job that supplies only its required work methods.
 	 *
-	 * @return  AbstractChunkedJob
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  ChunkedJob
 	 */
-	private static function chunked_job(): AbstractChunkedJob {
-		return new class() extends AbstractChunkedJob {
+	private static function chunked_job(): ChunkedJob {
+		return new class() extends ChunkedJob {
 
-			/** {@inheritDoc} */
+			/**
+			 * {@inheritDoc}
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @return  string
+			 */
 			#[\Override]
 			public function get_name(): string {
 				return 'refresh-index';
@@ -108,26 +132,32 @@ final class AbstractChunkedJobTest extends TestCase {
 			/**
 			 * {@inheritDoc}
 			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-			 * @param   RunContextInterface     $context    Controlled access to this run.
+			 * @param   RunContext              $context    Controlled access to this run.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
+			public function generate_queue( array $start_args, RunContext $context ): iterable {
 				return array();
 			}
 
 			/**
 			 * {@inheritDoc}
 			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
 			 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-			 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+			 * @param   ChunkContext            $context    Controlled access to this chunk's run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
 
 		};
 	}

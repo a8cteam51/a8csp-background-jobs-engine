@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Error;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -33,10 +33,10 @@ final class ApiErrorTest extends TestCase {
 	 */
 	public function test_carries_the_public_admission_failure_contract(): void {
 		$context = array( 'run_id' => 'run-incumbent' );
-		$error   = new ApiError( ApiErrorCode::OverlapHeld, 'The work is already running.', $context );
+		$error   = new ApiError( ErrorCode::OverlapHeld, 'The work is already running.', $context );
 
 		self::assertInstanceOf( ErrorInterface::class, $error );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertSame( 'The work is already running.', $error->message );
 		self::assertSame( $context, $error->context );
 	}
@@ -47,7 +47,7 @@ final class ApiErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_context_defaults_to_an_empty_array(): void {
-		$error = new ApiError( ApiErrorCode::BackendUnavailable, 'No backend is ready.' );
+		$error = new ApiError( ErrorCode::BackendUnavailable, 'No backend is ready.' );
 
 		self::assertSame( array(), $error->context );
 	}

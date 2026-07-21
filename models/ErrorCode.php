@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,7 +12,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
  * @since   1.0.0
  * @version 1.0.0
  */
-enum ApiErrorCode: string {
+enum ErrorCode: string {
 	// region FIELDS AND CONSTANTS
 
 	/** The engine cannot prepare or continue the requested operation. */

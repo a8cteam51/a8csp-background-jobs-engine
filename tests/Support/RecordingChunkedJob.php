@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 
 /**
  * Records chunked job lifecycle invocations with optional observation callbacks and failures.
@@ -30,14 +30,14 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	/**
 	 * Queue-generation contexts in call order.
 	 *
-	 * @var list<RunContextInterface>
+	 * @var list<RunContext>
 	 */
 	public array $generate_contexts = array();
 
 	/**
 	 * Chunk-processing arguments and contexts in call order.
 	 *
-	 * @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}>
+	 * @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContext}>
 	 */
 	public array $process_calls = array();
 
@@ -94,7 +94,7 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	/**
 	 * Observation run after recording chunk processing and before an optional failure.
 	 *
-	 * @var (\Closure(array<array-key, mixed>, ChunkContextInterface): void)|null
+	 * @var (\Closure(array<array-key, mixed>, ChunkContext): void)|null
 	 */
 	public ?\Closure $on_process = null;
 
@@ -159,12 +159,12 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	 * Records queue generation before applying scripted behavior.
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   RunContextInterface     $context    Controlled access to this run.
+	 * @param   RunContext     $context    Controlled access to this run.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
 	#[\Override]
-	public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
+	public function generate_queue( array $start_args, RunContext $context ): iterable {
 		$this->generate_calls[]    = $start_args;
 		$this->generate_contexts[] = $context;
 		$this->record_lifecycle_event( 'generate' );
@@ -187,12 +187,12 @@ final class RecordingChunkedJob implements ChunkedJobInterface {
 	 * Records one chunk invocation before applying scripted behavior.
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+	 * @param   ChunkContext   $context    Controlled access to this chunk's run.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {
+	public function process_chunk( array $chunk_args, ChunkContext $context ): void {
 		$this->process_calls[] = array(
 			'chunk_args' => $chunk_args,
 			'context'    => $context,

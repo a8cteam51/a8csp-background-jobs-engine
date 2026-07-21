@@ -1,22 +1,20 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
-
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Gives a chunked job chunk controlled access to its own run.
  *
- * Queue mutations are transactional within a `ChunkedJobInterface::process_chunk()` attempt: they take
+ * Queue mutations are transactional within a `ChunkedJob::process_chunk()` attempt: they take
  * effect only when the attempt returns normally and are discarded when it throws, so retrying a
  * failed chunk cannot duplicate queued work.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-interface ChunkContextInterface extends RunContextInterface {
+interface ChunkContext extends RunContext {
 	// region METHODS
 
 	/**

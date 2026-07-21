@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 
 /**
  * Records job invocations with an optional observation callback and failure.
@@ -22,7 +22,7 @@ final class RecordingJob implements OneOffJobInterface {
 	/**
 	 * Handler contexts in call order.
 	 *
-	 * @var list<RunContextInterface>
+	 * @var list<RunContext>
 	 */
 	public array $contexts = array();
 
@@ -130,12 +130,12 @@ final class RecordingJob implements OneOffJobInterface {
 	 * Records one job invocation before applying scripted behavior.
 	 *
 	 * @param   array<array-key, mixed> $args    Invocation arguments.
-	 * @param   RunContextInterface     $context Controlled access to this run.
+	 * @param   RunContext     $context Controlled access to this run.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args, RunContextInterface $context ): void {
+	public function handle( array $args, RunContext $context ): void {
 		$this->calls[]    = $args;
 		$this->contexts[] = $context;
 

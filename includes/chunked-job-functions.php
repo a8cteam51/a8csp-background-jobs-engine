@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface as InternalChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext as InternalChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface as InternalChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure as InternalFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as InternalRunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure as InternalFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext as InternalRunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;

@@ -1,20 +1,18 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Supplies default callback-runtime, retry, and terminal-notification behavior for chunked job implementations.
+ * Supplies default callback-runtime and retry policies for job implementations.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-abstract class AbstractChunkedJob implements ChunkedJobInterface {
+abstract class Job implements OneOffJobInterface {
 	// region INHERITED METHODS
 
 	/**

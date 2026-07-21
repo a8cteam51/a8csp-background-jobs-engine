@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
@@ -85,7 +85,7 @@ final class EngineRigTest extends TestCase {
 
 			$rig->run_due();
 
-			$rig->assert_failed( ApiErrorCode::ExecutionFailed );
+			$rig->assert_failed( ErrorCode::ExecutionFailed );
 			$rig->assert_no_retry();
 		} finally {
 			$rig->tear_down();
@@ -164,7 +164,7 @@ final class EngineRigTest extends TestCase {
 		self::assertSame( 'Job', self::decoded( $run_raw )['kind'] ?? null );
 		self::assertSame( self::ARGS, self::decoded( $run_raw )['start_args'] ?? null );
 
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
 
 		[ $failed_name, $failed_raw ] = $fixtures->failed( self::NOW, self::ARGS, $failure, new EngineError( $failure->summary ) );
 		self::assertSame( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $failed_name );

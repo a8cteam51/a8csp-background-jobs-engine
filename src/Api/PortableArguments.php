@@ -11,6 +11,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
  * persist in engine-owned storage, while scheduling backends carry only the delivery token; handlers
  * resolve the persisted values byte-faithfully after delivery.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

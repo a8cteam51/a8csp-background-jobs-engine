@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -217,7 +217,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( $failed_run_id, $failure->run_id );
 		self::assertSame( 2, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );

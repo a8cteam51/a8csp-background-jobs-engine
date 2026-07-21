@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule;
 /**
  * Policy applied when a schedule occurrence is discovered after its due instant.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

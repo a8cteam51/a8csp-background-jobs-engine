@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Result;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
@@ -105,7 +105,7 @@ final class ResultTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_predicate_branches_expose_the_narrowed_payload(): void {
-		$error = new ApiError( ApiErrorCode::BackendUnavailable, 'Load a supported scheduling backend.' );
+		$error = new ApiError( ErrorCode::BackendUnavailable, 'Load a supported scheduling backend.' );
 
 		self::assertSame( 42, $this->read_narrowed_result( new Success( 42 ) ) );
 		self::assertSame( $error->message, $this->read_narrowed_result( new Failure( $error ) ) );

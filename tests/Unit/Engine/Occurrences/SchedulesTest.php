@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
@@ -229,7 +229,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::PayloadRejected, $result->error->code );
+		self::assertSame( ErrorCode::PayloadRejected, $result->error->code );
 		self::assertSame( array(), $this->write_calls() );
 	}
 
@@ -296,7 +296,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( array(), $backend->calls );
 		$backend->assert_not_scheduled( 'owner-a:nightly' );
 		self::assertSame( $before, $this->raw_registry() );
@@ -365,7 +365,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
@@ -396,7 +396,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 		self::assertSame( array(), $this->write_calls() );
@@ -421,7 +421,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $result->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $result->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $before, $this->raw_registry() );
 		self::assertSame( 300, $this->owner_entries( 'owner-a' )[0]['recurrence'] ?? null );
@@ -443,7 +443,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( ApiError::class, $failed->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $failed->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
 		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'name' ) );
 
 		unset( $this->rig->backend()->results['schedule_recurring'] );
@@ -475,7 +475,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( ApiError::class, $failed->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $failed->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
 		$failed_entry = $this->owner_entries( 'owner-a' )[0];
 		self::assertSame( 600, $failed_entry['recurrence'] ?? null );
@@ -514,7 +514,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( ApiError::class, $failed->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $failed->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $failed->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $fixture[1], $this->raw_registry() );
 		$this->rig->backend()->assert_not_scheduled( 'owner-a:nightly' );

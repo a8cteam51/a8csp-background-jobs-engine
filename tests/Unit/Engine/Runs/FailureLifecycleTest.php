@@ -2,18 +2,18 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
@@ -270,7 +270,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( 1, $terminal_failures );
-		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
 	/**
@@ -340,7 +340,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		self::assertSame( array( self::ARGS, self::ARGS ), $this->job->calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 2, $failure->attempts );
 	}
 
@@ -370,7 +370,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( $contract, $observed );
-		self::assertSame( 1, $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution )->attempts );
+		self::assertSame( 1, $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution )->attempts );
 		$this->rig->assert_no_retry();
 	}
 
@@ -455,7 +455,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( array(), $this->rig->randomizer()->calls );
 	}
@@ -509,7 +509,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
 	}
 
 	/**
@@ -563,7 +563,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
-		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -628,7 +628,7 @@ final class FailureLifecycleTest extends TestCase {
 			$this->rig->run_due();
 		}
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
 	}
 
@@ -672,7 +672,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 	}
@@ -729,12 +729,12 @@ final class FailureLifecycleTest extends TestCase {
 			 * Fails every attempt with a retryable throwable.
 			 *
 			 * @param   array<array-key, mixed> $args    Job arguments.
-			 * @param   RunContextInterface     $context Controlled access to this run.
+			 * @param   RunContext     $context Controlled access to this run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function handle( array $args, RunContextInterface $context ): void {
+			public function handle( array $args, RunContext $context ): void {
 				throw new \RuntimeException( 'Database unavailable.' );
 			}
 
@@ -748,12 +748,12 @@ final class FailureLifecycleTest extends TestCase {
 			 * Returns an empty queue.
 			 *
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-			 * @param   RunContextInterface     $context    Controlled access to this run.
+			 * @param   RunContext     $context    Controlled access to this run.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
+			public function generate_queue( array $start_args, RunContext $context ): iterable {
 				return array();
 			}
 
@@ -761,12 +761,12 @@ final class FailureLifecycleTest extends TestCase {
 			 * Processes nothing.
 			 *
 			 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-			 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+			 * @param   ChunkContext   $context    Controlled access to this chunk's run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
 
 			/**
 			 * Observes nothing.
@@ -838,12 +838,12 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode    $code  Expected failure code.
+	 * @param   ErrorCode    $code  Expected failure code.
 	 * @param   RunFailureStage $stage Expected failure stage.
 	 *
 	 * @return  RunFailure
 	 */
-	private function assert_failure( ApiErrorCode $code, RunFailureStage $stage ): RunFailure {
+	private function assert_failure( ErrorCode $code, RunFailureStage $stage ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
 		self::assertNotEmpty( $events );
 		$failure = $events[ \count( $events ) - 1 ][3] ?? null;

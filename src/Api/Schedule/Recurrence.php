@@ -10,6 +10,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule;
  * An optional anchor is a canonical phase offset in UTC Unix seconds. Anchored occurrences retain
  * that phase modulo the interval without introducing site-local or calendar-time semantics.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

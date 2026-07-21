@@ -2,17 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
@@ -267,7 +266,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_retry();
 	}
@@ -398,7 +397,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
@@ -421,7 +420,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'private-payload-must-not-leak', $failure->summary );
 	}
 
@@ -521,7 +520,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 		self::assertSame( 'Chunked Job queue chunk at index 0 contains 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
 	}
 
@@ -571,7 +570,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 		self::assertSame( 'Chunked Job queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', $failure->summary );
 	}
 
@@ -608,7 +607,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 	}
 
 	/**
@@ -631,7 +630,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'credential secret', $failure->summary );
 	}
 
@@ -650,7 +649,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
 		self::assertStringNotContainsString( 'filtered-private-payload', $failure->summary );
 	}
 
@@ -817,7 +816,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		\do_action( ActionDeliveries::CONTINUE_HOOK, self::IDENTITY, self::RUN_ID, 2 );
 
-		$this->assert_failure( ApiErrorCode::UnknownWork, RunFailureStage::Execution, $current );
+		$this->assert_failure( ErrorCode::UnknownWork, RunFailureStage::Execution, $current );
 	}
 
 	/**
@@ -910,7 +909,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
 		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', 75 );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ) use ( $current ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ) use ( $current ): void {
 			self::assertSame( $current, $chunk );
 			self::assertSame( self::RUN_ID, $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
@@ -922,7 +921,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertInstanceOf( ChunkContextInterface::class, $this->chunked_job->process_calls[0]['context'] ?? null );
+		self::assertInstanceOf( ChunkContext::class, $this->chunked_job->process_calls[0]['context'] ?? null );
 		self::assertSame( array( array( 'chunk' => 'prepended-2' ), array( 'chunk' => 'prepended-1' ), array( 'chunk' => 'remaining' ), array( 'chunk' => 'appended' ) ), $this->run_state()['queue'] ?? null );
 		self::assertSame( self::NOW + 195, $this->single_call_for_hook( 'a8csp_jobs_engine/continue_chunked_job' )['args']['timestamp'] ?? null );
 	}
@@ -943,7 +942,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$current                         = array( 'chunk' => 'current' );
 		$this->chunked_job->retry_policy = new RetryPolicy( max_attempts: 1 );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ) use ( $invalid_value, $mutation ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ) use ( $invalid_value, $mutation ): void {
 			if ( 'enqueue' === $mutation ) {
 				$context->enqueue( array( 'callback-private-payload' => $invalid_value ) );
 
@@ -955,7 +954,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 		self::assertStringNotContainsString( 'callback-private-payload', $failure->summary );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 	}
@@ -975,7 +974,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$chunk                           = self::chunk_with_json_bytes( $json_bytes );
 		$this->chunked_job->retry_policy = new RetryPolicy( max_attempts: 1 );
 		$this->prepare_scheduled_chunk( array( $current ) );
-		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $chunk, $mutation ): void {
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkContext $context ) use ( $chunk, $mutation ): void {
 			if ( 'enqueue' === $mutation ) {
 				$context->enqueue( $chunk );
 
@@ -994,7 +993,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 	}
 
 	/**
@@ -1049,7 +1048,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->prepare_scheduled_chunk( array( $current, ...$candidate ) );
 		$this->chunked_job->queue            = array();
 		$this->rig->wpdb()->recorded_queries = array();
-		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
+		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkContext $context ) use ( $mutation, $mutation_chunk ): void {
 			if ( 'enqueue' === $mutation ) {
 				$context->enqueue( $mutation_chunk );
 
@@ -1070,7 +1069,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 	}
 
 	/**
@@ -1240,7 +1239,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_supersedes_after_chunk_work_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process = function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process = function ( array $chunk, ChunkContext $context ): void {
 			$context->enqueue( array( 'chunk' => 'discarded' ) );
 			$this->install_foreign_generation( self::NOW );
 		};
@@ -1289,7 +1288,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_fails_terminally_when_continue_scheduling_fails(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkContext $context ): void {
 			$context->prepend( array( 'chunk' => 'committed-front' ) );
 			$context->enqueue( array( 'chunk' => 'committed-back' ) );
 		};
@@ -1297,7 +1296,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1312,7 +1311,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_fails_terminally_when_continue_delay_filter_throws(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ): void {
 			$context->enqueue( array( 'chunk' => 'committed' ) );
 		};
 		$this->set_filter_value(
@@ -1324,7 +1323,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 	}
 
@@ -1397,7 +1396,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$current                         = array( 'chunk' => 'current' );
 		$this->chunked_job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process        = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process        = static function ( array $chunk, ChunkContext $context ): void {
 			$context->prepend( array( 'chunk' => 'discarded-front' ) );
 			$context->enqueue( array( 'chunk' => 'discarded-back' ) );
 		};
@@ -1514,7 +1513,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
+		$failure = $this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
 		self::assertSame( 1, $failure->attempts );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
@@ -1535,7 +1534,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ApiErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 	}
@@ -1603,7 +1602,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_cleanup_action_completes_and_logs_when_on_completed_throws(): void {
 		$this->prepare_cleanup_delivery();
-		$this->chunked_job->completed_throwable = new class( 'on_completed callback exploded.' ) extends \Error implements NonRetryableExceptionInterface {};
+		$this->chunked_job->completed_throwable = new class( 'on_completed callback exploded.' ) extends NonRetryableException {};
 
 		$this->rig->run_due();
 
@@ -1684,7 +1683,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1707,7 +1706,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		self::assertSame( array( $current ), \array_column( $this->chunked_job->process_calls, 'chunk_args' ) );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1729,7 +1728,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ApiErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -1944,13 +1943,13 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode                 $code         Expected failure code.
+	 * @param   ErrorCode                 $code         Expected failure code.
 	 * @param   RunFailureStage              $stage        Expected failure stage.
 	 * @param   array<array-key, mixed>|null $failed_chunk Expected failed chunk.
 	 *
 	 * @return  RunFailure
 	 */
-	private function assert_failure( ApiErrorCode $code, RunFailureStage $stage, ?array $failed_chunk ): RunFailure {
+	private function assert_failure( ErrorCode $code, RunFailureStage $stage, ?array $failed_chunk ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
 		self::assertNotEmpty( $events );
 		$failure = $events[ \count( $events ) - 1 ][3] ?? null;

@@ -3,8 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,6 +13,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
  * Contract for background work split into independently processed chunks.
  *
  * Queue generation defines the initial chunks, and processing handles one chunk.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -32,15 +35,15 @@ interface ChunkedJobInterface extends JobInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   RunContextInterface     $context    Controlled access to this run.
+	 * @param   RunContext              $context    Controlled access to this run.
 	 *
 	 * @throws  \Throwable When queue generation fails. The engine applies the retry policy and
-	 *                     re-enters queue generation while attempts remain; throwables implementing
-	 *                     NonRetryableExceptionInterface bypass remaining retry attempts.
+	 *                     re-enters queue generation while attempts remain; throwables extending
+	 *                     NonRetryableException bypass remaining retry attempts.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
-	public function generate_queue( array $start_args, RunContextInterface $context ): iterable;
+	public function generate_queue( array $start_args, RunContext $context ): iterable;
 
 	/**
 	 * Processes one queued chunk.
@@ -62,14 +65,14 @@ interface ChunkedJobInterface extends JobInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+	 * @param   ChunkContext            $context    Controlled access to this chunk's run.
 	 *
-	 * @throws  \Throwable When the chunk attempt fails. Throwables implementing
-	 *                     NonRetryableExceptionInterface bypass remaining retry attempts.
+	 * @throws  \Throwable When the chunk attempt fails. Throwables extending
+	 *                     NonRetryableException bypass remaining retry attempts.
 	 *
 	 * @return  void
 	 */
-	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void;
+	public function process_chunk( array $chunk_args, ChunkContext $context ): void;
 
 	// endregion
 }

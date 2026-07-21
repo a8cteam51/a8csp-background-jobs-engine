@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext as RunContextContract;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class RunContext implements RunContextInterface {
+final readonly class RunContext implements RunContextContract {
 	// region MAGIC METHODS
 
 	/**

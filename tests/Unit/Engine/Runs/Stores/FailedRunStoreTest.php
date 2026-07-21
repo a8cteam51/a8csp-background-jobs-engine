@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
@@ -261,7 +261,7 @@ final class FailedRunStoreTest extends TestCase {
 		$evicted = $this->client->runs()->retry_failed( self::NAME, $run_ids[0] );
 		self::assertInstanceOf( Failure::class, $evicted );
 		self::assertInstanceOf( ApiError::class, $evicted->error );
-		self::assertSame( ApiErrorCode::RunNotRetained, $evicted->error->code );
+		self::assertSame( ErrorCode::RunNotRetained, $evicted->error->code );
 
 		$this->job->throwable           = null;
 		$this->rig->randomizer()->value = 99;
@@ -270,7 +270,7 @@ final class FailedRunStoreTest extends TestCase {
 		$consumed = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Failure::class, $consumed );
 		self::assertInstanceOf( ApiError::class, $consumed->error );
-		self::assertSame( ApiErrorCode::RunNotRetained, $consumed->error->code );
+		self::assertSame( ErrorCode::RunNotRetained, $consumed->error->code );
 		$this->rig->run_due();
 		self::assertSame( array( 'index' => 1 ), $this->job->calls[21] ?? null );
 	}
@@ -322,7 +322,7 @@ final class FailedRunStoreTest extends TestCase {
 		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
+		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
 	}
 
 	/**
@@ -345,7 +345,7 @@ final class FailedRunStoreTest extends TestCase {
 		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::RunNotRetained, $result->error->code );
+		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
 	}
 
 	// endregion.
@@ -626,7 +626,7 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$this->rig->run_due();
-		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 
 		return $result->value;
 	}
@@ -645,7 +645,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
 
 		return array(
 			'failed_at'  => $failed_at,

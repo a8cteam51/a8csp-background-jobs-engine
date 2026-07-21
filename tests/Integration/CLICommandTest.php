@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
@@ -796,7 +796,7 @@ final class CLICommandTest extends IntegrationTestCase {
 					),
 				)
 			),
-			$builder->failed( self::FAILED_AT, array(), new RunFailure( identity: self::CANCEL_NAME, run_id: 'integration-cli-history-failed', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ), new EngineError( 'CLI history failure.' ) ),
+			$builder->failed( self::FAILED_AT, array(), new RunFailure( identity: self::CANCEL_NAME, run_id: 'integration-cli-history-failed', attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ), new EngineError( 'CLI history failure.' ) ),
 		);
 		foreach ( $fixtures as $fixture ) {
 			self::persist_store_fixture( $fixture );
@@ -1218,7 +1218,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private function seed_failed_run( string $name ): string {
 		$builder = StoreFixtureBuilder::for_identity( $name );
-		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 3, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
+		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
 		self::persist_store_fixture( $fixture );
 
 		return $fixture[0];

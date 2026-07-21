@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Backends;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
@@ -217,7 +217,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertSame( $secret, $internal->error->context['wp_error'] ?? null );
 		self::assertInstanceOf( Failure::class, $public );
 		self::assertInstanceOf( ApiError::class, $public->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $public->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $public->error->code );
 		self::assertArrayNotHasKey( 'wp_error', $public->error->context );
 		self::assertStringNotContainsString( $secret, $public->error->message );
 	}

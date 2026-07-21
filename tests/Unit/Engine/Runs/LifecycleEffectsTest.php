@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockClaimOutcome;
@@ -152,7 +152,7 @@ final class LifecycleEffectsTest extends TestCase {
 				'class'   => $error->exception_class,
 				'message' => $error->message,
 				'stage'   => RunFailureStage::Execution->value,
-				'code'    => ApiErrorCode::ExecutionFailed->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
 			)
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );

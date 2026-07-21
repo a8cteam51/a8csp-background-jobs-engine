@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs;
@@ -208,7 +208,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, self::RUN_ID );
 
-		$this->assert_failure_code( $result, ApiErrorCode::RunNotRetained );
+		$this->assert_failure_code( $result, ErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
 	}
 
@@ -226,7 +226,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, self::RUN_ID );
 
-		$this->assert_failure_code( $result, ApiErrorCode::RunNotRetained );
+		$this->assert_failure_code( $result, ErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
 	}
 
@@ -245,7 +245,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
 
-		$error = $this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
+		$error = $this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( 'completed', $error->context['status'] ?? null );
 		self::assertSame( $before, $this->cancellation_effects() );
 	}
@@ -269,7 +269,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
+		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled' ) );
@@ -298,7 +298,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
+		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( self::NOW + 1, $this->decoded_job_state()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 	}
@@ -326,7 +326,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
+		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertTrue( $this->decoded_job_state()['executing'] ?? false );
 		self::assertSame( array(), $this->job->calls );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
@@ -373,7 +373,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( 'unknown', self::RUN_ID );
 
-		$this->assert_failure_code( $result, ApiErrorCode::UnknownWork );
+		$this->assert_failure_code( $result, ErrorCode::UnknownWork );
 		self::assertSame( $before, $this->cancellation_effects() );
 	}
 
@@ -409,7 +409,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ApiErrorCode::RunNotCancellable );
+		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		$this->rig->backend()->assert_scheduled( self::CHUNKED_JOB_IDENTITY );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 	}
@@ -469,7 +469,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$second = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $second, ApiErrorCode::RunNotRetained );
+		$this->assert_failure_code( $second, ErrorCode::RunNotRetained );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 		$this->rig->assert_cancelled();
 	}
@@ -497,7 +497,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 	}
@@ -699,11 +699,11 @@ final class DispatcherCancelTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   mixed        $result Facade result.
-	 * @param   ApiErrorCode $code   Expected public code.
+	 * @param   ErrorCode $code   Expected public code.
 	 *
 	 * @return  ApiError
 	 */
-	private function assert_failure_code( mixed $result, ApiErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
 		self::assertInstanceOf( ApiError::class, $error );

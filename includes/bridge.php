@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Bridge;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure as InternalFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure as InternalFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 
 \defined( 'ABSPATH' ) || exit;
 

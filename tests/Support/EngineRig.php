@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
@@ -304,15 +304,15 @@ final class EngineRig {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode|string $code Expected failure code.
+	 * @param   ErrorCode|string $code Expected failure code.
 	 *
 	 * @return  void
 	 */
-	public function assert_failed( ApiErrorCode|string $code ): void {
+	public function assert_failed( ErrorCode|string $code ): void {
 		$args    = $this->latest_event( 'failed' );
 		$failure = $args[3] ?? null;
 		Assert::assertInstanceOf( RunFailure::class, $failure );
-		Assert::assertSame( $code instanceof ApiErrorCode ? $code : ApiErrorCode::from( $code ), $failure->code );
+		Assert::assertSame( $code instanceof ErrorCode ? $code : ErrorCode::from( $code ), $failure->code );
 	}
 
 	/**

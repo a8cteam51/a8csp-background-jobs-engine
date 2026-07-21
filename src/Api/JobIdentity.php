@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 /**
  * Validates and composes owner-qualified background-work identities.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

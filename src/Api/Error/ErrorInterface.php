@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
 /**
  * Marker for expected failure values handled as data.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

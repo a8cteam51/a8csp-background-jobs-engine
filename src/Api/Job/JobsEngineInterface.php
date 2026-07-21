@@ -10,6 +10,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 /**
  * Engine operations required by the owner-bound job facade.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

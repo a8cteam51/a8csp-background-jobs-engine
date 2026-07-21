@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
@@ -366,9 +366,9 @@ final readonly class RunReconciliation {
 			? ( $state->queue[0] ?? null )
 			: null;
 		if ( JobType::ChunkedJob === $work_type ) {
-			$this->terminal_transitions->fail_chunked_job( $contract, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
+			$this->terminal_transitions->fail_chunked_job( $contract, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
-			$this->terminal_transitions->fail_job( $contract, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, null, $expected_raw );
+			$this->terminal_transitions->fail_job( $contract, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ErrorCode::ExecutionFailed, null, $expected_raw );
 		}
 
 		return new Success( null );

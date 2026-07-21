@@ -2,8 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -19,6 +20,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
  * throwing `on_failed()` remains pending for a later terminal-maintenance attempt. `on_completed()`
  * is best-effort: a thrown callback is logged, and the run still completes. Cancelled and superseded
  * runs end without either callback; those outcomes surface through engine hooks.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

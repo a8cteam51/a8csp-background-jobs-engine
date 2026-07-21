@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Job;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableExceptionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -13,6 +13,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface;
  *
  * A stable name identifies the job, a normal return from the handler signals success, and a
  * thrown exception signals failure.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -37,14 +39,14 @@ interface OneOffJobInterface extends JobInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $args    Invocation arguments.
-	 * @param   RunContextInterface     $context Controlled access to this run.
+	 * @param   RunContext              $context Controlled access to this run.
 	 *
-	 * @throws  \Throwable When job handling fails. Throwables implementing
-	 *                     NonRetryableExceptionInterface bypass remaining retry attempts.
+	 * @throws  \Throwable When job handling fails. Throwables extending
+	 *                     NonRetryableException bypass remaining retry attempts.
 	 *
 	 * @return  void
 	 */
-	public function handle( array $args, RunContextInterface $context ): void;
+	public function handle( array $args, RunContext $context ): void;
 
 	// endregion
 }

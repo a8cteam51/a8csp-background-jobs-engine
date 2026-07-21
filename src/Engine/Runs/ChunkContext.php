@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext as ChunkContextContract;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ChunkContext implements ChunkContextInterface {
+final class ChunkContext implements ChunkContextContract {
 	// region FIELDS AND CONSTANTS
 
 	/**

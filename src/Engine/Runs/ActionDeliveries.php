@@ -4,8 +4,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
@@ -173,7 +173,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 		if ( $queue instanceof EngineError ) {
-			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $queue, ErrorCode::PayloadRejected );
 
 			return;
 		}
@@ -193,12 +193,12 @@ final readonly class ActionDeliveries {
 			 */
 			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_jobs_engine/queue/' . $chunked_job_name, $queue, $state->start_args, $run_id ) );
 		} catch ( \Throwable $throwable ) {
-			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ApiErrorCode::ExecutionFailed );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ErrorCode::ExecutionFailed );
 
 			return;
 		}
 		if ( $queue instanceof EngineError ) {
-			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $queue, ApiErrorCode::PayloadRejected );
+			$this->fail_chunked_job_start_action( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $queue, ErrorCode::PayloadRejected );
 
 			return;
 		}
@@ -220,7 +220,7 @@ final readonly class ActionDeliveries {
 				return;
 			}
 
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ErrorCode::ExecutionFailed );
 
 			return;
 		}
@@ -355,7 +355,7 @@ final readonly class ActionDeliveries {
 		}
 
 		if ( array() !== $state->queue ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $chunked_job_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', $chunked_job_name ) ), RunFailureStage::Execution, ErrorCode::UnsupportedOperation );
 
 			return;
 		}
@@ -394,11 +394,11 @@ final readonly class ActionDeliveries {
 	 * @param   RunState            $state      Fenced running state.
 	 * @param   RunStore            $run_store  Active-run store.
 	 * @param   EngineError         $error      Terminal failure detail.
-	 * @param   ApiErrorCode        $code       Machine-readable cause classification.
+	 * @param   ErrorCode           $code       Machine-readable cause classification.
 	 *
 	 * @return  void
 	 */
-	private function fail_chunked_job_start_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ApiErrorCode $code ): void {
+	private function fail_chunked_job_start_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ErrorCode $code ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::ChunkedJob, $chunked_job_name, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -459,7 +459,7 @@ final readonly class ActionDeliveries {
 	private function handle_chunked_job_continue_action( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$chunk_args = $state->queue[0] ?? null;
 		if ( ! \is_array( $chunk_args ) ) {
-			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', $chunked_job_name ) ), RunFailureStage::Execution, ApiErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_chunked_job( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, new EngineError( \sprintf( 'Chunked Job "%s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', $chunked_job_name ) ), RunFailureStage::Execution, ErrorCode::UnsupportedOperation );
 
 			return;
 		}
@@ -486,7 +486,7 @@ final readonly class ActionDeliveries {
 				return;
 			}
 
-			$this->fail_processed_chunk( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+			$this->fail_processed_chunk( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ErrorCode::ExecutionFailed );
 
 			return;
 		}
@@ -497,7 +497,7 @@ final readonly class ActionDeliveries {
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->fail_processed_chunk( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Chunked Job "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $chunked_job_name ) ), RunFailureStage::Scheduling, ApiErrorCode::BackendRejected );
+			$this->fail_processed_chunk( $chunked_job, $chunked_job_name, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( 'Chunked Job "%s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', $chunked_job_name ) ), RunFailureStage::Scheduling, ErrorCode::BackendRejected );
 
 			return;
 		}
@@ -529,11 +529,11 @@ final readonly class ActionDeliveries {
 	 * @param   int                           $reset_at   Post-callback liveness timestamp.
 	 * @param   EngineError                   $error      Terminal failure detail.
 	 * @param   RunFailureStage               $stage      Terminalization stage.
-	 * @param   ApiErrorCode                  $code       Machine-readable cause classification.
+	 * @param   ErrorCode                     $code       Machine-readable cause classification.
 	 *
 	 * @return  void
 	 */
-	private function fail_processed_chunk( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ApiErrorCode $code ): void {
+	private function fail_processed_chunk( ChunkedJobInterface $chunked_job, string $chunked_job_name, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ErrorCode $code ): void {
 		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( null );
 		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
 			return;

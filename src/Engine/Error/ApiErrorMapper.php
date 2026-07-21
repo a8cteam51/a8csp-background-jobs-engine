@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 
@@ -115,24 +115,24 @@ final class ApiErrorMapper {
 	 *
 	 * @throws  \LogicException When the failure lacks an API classification.
 	 *
-	 * @return  ApiErrorCode
+	 * @return  ErrorCode
 	 */
-	private static function engine_code( EngineError $error ): ApiErrorCode {
+	private static function engine_code( EngineError $error ): ErrorCode {
 		if ( null === $error->reason ) {
 			throw new \LogicException( 'An internal engine failure reached the API boundary without a public classification.' );
 		}
 
 		return match ( $error->reason ) {
-			EngineErrorReason::EngineUnavailable    => ApiErrorCode::EngineUnavailable,
-			EngineErrorReason::UnknownWork          => ApiErrorCode::UnknownWork,
-			EngineErrorReason::UnknownSchedule      => ApiErrorCode::UnknownSchedule,
-			EngineErrorReason::OverlapHeld          => ApiErrorCode::OverlapHeld,
-			EngineErrorReason::PayloadRejected      => ApiErrorCode::PayloadRejected,
-			EngineErrorReason::StorageFailure       => ApiErrorCode::StorageFailure,
-			EngineErrorReason::RunNotRetained       => ApiErrorCode::RunNotRetained,
-			EngineErrorReason::RunNotCancellable    => ApiErrorCode::RunNotCancellable,
-			EngineErrorReason::UnsupportedOperation => ApiErrorCode::UnsupportedOperation,
-			EngineErrorReason::ExecutionFailed      => ApiErrorCode::ExecutionFailed,
+			EngineErrorReason::EngineUnavailable    => ErrorCode::EngineUnavailable,
+			EngineErrorReason::UnknownWork          => ErrorCode::UnknownWork,
+			EngineErrorReason::UnknownSchedule      => ErrorCode::UnknownSchedule,
+			EngineErrorReason::OverlapHeld          => ErrorCode::OverlapHeld,
+			EngineErrorReason::PayloadRejected      => ErrorCode::PayloadRejected,
+			EngineErrorReason::StorageFailure       => ErrorCode::StorageFailure,
+			EngineErrorReason::RunNotRetained       => ErrorCode::RunNotRetained,
+			EngineErrorReason::RunNotCancellable    => ErrorCode::RunNotCancellable,
+			EngineErrorReason::UnsupportedOperation => ErrorCode::UnsupportedOperation,
+			EngineErrorReason::ExecutionFailed      => ErrorCode::ExecutionFailed,
 		};
 	}
 
@@ -144,16 +144,16 @@ final class ApiErrorMapper {
 	 *
 	 * @param   SchedulingErrorReason $reason Internal scheduling failure reason.
 	 *
-	 * @return  ApiErrorCode
+	 * @return  ErrorCode
 	 */
-	private static function scheduling_code( SchedulingErrorReason $reason ): ApiErrorCode {
+	private static function scheduling_code( SchedulingErrorReason $reason ): ErrorCode {
 		return match ( $reason ) {
-			SchedulingErrorReason::BackendNotReady => ApiErrorCode::BackendUnavailable,
-			SchedulingErrorReason::UnsupportedGroup => ApiErrorCode::UnsupportedOperation,
+			SchedulingErrorReason::BackendNotReady => ErrorCode::BackendUnavailable,
+			SchedulingErrorReason::UnsupportedGroup => ErrorCode::UnsupportedOperation,
 			SchedulingErrorReason::InvalidTimeInput,
-			SchedulingErrorReason::InvalidPayload        => ApiErrorCode::PayloadRejected,
-			SchedulingErrorReason::ScheduleFailed        => ApiErrorCode::BackendRejected,
-			SchedulingErrorReason::StorageFailure        => ApiErrorCode::StorageFailure,
+			SchedulingErrorReason::InvalidPayload        => ErrorCode::PayloadRejected,
+			SchedulingErrorReason::ScheduleFailed        => ErrorCode::BackendRejected,
+			SchedulingErrorReason::StorageFailure        => ErrorCode::StorageFailure,
 		};
 	}
 

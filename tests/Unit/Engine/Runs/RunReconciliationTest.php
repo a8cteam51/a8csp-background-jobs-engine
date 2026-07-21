@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
@@ -1313,7 +1313,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertStringContainsString( 'maintenance crash reclaim path', $failure->summary );
 		self::assertNull( $failure->failed_chunk );
 		$actions = $this->fired_actions();
@@ -1643,7 +1643,7 @@ final class RunReconciliationTest extends TestCase {
 				'class'   => \RuntimeException::class,
 				'message' => 'Persisted chunked job failure.',
 				'stage'   => RunFailureStage::Execution->value,
-				'code'    => ApiErrorCode::ExecutionFailed->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
 			),
 			3,
 			JobType::ChunkedJob
@@ -1666,7 +1666,7 @@ final class RunReconciliationTest extends TestCase {
 						'class'   => \RuntimeException::class,
 						'message' => 'Persisted chunked job failure.',
 						'stage'   => RunFailureStage::Execution->value,
-						'code'    => ApiErrorCode::ExecutionFailed->value,
+						'code'    => ErrorCode::ExecutionFailed->value,
 					),
 				),
 			),
@@ -1680,7 +1680,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Persisted chunked job failure.', $failure->summary );
 		self::assertNull( $failure->failed_chunk );
 		$actions = $this->fired_actions();
@@ -1725,7 +1725,7 @@ final class RunReconciliationTest extends TestCase {
 						'class'        => null,
 						'message'      => $expected_summary,
 						'stage'        => RunFailureStage::CrashReclaim->value,
-						'code'         => ApiErrorCode::StorageFailure->value,
+						'code'         => ErrorCode::StorageFailure->value,
 						'failed_chunk' => $chunk,
 					),
 				),
@@ -1738,7 +1738,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
 		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
-		self::assertSame( ApiErrorCode::StorageFailure, $failure->code );
+		self::assertSame( ErrorCode::StorageFailure, $failure->code );
 		self::assertSame( $expected_summary, $failure->summary );
 		self::assertSame( $chunk, $failure->failed_chunk );
 		$actions = $this->fired_actions();
@@ -1755,7 +1755,7 @@ final class RunReconciliationTest extends TestCase {
 		$name        = self::identity( 'partially-effected-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'partially-effected-chunked-job' );
 		$this->work->register_chunked_job( $name, $chunked_job );
-		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', failed_chunk: null, ) ) );
+		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', failed_chunk: null, ) ) );
 		$failed_option = 'a8csp_bgje_failed_runs_' . $name;
 		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
 		self::assertIsString( $failed_raw );
@@ -1767,7 +1767,7 @@ final class RunReconciliationTest extends TestCase {
 				'class'   => \RuntimeException::class,
 				'message' => 'Persisted chunked job failure.',
 				'stage'   => RunFailureStage::Execution->value,
-				'code'    => ApiErrorCode::ExecutionFailed->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
 			),
 			2,
 			JobType::ChunkedJob
@@ -1793,14 +1793,14 @@ final class RunReconciliationTest extends TestCase {
 			'class'   => \RuntimeException::class,
 			'message' => 'Persisted job failure.',
 			'stage'   => RunFailureStage::Execution->value,
-			'code'    => ApiErrorCode::ExecutionFailed->value,
+			'code'    => ErrorCode::ExecutionFailed->value,
 		);
 		$this->store_terminal_run( self::IDENTITY, 'failed', error: $error, failed_attempts: 2 );
 
 		$marked_name = self::identity( 'marked-failed-job' );
 		$marked_job  = new RecordingJob( 'marked-failed-job' );
 		$this->work->register_job( $marked_name, $marked_job );
-		$failure = new RunFailure( identity: $marked_name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted job failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: $marked_name, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Persisted job failure.', failed_chunk: null );
 		self::assertTrue( $this->stores->failed_run_store( $marked_name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
 		$this->store_terminal_run( $marked_name, 'failed', array( 'retention', 'callbacks', 'hooks' ), $error, 2 );
 
@@ -1826,9 +1826,9 @@ final class RunReconciliationTest extends TestCase {
 			'class'   => \RuntimeException::class,
 			'message' => 'Persisted job failure.',
 			'stage'   => RunFailureStage::Execution->value,
-			'code'    => ApiErrorCode::ExecutionFailed->value,
+			'code'    => ErrorCode::ExecutionFailed->value,
 		);
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Persisted job failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Persisted job failure.', failed_chunk: null );
 		self::assertTrue( $this->stores->failed_run_store( self::IDENTITY )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
 		$this->store_terminal_run( self::IDENTITY, 'failed', array( 'retention' ), $error, 2 );
 		$this->job->failed_throwable = new \RuntimeException( 'One-off on_failed callback exploded.' );
@@ -1892,7 +1892,7 @@ final class RunReconciliationTest extends TestCase {
 				'class'   => \RuntimeException::class,
 				'message' => 'Persisted chunked job failure.',
 				'stage'   => RunFailureStage::Execution->value,
-				'code'    => ApiErrorCode::ExecutionFailed->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
 			),
 			2,
 			JobType::ChunkedJob
@@ -2334,7 +2334,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertStringContainsString( 'maintenance crash reclaim path', $message );
 		self::assertNull( $error['class'] ?? null );
 		self::assertSame( RunFailureStage::CrashReclaim->value, $error['stage'] ?? null );
-		self::assertSame( ApiErrorCode::ExecutionFailed->value, $error['code'] ?? null );
+		self::assertSame( ErrorCode::ExecutionFailed->value, $error['code'] ?? null );
 		self::assertArrayNotHasKey( 'failed_chunk', $error );
 		$actions = $this->fired_actions();
 		self::assertSame(
@@ -2352,7 +2352,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::RUN_ID, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( RunFailureStage::CrashReclaim, $failure->stage );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $message, $failure->summary );
 		self::assertNull( $failure->failed_chunk );
 		self::assertSame( array( self::IDENTITY, ...( $actions[0]['args'] ?? array() ) ), $actions[1]['args'] ?? null );

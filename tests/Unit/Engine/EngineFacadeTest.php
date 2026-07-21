@@ -3,9 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\ApiAdapter;
@@ -151,7 +151,7 @@ final class EngineFacadeTest extends TestCase {
 		if ( ! $unknown->error instanceof ApiError ) {
 			throw new \LogicException( 'Unknown work must produce a public API error.' );
 		}
-		self::assertSame( ApiErrorCode::UnknownWork, $unknown->error->code );
+		self::assertSame( ErrorCode::UnknownWork, $unknown->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
 		$client->jobs()->register( new RecordingJob( 'shared' ) );
@@ -176,7 +176,7 @@ final class EngineFacadeTest extends TestCase {
 		$identity = 'facade-tests:email-digest';
 		$client   = $this->rig->client( 'facade-tests' );
 		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
-		$failure               = new RunFailure( identity: $identity, run_id: self::FAILED_RUN_ID, attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure               = new RunFailure( identity: $identity, run_id: self::FAILED_RUN_ID, attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
 		$GLOBALS['a8csp_bgje_test_option_calls'] = array();

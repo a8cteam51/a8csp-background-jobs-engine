@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Randomizer;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
@@ -758,8 +758,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );

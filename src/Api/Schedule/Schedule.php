@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
 /**
  * Complete declarative definition of one recurring job schedule.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

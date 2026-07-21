@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
@@ -668,7 +668,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_registered_failed_runs_json_warns_about_unreadable_entries_without_polluting_output(): void {
 		$identity = 'consumer-plugin:corrupt-listing';
-		$failure  = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure  = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 		$fixture  = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
 		$this->put( StoreFixtureBuilder::failed_runs_with_corrupt_member( $fixture ) );
 
@@ -921,7 +921,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
 		foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
 			$failed_chunk   = 'consumer-plugin:email_digest-2' === $identity ? array( 'post_id' => 42 ) : null;
-			$failure        = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: $failed_chunk );
+			$failure        = new RunFailure( identity: $identity, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: $failed_chunk );
 			[ $name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
 			$this->rig->wpdb()->put( $name, $raw );
 		}

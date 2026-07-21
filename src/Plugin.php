@@ -10,6 +10,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 /**
  * The plugin's composition root: assembles the top-level components and runs the boot pipeline.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 /**
  * Owner-bound facade for retained background-work runs.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

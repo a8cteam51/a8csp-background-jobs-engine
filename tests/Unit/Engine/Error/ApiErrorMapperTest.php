@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Error;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
@@ -70,7 +70,7 @@ final class ApiErrorMapperTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored corrective detail.', $result->error->message );
 		self::assertSame( array( 'run_id' => 'run-7' ), $result->error->context );
 	}
@@ -95,7 +95,7 @@ final class ApiErrorMapperTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
 		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/run_job' ), $result->error->context );
 	}

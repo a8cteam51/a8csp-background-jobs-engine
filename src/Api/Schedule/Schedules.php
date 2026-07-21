@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 /**
  * Owner-bound facade for declarative recurring job schedules.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

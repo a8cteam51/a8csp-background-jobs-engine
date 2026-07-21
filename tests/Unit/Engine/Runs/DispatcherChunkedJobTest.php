@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
@@ -177,7 +177,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_chunked_job_and_removes_the_failed_entry(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
@@ -187,7 +187,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
 		$consumed = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
-		$this->assert_failure_code( $consumed, ApiErrorCode::RunNotRetained );
+		$this->assert_failure_code( $consumed, ErrorCode::RunNotRetained );
 	}
 
 	/**
@@ -199,7 +199,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_refuses_to_replace_a_live_chunked_job(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
 		$incumbent                         = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -209,7 +209,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$refused = $this->client->runs()->retry_failed( self::NAME, self::FAILED_RUN_ID );
 
-		$error = $this->assert_failure_code( $refused, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $refused, ErrorCode::OverlapHeld );
 		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
 		$cancelled = $this->client->runs()->cancel( self::NAME, $incumbent->value );
 		self::assertInstanceOf( Success::class, $cancelled );
@@ -233,7 +233,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$incumbent = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
 		self::assertIsString( $incumbent->value );
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
@@ -290,7 +290,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 			)
 		);
 
-		$error = $this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertSame( $first->value, $error->context['run_id'] ?? null );
 		self::assertCount( 1, $this->start_calls() );
 	}
@@ -311,7 +311,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::PayloadRejected );
+		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
 		self::assertSame( array(), $this->start_calls() );
 	}
 
@@ -345,7 +345,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
 		$failed = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
-		$this->assert_failure_code( $failed, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 		$this->rig->clock()->timestamp = self::NOW + 1;
@@ -373,7 +373,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		$record = $this->scheduling_rollback_warning();
 		self::assertSame( 'warning', $record['level'] ?? null );
 		self::assertSame( self::IDENTITY, $record['context']['name'] ?? null );
@@ -414,7 +414,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
@@ -445,7 +445,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->start_calls() );
 	}
@@ -466,7 +466,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( array(), $this->start_calls() );
 	}
 
@@ -487,7 +487,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 	}
@@ -519,7 +519,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 	}
@@ -591,7 +591,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::BackendRejected );
+		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		self::assertNull( $this->lock() );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -618,7 +618,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
 	}
@@ -648,7 +648,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ApiErrorCode::OverlapHeld );
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
 	}
@@ -844,11 +844,11 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   mixed        $result Facade result.
-	 * @param   ApiErrorCode $code   Expected public code.
+	 * @param   ErrorCode $code   Expected public code.
 	 *
 	 * @return  ApiError
 	 */
-	private function assert_failure_code( mixed $result, ApiErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
 		self::assertInstanceOf( ApiError::class, $error );

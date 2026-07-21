@@ -11,6 +11,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Result;
  * additional type check. Expected failure outcomes use {@see Failure}; unexpected failures remain
  * exceptions.
  *
+ * @internal
+ *
  * @since   1.0.0
  * @version 1.0.0
  *

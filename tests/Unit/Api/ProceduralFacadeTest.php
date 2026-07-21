@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
@@ -401,7 +401,7 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( $failed_id, $failed[0]['run_id'] );
 		self::assertSame( $failed_args, $failed[0]['args'] );
 		self::assertSame( $failed_id, $failed[0]['failure']['run_id'] ?? null );
-		self::assertSame( ApiErrorCode::ExecutionFailed->value, $failed[0]['failure']['code'] ?? null );
+		self::assertSame( ErrorCode::ExecutionFailed->value, $failed[0]['failure']['code'] ?? null );
 	}
 
 	/**
@@ -512,7 +512,7 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( $failed_id, $job->failed[0]['run_id'] );
 		self::assertSame( $failed_args, $job->failed[0]['args'] );
 		self::assertSame( $failed_id, $job->failed[0]['failure']['run_id'] ?? null );
-		self::assertSame( ApiErrorCode::ExecutionFailed->value, $job->failed[0]['failure']['code'] ?? null );
+		self::assertSame( ErrorCode::ExecutionFailed->value, $job->failed[0]['failure']['code'] ?? null );
 	}
 
 	/**

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -54,7 +54,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			array( 'chunk' => 'two' ),
 			array( 'chunk' => 'three' ),
 		);
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkContext $context ): void {
 			if ( 'one' !== ( $chunk_args['chunk'] ?? null ) ) {
 				return;
 			}

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Models;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -75,7 +75,7 @@ final class PublicFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunk_context_forwards_queue_mutations_and_run_metadata(): void {
-		$inner   = new class() implements ChunkContextInterface {
+		$inner   = new class() implements ChunkContext {
 			/** @var list<array<array-key, mixed>> */
 			public array $enqueued = array();
 

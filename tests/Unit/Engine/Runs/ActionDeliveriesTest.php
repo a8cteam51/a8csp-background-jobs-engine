@@ -4,10 +4,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
@@ -154,7 +154,7 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
 		$duplicate                     = $this->client->jobs()->enqueue( self::NAME, $successor_args );
-		$this->assert_failure_code( $duplicate, ApiErrorCode::OverlapHeld );
+		$this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
@@ -226,7 +226,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertCount( 1, $this->job->failed_calls );
 		self::assertSame( $run_id, $this->job->failed_calls[0]['run_id'] );
 		self::assertSame( self::ARGS, $this->job->failed_calls[0]['start_args'] );
-		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
 	/**
@@ -460,9 +460,9 @@ final class ActionDeliveriesTest extends TestCase {
 
 		\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 1 );
 
-		$this->rig->assert_failed( ApiErrorCode::UnknownWork );
+		$this->rig->assert_failed( ErrorCode::UnknownWork );
 		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
-		$this->assert_failure_code( $retry, ApiErrorCode::UnknownWork );
+		$this->assert_failure_code( $retry, ErrorCode::UnknownWork );
 	}
 
 	/**
@@ -751,11 +751,11 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   mixed        $result Facade result.
-	 * @param   ApiErrorCode $code   Expected public code.
+	 * @param   ErrorCode $code   Expected public code.
 	 *
 	 * @return  ApiError
 	 */
-	private function assert_failure_code( mixed $result, ApiErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
 		self::assertInstanceOf( ApiError::class, $error );

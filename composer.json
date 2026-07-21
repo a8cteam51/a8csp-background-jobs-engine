@@ -50,7 +50,7 @@
 
   "autoload": {
     "psr-4": {
-      "A8C\\SpecialProjects\\BackgroundJobsEngine\\": "src/"
+      "A8C\\SpecialProjects\\BackgroundJobsEngine\\": ["src/", "models/"]
     },
     "classmap": [
       "models/"

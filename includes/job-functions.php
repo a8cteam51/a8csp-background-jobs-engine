@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface as InternalJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\RetryPolicy as InternalRetry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunContextInterface as InternalRunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy as InternalRetry;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext as InternalRunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
