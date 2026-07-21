@@ -846,7 +846,9 @@ final class FailureLifecycleTest extends TestCase {
 	private function assert_failure( ErrorCode $code, RunFailureStage $stage ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
 		self::assertNotEmpty( $events );
-		$failure = $events[ \count( $events ) - 1 ][3] ?? null;
+		$latest = $events[ \count( $events ) - 1 ];
+		self::assertCount( 1, $latest );
+		$failure = $latest[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( $code, $failure->code );
 		self::assertSame( $stage, $failure->stage );

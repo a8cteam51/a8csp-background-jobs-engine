@@ -1540,19 +1540,19 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A throwing named failed listener still permits its generic companion.
+	 * A throwing failed listener leaves the terminal row available for replay.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_failed_named_listener_throw_still_fires_generic_hook_and_retains_terminal_row(): void {
+	public function test_failed_listener_throw_retains_terminal_row(): void {
 		$this->chunked_job->retry_policy      = new RetryPolicy( max_attempts: 1 );
 		$this->chunked_job->process_throwable = new \DomainException( 'Chunk failed.' );
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
 		$listener = new \RuntimeException( 'Failed listener exploded.' );
-		$this->set_action_throwable( 'a8csp_jobs_engine/failed/' . self::IDENTITY, $listener );
+		$this->set_action_throwable( 'a8csp_jobs_engine/failed', $listener );
 
 		$caught = null;
 		try {
@@ -1564,6 +1564,10 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertSame( $listener, $caught );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
+		$state = $this->run_state();
+		self::assertNotNull( $state );
+		self::assertSame( 'failed', $state['status'] ?? null );
+		self::assertSame( array( 'retention', 'callbacks', 'history' ), $state['effects'] ?? null );
 	}
 
 	/**
@@ -1952,7 +1956,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	private function assert_failure( ErrorCode $code, RunFailureStage $stage, ?array $failed_chunk ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
 		self::assertNotEmpty( $events );
-		$failure = $events[ \count( $events ) - 1 ][3] ?? null;
+		$latest = $events[ \count( $events ) - 1 ];
+		self::assertCount( 1, $latest );
+		$failure = $latest[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( $code, $failure->code );
 		self::assertSame( $stage, $failure->stage );

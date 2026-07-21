@@ -13,6 +13,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
  * Contract for background work split into independently processed chunks.
  *
  * Queue generation defines the initial chunks, and processing handles one chunk.
+ * The `failed` lifecycle event dispatches only `a8csp_jobs_engine/failed` with the exact signature
+ * `(RunFailure $failure): void`; the failure value carries the owner-qualified identity and run
+ * identifier.
  *
  * @internal
  *

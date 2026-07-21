@@ -18,18 +18,18 @@ final class ApiBoundaryTest extends TestCase {
 	private const string API_NAMESPACE           = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\';
 	private const string ROOT_NAMESPACE          = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\';
 	private const array PROCEDURAL_BUILTIN_TYPES = array( 'array', 'bool', 'callable', 'false', 'int', 'null', 'string', 'true', 'void' );
-	private const array PROCEDURAL_PUBLIC_TYPES  = array( 'A8CSP_ChunkContext', 'A8CSP_ChunkedJob', 'A8CSP_Job', 'WP_Error' );
+	private const array PROCEDURAL_PUBLIC_TYPES  = array( 'A8C\\SpecialProjects\\BackgroundJobsEngine\\ChunkedJob', 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job', 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run', 'WP_Error' );
 	private const array PROCEDURAL_FUNCTIONS     = array(
-		'a8csp_bgje_job_register',
-		'a8csp_bgje_job_register_object',
-		'a8csp_bgje_job_enqueue',
-		'a8csp_bgje_chunked_job_register',
-		'a8csp_bgje_chunked_job_start',
-		'a8csp_bgje_schedule_sync',
-		'a8csp_bgje_schedule_dispatch',
-		'a8csp_bgje_run_last_completed',
-		'a8csp_bgje_run_retry_failed',
-		'a8csp_bgje_run_cancel',
+		'a8csp_bgje_register',
+		'a8csp_bgje_register_callable',
+		'a8csp_bgje_enqueue',
+		'a8csp_bgje_start',
+		'a8csp_bgje_sync_schedules',
+		'a8csp_bgje_dispatch_schedule',
+		'a8csp_bgje_inspect_run',
+		'a8csp_bgje_last_completed_run',
+		'a8csp_bgje_retry_failed_run',
+		'a8csp_bgje_cancel_run',
 	);
 
 	private const array PUBLIC_MODEL_TYPES = array(

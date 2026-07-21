@@ -150,23 +150,14 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FAILURE_IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::FAILURE_IDENTITY );
 
-		$named_failed   = array();
-		$generic_failed = array();
-		\add_action(
-			'a8csp_jobs_engine/failed/' . self::FAILURE_IDENTITY,
-			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
-				$named_failed[] = array( $run_id, $start_args, $failure );
-			},
-			10,
-			3
-		);
+		$failed = array();
 		\add_action(
 			'a8csp_jobs_engine/failed',
-			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
-				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
+			static function ( RunFailure $failure ) use ( &$failed ): void {
+				$failed[] = $failure;
 			},
 			10,
-			4
+			1
 		);
 
 		$result = $client->jobs()->enqueue( self::FAILURE_NAME, $args );
@@ -175,16 +166,14 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$run_id = $result->value;
 
 		self::assertCount( 0, $job->calls, 'Enqueueing a job must not invoke its handler inline' );
-		self::assertCount( 0, $named_failed, 'Enqueueing a job must not fire its identity-specific failed hook inline' );
-		self::assertCount( 0, $generic_failed, 'Enqueueing a job must not fire its generic failed hook inline' );
+		self::assertCount( 0, $failed, 'Enqueueing a job must not fire its failed hook inline' );
 
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must execute the failing job action' );
 
 		self::assertCount( 1, $job->calls, 'The runner drive must invoke the failing job handler exactly once' );
 		self::assertSame( array( $args ), $job->calls, 'A non-retryable job must execute exactly once' );
-		self::assertCount( 1, $named_failed, 'The identity-specific failed hook must fire exactly once' );
-		self::assertCount( 1, $generic_failed, 'The generic failed hook must fire exactly once' );
-		$failure = $named_failed[0][2] ?? null;
+		self::assertCount( 1, $failed, 'The failed hook must fire exactly once' );
+		$failure = $failed[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
 		self::assertSame( self::FAILURE_IDENTITY, $failure->identity );
@@ -195,8 +184,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		self::assertSame( $expected_message, $failure->summary );
 		self::assertStringNotContainsString( 'The remote record no longer exists.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame( array( array( $run_id, $args, $failure ) ), $named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and run failure' );
-		self::assertSame( array( array( self::FAILURE_IDENTITY, $run_id, $args, $failure ) ), $generic_failed, 'The generic failed hook must prepend the job name to the same failure payload' );
+		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 		self::assertSame( 0, $this->run_next_engine_action(), 'A non-retryable failure must not schedule another run attempt' );
 		$runs = $this->inspection()->runs( self::FAILURE_IDENTITY );
 		self::assertSame( array(), $runs['live'], 'Terminal job failure must leave no live run' );

@@ -2,8 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\CoversFunction;
 
@@ -13,9 +16,9 @@ use PHPUnit\Framework\Attributes\CoversFunction;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgje_job_register' )]
-#[CoversFunction( 'a8csp_bgje_job_register_object' )]
-#[CoversFunction( 'a8csp_bgje_job_enqueue' )]
+#[CoversFunction( 'a8csp_bgje_register' )]
+#[CoversFunction( 'a8csp_bgje_register_callable' )]
+#[CoversFunction( 'a8csp_bgje_enqueue' )]
 final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -45,18 +48,18 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 
 		\add_action( 'a8csp_jobs_engine/completed/' . $identity, $listener, 10, 3 );
 		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/completed/' . $identity, $listener ) );
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args, string $handler_run_id ): void {} ) );
+		self::assertTrue( \a8csp_bgje_register_callable( self::OWNER, $name, static function ( array $handler_args, RunContext $context ): void {} ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
-		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, $name, $args );
-		self::assertIsString( $run_id );
+		$run = \a8csp_bgje_enqueue( self::OWNER, $name, $args );
+		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertSame( array( array( $run_id, $args, null ) ), $observed );
+		self::assertSame( array( array( $run->run_id, $args, null ) ), $observed );
 	}
 
 	/**
-	 * The failed listener uses the owner-qualified hook and receives the documented payload.
+	 * The failed listener receives one self-identifying failure value through the generic hook.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -68,19 +71,24 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$name     = 'failed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 8 );
-		/** @var list<array{string, array<array-key, mixed>, RunFailure}> $observed */
+		/** @var list<RunFailure> $observed */
 		$observed = array();
-		$listener = static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$observed ): void {
-			$observed[] = array( $run_id, $start_args, $failure );
+		/** @var list<list<mixed>> $observed_extra_args */
+		$observed_extra_args = array();
+		$observed_arity      = null;
+		$listener            = static function ( RunFailure $failure, mixed ...$extra_args ) use ( &$observed, &$observed_extra_args, &$observed_arity ): void {
+			$observed[]            = $failure;
+			$observed_extra_args[] = $extra_args;
+			$observed_arity        = \func_num_args();
 		};
 
-		\add_action( 'a8csp_jobs_engine/failed/' . $identity, $listener, 10, 3 );
-		self::assertTrue( \has_action( 'a8csp_jobs_engine/failed/' . $identity ) );
+		\add_action( 'a8csp_jobs_engine/failed', $listener, 10, 4 );
+		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/failed', $listener ) );
 		self::assertTrue(
-			\a8csp_bgje_job_register(
+			\a8csp_bgje_register_callable(
 				self::OWNER,
 				$name,
-				static function ( array $handler_args, string $handler_run_id ): void {
+				static function ( array $handler_args, RunContext $context ): void {
 					throw new NonRetryableException( 'Permanent failure.' );
 				}
 			)
@@ -88,20 +96,21 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . $identity );
 
-		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, $name, $args );
-		self::assertIsString( $run_id );
+		$run = \a8csp_bgje_enqueue( self::OWNER, $name, $args );
+		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
 		self::assertCount( 1, $observed );
-		self::assertSame( $run_id, $observed[0][0] );
-		self::assertSame( $args, $observed[0][1] );
-		self::assertInstanceOf( RunFailure::class, $observed[0][2] );
-		self::assertSame( $run_id, $observed[0][2]->run_id );
-		self::assertSame( 1, $observed[0][2]->attempts );
-		self::assertSame( 'execution', $observed[0][2]->stage->value );
-		self::assertSame( 'execution_failed', $observed[0][2]->code->value );
-		self::assertSame( \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class ), $observed[0][2]->summary );
-		self::assertNull( $observed[0][2]->failed_chunk );
+		self::assertSame( 1, $observed_arity );
+		self::assertSame( array( array() ), $observed_extra_args );
+		self::assertSame( $identity, $observed[0]->identity );
+		self::assertSame( $run->run_id, $observed[0]->run_id );
+		self::assertSame( 1, $observed[0]->attempts );
+		self::assertSame( 'execution', $observed[0]->stage->value );
+		self::assertSame( 'execution_failed', $observed[0]->code->value );
+		self::assertSame( \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class ), $observed[0]->summary );
+		self::assertNull( $observed[0]->failed_chunk );
+		self::assertSame( 0, \did_action( 'a8csp_jobs_engine/failed/' . $identity ) );
 	}
 
 	/**
@@ -121,15 +130,15 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 			},
 		);
 
-		self::assertTrue( \a8csp_bgje_job_register( self::OWNER, $name, static function ( array $handler_args, string $handler_run_id ): void {}, $options ) );
+		self::assertTrue( \a8csp_bgje_register_callable( self::OWNER, $name, static function ( array $handler_args, RunContext $context ): void {}, $options ) );
 		self::assertFalse( \has_action( 'a8csp_jobs_engine/completed/' . $identity ), 'Model callbacks must not be registered on the public lifecycle-hook bus' );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
-		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, $name, $args );
-		self::assertIsString( $run_id );
+		$run = \a8csp_bgje_enqueue( self::OWNER, $name, $args );
+		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertSame( array( array( $run_id, $args, null ) ), $observed );
+		self::assertSame( array( array( $run->run_id, $args, null ) ), $observed );
 	}
 
 	/**
@@ -142,8 +151,8 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$name     = 'object-failed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 10 );
-		$job      = new class( $name ) extends \A8CSP_Job {
-			/** @var list<array{string, array<array-key, mixed>, array<string, mixed>}> */
+		$job      = new class( $name ) extends Job {
+			/** @var list<array{string, array<array-key, mixed>, RunFailure}> */
 			public array $failures = array();
 
 			/**
@@ -163,30 +172,29 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args, string $run_id ): void {
+			public function handle( array $args, RunContext $context ): void {
 				throw new NonRetryableException( 'Permanent failure.' );
 			}
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function on_failed( string $run_id, array $args, array $failure ): void {
+			public function on_failed( string $run_id, array $args, RunFailure $failure ): void {
 				$this->failures[] = array( $run_id, $args, $failure );
 			}
 		};
 
-		self::assertTrue( \a8csp_bgje_job_register_object( self::OWNER, $job ) );
-		self::assertFalse( \has_action( 'a8csp_jobs_engine/failed/' . $identity ), 'Model callbacks must not be registered on the public lifecycle-hook bus' );
+		self::assertTrue( \a8csp_bgje_register( self::OWNER, $job ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . $identity );
 
-		$run_id = \a8csp_bgje_job_enqueue( self::OWNER, $name, $args );
-		self::assertIsString( $run_id );
+		$run = \a8csp_bgje_enqueue( self::OWNER, $name, $args );
+		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
 		self::assertCount( 1, $job->failures );
-		self::assertSame( $run_id, $job->failures[0][0] );
+		self::assertSame( $run->run_id, $job->failures[0][0] );
 		self::assertSame( $args, $job->failures[0][1] );
-		self::assertSame( 'execution_failed', $job->failures[0][2]['code'] ?? null );
+		self::assertSame( 'execution_failed', $job->failures[0][2]->code->value );
 	}
 
 	// endregion.

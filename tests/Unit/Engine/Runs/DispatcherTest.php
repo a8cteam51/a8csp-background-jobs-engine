@@ -286,7 +286,6 @@ final class DispatcherTest extends TestCase {
 			array(
 				'a8csp_jobs_engine/started/' . self::IDENTITY,
 				'a8csp_jobs_engine/started',
-				'a8csp_jobs_engine/failed/' . self::IDENTITY,
 				'a8csp_jobs_engine/failed',
 			),
 			$this->rig->hooks()->sequence()

@@ -433,7 +433,7 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Fires the lifecycle-hook pair for one terminal state.
+	 * Fires the lifecycle hook sequence for one terminal state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -599,7 +599,7 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Fires the identity-specific lifecycle hook before its generic companion.
+	 * Fires the lifecycle hook sequence for one event.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -688,37 +688,18 @@ final readonly class LifecycleEffects {
 			return;
 		}
 
-		try {
-			/**
-			 * Fires when a work run fails.
-			 *
-			 * The dynamic portion of the hook name, `$hook`, refers to the `failed` lifecycle event.
-			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   RunFailure              $failure    Reconstructed client failure value.
-			 */
-			\do_action( $hook . '/' . $identity, $run_id, $start_args, $failure );
-		} finally {
-			/**
-			 * Fires after the identity-specific failed lifecycle hook.
-			 *
-			 * The dynamic portion of the hook name, `$hook`, refers to the `failed` lifecycle event.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-			 * @param   string                  $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   RunFailure              $failure    Reconstructed client failure value.
-			 */
-			\do_action( $hook, $identity, $run_id, $start_args, $failure );
-		}
+		/**
+		 * Fires when a work run fails.
+		 *
+		 * The failure value carries the owner-qualified identity and run identifier, so a consumer
+		 * scoping to one work item filters on the failure's identity.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   RunFailure $failure Reconstructed client failure value.
+		 */
+		\do_action( $hook, $failure );
 		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
 	}
 

@@ -169,13 +169,12 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( self::RUN_ID, $job->failed_calls[0]['run_id'] );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
+		$actions = $this->fired_actions();
 		self::assertSame(
-			array(
-				'a8csp_jobs_engine/failed/' . self::IDENTITY,
-				'a8csp_jobs_engine/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			array( 'a8csp_jobs_engine/failed' ),
+			\array_column( $actions, 'hook_name' )
 		);
+		self::assertSame( array( $job->failed_calls[0]['error'] ), $actions[0]['args'] ?? null );
 		$this->assert_terminal_history( 'failed' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );

@@ -82,10 +82,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$named_retry_scheduled = array();
 		/** @var list<array{string, string, array<array-key, mixed>, int, int}> $generic_retry_scheduled */
 		$generic_retry_scheduled = array();
-		/** @var list<array{string, array<array-key, mixed>, RunFailure}> $named_failed */
-		$named_failed = array();
-		/** @var list<array{string, string, array<array-key, mixed>, RunFailure}> $generic_failed */
-		$generic_failed = array();
+		/** @var list<RunFailure> $failed */
+		$failed = array();
 		/** @var list<array{string, array<array-key, mixed>, string|null}> $named_completed */
 		$named_completed = array();
 		/** @var list<array{string, string, array<array-key, mixed>, string|null}> $generic_completed */
@@ -107,20 +105,12 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp_jobs_engine/failed/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
-				$named_failed[] = array( $run_id, $start_args, $failure );
-			},
-			10,
-			3
-		);
-		\add_action(
 			'a8csp_jobs_engine/failed',
-			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
-				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
+			static function ( RunFailure $failure ) use ( &$failed ): void {
+				$failed[] = $failure;
 			},
 			10,
-			4
+			1
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
@@ -156,8 +146,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( $job->retry_policy, $retry_policy_calls[0]['policy'] );
 		self::assertCount( 1, $named_retry_scheduled, 'The first failure must fire the identity-specific retry-scheduled hook once' );
 		self::assertCount( 1, $generic_retry_scheduled, 'The first failure must fire the generic retry-scheduled hook once' );
-		self::assertSame( array(), $named_failed, 'The first failure must remain non-terminal below the retry cap' );
-		self::assertSame( array(), $generic_failed, 'The first failure must not fire the generic failed hook' );
+		self::assertSame( array(), $failed, 'The first failure must remain non-terminal below the retry cap' );
 
 		$delay = $named_retry_scheduled[0][3] ?? null;
 		self::assertIsInt( $delay );
@@ -204,14 +193,11 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		self::assertCount( 1, $named_retry_scheduled, 'Retry exhaustion must not announce a nonexistent third attempt' );
 		self::assertCount( 1, $generic_retry_scheduled, 'Retry exhaustion must not fire the generic retry-scheduled hook again' );
-		/** @var list<array{string, array<array-key, mixed>, RunFailure}> $recorded_named_failed */
-		$recorded_named_failed = $named_failed;
-		/** @var list<array{string, string, array<array-key, mixed>, RunFailure}> $recorded_generic_failed */
-		$recorded_generic_failed = $generic_failed;
-		self::assertCount( 1, $recorded_named_failed, 'Retry exhaustion must fire the identity-specific failed hook once' );
-		self::assertCount( 1, $recorded_generic_failed, 'Retry exhaustion must fire the generic failed hook once' );
+		/** @var list<RunFailure> $recorded_failed */
+		$recorded_failed = $failed;
+		self::assertCount( 1, $recorded_failed, 'Retry exhaustion must fire the failed hook once' );
 
-		$failure = $recorded_named_failed[0][2] ?? null;
+		$failure = $recorded_failed[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( $failed_run_id, $failure->run_id );
@@ -221,8 +207,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame( array( array( $failed_run_id, $args, $failure ) ), $recorded_named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and terminal error' );
-		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, $failure ) ), $recorded_generic_failed, 'The generic failed hook must prepend the job name to the same terminal payload' );
+		self::assertSame( array( $failure ), $recorded_failed, 'The failed hook must receive only the self-identifying failure value' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $retry_action_id ), 'Action Scheduler must complete the retry action after terminal engine handling' );
 		self::assertSame(
 			array( $initial_action_id, $retry_action_id ),
@@ -280,8 +265,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( array( array( self::IDENTITY, $successful_run_id, $args, null ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same fresh-run payload' );
 		self::assertSame( array( array( $failed_run_id, $args, 1, $delay ) ), $named_retry_scheduled, 'The successful manual retry must not repeat the identity-specific retry-scheduled hook' );
 		self::assertSame( array( array( self::IDENTITY, $failed_run_id, $args, 1, $delay ) ), $generic_retry_scheduled, 'The successful manual retry must not repeat the generic retry-scheduled hook' );
-		self::assertSame( $recorded_named_failed, $named_failed, 'The successful manual retry must not repeat the identity-specific failed hook' );
-		self::assertSame( $recorded_generic_failed, $generic_failed, 'The successful manual retry must not repeat the generic failed hook' );
+		self::assertSame( $recorded_failed, $failed, 'The successful manual retry must not repeat the failed hook' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $successful_action_id ), 'Action Scheduler must complete the manually retried job action' );
 		self::assertSame(
 			array( $initial_action_id, $retry_action_id, $successful_action_id ),

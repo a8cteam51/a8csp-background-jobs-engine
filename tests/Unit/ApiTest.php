@@ -334,15 +334,15 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * The public function surface contains only the owner-bound client front door.
+	 * Removed global spellings do not remain alongside the supported aliases.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_legacy_global_functions_are_absent(): void {
-		foreach ( array( 'a8csp_bgje_engine', 'a8csp_bgje_enqueue_job', 'a8csp_bgje_start_chunked_job', 'a8csp_bgje_sync_schedules', 'a8csp_bgje_run_schedule_now', 'a8csp_bgje_retry_failed_run', 'a8csp_bgje_cancel_run' ) as $function ) {
+	public function test_removed_global_function_spellings_are_absent(): void {
+		foreach ( array( 'a8csp_bgje_engine', 'a8csp_bgje_enqueue_job', 'a8csp_bgje_start_chunked_job' ) as $function ) {
 			self::assertFalse( \function_exists( $function ), $function );
 		}
 	}

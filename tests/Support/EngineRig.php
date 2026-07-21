@@ -309,8 +309,9 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public function assert_failed( ErrorCode|string $code ): void {
-		$args    = $this->latest_event( 'failed' );
-		$failure = $args[3] ?? null;
+		$args = $this->latest_event( 'failed' );
+		Assert::assertCount( 1, $args );
+		$failure = $args[0] ?? null;
 		Assert::assertInstanceOf( RunFailure::class, $failure );
 		Assert::assertSame( $code instanceof ErrorCode ? $code : ErrorCode::from( $code ), $failure->code );
 	}

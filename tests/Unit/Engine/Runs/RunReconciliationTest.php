@@ -854,7 +854,7 @@ final class RunReconciliationTest extends TestCase {
 		$error = $failed_entry['error'] ?? null;
 		self::assertIsArray( $error );
 		self::assertSame( $chunk, $error['failed_chunk'] ?? null );
-		$failure = $this->fired_actions()[0]['args'][2] ?? null;
+		$failure = $this->fired_actions()[0]['args'][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( $chunk, $failure->failed_chunk );
 		$record = $this->log_record(
@@ -1321,14 +1321,10 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID, $options );
 		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . $name, $options );
 		self::assertSame(
-			array(
-				'a8csp_jobs_engine/failed/' . $name,
-				'a8csp_jobs_engine/failed',
-			),
+			array( 'a8csp_jobs_engine/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
-		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
-		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
 	}
 
 	/**
@@ -1357,7 +1353,7 @@ final class RunReconciliationTest extends TestCase {
 		$error = $failed_entry['error'] ?? null;
 		self::assertIsArray( $error );
 		self::assertSame( self::ARGS, $error['failed_chunk'] ?? null );
-		$failure = $this->fired_actions()[0]['args'][2] ?? null;
+		$failure = $this->fired_actions()[0]['args'][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( self::ARGS, $failure->failed_chunk );
 		self::assertNotNull(
@@ -1685,14 +1681,10 @@ final class RunReconciliationTest extends TestCase {
 		self::assertNull( $failure->failed_chunk );
 		$actions = $this->fired_actions();
 		self::assertSame(
-			array(
-				'a8csp_jobs_engine/failed/' . $name,
-				'a8csp_jobs_engine/failed',
-			),
+			array( 'a8csp_jobs_engine/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
-		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
-		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
 		$this->assert_history_status( $options, 'failed', $name );
 	}
 
@@ -1742,8 +1734,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $expected_summary, $failure->summary );
 		self::assertSame( $chunk, $failure->failed_chunk );
 		$actions = $this->fired_actions();
-		self::assertSame( $failure, $actions[0]['args'][2] ?? null );
-		self::assertSame( $failure, $actions[1]['args'][3] ?? null );
+		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
 	}
 
 	/**
@@ -1839,7 +1830,10 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $state );
 		self::assertSame( array( 'retention', 'hooks', 'history' ), $state['effects'] ?? null );
 		self::assertCount( 1, $this->job->failed_calls );
-		self::assertCount( 2, $this->fired_actions() );
+		$actions = $this->fired_actions();
+		self::assertSame( array( 'a8csp_jobs_engine/failed' ), \array_column( $actions, 'hook_name' ) );
+		self::assertCount( 1, $actions[0]['args'] ?? array() );
+		self::assertEquals( $failure, $actions[0]['args'][0] ?? null );
 
 		$this->job->failed_throwable              = null;
 		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
@@ -1934,10 +1928,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'Original callback worker resumed after rival cleanup.', $caught->getMessage() );
 		self::assertCount( 2, $chunked_job->failed_calls );
 		self::assertSame(
-			array(
-				'a8csp_jobs_engine/failed/' . $name,
-				'a8csp_jobs_engine/failed',
-			),
+			array( 'a8csp_jobs_engine/failed' ),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		$options = $this->options();
@@ -2338,15 +2329,10 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( 'failed_chunk', $error );
 		$actions = $this->fired_actions();
 		self::assertSame(
-			array(
-				'a8csp_jobs_engine/failed/' . self::IDENTITY,
-				'a8csp_jobs_engine/failed',
-			),
+			array( 'a8csp_jobs_engine/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
-		self::assertSame( self::RUN_ID, $actions[0]['args'][0] ?? null );
-		self::assertSame( self::ARGS, $actions[0]['args'][1] ?? null );
-		$failure = $actions[0]['args'][2] ?? null;
+		$failure = $actions[0]['args'][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( self::RUN_ID, $failure->run_id );
@@ -2355,7 +2341,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $message, $failure->summary );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame( array( self::IDENTITY, ...( $actions[0]['args'] ?? array() ) ), $actions[1]['args'] ?? null );
+		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
 		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
