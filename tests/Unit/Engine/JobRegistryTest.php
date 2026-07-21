@@ -3,12 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\RunsEngineInterface;
 
 /** Records calls made through the typed run-engine client-testing seam. */
 final class FakeRunsEngine implements RunsEngineInterface {
@@ -17,10 +17,10 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	// region MAGIC METHODS.
 
 	/**
-	 * @phpstan-param AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $inspect_result
-	 * @phpstan-param AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $last_completed_result
-	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>      $retry_result
-	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>      $cancel_result
+	 * @phpstan-param AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $inspect_result
+	 * @phpstan-param AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $last_completed_result
+	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>      $retry_result
+	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>      $cancel_result
 	 *
 	 * @param   AbstractResult $inspect_result        Scripted run-inspection result.
 	 * @param   AbstractResult $last_completed_result Scripted inspection result.
@@ -44,7 +44,7 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	 * @param   string $identity Complete owner-qualified work identity.
 	 * @param   string $run_id   Retained run identifier.
 	 *
-	 * @phpstan-return AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */
@@ -60,7 +60,7 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	 *
 	 * @param   string $identity Complete owner-qualified work identity.
 	 *
-	 * @phpstan-return AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */
@@ -77,7 +77,7 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	 * @param   string $identity Complete owner-qualified work identity.
 	 * @param   string $run_id   Retained failed-run identifier.
 	 *
-	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */
@@ -94,7 +94,7 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	 * @param   string $identity Complete owner-qualified work identity.
 	 * @param   string $run_id   Retained run identifier.
 	 *
-	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */

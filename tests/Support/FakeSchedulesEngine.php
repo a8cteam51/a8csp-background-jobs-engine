@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\SchedulesEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\SchedulesEngineInterface;
 
 /** Records calls made through the typed schedule-engine client-testing seam. */
 final class FakeSchedulesEngine implements SchedulesEngineInterface {
@@ -17,8 +17,8 @@ final class FakeSchedulesEngine implements SchedulesEngineInterface {
 	// region MAGIC METHODS.
 
 	/**
-	 * @phpstan-param AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>   $sync_result
-	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $dispatch_now_result
+	 * @phpstan-param AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>   $sync_result
+	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $dispatch_now_result
 	 *
 	 * @param   AbstractResult $sync_result         Scripted synchronization result.
 	 * @param   AbstractResult $dispatch_now_result Scripted immediate-dispatch result.
@@ -37,7 +37,7 @@ final class FakeSchedulesEngine implements SchedulesEngineInterface {
 	 *
 	 * @param   array<array-key, mixed> $declarations Schedule declarations.
 	 *
-	 * @phpstan-return AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */
@@ -53,7 +53,7 @@ final class FakeSchedulesEngine implements SchedulesEngineInterface {
 	 *
 	 * @param   string $identity Complete owner-qualified schedule identity.
 	 *
-	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */

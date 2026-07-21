@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\CommentCountRecountChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\DemoClient;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\SiteHealthPingJob;

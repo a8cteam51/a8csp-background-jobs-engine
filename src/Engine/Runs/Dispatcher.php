@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
@@ -13,16 +13,16 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;

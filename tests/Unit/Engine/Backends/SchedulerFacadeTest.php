@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;

@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
@@ -386,7 +386,7 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 *
-	 * @phpstan-param AbstractResult<mixed, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface> $result
+	 * @phpstan-param AbstractResult<mixed, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ErrorInterface> $result
 	 * @phpstan-param list<string> $context_keys
 	 */
 	private static function assert_api_failure( AbstractResult $result, ErrorCode $code, array $context_keys ): void {

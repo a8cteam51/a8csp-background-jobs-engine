@@ -22,18 +22,18 @@ final class DependencyDirectionTest extends TestCase {
 
 	private const array FORBIDDEN_REFERENCES = array(
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Engine\\',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Client',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Result\\',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\Jobs',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobs',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Run\\Runs',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Schedule\\Schedules',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Client',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Result\\',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Job\\Jobs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\ChunkedJob\\ChunkedJobs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Run\\Runs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Schedule\\Schedules',
 	);
 
-	private const array PERMITTED_API_REFERENCES = array(
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\JobInterface',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\Job\\OneOffJobInterface',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobInterface',
+	private const array PERMITTED_INTERNAL_REFERENCES = array(
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\JobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Job\\OneOffJobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\ChunkedJob\\ChunkedJobInterface',
 	);
 
 	/**
@@ -74,13 +74,13 @@ final class DependencyDirectionTest extends TestCase {
 
 			self::assertSame( 0, \preg_match( '/\b[A-Za-z_][A-Za-z0-9_]*EngineInterface\b/', $contents ), $location . ' references an internal engine interface.' );
 
-			foreach ( self::PERMITTED_API_REFERENCES as $permitted ) {
+			foreach ( self::PERMITTED_INTERNAL_REFERENCES as $permitted ) {
 				$extended_reference_pattern = '/' . \preg_quote( $permitted, '/' ) . '[A-Za-z0-9_\\\\]/';
-				self::assertSame( 0, \preg_match( $extended_reference_pattern, $contents ), $location . ' extends a permitted API type name into an unsupported dependency.' );
+				self::assertSame( 0, \preg_match( $extended_reference_pattern, $contents ), $location . ' extends a permitted Internal type name into an unsupported dependency.' );
 			}
 
-			$without_permitted_references = \str_replace( self::PERMITTED_API_REFERENCES, '', $contents );
-			self::assertStringNotContainsString( self::ROOT_NAMESPACE . 'Api\\', $without_permitted_references, $location . ' references an API type other than the three permitted genus interfaces.' );
+			$without_permitted_references = \str_replace( self::PERMITTED_INTERNAL_REFERENCES, '', $contents );
+			self::assertStringNotContainsString( self::ROOT_NAMESPACE . 'Internal\\', $without_permitted_references, $location . ' references an Internal type other than the three permitted genus interfaces.' );
 		}
 	}
 

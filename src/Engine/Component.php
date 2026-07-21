@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobs as ApiChunkedJobs;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs as ApiRuns;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedules as ApiSchedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs as ApiJobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobs as ApiChunkedJobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\Runs as ApiRuns;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedules as ApiSchedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\Jobs as ApiJobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
@@ -33,7 +33,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

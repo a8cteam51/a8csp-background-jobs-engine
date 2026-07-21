@@ -2,17 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\SkippedJobDispatch;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;

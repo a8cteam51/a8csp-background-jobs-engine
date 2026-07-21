@@ -13,12 +13,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**

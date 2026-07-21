@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;

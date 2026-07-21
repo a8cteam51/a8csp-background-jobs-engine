@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;

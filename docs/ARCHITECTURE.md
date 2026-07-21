@@ -29,7 +29,7 @@ every surviving component is initialized before any hook can fire.
   behind a non-retryable latch.
 - `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound consumer surface:
   the owner-scoped `Engine` handle, authoring bases, contexts, and returned value types.
-  `src/Api/` contains the internal capability facades and contracts; the rest of the engine graph
+  `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
   is likewise `@internal`.
 - `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the

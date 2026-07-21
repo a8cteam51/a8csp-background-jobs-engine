@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
 
 \defined( 'ABSPATH' ) || exit;
 

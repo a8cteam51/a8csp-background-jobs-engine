@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobsEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\RunsEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\SchedulesEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\JobsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\RunsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\SchedulesEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\JobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\ApiErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
@@ -99,7 +99,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @param   int                     $delay     Scheduling delay in seconds.
 	 * @param   int                     $priority  Advisory priority from 0 through 255.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	#[\Override]
@@ -117,7 +117,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 	#[\Override]
@@ -131,11 +131,11 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule, job: string}> $declarations
+	 * @phpstan-param array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule, job: string}> $declarations
 	 *
 	 * @param   array $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *
-	 * @return  AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	#[\Override]
@@ -151,7 +151,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 *
 	 * @param   string $identity Complete owner-qualified schedule identity.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	#[\Override]
@@ -170,7 +170,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
-	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	#[\Override]
@@ -186,7 +186,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 *
 	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
-	 * @return  AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	#[\Override]
@@ -203,7 +203,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Retained failed-run identifier.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	#[\Override]
@@ -220,7 +220,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Retained run identifier.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	#[\Override]

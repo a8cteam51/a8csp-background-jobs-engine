@@ -26,7 +26,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;

@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\ComponentCollection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;

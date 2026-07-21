@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\CallableJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\CallableJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 

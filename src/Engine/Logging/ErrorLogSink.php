@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 

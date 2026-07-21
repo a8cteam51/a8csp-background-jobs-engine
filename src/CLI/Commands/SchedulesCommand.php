@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

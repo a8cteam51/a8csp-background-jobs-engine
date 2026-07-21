@@ -7,9 +7,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 

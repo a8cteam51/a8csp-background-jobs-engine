@@ -3,7 +3,7 @@
 #
 # Patterns follow gitignore semantics: a bare name (no slash) matches at
 # any depth, a leading `/` anchors to the repo root. `/build` is root-
-# anchored so it excludes only Infection's top-level mutation-testing output.
+# anchored so it excludes only top-level development tooling and generated analysis output.
 
 .git*
 .idea

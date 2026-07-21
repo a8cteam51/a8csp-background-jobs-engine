@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext as ChunkContextContract;
 
 \defined( 'ABSPATH' ) || exit;

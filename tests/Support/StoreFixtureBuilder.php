@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
@@ -323,7 +323,7 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @phpstan-param array{
 	 *     owner: string,
-	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule, job: string}>,
+	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule, job: string}>,
 	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>
 	 * } $owner
 	 *
