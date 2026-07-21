@@ -35,6 +35,8 @@ final class ApiBoundaryTest extends TestCase {
 	private const array PUBLIC_MODEL_TYPES = array(
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\ChunkedJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunStatus',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunContext',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\ChunkContext',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunFailure',
